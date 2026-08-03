@@ -1,0 +1,52 @@
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "./theme/tokens.css";
+@source "../src";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /*
+     * 17px rather than the 16px default. Every rem-based size in the app scales
+     * from here, so this is the one lever that enlarges text, spacing and controls
+     * together. Chosen deliberately: this product's daily users include managers
+     * and approvers reading dense pay and leave figures, and a browser zoom is not
+     * something we should expect them to discover. Users who do zoom still get
+     * proportional scaling on top of this.
+     */
+    font-size: 17px;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03";
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

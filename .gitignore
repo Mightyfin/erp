@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build output
+dist/
+dist-ssr/
+.output/
+.nitro/
+.vinxi/
+.tanstack/
+.wrangler/
+*.local
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+
+# Environment and secrets — never commit these
+.env
+*.env
+!.env.example
+.dev.vars
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Office lock/temp files, so an open .docx never blocks or dirties a commit
+~$*
+.~lock.*#

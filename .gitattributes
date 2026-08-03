@@ -1,0 +1,12 @@
+# Normalise line endings so Windows and CI agree on what changed.
+* text=auto eol=lf
+
+# Binary — never diff or line-ending-convert these.
+*.docx binary
+*.xlsx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
