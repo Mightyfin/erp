@@ -28,10 +28,10 @@ export function ComingSoon({ area }: { area?: string }) {
         <h2 className="text-sm font-semibold">In this release</h2>
         <ul className="mt-2 grid gap-2 sm:grid-cols-2">
           {[
-            ["Setup", "Get the organisation configured from empty", "/setup"],
-            ["People", "Employee records, positions, structure, documents", "/employees"],
-            ["Payroll", "Runs, exceptions, payslips and everything feeding them", "/payroll"],
-            ["Configuration", "Policies, routing, statutory packs and integrations", "/configuration"],
+            ["Setup", "Get the organisation configured from empty", "/hrm/setup"],
+            ["People", "Employee records, positions, structure, documents", "/hrm/employees"],
+            ["Payroll", "Runs, exceptions, payslips and everything feeding them", "/hrm/payroll"],
+            ["Configuration", "Policies, routing, statutory packs and integrations", "/hrm/configuration"],
           ].map(([label, detail, to]) => (
             <li key={label}>
               <Link
@@ -62,7 +62,7 @@ export function ComingSoon({ area }: { area?: string }) {
       </div>
 
       <Button asChild variant="outline" className="self-start">
-        <Link to="/">Back to Home</Link>
+        <Link to="/hrm">Back to Home</Link>
       </Button>
     </>
   );

@@ -5,7 +5,6 @@ import {
   CheckSquare,
   ChevronDown,
   CircleHelp,
-  Grid2x2,
   LogOut,
   Menu,
   Moon,
@@ -52,15 +51,8 @@ import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
+import { modules } from "@/platform/modules";
 import { cn } from "@/lib/utils";
-
-const modules = [
-  { id: "hrm", label: "Human resources", available: true },
-  { id: "finance", label: "Finance", available: false },
-  { id: "procurement", label: "Procurement", available: false },
-  { id: "inventory", label: "Inventory", available: false },
-  { id: "accounting", label: "Accounting", available: false },
-];
 
 function useVisibleSections(mod: ModuleDefinition, role: Role) {
   return mod.sections.filter((s) => !s.roles || s.roles.includes(role));
@@ -121,7 +113,7 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
         to={section.to}
         onClick={onNavigate}
         activeProps={{ className: "bg-rail-active text-rail-foreground" }}
-        activeOptions={{ exact: section.to === "/" }}
+        activeOptions={{ exact: section.to === "/hrm" }}
         className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
       >
         <Icon className="size-4 shrink-0" aria-hidden />
@@ -231,7 +223,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <CommandGroup heading="People">
           {employees.map((e) => (
             <CommandItem key={e.id} value={`${e.fullName} ${e.employeeNo} ${e.jobTitle}`} asChild>
-              <Link to="/employees/$id" params={{ id: e.id }} onClick={() => onOpenChange(false)}>
+              <Link to="/hrm/employees/$id" params={{ id: e.id }} onClick={() => onOpenChange(false)}>
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">{e.fullName}</span>
                   <span className="truncate text-xs text-muted-foreground">
@@ -246,7 +238,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <CommandGroup heading="Requests and cases">
           {leaveRequests.map((r) => (
             <CommandItem key={r.id} value={`${r.id} ${r.type} leave`} asChild>
-              <Link to="/leave/$id" params={{ id: r.id }} onClick={() => onOpenChange(false)}>
+              <Link to="/hrm/leave/$id" params={{ id: r.id }} onClick={() => onOpenChange(false)}>
                 <span className="truncate">
                   {r.id} — {r.type} leave
                 </span>
@@ -255,14 +247,14 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
           ))}
           {attendanceCorrections.map((r) => (
             <CommandItem key={r.id} value={`${r.id} attendance correction`} asChild>
-              <Link to="/attendance/$id" params={{ id: r.id }} onClick={() => onOpenChange(false)}>
+              <Link to="/hrm/attendance/$id" params={{ id: r.id }} onClick={() => onOpenChange(false)}>
                 <span className="truncate">{r.id} — Attendance correction</span>
               </Link>
             </CommandItem>
           ))}
           {hrCases.map((c) => (
             <CommandItem key={c.id} value={`${c.id} ${c.subject} ${c.category}`} asChild>
-              <Link to="/requests/$id" params={{ id: c.id }} onClick={() => onOpenChange(false)}>
+              <Link to="/hrm/requests/$id" params={{ id: c.id }} onClick={() => onOpenChange(false)}>
                 <span className="truncate">
                   {c.id} — {c.subject}
                 </span>
@@ -274,7 +266,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <CommandGroup heading="Payslips">
           {derivePayslips().map((p) => (
             <CommandItem key={p.id} value={`${p.id} payslip ${p.period} ${p.employee}`} asChild>
-              <Link to="/payslips/$id" params={{ id: p.id }} onClick={() => onOpenChange(false)}>
+              <Link to="/hrm/payslips/$id" params={{ id: p.id }} onClick={() => onOpenChange(false)}>
                 <span className="truncate">
                   {p.employee} — {p.period}
                 </span>
@@ -337,8 +329,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 px-2">
-                <Grid2x2 className="size-4" aria-hidden />
-                <span className="hidden font-semibold sm:inline">Meridian ERP</span>
+                <img src="/mightyfin-mark.png" alt="" className="size-5" aria-hidden />
+                <span className="hidden font-semibold sm:inline">Mightyfin ERP</span>
                 <ChevronDown className="size-3.5" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -409,7 +401,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {canApprove ? (
               <Button asChild variant="ghost" size="icon" className="relative" aria-label="Tasks and approvals">
-                <Link to="/approvals">
+                <Link to="/hrm/approvals">
                   <CheckSquare className="size-5" aria-hidden />
                   <span className="absolute right-1 top-1 rounded-full bg-warning px-1 text-[10px] font-semibold text-warning-foreground">3</span>
                 </Link>
@@ -446,7 +438,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </DropdownMenu>
 
             <Button variant="ghost" size="icon" aria-label="Help" asChild>
-              <Link to="/help">
+              <Link to="/hrm/help">
                 <CircleHelp className="size-5" aria-hidden />
               </Link>
             </Button>
@@ -470,10 +462,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/employees/$id" params={{ id: "w-1001" }}>My profile</Link>
+                  <Link to="/hrm/employees/$id" params={{ id: "w-1001" }}>My profile</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/setup">Setup guide</Link>
+                  <Link to="/hrm/setup">Setup guide</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

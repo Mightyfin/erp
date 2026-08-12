@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertTriangle, Building2, KeyRound, LifeBuoy, ShieldCheck } from "lucide-react";
+import { AlertTriangle, KeyRound, LifeBuoy, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +12,9 @@ import { useApp } from "@/platform/app-context";
 export const Route = createFileRoute("/sign-in")({
   head: () => ({
     meta: [
-      { title: "Sign in — Meridian ERP" },
+      { title: "Sign in — Mightyfin ERP" },
       { name: "description", content: "Sign in to the HR workspace." },
-      { property: "og:title", content: "Sign in — Meridian ERP" },
+      { property: "og:title", content: "Sign in — Mightyfin ERP" },
       { property: "og:description", content: "Sign in to the HR workspace." },
     ],
   }),
@@ -45,10 +45,7 @@ function SignIn() {
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Brand / context panel */}
       <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
-        <div className="flex items-center gap-2">
-          <Building2 className="size-5" aria-hidden />
-          <span className="font-semibold">Meridian ERP</span>
-        </div>
+        <img src="/mightyfin-logo-light.png" alt="Mightyfin ERP" className="h-8 w-auto" />
         <div className="max-w-md">
           <h1 className="text-2xl font-semibold">Human resources</h1>
           <p className="mt-3 text-sm text-rail-muted">
@@ -74,8 +71,8 @@ function SignIn() {
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
             <div className="flex items-center gap-2">
-              <Building2 className="size-5" aria-hidden />
-              <span className="font-semibold">Meridian ERP</span>
+              <img src="/mightyfin-mark.png" alt="" className="size-5" aria-hidden />
+              <span className="font-semibold">Mightyfin ERP</span>
             </div>
           </div>
 

@@ -22,23 +22,23 @@ export const ENABLED_SECTIONS = new Set([
 
 /** Route prefixes included in this release. */
 const ENABLED_PREFIXES = [
-  "/employees",
-  "/people",
-  "/attendance", // hours feeding the run
-  "/leave", // paid and unpaid absence
-  "/time", // timesheets, TOIL, utilisation, travel and expenses
-  "/payslips",
-  "/pay",
-  "/payroll",
-  "/approvals",
-  "/configuration",
-  "/setup",
-  "/help",
+  "/hrm/employees",
+  "/hrm/people",
+  "/hrm/attendance", // hours feeding the run
+  "/hrm/leave", // paid and unpaid absence
+  "/hrm/time", // timesheets, TOIL, utilisation, travel and expenses
+  "/hrm/payslips",
+  "/hrm/pay",
+  "/hrm/payroll",
+  "/hrm/approvals",
+  "/hrm/configuration",
+  "/hrm/setup",
+  "/hrm/help",
   "/sign-in",
 ];
 
 /** Always reachable regardless of scope. */
-const ALWAYS = ["/", "/setup", "/help", "/sign-in", "/speak-up"];
+const ALWAYS = ["/hrm", "/hrm/setup", "/hrm/help", "/sign-in", "/speak-up"];
 
 export function isSectionEnabled(id: string) {
   return ENABLED_SECTIONS.has(id);

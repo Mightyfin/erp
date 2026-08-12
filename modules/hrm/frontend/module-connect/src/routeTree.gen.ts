@@ -10,110 +10,96 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApprovalsRouteImport } from './routes/approvals'
-import { Route as HelpRouteImport } from './routes/help'
-import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpeakUpRouteImport } from './routes/speak-up'
-import { Route as AttendanceIndexRouteImport } from './routes/attendance.index'
-import { Route as AttendanceIdRouteImport } from './routes/attendance.$id'
-import { Route as AttendanceClockRouteImport } from './routes/attendance.clock'
-import { Route as AttendanceNewRouteImport } from './routes/attendance.new'
-import { Route as ConfigurationIndexRouteImport } from './routes/configuration.index'
-import { Route as ConfigurationBusinessRouteImport } from './routes/configuration.business'
-import { Route as ConfigurationComplianceRouteImport } from './routes/configuration.compliance'
-import { Route as ConfigurationOrganisationRouteImport } from './routes/configuration.organisation'
-import { Route as ConfigurationProcessRouteImport } from './routes/configuration.process'
-import { Route as ConfigurationRolesRouteImport } from './routes/configuration.roles'
-import { Route as ConfigurationTechnicalRouteImport } from './routes/configuration.technical'
-import { Route as EmployeesIndexRouteImport } from './routes/employees.index'
-import { Route as EmployeesIdRouteImport } from './routes/employees.$id'
-import { Route as EmployeesNewRouteImport } from './routes/employees.new'
-import { Route as ExperienceAnnouncementsRouteImport } from './routes/experience.announcements'
-import { Route as ExperienceKnowledgeRouteImport } from './routes/experience.knowledge'
-import { Route as ExperienceLettersRouteImport } from './routes/experience.letters'
-import { Route as LeaveIndexRouteImport } from './routes/leave.index'
-import { Route as LeaveIdRouteImport } from './routes/leave.$id'
-import { Route as LeaveNewRouteImport } from './routes/leave.new'
-import { Route as LifecycleIndexRouteImport } from './routes/lifecycle.index'
-import { Route as LifecycleAlumniRouteImport } from './routes/lifecycle.alumni'
-import { Route as LifecycleAssetsRouteImport } from './routes/lifecycle.assets'
-import { Route as LifecycleJourneysRouteImport } from './routes/lifecycle.journeys'
-import { Route as LifecycleMobilityRouteImport } from './routes/lifecycle.mobility'
-import { Route as LifecycleMovementsRouteImport } from './routes/lifecycle.movements'
-import { Route as LifecycleOffboardingRouteImport } from './routes/lifecycle.offboarding'
-import { Route as LifecycleOnboardingRouteImport } from './routes/lifecycle.onboarding'
-import { Route as PayCompensationRouteImport } from './routes/pay.compensation'
-import { Route as PayrollIndexRouteImport } from './routes/payroll.index'
-import { Route as PayrollExceptionsRouteImport } from './routes/payroll.exceptions'
-import { Route as PayrollRunsRouteImport } from './routes/payroll.runs'
-import { Route as PayslipsIndexRouteImport } from './routes/payslips.index'
-import { Route as PayslipsIdRouteImport } from './routes/payslips.$id'
-import { Route as PeopleDataQualityRouteImport } from './routes/people.data-quality'
-import { Route as PeopleDocumentsRouteImport } from './routes/people.documents'
-import { Route as PeopleOrgRouteImport } from './routes/people.org'
-import { Route as PeoplePositionsRouteImport } from './routes/people.positions'
-import { Route as PeoplePrivacyRouteImport } from './routes/people.privacy'
-import { Route as RecruitmentIndexRouteImport } from './routes/recruitment.index'
-import { Route as RecruitmentCandidatesRouteImport } from './routes/recruitment.candidates'
-import { Route as RecruitmentOffersRouteImport } from './routes/recruitment.offers'
-import { Route as RecruitmentRequisitionsRouteImport } from './routes/recruitment.requisitions'
-import { Route as RecruitmentVacanciesRouteImport } from './routes/recruitment.vacancies'
-import { Route as RelationsIndexRouteImport } from './routes/relations.index'
-import { Route as RelationsCasesRouteImport } from './routes/relations.cases'
-import { Route as RelationsDisciplineRouteImport } from './routes/relations.discipline'
-import { Route as RelationsEthicsRouteImport } from './routes/relations.ethics'
-import { Route as RelationsLabourRouteImport } from './routes/relations.labour'
-import { Route as RelationsSafetyRouteImport } from './routes/relations.safety'
-import { Route as ReportsIndexRouteImport } from './routes/reports.index'
-import { Route as ReportsBuilderRouteImport } from './routes/reports.builder'
-import { Route as RequestsIndexRouteImport } from './routes/requests.index'
-import { Route as RequestsIdRouteImport } from './routes/requests.$id'
-import { Route as RequestsNewRouteImport } from './routes/requests.new'
-import { Route as TalentIndexRouteImport } from './routes/talent.index'
-import { Route as TalentFeedbackRouteImport } from './routes/talent.feedback'
-import { Route as TalentGoalsRouteImport } from './routes/talent.goals'
-import { Route as TalentLearningRouteImport } from './routes/talent.learning'
-import { Route as TalentReviewsRouteImport } from './routes/talent.reviews'
-import { Route as TalentSuccessionRouteImport } from './routes/talent.succession'
-import { Route as TimeSchedulesRouteImport } from './routes/time.schedules'
-import { Route as TimeTimesheetsRouteImport } from './routes/time.timesheets'
-import { Route as TimeToilRouteImport } from './routes/time.toil'
-import { Route as TimeTravelRouteImport } from './routes/time.travel'
-import { Route as TimeUtilisationRouteImport } from './routes/time.utilisation'
-import { Route as EmployeesIdEditRouteImport } from './routes/employees.$id.edit'
-import { Route as LifecycleMovementsNewRouteImport } from './routes/lifecycle.movements.new'
-import { Route as LifecycleOffboardingIdRouteImport } from './routes/lifecycle.offboarding.$id'
-import { Route as LifecycleOnboardingIdRouteImport } from './routes/lifecycle.onboarding.$id'
-import { Route as PayrollRunsIdRouteImport } from './routes/payroll.runs.$id'
-import { Route as PayrollRunsNewRouteImport } from './routes/payroll.runs.new'
-import { Route as PeoplePositionsIdRouteImport } from './routes/people.positions.$id'
-import { Route as RecruitmentCandidatesIdRouteImport } from './routes/recruitment.candidates.$id'
-import { Route as RecruitmentRequisitionsNewRouteImport } from './routes/recruitment.requisitions.new'
-import { Route as RelationsCasesIdRouteImport } from './routes/relations.cases.$id'
-import { Route as TalentReviewsIdRouteImport } from './routes/talent.reviews.$id'
-import { Route as TimeExpensesIndexRouteImport } from './routes/time.expenses.index'
-import { Route as TimeExpensesNewRouteImport } from './routes/time.expenses.new'
-import { Route as PayrollRunsIdEditRouteImport } from './routes/payroll.runs.$id.edit'
+import { Route as HrmIndexRouteImport } from './routes/hrm.index'
+import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
+import { Route as HrmHelpRouteImport } from './routes/hrm.help'
+import { Route as HrmSetupRouteImport } from './routes/hrm.setup'
+import { Route as HrmAttendanceIndexRouteImport } from './routes/hrm.attendance.index'
+import { Route as HrmAttendanceIdRouteImport } from './routes/hrm.attendance.$id'
+import { Route as HrmAttendanceClockRouteImport } from './routes/hrm.attendance.clock'
+import { Route as HrmAttendanceNewRouteImport } from './routes/hrm.attendance.new'
+import { Route as HrmConfigurationIndexRouteImport } from './routes/hrm.configuration.index'
+import { Route as HrmConfigurationBusinessRouteImport } from './routes/hrm.configuration.business'
+import { Route as HrmConfigurationComplianceRouteImport } from './routes/hrm.configuration.compliance'
+import { Route as HrmConfigurationOrganisationRouteImport } from './routes/hrm.configuration.organisation'
+import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.configuration.process'
+import { Route as HrmConfigurationRolesRouteImport } from './routes/hrm.configuration.roles'
+import { Route as HrmConfigurationTechnicalRouteImport } from './routes/hrm.configuration.technical'
+import { Route as HrmEmployeesIndexRouteImport } from './routes/hrm.employees.index'
+import { Route as HrmEmployeesIdRouteImport } from './routes/hrm.employees.$id'
+import { Route as HrmEmployeesNewRouteImport } from './routes/hrm.employees.new'
+import { Route as HrmExperienceAnnouncementsRouteImport } from './routes/hrm.experience.announcements'
+import { Route as HrmExperienceKnowledgeRouteImport } from './routes/hrm.experience.knowledge'
+import { Route as HrmExperienceLettersRouteImport } from './routes/hrm.experience.letters'
+import { Route as HrmLeaveIndexRouteImport } from './routes/hrm.leave.index'
+import { Route as HrmLeaveIdRouteImport } from './routes/hrm.leave.$id'
+import { Route as HrmLeaveNewRouteImport } from './routes/hrm.leave.new'
+import { Route as HrmLifecycleIndexRouteImport } from './routes/hrm.lifecycle.index'
+import { Route as HrmLifecycleAlumniRouteImport } from './routes/hrm.lifecycle.alumni'
+import { Route as HrmLifecycleAssetsRouteImport } from './routes/hrm.lifecycle.assets'
+import { Route as HrmLifecycleJourneysRouteImport } from './routes/hrm.lifecycle.journeys'
+import { Route as HrmLifecycleMobilityRouteImport } from './routes/hrm.lifecycle.mobility'
+import { Route as HrmLifecycleMovementsRouteImport } from './routes/hrm.lifecycle.movements'
+import { Route as HrmLifecycleOffboardingRouteImport } from './routes/hrm.lifecycle.offboarding'
+import { Route as HrmLifecycleOnboardingRouteImport } from './routes/hrm.lifecycle.onboarding'
+import { Route as HrmPayCompensationRouteImport } from './routes/hrm.pay.compensation'
+import { Route as HrmPayrollIndexRouteImport } from './routes/hrm.payroll.index'
+import { Route as HrmPayrollExceptionsRouteImport } from './routes/hrm.payroll.exceptions'
+import { Route as HrmPayrollRunsRouteImport } from './routes/hrm.payroll.runs'
+import { Route as HrmPayslipsIndexRouteImport } from './routes/hrm.payslips.index'
+import { Route as HrmPayslipsIdRouteImport } from './routes/hrm.payslips.$id'
+import { Route as HrmPeopleDataQualityRouteImport } from './routes/hrm.people.data-quality'
+import { Route as HrmPeopleDocumentsRouteImport } from './routes/hrm.people.documents'
+import { Route as HrmPeopleOrgRouteImport } from './routes/hrm.people.org'
+import { Route as HrmPeoplePositionsRouteImport } from './routes/hrm.people.positions'
+import { Route as HrmPeoplePrivacyRouteImport } from './routes/hrm.people.privacy'
+import { Route as HrmRecruitmentIndexRouteImport } from './routes/hrm.recruitment.index'
+import { Route as HrmRecruitmentCandidatesRouteImport } from './routes/hrm.recruitment.candidates'
+import { Route as HrmRecruitmentOffersRouteImport } from './routes/hrm.recruitment.offers'
+import { Route as HrmRecruitmentRequisitionsRouteImport } from './routes/hrm.recruitment.requisitions'
+import { Route as HrmRecruitmentVacanciesRouteImport } from './routes/hrm.recruitment.vacancies'
+import { Route as HrmRelationsIndexRouteImport } from './routes/hrm.relations.index'
+import { Route as HrmRelationsCasesRouteImport } from './routes/hrm.relations.cases'
+import { Route as HrmRelationsDisciplineRouteImport } from './routes/hrm.relations.discipline'
+import { Route as HrmRelationsEthicsRouteImport } from './routes/hrm.relations.ethics'
+import { Route as HrmRelationsLabourRouteImport } from './routes/hrm.relations.labour'
+import { Route as HrmRelationsSafetyRouteImport } from './routes/hrm.relations.safety'
+import { Route as HrmReportsIndexRouteImport } from './routes/hrm.reports.index'
+import { Route as HrmReportsBuilderRouteImport } from './routes/hrm.reports.builder'
+import { Route as HrmRequestsIndexRouteImport } from './routes/hrm.requests.index'
+import { Route as HrmRequestsIdRouteImport } from './routes/hrm.requests.$id'
+import { Route as HrmRequestsNewRouteImport } from './routes/hrm.requests.new'
+import { Route as HrmTalentIndexRouteImport } from './routes/hrm.talent.index'
+import { Route as HrmTalentFeedbackRouteImport } from './routes/hrm.talent.feedback'
+import { Route as HrmTalentGoalsRouteImport } from './routes/hrm.talent.goals'
+import { Route as HrmTalentLearningRouteImport } from './routes/hrm.talent.learning'
+import { Route as HrmTalentReviewsRouteImport } from './routes/hrm.talent.reviews'
+import { Route as HrmTalentSuccessionRouteImport } from './routes/hrm.talent.succession'
+import { Route as HrmTimeSchedulesRouteImport } from './routes/hrm.time.schedules'
+import { Route as HrmTimeTimesheetsRouteImport } from './routes/hrm.time.timesheets'
+import { Route as HrmTimeToilRouteImport } from './routes/hrm.time.toil'
+import { Route as HrmTimeTravelRouteImport } from './routes/hrm.time.travel'
+import { Route as HrmTimeUtilisationRouteImport } from './routes/hrm.time.utilisation'
+import { Route as HrmEmployeesIdEditRouteImport } from './routes/hrm.employees.$id.edit'
+import { Route as HrmLifecycleMovementsNewRouteImport } from './routes/hrm.lifecycle.movements.new'
+import { Route as HrmLifecycleOffboardingIdRouteImport } from './routes/hrm.lifecycle.offboarding.$id'
+import { Route as HrmLifecycleOnboardingIdRouteImport } from './routes/hrm.lifecycle.onboarding.$id'
+import { Route as HrmPayrollRunsIdRouteImport } from './routes/hrm.payroll.runs.$id'
+import { Route as HrmPayrollRunsNewRouteImport } from './routes/hrm.payroll.runs.new'
+import { Route as HrmPeoplePositionsIdRouteImport } from './routes/hrm.people.positions.$id'
+import { Route as HrmRecruitmentCandidatesIdRouteImport } from './routes/hrm.recruitment.candidates.$id'
+import { Route as HrmRecruitmentRequisitionsNewRouteImport } from './routes/hrm.recruitment.requisitions.new'
+import { Route as HrmRelationsCasesIdRouteImport } from './routes/hrm.relations.cases.$id'
+import { Route as HrmTalentReviewsIdRouteImport } from './routes/hrm.talent.reviews.$id'
+import { Route as HrmTimeExpensesIndexRouteImport } from './routes/hrm.time.expenses.index'
+import { Route as HrmTimeExpensesNewRouteImport } from './routes/hrm.time.expenses.new'
+import { Route as HrmPayrollRunsIdEditRouteImport } from './routes/hrm.payroll.runs.$id.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApprovalsRoute = ApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HelpRoute = HelpRouteImport.update({
-  id: '/help',
-  path: '/help',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -126,1016 +112,1053 @@ const SpeakUpRoute = SpeakUpRouteImport.update({
   path: '/speak-up',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AttendanceIndexRoute = AttendanceIndexRouteImport.update({
-  id: '/attendance/',
-  path: '/attendance/',
+const HrmIndexRoute = HrmIndexRouteImport.update({
+  id: '/hrm/',
+  path: '/hrm/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AttendanceIdRoute = AttendanceIdRouteImport.update({
-  id: '/attendance/$id',
-  path: '/attendance/$id',
+const HrmApprovalsRoute = HrmApprovalsRouteImport.update({
+  id: '/hrm/approvals',
+  path: '/hrm/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AttendanceClockRoute = AttendanceClockRouteImport.update({
-  id: '/attendance/clock',
-  path: '/attendance/clock',
+const HrmHelpRoute = HrmHelpRouteImport.update({
+  id: '/hrm/help',
+  path: '/hrm/help',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AttendanceNewRoute = AttendanceNewRouteImport.update({
-  id: '/attendance/new',
-  path: '/attendance/new',
+const HrmSetupRoute = HrmSetupRouteImport.update({
+  id: '/hrm/setup',
+  path: '/hrm/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationIndexRoute = ConfigurationIndexRouteImport.update({
-  id: '/configuration/',
-  path: '/configuration/',
+const HrmAttendanceIndexRoute = HrmAttendanceIndexRouteImport.update({
+  id: '/hrm/attendance/',
+  path: '/hrm/attendance/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationBusinessRoute = ConfigurationBusinessRouteImport.update({
-  id: '/configuration/business',
-  path: '/configuration/business',
+const HrmAttendanceIdRoute = HrmAttendanceIdRouteImport.update({
+  id: '/hrm/attendance/$id',
+  path: '/hrm/attendance/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationComplianceRoute = ConfigurationComplianceRouteImport.update({
-  id: '/configuration/compliance',
-  path: '/configuration/compliance',
+const HrmAttendanceClockRoute = HrmAttendanceClockRouteImport.update({
+  id: '/hrm/attendance/clock',
+  path: '/hrm/attendance/clock',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationOrganisationRoute =
-  ConfigurationOrganisationRouteImport.update({
-    id: '/configuration/organisation',
-    path: '/configuration/organisation',
+const HrmAttendanceNewRoute = HrmAttendanceNewRouteImport.update({
+  id: '/hrm/attendance/new',
+  path: '/hrm/attendance/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmConfigurationIndexRoute = HrmConfigurationIndexRouteImport.update({
+  id: '/hrm/configuration/',
+  path: '/hrm/configuration/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmConfigurationBusinessRoute =
+  HrmConfigurationBusinessRouteImport.update({
+    id: '/hrm/configuration/business',
+    path: '/hrm/configuration/business',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ConfigurationProcessRoute = ConfigurationProcessRouteImport.update({
-  id: '/configuration/process',
-  path: '/configuration/process',
+const HrmConfigurationComplianceRoute =
+  HrmConfigurationComplianceRouteImport.update({
+    id: '/hrm/configuration/compliance',
+    path: '/hrm/configuration/compliance',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmConfigurationOrganisationRoute =
+  HrmConfigurationOrganisationRouteImport.update({
+    id: '/hrm/configuration/organisation',
+    path: '/hrm/configuration/organisation',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmConfigurationProcessRoute = HrmConfigurationProcessRouteImport.update({
+  id: '/hrm/configuration/process',
+  path: '/hrm/configuration/process',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationRolesRoute = ConfigurationRolesRouteImport.update({
-  id: '/configuration/roles',
-  path: '/configuration/roles',
+const HrmConfigurationRolesRoute = HrmConfigurationRolesRouteImport.update({
+  id: '/hrm/configuration/roles',
+  path: '/hrm/configuration/roles',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConfigurationTechnicalRoute = ConfigurationTechnicalRouteImport.update({
-  id: '/configuration/technical',
-  path: '/configuration/technical',
+const HrmConfigurationTechnicalRoute =
+  HrmConfigurationTechnicalRouteImport.update({
+    id: '/hrm/configuration/technical',
+    path: '/hrm/configuration/technical',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmEmployeesIndexRoute = HrmEmployeesIndexRouteImport.update({
+  id: '/hrm/employees/',
+  path: '/hrm/employees/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EmployeesIndexRoute = EmployeesIndexRouteImport.update({
-  id: '/employees/',
-  path: '/employees/',
+const HrmEmployeesIdRoute = HrmEmployeesIdRouteImport.update({
+  id: '/hrm/employees/$id',
+  path: '/hrm/employees/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EmployeesIdRoute = EmployeesIdRouteImport.update({
-  id: '/employees/$id',
-  path: '/employees/$id',
+const HrmEmployeesNewRoute = HrmEmployeesNewRouteImport.update({
+  id: '/hrm/employees/new',
+  path: '/hrm/employees/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EmployeesNewRoute = EmployeesNewRouteImport.update({
-  id: '/employees/new',
-  path: '/employees/new',
+const HrmExperienceAnnouncementsRoute =
+  HrmExperienceAnnouncementsRouteImport.update({
+    id: '/hrm/experience/announcements',
+    path: '/hrm/experience/announcements',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmExperienceKnowledgeRoute = HrmExperienceKnowledgeRouteImport.update({
+  id: '/hrm/experience/knowledge',
+  path: '/hrm/experience/knowledge',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ExperienceAnnouncementsRoute = ExperienceAnnouncementsRouteImport.update({
-  id: '/experience/announcements',
-  path: '/experience/announcements',
+const HrmExperienceLettersRoute = HrmExperienceLettersRouteImport.update({
+  id: '/hrm/experience/letters',
+  path: '/hrm/experience/letters',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ExperienceKnowledgeRoute = ExperienceKnowledgeRouteImport.update({
-  id: '/experience/knowledge',
-  path: '/experience/knowledge',
+const HrmLeaveIndexRoute = HrmLeaveIndexRouteImport.update({
+  id: '/hrm/leave/',
+  path: '/hrm/leave/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ExperienceLettersRoute = ExperienceLettersRouteImport.update({
-  id: '/experience/letters',
-  path: '/experience/letters',
+const HrmLeaveIdRoute = HrmLeaveIdRouteImport.update({
+  id: '/hrm/leave/$id',
+  path: '/hrm/leave/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LeaveIndexRoute = LeaveIndexRouteImport.update({
-  id: '/leave/',
-  path: '/leave/',
+const HrmLeaveNewRoute = HrmLeaveNewRouteImport.update({
+  id: '/hrm/leave/new',
+  path: '/hrm/leave/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LeaveIdRoute = LeaveIdRouteImport.update({
-  id: '/leave/$id',
-  path: '/leave/$id',
+const HrmLifecycleIndexRoute = HrmLifecycleIndexRouteImport.update({
+  id: '/hrm/lifecycle/',
+  path: '/hrm/lifecycle/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LeaveNewRoute = LeaveNewRouteImport.update({
-  id: '/leave/new',
-  path: '/leave/new',
+const HrmLifecycleAlumniRoute = HrmLifecycleAlumniRouteImport.update({
+  id: '/hrm/lifecycle/alumni',
+  path: '/hrm/lifecycle/alumni',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleIndexRoute = LifecycleIndexRouteImport.update({
-  id: '/lifecycle/',
-  path: '/lifecycle/',
+const HrmLifecycleAssetsRoute = HrmLifecycleAssetsRouteImport.update({
+  id: '/hrm/lifecycle/assets',
+  path: '/hrm/lifecycle/assets',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleAlumniRoute = LifecycleAlumniRouteImport.update({
-  id: '/lifecycle/alumni',
-  path: '/lifecycle/alumni',
+const HrmLifecycleJourneysRoute = HrmLifecycleJourneysRouteImport.update({
+  id: '/hrm/lifecycle/journeys',
+  path: '/hrm/lifecycle/journeys',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleAssetsRoute = LifecycleAssetsRouteImport.update({
-  id: '/lifecycle/assets',
-  path: '/lifecycle/assets',
+const HrmLifecycleMobilityRoute = HrmLifecycleMobilityRouteImport.update({
+  id: '/hrm/lifecycle/mobility',
+  path: '/hrm/lifecycle/mobility',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleJourneysRoute = LifecycleJourneysRouteImport.update({
-  id: '/lifecycle/journeys',
-  path: '/lifecycle/journeys',
+const HrmLifecycleMovementsRoute = HrmLifecycleMovementsRouteImport.update({
+  id: '/hrm/lifecycle/movements',
+  path: '/hrm/lifecycle/movements',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleMobilityRoute = LifecycleMobilityRouteImport.update({
-  id: '/lifecycle/mobility',
-  path: '/lifecycle/mobility',
+const HrmLifecycleOffboardingRoute = HrmLifecycleOffboardingRouteImport.update({
+  id: '/hrm/lifecycle/offboarding',
+  path: '/hrm/lifecycle/offboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleMovementsRoute = LifecycleMovementsRouteImport.update({
-  id: '/lifecycle/movements',
-  path: '/lifecycle/movements',
+const HrmLifecycleOnboardingRoute = HrmLifecycleOnboardingRouteImport.update({
+  id: '/hrm/lifecycle/onboarding',
+  path: '/hrm/lifecycle/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleOffboardingRoute = LifecycleOffboardingRouteImport.update({
-  id: '/lifecycle/offboarding',
-  path: '/lifecycle/offboarding',
+const HrmPayCompensationRoute = HrmPayCompensationRouteImport.update({
+  id: '/hrm/pay/compensation',
+  path: '/hrm/pay/compensation',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LifecycleOnboardingRoute = LifecycleOnboardingRouteImport.update({
-  id: '/lifecycle/onboarding',
-  path: '/lifecycle/onboarding',
+const HrmPayrollIndexRoute = HrmPayrollIndexRouteImport.update({
+  id: '/hrm/payroll/',
+  path: '/hrm/payroll/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayCompensationRoute = PayCompensationRouteImport.update({
-  id: '/pay/compensation',
-  path: '/pay/compensation',
+const HrmPayrollExceptionsRoute = HrmPayrollExceptionsRouteImport.update({
+  id: '/hrm/payroll/exceptions',
+  path: '/hrm/payroll/exceptions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayrollIndexRoute = PayrollIndexRouteImport.update({
-  id: '/payroll/',
-  path: '/payroll/',
+const HrmPayrollRunsRoute = HrmPayrollRunsRouteImport.update({
+  id: '/hrm/payroll/runs',
+  path: '/hrm/payroll/runs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayrollExceptionsRoute = PayrollExceptionsRouteImport.update({
-  id: '/payroll/exceptions',
-  path: '/payroll/exceptions',
+const HrmPayslipsIndexRoute = HrmPayslipsIndexRouteImport.update({
+  id: '/hrm/payslips/',
+  path: '/hrm/payslips/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayrollRunsRoute = PayrollRunsRouteImport.update({
-  id: '/payroll/runs',
-  path: '/payroll/runs',
+const HrmPayslipsIdRoute = HrmPayslipsIdRouteImport.update({
+  id: '/hrm/payslips/$id',
+  path: '/hrm/payslips/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayslipsIndexRoute = PayslipsIndexRouteImport.update({
-  id: '/payslips/',
-  path: '/payslips/',
+const HrmPeopleDataQualityRoute = HrmPeopleDataQualityRouteImport.update({
+  id: '/hrm/people/data-quality',
+  path: '/hrm/people/data-quality',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayslipsIdRoute = PayslipsIdRouteImport.update({
-  id: '/payslips/$id',
-  path: '/payslips/$id',
+const HrmPeopleDocumentsRoute = HrmPeopleDocumentsRouteImport.update({
+  id: '/hrm/people/documents',
+  path: '/hrm/people/documents',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PeopleDataQualityRoute = PeopleDataQualityRouteImport.update({
-  id: '/people/data-quality',
-  path: '/people/data-quality',
+const HrmPeopleOrgRoute = HrmPeopleOrgRouteImport.update({
+  id: '/hrm/people/org',
+  path: '/hrm/people/org',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PeopleDocumentsRoute = PeopleDocumentsRouteImport.update({
-  id: '/people/documents',
-  path: '/people/documents',
+const HrmPeoplePositionsRoute = HrmPeoplePositionsRouteImport.update({
+  id: '/hrm/people/positions',
+  path: '/hrm/people/positions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PeopleOrgRoute = PeopleOrgRouteImport.update({
-  id: '/people/org',
-  path: '/people/org',
+const HrmPeoplePrivacyRoute = HrmPeoplePrivacyRouteImport.update({
+  id: '/hrm/people/privacy',
+  path: '/hrm/people/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PeoplePositionsRoute = PeoplePositionsRouteImport.update({
-  id: '/people/positions',
-  path: '/people/positions',
+const HrmRecruitmentIndexRoute = HrmRecruitmentIndexRouteImport.update({
+  id: '/hrm/recruitment/',
+  path: '/hrm/recruitment/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PeoplePrivacyRoute = PeoplePrivacyRouteImport.update({
-  id: '/people/privacy',
-  path: '/people/privacy',
+const HrmRecruitmentCandidatesRoute =
+  HrmRecruitmentCandidatesRouteImport.update({
+    id: '/hrm/recruitment/candidates',
+    path: '/hrm/recruitment/candidates',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmRecruitmentOffersRoute = HrmRecruitmentOffersRouteImport.update({
+  id: '/hrm/recruitment/offers',
+  path: '/hrm/recruitment/offers',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruitmentIndexRoute = RecruitmentIndexRouteImport.update({
-  id: '/recruitment/',
-  path: '/recruitment/',
+const HrmRecruitmentRequisitionsRoute =
+  HrmRecruitmentRequisitionsRouteImport.update({
+    id: '/hrm/recruitment/requisitions',
+    path: '/hrm/recruitment/requisitions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmRecruitmentVacanciesRoute = HrmRecruitmentVacanciesRouteImport.update({
+  id: '/hrm/recruitment/vacancies',
+  path: '/hrm/recruitment/vacancies',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruitmentCandidatesRoute = RecruitmentCandidatesRouteImport.update({
-  id: '/recruitment/candidates',
-  path: '/recruitment/candidates',
+const HrmRelationsIndexRoute = HrmRelationsIndexRouteImport.update({
+  id: '/hrm/relations/',
+  path: '/hrm/relations/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruitmentOffersRoute = RecruitmentOffersRouteImport.update({
-  id: '/recruitment/offers',
-  path: '/recruitment/offers',
+const HrmRelationsCasesRoute = HrmRelationsCasesRouteImport.update({
+  id: '/hrm/relations/cases',
+  path: '/hrm/relations/cases',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruitmentRequisitionsRoute = RecruitmentRequisitionsRouteImport.update({
-  id: '/recruitment/requisitions',
-  path: '/recruitment/requisitions',
+const HrmRelationsDisciplineRoute = HrmRelationsDisciplineRouteImport.update({
+  id: '/hrm/relations/discipline',
+  path: '/hrm/relations/discipline',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruitmentVacanciesRoute = RecruitmentVacanciesRouteImport.update({
-  id: '/recruitment/vacancies',
-  path: '/recruitment/vacancies',
+const HrmRelationsEthicsRoute = HrmRelationsEthicsRouteImport.update({
+  id: '/hrm/relations/ethics',
+  path: '/hrm/relations/ethics',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsIndexRoute = RelationsIndexRouteImport.update({
-  id: '/relations/',
-  path: '/relations/',
+const HrmRelationsLabourRoute = HrmRelationsLabourRouteImport.update({
+  id: '/hrm/relations/labour',
+  path: '/hrm/relations/labour',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsCasesRoute = RelationsCasesRouteImport.update({
-  id: '/relations/cases',
-  path: '/relations/cases',
+const HrmRelationsSafetyRoute = HrmRelationsSafetyRouteImport.update({
+  id: '/hrm/relations/safety',
+  path: '/hrm/relations/safety',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsDisciplineRoute = RelationsDisciplineRouteImport.update({
-  id: '/relations/discipline',
-  path: '/relations/discipline',
+const HrmReportsIndexRoute = HrmReportsIndexRouteImport.update({
+  id: '/hrm/reports/',
+  path: '/hrm/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsEthicsRoute = RelationsEthicsRouteImport.update({
-  id: '/relations/ethics',
-  path: '/relations/ethics',
+const HrmReportsBuilderRoute = HrmReportsBuilderRouteImport.update({
+  id: '/hrm/reports/builder',
+  path: '/hrm/reports/builder',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsLabourRoute = RelationsLabourRouteImport.update({
-  id: '/relations/labour',
-  path: '/relations/labour',
+const HrmRequestsIndexRoute = HrmRequestsIndexRouteImport.update({
+  id: '/hrm/requests/',
+  path: '/hrm/requests/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RelationsSafetyRoute = RelationsSafetyRouteImport.update({
-  id: '/relations/safety',
-  path: '/relations/safety',
+const HrmRequestsIdRoute = HrmRequestsIdRouteImport.update({
+  id: '/hrm/requests/$id',
+  path: '/hrm/requests/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReportsIndexRoute = ReportsIndexRouteImport.update({
-  id: '/reports/',
-  path: '/reports/',
+const HrmRequestsNewRoute = HrmRequestsNewRouteImport.update({
+  id: '/hrm/requests/new',
+  path: '/hrm/requests/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReportsBuilderRoute = ReportsBuilderRouteImport.update({
-  id: '/reports/builder',
-  path: '/reports/builder',
+const HrmTalentIndexRoute = HrmTalentIndexRouteImport.update({
+  id: '/hrm/talent/',
+  path: '/hrm/talent/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RequestsIndexRoute = RequestsIndexRouteImport.update({
-  id: '/requests/',
-  path: '/requests/',
+const HrmTalentFeedbackRoute = HrmTalentFeedbackRouteImport.update({
+  id: '/hrm/talent/feedback',
+  path: '/hrm/talent/feedback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RequestsIdRoute = RequestsIdRouteImport.update({
-  id: '/requests/$id',
-  path: '/requests/$id',
+const HrmTalentGoalsRoute = HrmTalentGoalsRouteImport.update({
+  id: '/hrm/talent/goals',
+  path: '/hrm/talent/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RequestsNewRoute = RequestsNewRouteImport.update({
-  id: '/requests/new',
-  path: '/requests/new',
+const HrmTalentLearningRoute = HrmTalentLearningRouteImport.update({
+  id: '/hrm/talent/learning',
+  path: '/hrm/talent/learning',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentIndexRoute = TalentIndexRouteImport.update({
-  id: '/talent/',
-  path: '/talent/',
+const HrmTalentReviewsRoute = HrmTalentReviewsRouteImport.update({
+  id: '/hrm/talent/reviews',
+  path: '/hrm/talent/reviews',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentFeedbackRoute = TalentFeedbackRouteImport.update({
-  id: '/talent/feedback',
-  path: '/talent/feedback',
+const HrmTalentSuccessionRoute = HrmTalentSuccessionRouteImport.update({
+  id: '/hrm/talent/succession',
+  path: '/hrm/talent/succession',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentGoalsRoute = TalentGoalsRouteImport.update({
-  id: '/talent/goals',
-  path: '/talent/goals',
+const HrmTimeSchedulesRoute = HrmTimeSchedulesRouteImport.update({
+  id: '/hrm/time/schedules',
+  path: '/hrm/time/schedules',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentLearningRoute = TalentLearningRouteImport.update({
-  id: '/talent/learning',
-  path: '/talent/learning',
+const HrmTimeTimesheetsRoute = HrmTimeTimesheetsRouteImport.update({
+  id: '/hrm/time/timesheets',
+  path: '/hrm/time/timesheets',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentReviewsRoute = TalentReviewsRouteImport.update({
-  id: '/talent/reviews',
-  path: '/talent/reviews',
+const HrmTimeToilRoute = HrmTimeToilRouteImport.update({
+  id: '/hrm/time/toil',
+  path: '/hrm/time/toil',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TalentSuccessionRoute = TalentSuccessionRouteImport.update({
-  id: '/talent/succession',
-  path: '/talent/succession',
+const HrmTimeTravelRoute = HrmTimeTravelRouteImport.update({
+  id: '/hrm/time/travel',
+  path: '/hrm/time/travel',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TimeSchedulesRoute = TimeSchedulesRouteImport.update({
-  id: '/time/schedules',
-  path: '/time/schedules',
+const HrmTimeUtilisationRoute = HrmTimeUtilisationRouteImport.update({
+  id: '/hrm/time/utilisation',
+  path: '/hrm/time/utilisation',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TimeTimesheetsRoute = TimeTimesheetsRouteImport.update({
-  id: '/time/timesheets',
-  path: '/time/timesheets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TimeToilRoute = TimeToilRouteImport.update({
-  id: '/time/toil',
-  path: '/time/toil',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TimeTravelRoute = TimeTravelRouteImport.update({
-  id: '/time/travel',
-  path: '/time/travel',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TimeUtilisationRoute = TimeUtilisationRouteImport.update({
-  id: '/time/utilisation',
-  path: '/time/utilisation',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EmployeesIdEditRoute = EmployeesIdEditRouteImport.update({
+const HrmEmployeesIdEditRoute = HrmEmployeesIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
-  getParentRoute: () => EmployeesIdRoute,
+  getParentRoute: () => HrmEmployeesIdRoute,
 } as any)
-const LifecycleMovementsNewRoute = LifecycleMovementsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => LifecycleMovementsRoute,
-} as any)
-const LifecycleOffboardingIdRoute = LifecycleOffboardingIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => LifecycleOffboardingRoute,
-} as any)
-const LifecycleOnboardingIdRoute = LifecycleOnboardingIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => LifecycleOnboardingRoute,
-} as any)
-const PayrollRunsIdRoute = PayrollRunsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PayrollRunsRoute,
-} as any)
-const PayrollRunsNewRoute = PayrollRunsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PayrollRunsRoute,
-} as any)
-const PeoplePositionsIdRoute = PeoplePositionsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PeoplePositionsRoute,
-} as any)
-const RecruitmentCandidatesIdRoute = RecruitmentCandidatesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RecruitmentCandidatesRoute,
-} as any)
-const RecruitmentRequisitionsNewRoute =
-  RecruitmentRequisitionsNewRouteImport.update({
+const HrmLifecycleMovementsNewRoute =
+  HrmLifecycleMovementsNewRouteImport.update({
     id: '/new',
     path: '/new',
-    getParentRoute: () => RecruitmentRequisitionsRoute,
+    getParentRoute: () => HrmLifecycleMovementsRoute,
   } as any)
-const RelationsCasesIdRoute = RelationsCasesIdRouteImport.update({
+const HrmLifecycleOffboardingIdRoute =
+  HrmLifecycleOffboardingIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => HrmLifecycleOffboardingRoute,
+  } as any)
+const HrmLifecycleOnboardingIdRoute =
+  HrmLifecycleOnboardingIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => HrmLifecycleOnboardingRoute,
+  } as any)
+const HrmPayrollRunsIdRoute = HrmPayrollRunsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => RelationsCasesRoute,
+  getParentRoute: () => HrmPayrollRunsRoute,
 } as any)
-const TalentReviewsIdRoute = TalentReviewsIdRouteImport.update({
+const HrmPayrollRunsNewRoute = HrmPayrollRunsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => HrmPayrollRunsRoute,
+} as any)
+const HrmPeoplePositionsIdRoute = HrmPeoplePositionsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => TalentReviewsRoute,
+  getParentRoute: () => HrmPeoplePositionsRoute,
 } as any)
-const TimeExpensesIndexRoute = TimeExpensesIndexRouteImport.update({
-  id: '/time/expenses/',
-  path: '/time/expenses/',
+const HrmRecruitmentCandidatesIdRoute =
+  HrmRecruitmentCandidatesIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => HrmRecruitmentCandidatesRoute,
+  } as any)
+const HrmRecruitmentRequisitionsNewRoute =
+  HrmRecruitmentRequisitionsNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => HrmRecruitmentRequisitionsRoute,
+  } as any)
+const HrmRelationsCasesIdRoute = HrmRelationsCasesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => HrmRelationsCasesRoute,
+} as any)
+const HrmTalentReviewsIdRoute = HrmTalentReviewsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => HrmTalentReviewsRoute,
+} as any)
+const HrmTimeExpensesIndexRoute = HrmTimeExpensesIndexRouteImport.update({
+  id: '/hrm/time/expenses/',
+  path: '/hrm/time/expenses/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TimeExpensesNewRoute = TimeExpensesNewRouteImport.update({
-  id: '/time/expenses/new',
-  path: '/time/expenses/new',
+const HrmTimeExpensesNewRoute = HrmTimeExpensesNewRouteImport.update({
+  id: '/hrm/time/expenses/new',
+  path: '/hrm/time/expenses/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PayrollRunsIdEditRoute = PayrollRunsIdEditRouteImport.update({
+const HrmPayrollRunsIdEditRoute = HrmPayrollRunsIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
-  getParentRoute: () => PayrollRunsIdRoute,
+  getParentRoute: () => HrmPayrollRunsIdRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/approvals': typeof ApprovalsRoute
-  '/help': typeof HelpRoute
-  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
-  '/attendance/$id': typeof AttendanceIdRoute
-  '/attendance/clock': typeof AttendanceClockRoute
-  '/attendance/new': typeof AttendanceNewRoute
-  '/configuration/business': typeof ConfigurationBusinessRoute
-  '/configuration/compliance': typeof ConfigurationComplianceRoute
-  '/configuration/organisation': typeof ConfigurationOrganisationRoute
-  '/configuration/process': typeof ConfigurationProcessRoute
-  '/configuration/roles': typeof ConfigurationRolesRoute
-  '/configuration/technical': typeof ConfigurationTechnicalRoute
-  '/employees/$id': typeof EmployeesIdRouteWithChildren
-  '/employees/new': typeof EmployeesNewRoute
-  '/experience/announcements': typeof ExperienceAnnouncementsRoute
-  '/experience/knowledge': typeof ExperienceKnowledgeRoute
-  '/experience/letters': typeof ExperienceLettersRoute
-  '/leave/$id': typeof LeaveIdRoute
-  '/leave/new': typeof LeaveNewRoute
-  '/lifecycle/alumni': typeof LifecycleAlumniRoute
-  '/lifecycle/assets': typeof LifecycleAssetsRoute
-  '/lifecycle/journeys': typeof LifecycleJourneysRoute
-  '/lifecycle/mobility': typeof LifecycleMobilityRoute
-  '/lifecycle/movements': typeof LifecycleMovementsRouteWithChildren
-  '/lifecycle/offboarding': typeof LifecycleOffboardingRouteWithChildren
-  '/lifecycle/onboarding': typeof LifecycleOnboardingRouteWithChildren
-  '/pay/compensation': typeof PayCompensationRoute
-  '/payroll/exceptions': typeof PayrollExceptionsRoute
-  '/payroll/runs': typeof PayrollRunsRouteWithChildren
-  '/payslips/$id': typeof PayslipsIdRoute
-  '/people/data-quality': typeof PeopleDataQualityRoute
-  '/people/documents': typeof PeopleDocumentsRoute
-  '/people/org': typeof PeopleOrgRoute
-  '/people/positions': typeof PeoplePositionsRouteWithChildren
-  '/people/privacy': typeof PeoplePrivacyRoute
-  '/recruitment/candidates': typeof RecruitmentCandidatesRouteWithChildren
-  '/recruitment/offers': typeof RecruitmentOffersRoute
-  '/recruitment/requisitions': typeof RecruitmentRequisitionsRouteWithChildren
-  '/recruitment/vacancies': typeof RecruitmentVacanciesRoute
-  '/relations/cases': typeof RelationsCasesRouteWithChildren
-  '/relations/discipline': typeof RelationsDisciplineRoute
-  '/relations/ethics': typeof RelationsEthicsRoute
-  '/relations/labour': typeof RelationsLabourRoute
-  '/relations/safety': typeof RelationsSafetyRoute
-  '/reports/builder': typeof ReportsBuilderRoute
-  '/requests/$id': typeof RequestsIdRoute
-  '/requests/new': typeof RequestsNewRoute
-  '/talent/feedback': typeof TalentFeedbackRoute
-  '/talent/goals': typeof TalentGoalsRoute
-  '/talent/learning': typeof TalentLearningRoute
-  '/talent/reviews': typeof TalentReviewsRouteWithChildren
-  '/talent/succession': typeof TalentSuccessionRoute
-  '/time/schedules': typeof TimeSchedulesRoute
-  '/time/timesheets': typeof TimeTimesheetsRoute
-  '/time/toil': typeof TimeToilRoute
-  '/time/travel': typeof TimeTravelRoute
-  '/time/utilisation': typeof TimeUtilisationRoute
-  '/attendance/': typeof AttendanceIndexRoute
-  '/configuration/': typeof ConfigurationIndexRoute
-  '/employees/': typeof EmployeesIndexRoute
-  '/leave/': typeof LeaveIndexRoute
-  '/lifecycle/': typeof LifecycleIndexRoute
-  '/payroll/': typeof PayrollIndexRoute
-  '/payslips/': typeof PayslipsIndexRoute
-  '/recruitment/': typeof RecruitmentIndexRoute
-  '/relations/': typeof RelationsIndexRoute
-  '/reports/': typeof ReportsIndexRoute
-  '/requests/': typeof RequestsIndexRoute
-  '/talent/': typeof TalentIndexRoute
-  '/employees/$id/edit': typeof EmployeesIdEditRoute
-  '/lifecycle/movements/new': typeof LifecycleMovementsNewRoute
-  '/lifecycle/offboarding/$id': typeof LifecycleOffboardingIdRoute
-  '/lifecycle/onboarding/$id': typeof LifecycleOnboardingIdRoute
-  '/payroll/runs/$id': typeof PayrollRunsIdRouteWithChildren
-  '/payroll/runs/new': typeof PayrollRunsNewRoute
-  '/people/positions/$id': typeof PeoplePositionsIdRoute
-  '/recruitment/candidates/$id': typeof RecruitmentCandidatesIdRoute
-  '/recruitment/requisitions/new': typeof RecruitmentRequisitionsNewRoute
-  '/relations/cases/$id': typeof RelationsCasesIdRoute
-  '/talent/reviews/$id': typeof TalentReviewsIdRoute
-  '/time/expenses/new': typeof TimeExpensesNewRoute
-  '/time/expenses/': typeof TimeExpensesIndexRoute
-  '/payroll/runs/$id/edit': typeof PayrollRunsIdEditRoute
+  '/hrm/approvals': typeof HrmApprovalsRoute
+  '/hrm/help': typeof HrmHelpRoute
+  '/hrm/setup': typeof HrmSetupRoute
+  '/hrm/': typeof HrmIndexRoute
+  '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
+  '/hrm/attendance/clock': typeof HrmAttendanceClockRoute
+  '/hrm/attendance/new': typeof HrmAttendanceNewRoute
+  '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
+  '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
+  '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
+  '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/new': typeof HrmEmployeesNewRoute
+  '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
+  '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
+  '/hrm/experience/letters': typeof HrmExperienceLettersRoute
+  '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
+  '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
+  '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
+  '/hrm/lifecycle/mobility': typeof HrmLifecycleMobilityRoute
+  '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
+  '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
+  '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/pay/compensation': typeof HrmPayCompensationRoute
+  '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
+  '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
+  '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/org': typeof HrmPeopleOrgRoute
+  '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
+  '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
+  '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
+  '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
+  '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
+  '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
+  '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
+  '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
+  '/hrm/reports/builder': typeof HrmReportsBuilderRoute
+  '/hrm/requests/$id': typeof HrmRequestsIdRoute
+  '/hrm/requests/new': typeof HrmRequestsNewRoute
+  '/hrm/talent/feedback': typeof HrmTalentFeedbackRoute
+  '/hrm/talent/goals': typeof HrmTalentGoalsRoute
+  '/hrm/talent/learning': typeof HrmTalentLearningRoute
+  '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
+  '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
+  '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
+  '/hrm/time/toil': typeof HrmTimeToilRoute
+  '/hrm/time/travel': typeof HrmTimeTravelRoute
+  '/hrm/time/utilisation': typeof HrmTimeUtilisationRoute
+  '/hrm/attendance/': typeof HrmAttendanceIndexRoute
+  '/hrm/configuration/': typeof HrmConfigurationIndexRoute
+  '/hrm/employees/': typeof HrmEmployeesIndexRoute
+  '/hrm/leave/': typeof HrmLeaveIndexRoute
+  '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
+  '/hrm/payroll/': typeof HrmPayrollIndexRoute
+  '/hrm/payslips/': typeof HrmPayslipsIndexRoute
+  '/hrm/recruitment/': typeof HrmRecruitmentIndexRoute
+  '/hrm/relations/': typeof HrmRelationsIndexRoute
+  '/hrm/reports/': typeof HrmReportsIndexRoute
+  '/hrm/requests/': typeof HrmRequestsIndexRoute
+  '/hrm/talent/': typeof HrmTalentIndexRoute
+  '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
+  '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
+  '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
+  '/hrm/lifecycle/onboarding/$id': typeof HrmLifecycleOnboardingIdRoute
+  '/hrm/payroll/runs/$id': typeof HrmPayrollRunsIdRouteWithChildren
+  '/hrm/payroll/runs/new': typeof HrmPayrollRunsNewRoute
+  '/hrm/people/positions/$id': typeof HrmPeoplePositionsIdRoute
+  '/hrm/recruitment/candidates/$id': typeof HrmRecruitmentCandidatesIdRoute
+  '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
+  '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
+  '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
+  '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
+  '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/approvals': typeof ApprovalsRoute
-  '/help': typeof HelpRoute
-  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
-  '/attendance/$id': typeof AttendanceIdRoute
-  '/attendance/clock': typeof AttendanceClockRoute
-  '/attendance/new': typeof AttendanceNewRoute
-  '/configuration/business': typeof ConfigurationBusinessRoute
-  '/configuration/compliance': typeof ConfigurationComplianceRoute
-  '/configuration/organisation': typeof ConfigurationOrganisationRoute
-  '/configuration/process': typeof ConfigurationProcessRoute
-  '/configuration/roles': typeof ConfigurationRolesRoute
-  '/configuration/technical': typeof ConfigurationTechnicalRoute
-  '/employees/$id': typeof EmployeesIdRouteWithChildren
-  '/employees/new': typeof EmployeesNewRoute
-  '/experience/announcements': typeof ExperienceAnnouncementsRoute
-  '/experience/knowledge': typeof ExperienceKnowledgeRoute
-  '/experience/letters': typeof ExperienceLettersRoute
-  '/leave/$id': typeof LeaveIdRoute
-  '/leave/new': typeof LeaveNewRoute
-  '/lifecycle/alumni': typeof LifecycleAlumniRoute
-  '/lifecycle/assets': typeof LifecycleAssetsRoute
-  '/lifecycle/journeys': typeof LifecycleJourneysRoute
-  '/lifecycle/mobility': typeof LifecycleMobilityRoute
-  '/lifecycle/movements': typeof LifecycleMovementsRouteWithChildren
-  '/lifecycle/offboarding': typeof LifecycleOffboardingRouteWithChildren
-  '/lifecycle/onboarding': typeof LifecycleOnboardingRouteWithChildren
-  '/pay/compensation': typeof PayCompensationRoute
-  '/payroll/exceptions': typeof PayrollExceptionsRoute
-  '/payroll/runs': typeof PayrollRunsRouteWithChildren
-  '/payslips/$id': typeof PayslipsIdRoute
-  '/people/data-quality': typeof PeopleDataQualityRoute
-  '/people/documents': typeof PeopleDocumentsRoute
-  '/people/org': typeof PeopleOrgRoute
-  '/people/positions': typeof PeoplePositionsRouteWithChildren
-  '/people/privacy': typeof PeoplePrivacyRoute
-  '/recruitment/candidates': typeof RecruitmentCandidatesRouteWithChildren
-  '/recruitment/offers': typeof RecruitmentOffersRoute
-  '/recruitment/requisitions': typeof RecruitmentRequisitionsRouteWithChildren
-  '/recruitment/vacancies': typeof RecruitmentVacanciesRoute
-  '/relations/cases': typeof RelationsCasesRouteWithChildren
-  '/relations/discipline': typeof RelationsDisciplineRoute
-  '/relations/ethics': typeof RelationsEthicsRoute
-  '/relations/labour': typeof RelationsLabourRoute
-  '/relations/safety': typeof RelationsSafetyRoute
-  '/reports/builder': typeof ReportsBuilderRoute
-  '/requests/$id': typeof RequestsIdRoute
-  '/requests/new': typeof RequestsNewRoute
-  '/talent/feedback': typeof TalentFeedbackRoute
-  '/talent/goals': typeof TalentGoalsRoute
-  '/talent/learning': typeof TalentLearningRoute
-  '/talent/reviews': typeof TalentReviewsRouteWithChildren
-  '/talent/succession': typeof TalentSuccessionRoute
-  '/time/schedules': typeof TimeSchedulesRoute
-  '/time/timesheets': typeof TimeTimesheetsRoute
-  '/time/toil': typeof TimeToilRoute
-  '/time/travel': typeof TimeTravelRoute
-  '/time/utilisation': typeof TimeUtilisationRoute
-  '/attendance': typeof AttendanceIndexRoute
-  '/configuration': typeof ConfigurationIndexRoute
-  '/employees': typeof EmployeesIndexRoute
-  '/leave': typeof LeaveIndexRoute
-  '/lifecycle': typeof LifecycleIndexRoute
-  '/payroll': typeof PayrollIndexRoute
-  '/payslips': typeof PayslipsIndexRoute
-  '/recruitment': typeof RecruitmentIndexRoute
-  '/relations': typeof RelationsIndexRoute
-  '/reports': typeof ReportsIndexRoute
-  '/requests': typeof RequestsIndexRoute
-  '/talent': typeof TalentIndexRoute
-  '/employees/$id/edit': typeof EmployeesIdEditRoute
-  '/lifecycle/movements/new': typeof LifecycleMovementsNewRoute
-  '/lifecycle/offboarding/$id': typeof LifecycleOffboardingIdRoute
-  '/lifecycle/onboarding/$id': typeof LifecycleOnboardingIdRoute
-  '/payroll/runs/$id': typeof PayrollRunsIdRouteWithChildren
-  '/payroll/runs/new': typeof PayrollRunsNewRoute
-  '/people/positions/$id': typeof PeoplePositionsIdRoute
-  '/recruitment/candidates/$id': typeof RecruitmentCandidatesIdRoute
-  '/recruitment/requisitions/new': typeof RecruitmentRequisitionsNewRoute
-  '/relations/cases/$id': typeof RelationsCasesIdRoute
-  '/talent/reviews/$id': typeof TalentReviewsIdRoute
-  '/time/expenses/new': typeof TimeExpensesNewRoute
-  '/time/expenses': typeof TimeExpensesIndexRoute
-  '/payroll/runs/$id/edit': typeof PayrollRunsIdEditRoute
+  '/hrm/approvals': typeof HrmApprovalsRoute
+  '/hrm/help': typeof HrmHelpRoute
+  '/hrm/setup': typeof HrmSetupRoute
+  '/hrm': typeof HrmIndexRoute
+  '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
+  '/hrm/attendance/clock': typeof HrmAttendanceClockRoute
+  '/hrm/attendance/new': typeof HrmAttendanceNewRoute
+  '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
+  '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
+  '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
+  '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/new': typeof HrmEmployeesNewRoute
+  '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
+  '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
+  '/hrm/experience/letters': typeof HrmExperienceLettersRoute
+  '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
+  '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
+  '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
+  '/hrm/lifecycle/mobility': typeof HrmLifecycleMobilityRoute
+  '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
+  '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
+  '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/pay/compensation': typeof HrmPayCompensationRoute
+  '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
+  '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
+  '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/org': typeof HrmPeopleOrgRoute
+  '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
+  '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
+  '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
+  '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
+  '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
+  '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
+  '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
+  '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
+  '/hrm/reports/builder': typeof HrmReportsBuilderRoute
+  '/hrm/requests/$id': typeof HrmRequestsIdRoute
+  '/hrm/requests/new': typeof HrmRequestsNewRoute
+  '/hrm/talent/feedback': typeof HrmTalentFeedbackRoute
+  '/hrm/talent/goals': typeof HrmTalentGoalsRoute
+  '/hrm/talent/learning': typeof HrmTalentLearningRoute
+  '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
+  '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
+  '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
+  '/hrm/time/toil': typeof HrmTimeToilRoute
+  '/hrm/time/travel': typeof HrmTimeTravelRoute
+  '/hrm/time/utilisation': typeof HrmTimeUtilisationRoute
+  '/hrm/attendance': typeof HrmAttendanceIndexRoute
+  '/hrm/configuration': typeof HrmConfigurationIndexRoute
+  '/hrm/employees': typeof HrmEmployeesIndexRoute
+  '/hrm/leave': typeof HrmLeaveIndexRoute
+  '/hrm/lifecycle': typeof HrmLifecycleIndexRoute
+  '/hrm/payroll': typeof HrmPayrollIndexRoute
+  '/hrm/payslips': typeof HrmPayslipsIndexRoute
+  '/hrm/recruitment': typeof HrmRecruitmentIndexRoute
+  '/hrm/relations': typeof HrmRelationsIndexRoute
+  '/hrm/reports': typeof HrmReportsIndexRoute
+  '/hrm/requests': typeof HrmRequestsIndexRoute
+  '/hrm/talent': typeof HrmTalentIndexRoute
+  '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
+  '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
+  '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
+  '/hrm/lifecycle/onboarding/$id': typeof HrmLifecycleOnboardingIdRoute
+  '/hrm/payroll/runs/$id': typeof HrmPayrollRunsIdRouteWithChildren
+  '/hrm/payroll/runs/new': typeof HrmPayrollRunsNewRoute
+  '/hrm/people/positions/$id': typeof HrmPeoplePositionsIdRoute
+  '/hrm/recruitment/candidates/$id': typeof HrmRecruitmentCandidatesIdRoute
+  '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
+  '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
+  '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
+  '/hrm/time/expenses': typeof HrmTimeExpensesIndexRoute
+  '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/approvals': typeof ApprovalsRoute
-  '/help': typeof HelpRoute
-  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
-  '/attendance/$id': typeof AttendanceIdRoute
-  '/attendance/clock': typeof AttendanceClockRoute
-  '/attendance/new': typeof AttendanceNewRoute
-  '/configuration/business': typeof ConfigurationBusinessRoute
-  '/configuration/compliance': typeof ConfigurationComplianceRoute
-  '/configuration/organisation': typeof ConfigurationOrganisationRoute
-  '/configuration/process': typeof ConfigurationProcessRoute
-  '/configuration/roles': typeof ConfigurationRolesRoute
-  '/configuration/technical': typeof ConfigurationTechnicalRoute
-  '/employees/$id': typeof EmployeesIdRouteWithChildren
-  '/employees/new': typeof EmployeesNewRoute
-  '/experience/announcements': typeof ExperienceAnnouncementsRoute
-  '/experience/knowledge': typeof ExperienceKnowledgeRoute
-  '/experience/letters': typeof ExperienceLettersRoute
-  '/leave/$id': typeof LeaveIdRoute
-  '/leave/new': typeof LeaveNewRoute
-  '/lifecycle/alumni': typeof LifecycleAlumniRoute
-  '/lifecycle/assets': typeof LifecycleAssetsRoute
-  '/lifecycle/journeys': typeof LifecycleJourneysRoute
-  '/lifecycle/mobility': typeof LifecycleMobilityRoute
-  '/lifecycle/movements': typeof LifecycleMovementsRouteWithChildren
-  '/lifecycle/offboarding': typeof LifecycleOffboardingRouteWithChildren
-  '/lifecycle/onboarding': typeof LifecycleOnboardingRouteWithChildren
-  '/pay/compensation': typeof PayCompensationRoute
-  '/payroll/exceptions': typeof PayrollExceptionsRoute
-  '/payroll/runs': typeof PayrollRunsRouteWithChildren
-  '/payslips/$id': typeof PayslipsIdRoute
-  '/people/data-quality': typeof PeopleDataQualityRoute
-  '/people/documents': typeof PeopleDocumentsRoute
-  '/people/org': typeof PeopleOrgRoute
-  '/people/positions': typeof PeoplePositionsRouteWithChildren
-  '/people/privacy': typeof PeoplePrivacyRoute
-  '/recruitment/candidates': typeof RecruitmentCandidatesRouteWithChildren
-  '/recruitment/offers': typeof RecruitmentOffersRoute
-  '/recruitment/requisitions': typeof RecruitmentRequisitionsRouteWithChildren
-  '/recruitment/vacancies': typeof RecruitmentVacanciesRoute
-  '/relations/cases': typeof RelationsCasesRouteWithChildren
-  '/relations/discipline': typeof RelationsDisciplineRoute
-  '/relations/ethics': typeof RelationsEthicsRoute
-  '/relations/labour': typeof RelationsLabourRoute
-  '/relations/safety': typeof RelationsSafetyRoute
-  '/reports/builder': typeof ReportsBuilderRoute
-  '/requests/$id': typeof RequestsIdRoute
-  '/requests/new': typeof RequestsNewRoute
-  '/talent/feedback': typeof TalentFeedbackRoute
-  '/talent/goals': typeof TalentGoalsRoute
-  '/talent/learning': typeof TalentLearningRoute
-  '/talent/reviews': typeof TalentReviewsRouteWithChildren
-  '/talent/succession': typeof TalentSuccessionRoute
-  '/time/schedules': typeof TimeSchedulesRoute
-  '/time/timesheets': typeof TimeTimesheetsRoute
-  '/time/toil': typeof TimeToilRoute
-  '/time/travel': typeof TimeTravelRoute
-  '/time/utilisation': typeof TimeUtilisationRoute
-  '/attendance/': typeof AttendanceIndexRoute
-  '/configuration/': typeof ConfigurationIndexRoute
-  '/employees/': typeof EmployeesIndexRoute
-  '/leave/': typeof LeaveIndexRoute
-  '/lifecycle/': typeof LifecycleIndexRoute
-  '/payroll/': typeof PayrollIndexRoute
-  '/payslips/': typeof PayslipsIndexRoute
-  '/recruitment/': typeof RecruitmentIndexRoute
-  '/relations/': typeof RelationsIndexRoute
-  '/reports/': typeof ReportsIndexRoute
-  '/requests/': typeof RequestsIndexRoute
-  '/talent/': typeof TalentIndexRoute
-  '/employees/$id/edit': typeof EmployeesIdEditRoute
-  '/lifecycle/movements/new': typeof LifecycleMovementsNewRoute
-  '/lifecycle/offboarding/$id': typeof LifecycleOffboardingIdRoute
-  '/lifecycle/onboarding/$id': typeof LifecycleOnboardingIdRoute
-  '/payroll/runs/$id': typeof PayrollRunsIdRouteWithChildren
-  '/payroll/runs/new': typeof PayrollRunsNewRoute
-  '/people/positions/$id': typeof PeoplePositionsIdRoute
-  '/recruitment/candidates/$id': typeof RecruitmentCandidatesIdRoute
-  '/recruitment/requisitions/new': typeof RecruitmentRequisitionsNewRoute
-  '/relations/cases/$id': typeof RelationsCasesIdRoute
-  '/talent/reviews/$id': typeof TalentReviewsIdRoute
-  '/time/expenses/new': typeof TimeExpensesNewRoute
-  '/time/expenses/': typeof TimeExpensesIndexRoute
-  '/payroll/runs/$id/edit': typeof PayrollRunsIdEditRoute
+  '/hrm/approvals': typeof HrmApprovalsRoute
+  '/hrm/help': typeof HrmHelpRoute
+  '/hrm/setup': typeof HrmSetupRoute
+  '/hrm/': typeof HrmIndexRoute
+  '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
+  '/hrm/attendance/clock': typeof HrmAttendanceClockRoute
+  '/hrm/attendance/new': typeof HrmAttendanceNewRoute
+  '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
+  '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
+  '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
+  '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/new': typeof HrmEmployeesNewRoute
+  '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
+  '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
+  '/hrm/experience/letters': typeof HrmExperienceLettersRoute
+  '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
+  '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
+  '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
+  '/hrm/lifecycle/mobility': typeof HrmLifecycleMobilityRoute
+  '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
+  '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
+  '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/pay/compensation': typeof HrmPayCompensationRoute
+  '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
+  '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
+  '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/org': typeof HrmPeopleOrgRoute
+  '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
+  '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
+  '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
+  '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
+  '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
+  '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
+  '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
+  '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
+  '/hrm/reports/builder': typeof HrmReportsBuilderRoute
+  '/hrm/requests/$id': typeof HrmRequestsIdRoute
+  '/hrm/requests/new': typeof HrmRequestsNewRoute
+  '/hrm/talent/feedback': typeof HrmTalentFeedbackRoute
+  '/hrm/talent/goals': typeof HrmTalentGoalsRoute
+  '/hrm/talent/learning': typeof HrmTalentLearningRoute
+  '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
+  '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
+  '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
+  '/hrm/time/toil': typeof HrmTimeToilRoute
+  '/hrm/time/travel': typeof HrmTimeTravelRoute
+  '/hrm/time/utilisation': typeof HrmTimeUtilisationRoute
+  '/hrm/attendance/': typeof HrmAttendanceIndexRoute
+  '/hrm/configuration/': typeof HrmConfigurationIndexRoute
+  '/hrm/employees/': typeof HrmEmployeesIndexRoute
+  '/hrm/leave/': typeof HrmLeaveIndexRoute
+  '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
+  '/hrm/payroll/': typeof HrmPayrollIndexRoute
+  '/hrm/payslips/': typeof HrmPayslipsIndexRoute
+  '/hrm/recruitment/': typeof HrmRecruitmentIndexRoute
+  '/hrm/relations/': typeof HrmRelationsIndexRoute
+  '/hrm/reports/': typeof HrmReportsIndexRoute
+  '/hrm/requests/': typeof HrmRequestsIndexRoute
+  '/hrm/talent/': typeof HrmTalentIndexRoute
+  '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
+  '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
+  '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
+  '/hrm/lifecycle/onboarding/$id': typeof HrmLifecycleOnboardingIdRoute
+  '/hrm/payroll/runs/$id': typeof HrmPayrollRunsIdRouteWithChildren
+  '/hrm/payroll/runs/new': typeof HrmPayrollRunsNewRoute
+  '/hrm/people/positions/$id': typeof HrmPeoplePositionsIdRoute
+  '/hrm/recruitment/candidates/$id': typeof HrmRecruitmentCandidatesIdRoute
+  '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
+  '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
+  '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
+  '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
+  '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/approvals'
-    | '/help'
-    | '/setup'
     | '/sign-in'
     | '/speak-up'
-    | '/attendance/$id'
-    | '/attendance/clock'
-    | '/attendance/new'
-    | '/configuration/business'
-    | '/configuration/compliance'
-    | '/configuration/organisation'
-    | '/configuration/process'
-    | '/configuration/roles'
-    | '/configuration/technical'
-    | '/employees/$id'
-    | '/employees/new'
-    | '/experience/announcements'
-    | '/experience/knowledge'
-    | '/experience/letters'
-    | '/leave/$id'
-    | '/leave/new'
-    | '/lifecycle/alumni'
-    | '/lifecycle/assets'
-    | '/lifecycle/journeys'
-    | '/lifecycle/mobility'
-    | '/lifecycle/movements'
-    | '/lifecycle/offboarding'
-    | '/lifecycle/onboarding'
-    | '/pay/compensation'
-    | '/payroll/exceptions'
-    | '/payroll/runs'
-    | '/payslips/$id'
-    | '/people/data-quality'
-    | '/people/documents'
-    | '/people/org'
-    | '/people/positions'
-    | '/people/privacy'
-    | '/recruitment/candidates'
-    | '/recruitment/offers'
-    | '/recruitment/requisitions'
-    | '/recruitment/vacancies'
-    | '/relations/cases'
-    | '/relations/discipline'
-    | '/relations/ethics'
-    | '/relations/labour'
-    | '/relations/safety'
-    | '/reports/builder'
-    | '/requests/$id'
-    | '/requests/new'
-    | '/talent/feedback'
-    | '/talent/goals'
-    | '/talent/learning'
-    | '/talent/reviews'
-    | '/talent/succession'
-    | '/time/schedules'
-    | '/time/timesheets'
-    | '/time/toil'
-    | '/time/travel'
-    | '/time/utilisation'
-    | '/attendance/'
-    | '/configuration/'
-    | '/employees/'
-    | '/leave/'
-    | '/lifecycle/'
-    | '/payroll/'
-    | '/payslips/'
-    | '/recruitment/'
-    | '/relations/'
-    | '/reports/'
-    | '/requests/'
-    | '/talent/'
-    | '/employees/$id/edit'
-    | '/lifecycle/movements/new'
-    | '/lifecycle/offboarding/$id'
-    | '/lifecycle/onboarding/$id'
-    | '/payroll/runs/$id'
-    | '/payroll/runs/new'
-    | '/people/positions/$id'
-    | '/recruitment/candidates/$id'
-    | '/recruitment/requisitions/new'
-    | '/relations/cases/$id'
-    | '/talent/reviews/$id'
-    | '/time/expenses/new'
-    | '/time/expenses/'
-    | '/payroll/runs/$id/edit'
+    | '/hrm/approvals'
+    | '/hrm/help'
+    | '/hrm/setup'
+    | '/hrm/'
+    | '/hrm/attendance/$id'
+    | '/hrm/attendance/clock'
+    | '/hrm/attendance/new'
+    | '/hrm/configuration/business'
+    | '/hrm/configuration/compliance'
+    | '/hrm/configuration/organisation'
+    | '/hrm/configuration/process'
+    | '/hrm/configuration/roles'
+    | '/hrm/configuration/technical'
+    | '/hrm/employees/$id'
+    | '/hrm/employees/new'
+    | '/hrm/experience/announcements'
+    | '/hrm/experience/knowledge'
+    | '/hrm/experience/letters'
+    | '/hrm/leave/$id'
+    | '/hrm/leave/new'
+    | '/hrm/lifecycle/alumni'
+    | '/hrm/lifecycle/assets'
+    | '/hrm/lifecycle/journeys'
+    | '/hrm/lifecycle/mobility'
+    | '/hrm/lifecycle/movements'
+    | '/hrm/lifecycle/offboarding'
+    | '/hrm/lifecycle/onboarding'
+    | '/hrm/pay/compensation'
+    | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/runs'
+    | '/hrm/payslips/$id'
+    | '/hrm/people/data-quality'
+    | '/hrm/people/documents'
+    | '/hrm/people/org'
+    | '/hrm/people/positions'
+    | '/hrm/people/privacy'
+    | '/hrm/recruitment/candidates'
+    | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/requisitions'
+    | '/hrm/recruitment/vacancies'
+    | '/hrm/relations/cases'
+    | '/hrm/relations/discipline'
+    | '/hrm/relations/ethics'
+    | '/hrm/relations/labour'
+    | '/hrm/relations/safety'
+    | '/hrm/reports/builder'
+    | '/hrm/requests/$id'
+    | '/hrm/requests/new'
+    | '/hrm/talent/feedback'
+    | '/hrm/talent/goals'
+    | '/hrm/talent/learning'
+    | '/hrm/talent/reviews'
+    | '/hrm/talent/succession'
+    | '/hrm/time/schedules'
+    | '/hrm/time/timesheets'
+    | '/hrm/time/toil'
+    | '/hrm/time/travel'
+    | '/hrm/time/utilisation'
+    | '/hrm/attendance/'
+    | '/hrm/configuration/'
+    | '/hrm/employees/'
+    | '/hrm/leave/'
+    | '/hrm/lifecycle/'
+    | '/hrm/payroll/'
+    | '/hrm/payslips/'
+    | '/hrm/recruitment/'
+    | '/hrm/relations/'
+    | '/hrm/reports/'
+    | '/hrm/requests/'
+    | '/hrm/talent/'
+    | '/hrm/employees/$id/edit'
+    | '/hrm/lifecycle/movements/new'
+    | '/hrm/lifecycle/offboarding/$id'
+    | '/hrm/lifecycle/onboarding/$id'
+    | '/hrm/payroll/runs/$id'
+    | '/hrm/payroll/runs/new'
+    | '/hrm/people/positions/$id'
+    | '/hrm/recruitment/candidates/$id'
+    | '/hrm/recruitment/requisitions/new'
+    | '/hrm/relations/cases/$id'
+    | '/hrm/talent/reviews/$id'
+    | '/hrm/time/expenses/new'
+    | '/hrm/time/expenses/'
+    | '/hrm/payroll/runs/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/approvals'
-    | '/help'
-    | '/setup'
     | '/sign-in'
     | '/speak-up'
-    | '/attendance/$id'
-    | '/attendance/clock'
-    | '/attendance/new'
-    | '/configuration/business'
-    | '/configuration/compliance'
-    | '/configuration/organisation'
-    | '/configuration/process'
-    | '/configuration/roles'
-    | '/configuration/technical'
-    | '/employees/$id'
-    | '/employees/new'
-    | '/experience/announcements'
-    | '/experience/knowledge'
-    | '/experience/letters'
-    | '/leave/$id'
-    | '/leave/new'
-    | '/lifecycle/alumni'
-    | '/lifecycle/assets'
-    | '/lifecycle/journeys'
-    | '/lifecycle/mobility'
-    | '/lifecycle/movements'
-    | '/lifecycle/offboarding'
-    | '/lifecycle/onboarding'
-    | '/pay/compensation'
-    | '/payroll/exceptions'
-    | '/payroll/runs'
-    | '/payslips/$id'
-    | '/people/data-quality'
-    | '/people/documents'
-    | '/people/org'
-    | '/people/positions'
-    | '/people/privacy'
-    | '/recruitment/candidates'
-    | '/recruitment/offers'
-    | '/recruitment/requisitions'
-    | '/recruitment/vacancies'
-    | '/relations/cases'
-    | '/relations/discipline'
-    | '/relations/ethics'
-    | '/relations/labour'
-    | '/relations/safety'
-    | '/reports/builder'
-    | '/requests/$id'
-    | '/requests/new'
-    | '/talent/feedback'
-    | '/talent/goals'
-    | '/talent/learning'
-    | '/talent/reviews'
-    | '/talent/succession'
-    | '/time/schedules'
-    | '/time/timesheets'
-    | '/time/toil'
-    | '/time/travel'
-    | '/time/utilisation'
-    | '/attendance'
-    | '/configuration'
-    | '/employees'
-    | '/leave'
-    | '/lifecycle'
-    | '/payroll'
-    | '/payslips'
-    | '/recruitment'
-    | '/relations'
-    | '/reports'
-    | '/requests'
-    | '/talent'
-    | '/employees/$id/edit'
-    | '/lifecycle/movements/new'
-    | '/lifecycle/offboarding/$id'
-    | '/lifecycle/onboarding/$id'
-    | '/payroll/runs/$id'
-    | '/payroll/runs/new'
-    | '/people/positions/$id'
-    | '/recruitment/candidates/$id'
-    | '/recruitment/requisitions/new'
-    | '/relations/cases/$id'
-    | '/talent/reviews/$id'
-    | '/time/expenses/new'
-    | '/time/expenses'
-    | '/payroll/runs/$id/edit'
+    | '/hrm/approvals'
+    | '/hrm/help'
+    | '/hrm/setup'
+    | '/hrm'
+    | '/hrm/attendance/$id'
+    | '/hrm/attendance/clock'
+    | '/hrm/attendance/new'
+    | '/hrm/configuration/business'
+    | '/hrm/configuration/compliance'
+    | '/hrm/configuration/organisation'
+    | '/hrm/configuration/process'
+    | '/hrm/configuration/roles'
+    | '/hrm/configuration/technical'
+    | '/hrm/employees/$id'
+    | '/hrm/employees/new'
+    | '/hrm/experience/announcements'
+    | '/hrm/experience/knowledge'
+    | '/hrm/experience/letters'
+    | '/hrm/leave/$id'
+    | '/hrm/leave/new'
+    | '/hrm/lifecycle/alumni'
+    | '/hrm/lifecycle/assets'
+    | '/hrm/lifecycle/journeys'
+    | '/hrm/lifecycle/mobility'
+    | '/hrm/lifecycle/movements'
+    | '/hrm/lifecycle/offboarding'
+    | '/hrm/lifecycle/onboarding'
+    | '/hrm/pay/compensation'
+    | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/runs'
+    | '/hrm/payslips/$id'
+    | '/hrm/people/data-quality'
+    | '/hrm/people/documents'
+    | '/hrm/people/org'
+    | '/hrm/people/positions'
+    | '/hrm/people/privacy'
+    | '/hrm/recruitment/candidates'
+    | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/requisitions'
+    | '/hrm/recruitment/vacancies'
+    | '/hrm/relations/cases'
+    | '/hrm/relations/discipline'
+    | '/hrm/relations/ethics'
+    | '/hrm/relations/labour'
+    | '/hrm/relations/safety'
+    | '/hrm/reports/builder'
+    | '/hrm/requests/$id'
+    | '/hrm/requests/new'
+    | '/hrm/talent/feedback'
+    | '/hrm/talent/goals'
+    | '/hrm/talent/learning'
+    | '/hrm/talent/reviews'
+    | '/hrm/talent/succession'
+    | '/hrm/time/schedules'
+    | '/hrm/time/timesheets'
+    | '/hrm/time/toil'
+    | '/hrm/time/travel'
+    | '/hrm/time/utilisation'
+    | '/hrm/attendance'
+    | '/hrm/configuration'
+    | '/hrm/employees'
+    | '/hrm/leave'
+    | '/hrm/lifecycle'
+    | '/hrm/payroll'
+    | '/hrm/payslips'
+    | '/hrm/recruitment'
+    | '/hrm/relations'
+    | '/hrm/reports'
+    | '/hrm/requests'
+    | '/hrm/talent'
+    | '/hrm/employees/$id/edit'
+    | '/hrm/lifecycle/movements/new'
+    | '/hrm/lifecycle/offboarding/$id'
+    | '/hrm/lifecycle/onboarding/$id'
+    | '/hrm/payroll/runs/$id'
+    | '/hrm/payroll/runs/new'
+    | '/hrm/people/positions/$id'
+    | '/hrm/recruitment/candidates/$id'
+    | '/hrm/recruitment/requisitions/new'
+    | '/hrm/relations/cases/$id'
+    | '/hrm/talent/reviews/$id'
+    | '/hrm/time/expenses/new'
+    | '/hrm/time/expenses'
+    | '/hrm/payroll/runs/$id/edit'
   id:
     | '__root__'
     | '/'
-    | '/approvals'
-    | '/help'
-    | '/setup'
     | '/sign-in'
     | '/speak-up'
-    | '/attendance/$id'
-    | '/attendance/clock'
-    | '/attendance/new'
-    | '/configuration/business'
-    | '/configuration/compliance'
-    | '/configuration/organisation'
-    | '/configuration/process'
-    | '/configuration/roles'
-    | '/configuration/technical'
-    | '/employees/$id'
-    | '/employees/new'
-    | '/experience/announcements'
-    | '/experience/knowledge'
-    | '/experience/letters'
-    | '/leave/$id'
-    | '/leave/new'
-    | '/lifecycle/alumni'
-    | '/lifecycle/assets'
-    | '/lifecycle/journeys'
-    | '/lifecycle/mobility'
-    | '/lifecycle/movements'
-    | '/lifecycle/offboarding'
-    | '/lifecycle/onboarding'
-    | '/pay/compensation'
-    | '/payroll/exceptions'
-    | '/payroll/runs'
-    | '/payslips/$id'
-    | '/people/data-quality'
-    | '/people/documents'
-    | '/people/org'
-    | '/people/positions'
-    | '/people/privacy'
-    | '/recruitment/candidates'
-    | '/recruitment/offers'
-    | '/recruitment/requisitions'
-    | '/recruitment/vacancies'
-    | '/relations/cases'
-    | '/relations/discipline'
-    | '/relations/ethics'
-    | '/relations/labour'
-    | '/relations/safety'
-    | '/reports/builder'
-    | '/requests/$id'
-    | '/requests/new'
-    | '/talent/feedback'
-    | '/talent/goals'
-    | '/talent/learning'
-    | '/talent/reviews'
-    | '/talent/succession'
-    | '/time/schedules'
-    | '/time/timesheets'
-    | '/time/toil'
-    | '/time/travel'
-    | '/time/utilisation'
-    | '/attendance/'
-    | '/configuration/'
-    | '/employees/'
-    | '/leave/'
-    | '/lifecycle/'
-    | '/payroll/'
-    | '/payslips/'
-    | '/recruitment/'
-    | '/relations/'
-    | '/reports/'
-    | '/requests/'
-    | '/talent/'
-    | '/employees/$id/edit'
-    | '/lifecycle/movements/new'
-    | '/lifecycle/offboarding/$id'
-    | '/lifecycle/onboarding/$id'
-    | '/payroll/runs/$id'
-    | '/payroll/runs/new'
-    | '/people/positions/$id'
-    | '/recruitment/candidates/$id'
-    | '/recruitment/requisitions/new'
-    | '/relations/cases/$id'
-    | '/talent/reviews/$id'
-    | '/time/expenses/new'
-    | '/time/expenses/'
-    | '/payroll/runs/$id/edit'
+    | '/hrm/approvals'
+    | '/hrm/help'
+    | '/hrm/setup'
+    | '/hrm/'
+    | '/hrm/attendance/$id'
+    | '/hrm/attendance/clock'
+    | '/hrm/attendance/new'
+    | '/hrm/configuration/business'
+    | '/hrm/configuration/compliance'
+    | '/hrm/configuration/organisation'
+    | '/hrm/configuration/process'
+    | '/hrm/configuration/roles'
+    | '/hrm/configuration/technical'
+    | '/hrm/employees/$id'
+    | '/hrm/employees/new'
+    | '/hrm/experience/announcements'
+    | '/hrm/experience/knowledge'
+    | '/hrm/experience/letters'
+    | '/hrm/leave/$id'
+    | '/hrm/leave/new'
+    | '/hrm/lifecycle/alumni'
+    | '/hrm/lifecycle/assets'
+    | '/hrm/lifecycle/journeys'
+    | '/hrm/lifecycle/mobility'
+    | '/hrm/lifecycle/movements'
+    | '/hrm/lifecycle/offboarding'
+    | '/hrm/lifecycle/onboarding'
+    | '/hrm/pay/compensation'
+    | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/runs'
+    | '/hrm/payslips/$id'
+    | '/hrm/people/data-quality'
+    | '/hrm/people/documents'
+    | '/hrm/people/org'
+    | '/hrm/people/positions'
+    | '/hrm/people/privacy'
+    | '/hrm/recruitment/candidates'
+    | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/requisitions'
+    | '/hrm/recruitment/vacancies'
+    | '/hrm/relations/cases'
+    | '/hrm/relations/discipline'
+    | '/hrm/relations/ethics'
+    | '/hrm/relations/labour'
+    | '/hrm/relations/safety'
+    | '/hrm/reports/builder'
+    | '/hrm/requests/$id'
+    | '/hrm/requests/new'
+    | '/hrm/talent/feedback'
+    | '/hrm/talent/goals'
+    | '/hrm/talent/learning'
+    | '/hrm/talent/reviews'
+    | '/hrm/talent/succession'
+    | '/hrm/time/schedules'
+    | '/hrm/time/timesheets'
+    | '/hrm/time/toil'
+    | '/hrm/time/travel'
+    | '/hrm/time/utilisation'
+    | '/hrm/attendance/'
+    | '/hrm/configuration/'
+    | '/hrm/employees/'
+    | '/hrm/leave/'
+    | '/hrm/lifecycle/'
+    | '/hrm/payroll/'
+    | '/hrm/payslips/'
+    | '/hrm/recruitment/'
+    | '/hrm/relations/'
+    | '/hrm/reports/'
+    | '/hrm/requests/'
+    | '/hrm/talent/'
+    | '/hrm/employees/$id/edit'
+    | '/hrm/lifecycle/movements/new'
+    | '/hrm/lifecycle/offboarding/$id'
+    | '/hrm/lifecycle/onboarding/$id'
+    | '/hrm/payroll/runs/$id'
+    | '/hrm/payroll/runs/new'
+    | '/hrm/people/positions/$id'
+    | '/hrm/recruitment/candidates/$id'
+    | '/hrm/recruitment/requisitions/new'
+    | '/hrm/relations/cases/$id'
+    | '/hrm/talent/reviews/$id'
+    | '/hrm/time/expenses/new'
+    | '/hrm/time/expenses/'
+    | '/hrm/payroll/runs/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ApprovalsRoute: typeof ApprovalsRoute
-  HelpRoute: typeof HelpRoute
-  SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
   SpeakUpRoute: typeof SpeakUpRoute
-  AttendanceIdRoute: typeof AttendanceIdRoute
-  AttendanceClockRoute: typeof AttendanceClockRoute
-  AttendanceNewRoute: typeof AttendanceNewRoute
-  ConfigurationBusinessRoute: typeof ConfigurationBusinessRoute
-  ConfigurationComplianceRoute: typeof ConfigurationComplianceRoute
-  ConfigurationOrganisationRoute: typeof ConfigurationOrganisationRoute
-  ConfigurationProcessRoute: typeof ConfigurationProcessRoute
-  ConfigurationRolesRoute: typeof ConfigurationRolesRoute
-  ConfigurationTechnicalRoute: typeof ConfigurationTechnicalRoute
-  EmployeesIdRoute: typeof EmployeesIdRouteWithChildren
-  EmployeesNewRoute: typeof EmployeesNewRoute
-  ExperienceAnnouncementsRoute: typeof ExperienceAnnouncementsRoute
-  ExperienceKnowledgeRoute: typeof ExperienceKnowledgeRoute
-  ExperienceLettersRoute: typeof ExperienceLettersRoute
-  LeaveIdRoute: typeof LeaveIdRoute
-  LeaveNewRoute: typeof LeaveNewRoute
-  LifecycleAlumniRoute: typeof LifecycleAlumniRoute
-  LifecycleAssetsRoute: typeof LifecycleAssetsRoute
-  LifecycleJourneysRoute: typeof LifecycleJourneysRoute
-  LifecycleMobilityRoute: typeof LifecycleMobilityRoute
-  LifecycleMovementsRoute: typeof LifecycleMovementsRouteWithChildren
-  LifecycleOffboardingRoute: typeof LifecycleOffboardingRouteWithChildren
-  LifecycleOnboardingRoute: typeof LifecycleOnboardingRouteWithChildren
-  PayCompensationRoute: typeof PayCompensationRoute
-  PayrollExceptionsRoute: typeof PayrollExceptionsRoute
-  PayrollRunsRoute: typeof PayrollRunsRouteWithChildren
-  PayslipsIdRoute: typeof PayslipsIdRoute
-  PeopleDataQualityRoute: typeof PeopleDataQualityRoute
-  PeopleDocumentsRoute: typeof PeopleDocumentsRoute
-  PeopleOrgRoute: typeof PeopleOrgRoute
-  PeoplePositionsRoute: typeof PeoplePositionsRouteWithChildren
-  PeoplePrivacyRoute: typeof PeoplePrivacyRoute
-  RecruitmentCandidatesRoute: typeof RecruitmentCandidatesRouteWithChildren
-  RecruitmentOffersRoute: typeof RecruitmentOffersRoute
-  RecruitmentRequisitionsRoute: typeof RecruitmentRequisitionsRouteWithChildren
-  RecruitmentVacanciesRoute: typeof RecruitmentVacanciesRoute
-  RelationsCasesRoute: typeof RelationsCasesRouteWithChildren
-  RelationsDisciplineRoute: typeof RelationsDisciplineRoute
-  RelationsEthicsRoute: typeof RelationsEthicsRoute
-  RelationsLabourRoute: typeof RelationsLabourRoute
-  RelationsSafetyRoute: typeof RelationsSafetyRoute
-  ReportsBuilderRoute: typeof ReportsBuilderRoute
-  RequestsIdRoute: typeof RequestsIdRoute
-  RequestsNewRoute: typeof RequestsNewRoute
-  TalentFeedbackRoute: typeof TalentFeedbackRoute
-  TalentGoalsRoute: typeof TalentGoalsRoute
-  TalentLearningRoute: typeof TalentLearningRoute
-  TalentReviewsRoute: typeof TalentReviewsRouteWithChildren
-  TalentSuccessionRoute: typeof TalentSuccessionRoute
-  TimeSchedulesRoute: typeof TimeSchedulesRoute
-  TimeTimesheetsRoute: typeof TimeTimesheetsRoute
-  TimeToilRoute: typeof TimeToilRoute
-  TimeTravelRoute: typeof TimeTravelRoute
-  TimeUtilisationRoute: typeof TimeUtilisationRoute
-  AttendanceIndexRoute: typeof AttendanceIndexRoute
-  ConfigurationIndexRoute: typeof ConfigurationIndexRoute
-  EmployeesIndexRoute: typeof EmployeesIndexRoute
-  LeaveIndexRoute: typeof LeaveIndexRoute
-  LifecycleIndexRoute: typeof LifecycleIndexRoute
-  PayrollIndexRoute: typeof PayrollIndexRoute
-  PayslipsIndexRoute: typeof PayslipsIndexRoute
-  RecruitmentIndexRoute: typeof RecruitmentIndexRoute
-  RelationsIndexRoute: typeof RelationsIndexRoute
-  ReportsIndexRoute: typeof ReportsIndexRoute
-  RequestsIndexRoute: typeof RequestsIndexRoute
-  TalentIndexRoute: typeof TalentIndexRoute
-  TimeExpensesNewRoute: typeof TimeExpensesNewRoute
-  TimeExpensesIndexRoute: typeof TimeExpensesIndexRoute
+  HrmApprovalsRoute: typeof HrmApprovalsRoute
+  HrmHelpRoute: typeof HrmHelpRoute
+  HrmSetupRoute: typeof HrmSetupRoute
+  HrmIndexRoute: typeof HrmIndexRoute
+  HrmAttendanceIdRoute: typeof HrmAttendanceIdRoute
+  HrmAttendanceClockRoute: typeof HrmAttendanceClockRoute
+  HrmAttendanceNewRoute: typeof HrmAttendanceNewRoute
+  HrmConfigurationBusinessRoute: typeof HrmConfigurationBusinessRoute
+  HrmConfigurationComplianceRoute: typeof HrmConfigurationComplianceRoute
+  HrmConfigurationOrganisationRoute: typeof HrmConfigurationOrganisationRoute
+  HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
+  HrmConfigurationRolesRoute: typeof HrmConfigurationRolesRoute
+  HrmConfigurationTechnicalRoute: typeof HrmConfigurationTechnicalRoute
+  HrmEmployeesIdRoute: typeof HrmEmployeesIdRouteWithChildren
+  HrmEmployeesNewRoute: typeof HrmEmployeesNewRoute
+  HrmExperienceAnnouncementsRoute: typeof HrmExperienceAnnouncementsRoute
+  HrmExperienceKnowledgeRoute: typeof HrmExperienceKnowledgeRoute
+  HrmExperienceLettersRoute: typeof HrmExperienceLettersRoute
+  HrmLeaveIdRoute: typeof HrmLeaveIdRoute
+  HrmLeaveNewRoute: typeof HrmLeaveNewRoute
+  HrmLifecycleAlumniRoute: typeof HrmLifecycleAlumniRoute
+  HrmLifecycleAssetsRoute: typeof HrmLifecycleAssetsRoute
+  HrmLifecycleJourneysRoute: typeof HrmLifecycleJourneysRoute
+  HrmLifecycleMobilityRoute: typeof HrmLifecycleMobilityRoute
+  HrmLifecycleMovementsRoute: typeof HrmLifecycleMovementsRouteWithChildren
+  HrmLifecycleOffboardingRoute: typeof HrmLifecycleOffboardingRouteWithChildren
+  HrmLifecycleOnboardingRoute: typeof HrmLifecycleOnboardingRouteWithChildren
+  HrmPayCompensationRoute: typeof HrmPayCompensationRoute
+  HrmPayrollExceptionsRoute: typeof HrmPayrollExceptionsRoute
+  HrmPayrollRunsRoute: typeof HrmPayrollRunsRouteWithChildren
+  HrmPayslipsIdRoute: typeof HrmPayslipsIdRoute
+  HrmPeopleDataQualityRoute: typeof HrmPeopleDataQualityRoute
+  HrmPeopleDocumentsRoute: typeof HrmPeopleDocumentsRoute
+  HrmPeopleOrgRoute: typeof HrmPeopleOrgRoute
+  HrmPeoplePositionsRoute: typeof HrmPeoplePositionsRouteWithChildren
+  HrmPeoplePrivacyRoute: typeof HrmPeoplePrivacyRoute
+  HrmRecruitmentCandidatesRoute: typeof HrmRecruitmentCandidatesRouteWithChildren
+  HrmRecruitmentOffersRoute: typeof HrmRecruitmentOffersRoute
+  HrmRecruitmentRequisitionsRoute: typeof HrmRecruitmentRequisitionsRouteWithChildren
+  HrmRecruitmentVacanciesRoute: typeof HrmRecruitmentVacanciesRoute
+  HrmRelationsCasesRoute: typeof HrmRelationsCasesRouteWithChildren
+  HrmRelationsDisciplineRoute: typeof HrmRelationsDisciplineRoute
+  HrmRelationsEthicsRoute: typeof HrmRelationsEthicsRoute
+  HrmRelationsLabourRoute: typeof HrmRelationsLabourRoute
+  HrmRelationsSafetyRoute: typeof HrmRelationsSafetyRoute
+  HrmReportsBuilderRoute: typeof HrmReportsBuilderRoute
+  HrmRequestsIdRoute: typeof HrmRequestsIdRoute
+  HrmRequestsNewRoute: typeof HrmRequestsNewRoute
+  HrmTalentFeedbackRoute: typeof HrmTalentFeedbackRoute
+  HrmTalentGoalsRoute: typeof HrmTalentGoalsRoute
+  HrmTalentLearningRoute: typeof HrmTalentLearningRoute
+  HrmTalentReviewsRoute: typeof HrmTalentReviewsRouteWithChildren
+  HrmTalentSuccessionRoute: typeof HrmTalentSuccessionRoute
+  HrmTimeSchedulesRoute: typeof HrmTimeSchedulesRoute
+  HrmTimeTimesheetsRoute: typeof HrmTimeTimesheetsRoute
+  HrmTimeToilRoute: typeof HrmTimeToilRoute
+  HrmTimeTravelRoute: typeof HrmTimeTravelRoute
+  HrmTimeUtilisationRoute: typeof HrmTimeUtilisationRoute
+  HrmAttendanceIndexRoute: typeof HrmAttendanceIndexRoute
+  HrmConfigurationIndexRoute: typeof HrmConfigurationIndexRoute
+  HrmEmployeesIndexRoute: typeof HrmEmployeesIndexRoute
+  HrmLeaveIndexRoute: typeof HrmLeaveIndexRoute
+  HrmLifecycleIndexRoute: typeof HrmLifecycleIndexRoute
+  HrmPayrollIndexRoute: typeof HrmPayrollIndexRoute
+  HrmPayslipsIndexRoute: typeof HrmPayslipsIndexRoute
+  HrmRecruitmentIndexRoute: typeof HrmRecruitmentIndexRoute
+  HrmRelationsIndexRoute: typeof HrmRelationsIndexRoute
+  HrmReportsIndexRoute: typeof HrmReportsIndexRoute
+  HrmRequestsIndexRoute: typeof HrmRequestsIndexRoute
+  HrmTalentIndexRoute: typeof HrmTalentIndexRoute
+  HrmTimeExpensesNewRoute: typeof HrmTimeExpensesNewRoute
+  HrmTimeExpensesIndexRoute: typeof HrmTimeExpensesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1145,27 +1168,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/approvals': {
-      id: '/approvals'
-      path: '/approvals'
-      fullPath: '/approvals'
-      preLoaderRoute: typeof ApprovalsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/help': {
-      id: '/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof HelpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -1182,778 +1184,812 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpeakUpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/attendance/': {
-      id: '/attendance/'
-      path: '/attendance'
-      fullPath: '/attendance/'
-      preLoaderRoute: typeof AttendanceIndexRouteImport
+    '/hrm/': {
+      id: '/hrm/'
+      path: '/hrm'
+      fullPath: '/hrm/'
+      preLoaderRoute: typeof HrmIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/attendance/$id': {
-      id: '/attendance/$id'
-      path: '/attendance/$id'
-      fullPath: '/attendance/$id'
-      preLoaderRoute: typeof AttendanceIdRouteImport
+    '/hrm/approvals': {
+      id: '/hrm/approvals'
+      path: '/hrm/approvals'
+      fullPath: '/hrm/approvals'
+      preLoaderRoute: typeof HrmApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/attendance/clock': {
-      id: '/attendance/clock'
-      path: '/attendance/clock'
-      fullPath: '/attendance/clock'
-      preLoaderRoute: typeof AttendanceClockRouteImport
+    '/hrm/help': {
+      id: '/hrm/help'
+      path: '/hrm/help'
+      fullPath: '/hrm/help'
+      preLoaderRoute: typeof HrmHelpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/attendance/new': {
-      id: '/attendance/new'
-      path: '/attendance/new'
-      fullPath: '/attendance/new'
-      preLoaderRoute: typeof AttendanceNewRouteImport
+    '/hrm/setup': {
+      id: '/hrm/setup'
+      path: '/hrm/setup'
+      fullPath: '/hrm/setup'
+      preLoaderRoute: typeof HrmSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/': {
-      id: '/configuration/'
-      path: '/configuration'
-      fullPath: '/configuration/'
-      preLoaderRoute: typeof ConfigurationIndexRouteImport
+    '/hrm/attendance/': {
+      id: '/hrm/attendance/'
+      path: '/hrm/attendance'
+      fullPath: '/hrm/attendance/'
+      preLoaderRoute: typeof HrmAttendanceIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/business': {
-      id: '/configuration/business'
-      path: '/configuration/business'
-      fullPath: '/configuration/business'
-      preLoaderRoute: typeof ConfigurationBusinessRouteImport
+    '/hrm/attendance/$id': {
+      id: '/hrm/attendance/$id'
+      path: '/hrm/attendance/$id'
+      fullPath: '/hrm/attendance/$id'
+      preLoaderRoute: typeof HrmAttendanceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/compliance': {
-      id: '/configuration/compliance'
-      path: '/configuration/compliance'
-      fullPath: '/configuration/compliance'
-      preLoaderRoute: typeof ConfigurationComplianceRouteImport
+    '/hrm/attendance/clock': {
+      id: '/hrm/attendance/clock'
+      path: '/hrm/attendance/clock'
+      fullPath: '/hrm/attendance/clock'
+      preLoaderRoute: typeof HrmAttendanceClockRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/organisation': {
-      id: '/configuration/organisation'
-      path: '/configuration/organisation'
-      fullPath: '/configuration/organisation'
-      preLoaderRoute: typeof ConfigurationOrganisationRouteImport
+    '/hrm/attendance/new': {
+      id: '/hrm/attendance/new'
+      path: '/hrm/attendance/new'
+      fullPath: '/hrm/attendance/new'
+      preLoaderRoute: typeof HrmAttendanceNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/process': {
-      id: '/configuration/process'
-      path: '/configuration/process'
-      fullPath: '/configuration/process'
-      preLoaderRoute: typeof ConfigurationProcessRouteImport
+    '/hrm/configuration/': {
+      id: '/hrm/configuration/'
+      path: '/hrm/configuration'
+      fullPath: '/hrm/configuration/'
+      preLoaderRoute: typeof HrmConfigurationIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/roles': {
-      id: '/configuration/roles'
-      path: '/configuration/roles'
-      fullPath: '/configuration/roles'
-      preLoaderRoute: typeof ConfigurationRolesRouteImport
+    '/hrm/configuration/business': {
+      id: '/hrm/configuration/business'
+      path: '/hrm/configuration/business'
+      fullPath: '/hrm/configuration/business'
+      preLoaderRoute: typeof HrmConfigurationBusinessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/configuration/technical': {
-      id: '/configuration/technical'
-      path: '/configuration/technical'
-      fullPath: '/configuration/technical'
-      preLoaderRoute: typeof ConfigurationTechnicalRouteImport
+    '/hrm/configuration/compliance': {
+      id: '/hrm/configuration/compliance'
+      path: '/hrm/configuration/compliance'
+      fullPath: '/hrm/configuration/compliance'
+      preLoaderRoute: typeof HrmConfigurationComplianceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/employees/': {
-      id: '/employees/'
-      path: '/employees'
-      fullPath: '/employees/'
-      preLoaderRoute: typeof EmployeesIndexRouteImport
+    '/hrm/configuration/organisation': {
+      id: '/hrm/configuration/organisation'
+      path: '/hrm/configuration/organisation'
+      fullPath: '/hrm/configuration/organisation'
+      preLoaderRoute: typeof HrmConfigurationOrganisationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/employees/$id': {
-      id: '/employees/$id'
-      path: '/employees/$id'
-      fullPath: '/employees/$id'
-      preLoaderRoute: typeof EmployeesIdRouteImport
+    '/hrm/configuration/process': {
+      id: '/hrm/configuration/process'
+      path: '/hrm/configuration/process'
+      fullPath: '/hrm/configuration/process'
+      preLoaderRoute: typeof HrmConfigurationProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/employees/new': {
-      id: '/employees/new'
-      path: '/employees/new'
-      fullPath: '/employees/new'
-      preLoaderRoute: typeof EmployeesNewRouteImport
+    '/hrm/configuration/roles': {
+      id: '/hrm/configuration/roles'
+      path: '/hrm/configuration/roles'
+      fullPath: '/hrm/configuration/roles'
+      preLoaderRoute: typeof HrmConfigurationRolesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/experience/announcements': {
-      id: '/experience/announcements'
-      path: '/experience/announcements'
-      fullPath: '/experience/announcements'
-      preLoaderRoute: typeof ExperienceAnnouncementsRouteImport
+    '/hrm/configuration/technical': {
+      id: '/hrm/configuration/technical'
+      path: '/hrm/configuration/technical'
+      fullPath: '/hrm/configuration/technical'
+      preLoaderRoute: typeof HrmConfigurationTechnicalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/experience/knowledge': {
-      id: '/experience/knowledge'
-      path: '/experience/knowledge'
-      fullPath: '/experience/knowledge'
-      preLoaderRoute: typeof ExperienceKnowledgeRouteImport
+    '/hrm/employees/': {
+      id: '/hrm/employees/'
+      path: '/hrm/employees'
+      fullPath: '/hrm/employees/'
+      preLoaderRoute: typeof HrmEmployeesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/experience/letters': {
-      id: '/experience/letters'
-      path: '/experience/letters'
-      fullPath: '/experience/letters'
-      preLoaderRoute: typeof ExperienceLettersRouteImport
+    '/hrm/employees/$id': {
+      id: '/hrm/employees/$id'
+      path: '/hrm/employees/$id'
+      fullPath: '/hrm/employees/$id'
+      preLoaderRoute: typeof HrmEmployeesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/leave/': {
-      id: '/leave/'
-      path: '/leave'
-      fullPath: '/leave/'
-      preLoaderRoute: typeof LeaveIndexRouteImport
+    '/hrm/employees/new': {
+      id: '/hrm/employees/new'
+      path: '/hrm/employees/new'
+      fullPath: '/hrm/employees/new'
+      preLoaderRoute: typeof HrmEmployeesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/leave/$id': {
-      id: '/leave/$id'
-      path: '/leave/$id'
-      fullPath: '/leave/$id'
-      preLoaderRoute: typeof LeaveIdRouteImport
+    '/hrm/experience/announcements': {
+      id: '/hrm/experience/announcements'
+      path: '/hrm/experience/announcements'
+      fullPath: '/hrm/experience/announcements'
+      preLoaderRoute: typeof HrmExperienceAnnouncementsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/leave/new': {
-      id: '/leave/new'
-      path: '/leave/new'
-      fullPath: '/leave/new'
-      preLoaderRoute: typeof LeaveNewRouteImport
+    '/hrm/experience/knowledge': {
+      id: '/hrm/experience/knowledge'
+      path: '/hrm/experience/knowledge'
+      fullPath: '/hrm/experience/knowledge'
+      preLoaderRoute: typeof HrmExperienceKnowledgeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/': {
-      id: '/lifecycle/'
-      path: '/lifecycle'
-      fullPath: '/lifecycle/'
-      preLoaderRoute: typeof LifecycleIndexRouteImport
+    '/hrm/experience/letters': {
+      id: '/hrm/experience/letters'
+      path: '/hrm/experience/letters'
+      fullPath: '/hrm/experience/letters'
+      preLoaderRoute: typeof HrmExperienceLettersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/alumni': {
-      id: '/lifecycle/alumni'
-      path: '/lifecycle/alumni'
-      fullPath: '/lifecycle/alumni'
-      preLoaderRoute: typeof LifecycleAlumniRouteImport
+    '/hrm/leave/': {
+      id: '/hrm/leave/'
+      path: '/hrm/leave'
+      fullPath: '/hrm/leave/'
+      preLoaderRoute: typeof HrmLeaveIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/assets': {
-      id: '/lifecycle/assets'
-      path: '/lifecycle/assets'
-      fullPath: '/lifecycle/assets'
-      preLoaderRoute: typeof LifecycleAssetsRouteImport
+    '/hrm/leave/$id': {
+      id: '/hrm/leave/$id'
+      path: '/hrm/leave/$id'
+      fullPath: '/hrm/leave/$id'
+      preLoaderRoute: typeof HrmLeaveIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/journeys': {
-      id: '/lifecycle/journeys'
-      path: '/lifecycle/journeys'
-      fullPath: '/lifecycle/journeys'
-      preLoaderRoute: typeof LifecycleJourneysRouteImport
+    '/hrm/leave/new': {
+      id: '/hrm/leave/new'
+      path: '/hrm/leave/new'
+      fullPath: '/hrm/leave/new'
+      preLoaderRoute: typeof HrmLeaveNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/mobility': {
-      id: '/lifecycle/mobility'
-      path: '/lifecycle/mobility'
-      fullPath: '/lifecycle/mobility'
-      preLoaderRoute: typeof LifecycleMobilityRouteImport
+    '/hrm/lifecycle/': {
+      id: '/hrm/lifecycle/'
+      path: '/hrm/lifecycle'
+      fullPath: '/hrm/lifecycle/'
+      preLoaderRoute: typeof HrmLifecycleIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/movements': {
-      id: '/lifecycle/movements'
-      path: '/lifecycle/movements'
-      fullPath: '/lifecycle/movements'
-      preLoaderRoute: typeof LifecycleMovementsRouteImport
+    '/hrm/lifecycle/alumni': {
+      id: '/hrm/lifecycle/alumni'
+      path: '/hrm/lifecycle/alumni'
+      fullPath: '/hrm/lifecycle/alumni'
+      preLoaderRoute: typeof HrmLifecycleAlumniRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/offboarding': {
-      id: '/lifecycle/offboarding'
-      path: '/lifecycle/offboarding'
-      fullPath: '/lifecycle/offboarding'
-      preLoaderRoute: typeof LifecycleOffboardingRouteImport
+    '/hrm/lifecycle/assets': {
+      id: '/hrm/lifecycle/assets'
+      path: '/hrm/lifecycle/assets'
+      fullPath: '/hrm/lifecycle/assets'
+      preLoaderRoute: typeof HrmLifecycleAssetsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lifecycle/onboarding': {
-      id: '/lifecycle/onboarding'
-      path: '/lifecycle/onboarding'
-      fullPath: '/lifecycle/onboarding'
-      preLoaderRoute: typeof LifecycleOnboardingRouteImport
+    '/hrm/lifecycle/journeys': {
+      id: '/hrm/lifecycle/journeys'
+      path: '/hrm/lifecycle/journeys'
+      fullPath: '/hrm/lifecycle/journeys'
+      preLoaderRoute: typeof HrmLifecycleJourneysRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/pay/compensation': {
-      id: '/pay/compensation'
-      path: '/pay/compensation'
-      fullPath: '/pay/compensation'
-      preLoaderRoute: typeof PayCompensationRouteImport
+    '/hrm/lifecycle/mobility': {
+      id: '/hrm/lifecycle/mobility'
+      path: '/hrm/lifecycle/mobility'
+      fullPath: '/hrm/lifecycle/mobility'
+      preLoaderRoute: typeof HrmLifecycleMobilityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payroll/': {
-      id: '/payroll/'
-      path: '/payroll'
-      fullPath: '/payroll/'
-      preLoaderRoute: typeof PayrollIndexRouteImport
+    '/hrm/lifecycle/movements': {
+      id: '/hrm/lifecycle/movements'
+      path: '/hrm/lifecycle/movements'
+      fullPath: '/hrm/lifecycle/movements'
+      preLoaderRoute: typeof HrmLifecycleMovementsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payroll/exceptions': {
-      id: '/payroll/exceptions'
-      path: '/payroll/exceptions'
-      fullPath: '/payroll/exceptions'
-      preLoaderRoute: typeof PayrollExceptionsRouteImport
+    '/hrm/lifecycle/offboarding': {
+      id: '/hrm/lifecycle/offboarding'
+      path: '/hrm/lifecycle/offboarding'
+      fullPath: '/hrm/lifecycle/offboarding'
+      preLoaderRoute: typeof HrmLifecycleOffboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payroll/runs': {
-      id: '/payroll/runs'
-      path: '/payroll/runs'
-      fullPath: '/payroll/runs'
-      preLoaderRoute: typeof PayrollRunsRouteImport
+    '/hrm/lifecycle/onboarding': {
+      id: '/hrm/lifecycle/onboarding'
+      path: '/hrm/lifecycle/onboarding'
+      fullPath: '/hrm/lifecycle/onboarding'
+      preLoaderRoute: typeof HrmLifecycleOnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payslips/': {
-      id: '/payslips/'
-      path: '/payslips'
-      fullPath: '/payslips/'
-      preLoaderRoute: typeof PayslipsIndexRouteImport
+    '/hrm/pay/compensation': {
+      id: '/hrm/pay/compensation'
+      path: '/hrm/pay/compensation'
+      fullPath: '/hrm/pay/compensation'
+      preLoaderRoute: typeof HrmPayCompensationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payslips/$id': {
-      id: '/payslips/$id'
-      path: '/payslips/$id'
-      fullPath: '/payslips/$id'
-      preLoaderRoute: typeof PayslipsIdRouteImport
+    '/hrm/payroll/': {
+      id: '/hrm/payroll/'
+      path: '/hrm/payroll'
+      fullPath: '/hrm/payroll/'
+      preLoaderRoute: typeof HrmPayrollIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/people/data-quality': {
-      id: '/people/data-quality'
-      path: '/people/data-quality'
-      fullPath: '/people/data-quality'
-      preLoaderRoute: typeof PeopleDataQualityRouteImport
+    '/hrm/payroll/exceptions': {
+      id: '/hrm/payroll/exceptions'
+      path: '/hrm/payroll/exceptions'
+      fullPath: '/hrm/payroll/exceptions'
+      preLoaderRoute: typeof HrmPayrollExceptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/people/documents': {
-      id: '/people/documents'
-      path: '/people/documents'
-      fullPath: '/people/documents'
-      preLoaderRoute: typeof PeopleDocumentsRouteImport
+    '/hrm/payroll/runs': {
+      id: '/hrm/payroll/runs'
+      path: '/hrm/payroll/runs'
+      fullPath: '/hrm/payroll/runs'
+      preLoaderRoute: typeof HrmPayrollRunsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/people/org': {
-      id: '/people/org'
-      path: '/people/org'
-      fullPath: '/people/org'
-      preLoaderRoute: typeof PeopleOrgRouteImport
+    '/hrm/payslips/': {
+      id: '/hrm/payslips/'
+      path: '/hrm/payslips'
+      fullPath: '/hrm/payslips/'
+      preLoaderRoute: typeof HrmPayslipsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/people/positions': {
-      id: '/people/positions'
-      path: '/people/positions'
-      fullPath: '/people/positions'
-      preLoaderRoute: typeof PeoplePositionsRouteImport
+    '/hrm/payslips/$id': {
+      id: '/hrm/payslips/$id'
+      path: '/hrm/payslips/$id'
+      fullPath: '/hrm/payslips/$id'
+      preLoaderRoute: typeof HrmPayslipsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/people/privacy': {
-      id: '/people/privacy'
-      path: '/people/privacy'
-      fullPath: '/people/privacy'
-      preLoaderRoute: typeof PeoplePrivacyRouteImport
+    '/hrm/people/data-quality': {
+      id: '/hrm/people/data-quality'
+      path: '/hrm/people/data-quality'
+      fullPath: '/hrm/people/data-quality'
+      preLoaderRoute: typeof HrmPeopleDataQualityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruitment/': {
-      id: '/recruitment/'
-      path: '/recruitment'
-      fullPath: '/recruitment/'
-      preLoaderRoute: typeof RecruitmentIndexRouteImport
+    '/hrm/people/documents': {
+      id: '/hrm/people/documents'
+      path: '/hrm/people/documents'
+      fullPath: '/hrm/people/documents'
+      preLoaderRoute: typeof HrmPeopleDocumentsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruitment/candidates': {
-      id: '/recruitment/candidates'
-      path: '/recruitment/candidates'
-      fullPath: '/recruitment/candidates'
-      preLoaderRoute: typeof RecruitmentCandidatesRouteImport
+    '/hrm/people/org': {
+      id: '/hrm/people/org'
+      path: '/hrm/people/org'
+      fullPath: '/hrm/people/org'
+      preLoaderRoute: typeof HrmPeopleOrgRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruitment/offers': {
-      id: '/recruitment/offers'
-      path: '/recruitment/offers'
-      fullPath: '/recruitment/offers'
-      preLoaderRoute: typeof RecruitmentOffersRouteImport
+    '/hrm/people/positions': {
+      id: '/hrm/people/positions'
+      path: '/hrm/people/positions'
+      fullPath: '/hrm/people/positions'
+      preLoaderRoute: typeof HrmPeoplePositionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruitment/requisitions': {
-      id: '/recruitment/requisitions'
-      path: '/recruitment/requisitions'
-      fullPath: '/recruitment/requisitions'
-      preLoaderRoute: typeof RecruitmentRequisitionsRouteImport
+    '/hrm/people/privacy': {
+      id: '/hrm/people/privacy'
+      path: '/hrm/people/privacy'
+      fullPath: '/hrm/people/privacy'
+      preLoaderRoute: typeof HrmPeoplePrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruitment/vacancies': {
-      id: '/recruitment/vacancies'
-      path: '/recruitment/vacancies'
-      fullPath: '/recruitment/vacancies'
-      preLoaderRoute: typeof RecruitmentVacanciesRouteImport
+    '/hrm/recruitment/': {
+      id: '/hrm/recruitment/'
+      path: '/hrm/recruitment'
+      fullPath: '/hrm/recruitment/'
+      preLoaderRoute: typeof HrmRecruitmentIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/': {
-      id: '/relations/'
-      path: '/relations'
-      fullPath: '/relations/'
-      preLoaderRoute: typeof RelationsIndexRouteImport
+    '/hrm/recruitment/candidates': {
+      id: '/hrm/recruitment/candidates'
+      path: '/hrm/recruitment/candidates'
+      fullPath: '/hrm/recruitment/candidates'
+      preLoaderRoute: typeof HrmRecruitmentCandidatesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/cases': {
-      id: '/relations/cases'
-      path: '/relations/cases'
-      fullPath: '/relations/cases'
-      preLoaderRoute: typeof RelationsCasesRouteImport
+    '/hrm/recruitment/offers': {
+      id: '/hrm/recruitment/offers'
+      path: '/hrm/recruitment/offers'
+      fullPath: '/hrm/recruitment/offers'
+      preLoaderRoute: typeof HrmRecruitmentOffersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/discipline': {
-      id: '/relations/discipline'
-      path: '/relations/discipline'
-      fullPath: '/relations/discipline'
-      preLoaderRoute: typeof RelationsDisciplineRouteImport
+    '/hrm/recruitment/requisitions': {
+      id: '/hrm/recruitment/requisitions'
+      path: '/hrm/recruitment/requisitions'
+      fullPath: '/hrm/recruitment/requisitions'
+      preLoaderRoute: typeof HrmRecruitmentRequisitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/ethics': {
-      id: '/relations/ethics'
-      path: '/relations/ethics'
-      fullPath: '/relations/ethics'
-      preLoaderRoute: typeof RelationsEthicsRouteImport
+    '/hrm/recruitment/vacancies': {
+      id: '/hrm/recruitment/vacancies'
+      path: '/hrm/recruitment/vacancies'
+      fullPath: '/hrm/recruitment/vacancies'
+      preLoaderRoute: typeof HrmRecruitmentVacanciesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/labour': {
-      id: '/relations/labour'
-      path: '/relations/labour'
-      fullPath: '/relations/labour'
-      preLoaderRoute: typeof RelationsLabourRouteImport
+    '/hrm/relations/': {
+      id: '/hrm/relations/'
+      path: '/hrm/relations'
+      fullPath: '/hrm/relations/'
+      preLoaderRoute: typeof HrmRelationsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/relations/safety': {
-      id: '/relations/safety'
-      path: '/relations/safety'
-      fullPath: '/relations/safety'
-      preLoaderRoute: typeof RelationsSafetyRouteImport
+    '/hrm/relations/cases': {
+      id: '/hrm/relations/cases'
+      path: '/hrm/relations/cases'
+      fullPath: '/hrm/relations/cases'
+      preLoaderRoute: typeof HrmRelationsCasesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reports/': {
-      id: '/reports/'
-      path: '/reports'
-      fullPath: '/reports/'
-      preLoaderRoute: typeof ReportsIndexRouteImport
+    '/hrm/relations/discipline': {
+      id: '/hrm/relations/discipline'
+      path: '/hrm/relations/discipline'
+      fullPath: '/hrm/relations/discipline'
+      preLoaderRoute: typeof HrmRelationsDisciplineRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reports/builder': {
-      id: '/reports/builder'
-      path: '/reports/builder'
-      fullPath: '/reports/builder'
-      preLoaderRoute: typeof ReportsBuilderRouteImport
+    '/hrm/relations/ethics': {
+      id: '/hrm/relations/ethics'
+      path: '/hrm/relations/ethics'
+      fullPath: '/hrm/relations/ethics'
+      preLoaderRoute: typeof HrmRelationsEthicsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/requests/': {
-      id: '/requests/'
-      path: '/requests'
-      fullPath: '/requests/'
-      preLoaderRoute: typeof RequestsIndexRouteImport
+    '/hrm/relations/labour': {
+      id: '/hrm/relations/labour'
+      path: '/hrm/relations/labour'
+      fullPath: '/hrm/relations/labour'
+      preLoaderRoute: typeof HrmRelationsLabourRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/requests/$id': {
-      id: '/requests/$id'
-      path: '/requests/$id'
-      fullPath: '/requests/$id'
-      preLoaderRoute: typeof RequestsIdRouteImport
+    '/hrm/relations/safety': {
+      id: '/hrm/relations/safety'
+      path: '/hrm/relations/safety'
+      fullPath: '/hrm/relations/safety'
+      preLoaderRoute: typeof HrmRelationsSafetyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/requests/new': {
-      id: '/requests/new'
-      path: '/requests/new'
-      fullPath: '/requests/new'
-      preLoaderRoute: typeof RequestsNewRouteImport
+    '/hrm/reports/': {
+      id: '/hrm/reports/'
+      path: '/hrm/reports'
+      fullPath: '/hrm/reports/'
+      preLoaderRoute: typeof HrmReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/': {
-      id: '/talent/'
-      path: '/talent'
-      fullPath: '/talent/'
-      preLoaderRoute: typeof TalentIndexRouteImport
+    '/hrm/reports/builder': {
+      id: '/hrm/reports/builder'
+      path: '/hrm/reports/builder'
+      fullPath: '/hrm/reports/builder'
+      preLoaderRoute: typeof HrmReportsBuilderRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/feedback': {
-      id: '/talent/feedback'
-      path: '/talent/feedback'
-      fullPath: '/talent/feedback'
-      preLoaderRoute: typeof TalentFeedbackRouteImport
+    '/hrm/requests/': {
+      id: '/hrm/requests/'
+      path: '/hrm/requests'
+      fullPath: '/hrm/requests/'
+      preLoaderRoute: typeof HrmRequestsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/goals': {
-      id: '/talent/goals'
-      path: '/talent/goals'
-      fullPath: '/talent/goals'
-      preLoaderRoute: typeof TalentGoalsRouteImport
+    '/hrm/requests/$id': {
+      id: '/hrm/requests/$id'
+      path: '/hrm/requests/$id'
+      fullPath: '/hrm/requests/$id'
+      preLoaderRoute: typeof HrmRequestsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/learning': {
-      id: '/talent/learning'
-      path: '/talent/learning'
-      fullPath: '/talent/learning'
-      preLoaderRoute: typeof TalentLearningRouteImport
+    '/hrm/requests/new': {
+      id: '/hrm/requests/new'
+      path: '/hrm/requests/new'
+      fullPath: '/hrm/requests/new'
+      preLoaderRoute: typeof HrmRequestsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/reviews': {
-      id: '/talent/reviews'
-      path: '/talent/reviews'
-      fullPath: '/talent/reviews'
-      preLoaderRoute: typeof TalentReviewsRouteImport
+    '/hrm/talent/': {
+      id: '/hrm/talent/'
+      path: '/hrm/talent'
+      fullPath: '/hrm/talent/'
+      preLoaderRoute: typeof HrmTalentIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/talent/succession': {
-      id: '/talent/succession'
-      path: '/talent/succession'
-      fullPath: '/talent/succession'
-      preLoaderRoute: typeof TalentSuccessionRouteImport
+    '/hrm/talent/feedback': {
+      id: '/hrm/talent/feedback'
+      path: '/hrm/talent/feedback'
+      fullPath: '/hrm/talent/feedback'
+      preLoaderRoute: typeof HrmTalentFeedbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/schedules': {
-      id: '/time/schedules'
-      path: '/time/schedules'
-      fullPath: '/time/schedules'
-      preLoaderRoute: typeof TimeSchedulesRouteImport
+    '/hrm/talent/goals': {
+      id: '/hrm/talent/goals'
+      path: '/hrm/talent/goals'
+      fullPath: '/hrm/talent/goals'
+      preLoaderRoute: typeof HrmTalentGoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/timesheets': {
-      id: '/time/timesheets'
-      path: '/time/timesheets'
-      fullPath: '/time/timesheets'
-      preLoaderRoute: typeof TimeTimesheetsRouteImport
+    '/hrm/talent/learning': {
+      id: '/hrm/talent/learning'
+      path: '/hrm/talent/learning'
+      fullPath: '/hrm/talent/learning'
+      preLoaderRoute: typeof HrmTalentLearningRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/toil': {
-      id: '/time/toil'
-      path: '/time/toil'
-      fullPath: '/time/toil'
-      preLoaderRoute: typeof TimeToilRouteImport
+    '/hrm/talent/reviews': {
+      id: '/hrm/talent/reviews'
+      path: '/hrm/talent/reviews'
+      fullPath: '/hrm/talent/reviews'
+      preLoaderRoute: typeof HrmTalentReviewsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/travel': {
-      id: '/time/travel'
-      path: '/time/travel'
-      fullPath: '/time/travel'
-      preLoaderRoute: typeof TimeTravelRouteImport
+    '/hrm/talent/succession': {
+      id: '/hrm/talent/succession'
+      path: '/hrm/talent/succession'
+      fullPath: '/hrm/talent/succession'
+      preLoaderRoute: typeof HrmTalentSuccessionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/utilisation': {
-      id: '/time/utilisation'
-      path: '/time/utilisation'
-      fullPath: '/time/utilisation'
-      preLoaderRoute: typeof TimeUtilisationRouteImport
+    '/hrm/time/schedules': {
+      id: '/hrm/time/schedules'
+      path: '/hrm/time/schedules'
+      fullPath: '/hrm/time/schedules'
+      preLoaderRoute: typeof HrmTimeSchedulesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/employees/$id/edit': {
-      id: '/employees/$id/edit'
+    '/hrm/time/timesheets': {
+      id: '/hrm/time/timesheets'
+      path: '/hrm/time/timesheets'
+      fullPath: '/hrm/time/timesheets'
+      preLoaderRoute: typeof HrmTimeTimesheetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/time/toil': {
+      id: '/hrm/time/toil'
+      path: '/hrm/time/toil'
+      fullPath: '/hrm/time/toil'
+      preLoaderRoute: typeof HrmTimeToilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/time/travel': {
+      id: '/hrm/time/travel'
+      path: '/hrm/time/travel'
+      fullPath: '/hrm/time/travel'
+      preLoaderRoute: typeof HrmTimeTravelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/time/utilisation': {
+      id: '/hrm/time/utilisation'
+      path: '/hrm/time/utilisation'
+      fullPath: '/hrm/time/utilisation'
+      preLoaderRoute: typeof HrmTimeUtilisationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/employees/$id/edit': {
+      id: '/hrm/employees/$id/edit'
       path: '/edit'
-      fullPath: '/employees/$id/edit'
-      preLoaderRoute: typeof EmployeesIdEditRouteImport
-      parentRoute: typeof EmployeesIdRoute
+      fullPath: '/hrm/employees/$id/edit'
+      preLoaderRoute: typeof HrmEmployeesIdEditRouteImport
+      parentRoute: typeof HrmEmployeesIdRoute
     }
-    '/lifecycle/movements/new': {
-      id: '/lifecycle/movements/new'
+    '/hrm/lifecycle/movements/new': {
+      id: '/hrm/lifecycle/movements/new'
       path: '/new'
-      fullPath: '/lifecycle/movements/new'
-      preLoaderRoute: typeof LifecycleMovementsNewRouteImport
-      parentRoute: typeof LifecycleMovementsRoute
+      fullPath: '/hrm/lifecycle/movements/new'
+      preLoaderRoute: typeof HrmLifecycleMovementsNewRouteImport
+      parentRoute: typeof HrmLifecycleMovementsRoute
     }
-    '/lifecycle/offboarding/$id': {
-      id: '/lifecycle/offboarding/$id'
+    '/hrm/lifecycle/offboarding/$id': {
+      id: '/hrm/lifecycle/offboarding/$id'
       path: '/$id'
-      fullPath: '/lifecycle/offboarding/$id'
-      preLoaderRoute: typeof LifecycleOffboardingIdRouteImport
-      parentRoute: typeof LifecycleOffboardingRoute
+      fullPath: '/hrm/lifecycle/offboarding/$id'
+      preLoaderRoute: typeof HrmLifecycleOffboardingIdRouteImport
+      parentRoute: typeof HrmLifecycleOffboardingRoute
     }
-    '/lifecycle/onboarding/$id': {
-      id: '/lifecycle/onboarding/$id'
+    '/hrm/lifecycle/onboarding/$id': {
+      id: '/hrm/lifecycle/onboarding/$id'
       path: '/$id'
-      fullPath: '/lifecycle/onboarding/$id'
-      preLoaderRoute: typeof LifecycleOnboardingIdRouteImport
-      parentRoute: typeof LifecycleOnboardingRoute
+      fullPath: '/hrm/lifecycle/onboarding/$id'
+      preLoaderRoute: typeof HrmLifecycleOnboardingIdRouteImport
+      parentRoute: typeof HrmLifecycleOnboardingRoute
     }
-    '/payroll/runs/$id': {
-      id: '/payroll/runs/$id'
+    '/hrm/payroll/runs/$id': {
+      id: '/hrm/payroll/runs/$id'
       path: '/$id'
-      fullPath: '/payroll/runs/$id'
-      preLoaderRoute: typeof PayrollRunsIdRouteImport
-      parentRoute: typeof PayrollRunsRoute
+      fullPath: '/hrm/payroll/runs/$id'
+      preLoaderRoute: typeof HrmPayrollRunsIdRouteImport
+      parentRoute: typeof HrmPayrollRunsRoute
     }
-    '/payroll/runs/new': {
-      id: '/payroll/runs/new'
+    '/hrm/payroll/runs/new': {
+      id: '/hrm/payroll/runs/new'
       path: '/new'
-      fullPath: '/payroll/runs/new'
-      preLoaderRoute: typeof PayrollRunsNewRouteImport
-      parentRoute: typeof PayrollRunsRoute
+      fullPath: '/hrm/payroll/runs/new'
+      preLoaderRoute: typeof HrmPayrollRunsNewRouteImport
+      parentRoute: typeof HrmPayrollRunsRoute
     }
-    '/people/positions/$id': {
-      id: '/people/positions/$id'
+    '/hrm/people/positions/$id': {
+      id: '/hrm/people/positions/$id'
       path: '/$id'
-      fullPath: '/people/positions/$id'
-      preLoaderRoute: typeof PeoplePositionsIdRouteImport
-      parentRoute: typeof PeoplePositionsRoute
+      fullPath: '/hrm/people/positions/$id'
+      preLoaderRoute: typeof HrmPeoplePositionsIdRouteImport
+      parentRoute: typeof HrmPeoplePositionsRoute
     }
-    '/recruitment/candidates/$id': {
-      id: '/recruitment/candidates/$id'
+    '/hrm/recruitment/candidates/$id': {
+      id: '/hrm/recruitment/candidates/$id'
       path: '/$id'
-      fullPath: '/recruitment/candidates/$id'
-      preLoaderRoute: typeof RecruitmentCandidatesIdRouteImport
-      parentRoute: typeof RecruitmentCandidatesRoute
+      fullPath: '/hrm/recruitment/candidates/$id'
+      preLoaderRoute: typeof HrmRecruitmentCandidatesIdRouteImport
+      parentRoute: typeof HrmRecruitmentCandidatesRoute
     }
-    '/recruitment/requisitions/new': {
-      id: '/recruitment/requisitions/new'
+    '/hrm/recruitment/requisitions/new': {
+      id: '/hrm/recruitment/requisitions/new'
       path: '/new'
-      fullPath: '/recruitment/requisitions/new'
-      preLoaderRoute: typeof RecruitmentRequisitionsNewRouteImport
-      parentRoute: typeof RecruitmentRequisitionsRoute
+      fullPath: '/hrm/recruitment/requisitions/new'
+      preLoaderRoute: typeof HrmRecruitmentRequisitionsNewRouteImport
+      parentRoute: typeof HrmRecruitmentRequisitionsRoute
     }
-    '/relations/cases/$id': {
-      id: '/relations/cases/$id'
+    '/hrm/relations/cases/$id': {
+      id: '/hrm/relations/cases/$id'
       path: '/$id'
-      fullPath: '/relations/cases/$id'
-      preLoaderRoute: typeof RelationsCasesIdRouteImport
-      parentRoute: typeof RelationsCasesRoute
+      fullPath: '/hrm/relations/cases/$id'
+      preLoaderRoute: typeof HrmRelationsCasesIdRouteImport
+      parentRoute: typeof HrmRelationsCasesRoute
     }
-    '/talent/reviews/$id': {
-      id: '/talent/reviews/$id'
+    '/hrm/talent/reviews/$id': {
+      id: '/hrm/talent/reviews/$id'
       path: '/$id'
-      fullPath: '/talent/reviews/$id'
-      preLoaderRoute: typeof TalentReviewsIdRouteImport
-      parentRoute: typeof TalentReviewsRoute
+      fullPath: '/hrm/talent/reviews/$id'
+      preLoaderRoute: typeof HrmTalentReviewsIdRouteImport
+      parentRoute: typeof HrmTalentReviewsRoute
     }
-    '/time/expenses/': {
-      id: '/time/expenses/'
-      path: '/time/expenses'
-      fullPath: '/time/expenses/'
-      preLoaderRoute: typeof TimeExpensesIndexRouteImport
+    '/hrm/time/expenses/': {
+      id: '/hrm/time/expenses/'
+      path: '/hrm/time/expenses'
+      fullPath: '/hrm/time/expenses/'
+      preLoaderRoute: typeof HrmTimeExpensesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/time/expenses/new': {
-      id: '/time/expenses/new'
-      path: '/time/expenses/new'
-      fullPath: '/time/expenses/new'
-      preLoaderRoute: typeof TimeExpensesNewRouteImport
+    '/hrm/time/expenses/new': {
+      id: '/hrm/time/expenses/new'
+      path: '/hrm/time/expenses/new'
+      fullPath: '/hrm/time/expenses/new'
+      preLoaderRoute: typeof HrmTimeExpensesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/payroll/runs/$id/edit': {
-      id: '/payroll/runs/$id/edit'
+    '/hrm/payroll/runs/$id/edit': {
+      id: '/hrm/payroll/runs/$id/edit'
       path: '/edit'
-      fullPath: '/payroll/runs/$id/edit'
-      preLoaderRoute: typeof PayrollRunsIdEditRouteImport
-      parentRoute: typeof PayrollRunsIdRoute
+      fullPath: '/hrm/payroll/runs/$id/edit'
+      preLoaderRoute: typeof HrmPayrollRunsIdEditRouteImport
+      parentRoute: typeof HrmPayrollRunsIdRoute
     }
   }
 }
 
-interface EmployeesIdRouteChildren {
-  EmployeesIdEditRoute: typeof EmployeesIdEditRoute
+interface HrmEmployeesIdRouteChildren {
+  HrmEmployeesIdEditRoute: typeof HrmEmployeesIdEditRoute
 }
 
-const EmployeesIdRouteChildren: EmployeesIdRouteChildren = {
-  EmployeesIdEditRoute: EmployeesIdEditRoute,
+const HrmEmployeesIdRouteChildren: HrmEmployeesIdRouteChildren = {
+  HrmEmployeesIdEditRoute: HrmEmployeesIdEditRoute,
 }
 
-const EmployeesIdRouteWithChildren = EmployeesIdRoute._addFileChildren(
-  EmployeesIdRouteChildren,
+const HrmEmployeesIdRouteWithChildren = HrmEmployeesIdRoute._addFileChildren(
+  HrmEmployeesIdRouteChildren,
 )
 
-interface LifecycleMovementsRouteChildren {
-  LifecycleMovementsNewRoute: typeof LifecycleMovementsNewRoute
+interface HrmLifecycleMovementsRouteChildren {
+  HrmLifecycleMovementsNewRoute: typeof HrmLifecycleMovementsNewRoute
 }
 
-const LifecycleMovementsRouteChildren: LifecycleMovementsRouteChildren = {
-  LifecycleMovementsNewRoute: LifecycleMovementsNewRoute,
+const HrmLifecycleMovementsRouteChildren: HrmLifecycleMovementsRouteChildren = {
+  HrmLifecycleMovementsNewRoute: HrmLifecycleMovementsNewRoute,
 }
 
-const LifecycleMovementsRouteWithChildren =
-  LifecycleMovementsRoute._addFileChildren(LifecycleMovementsRouteChildren)
-
-interface LifecycleOffboardingRouteChildren {
-  LifecycleOffboardingIdRoute: typeof LifecycleOffboardingIdRoute
-}
-
-const LifecycleOffboardingRouteChildren: LifecycleOffboardingRouteChildren = {
-  LifecycleOffboardingIdRoute: LifecycleOffboardingIdRoute,
-}
-
-const LifecycleOffboardingRouteWithChildren =
-  LifecycleOffboardingRoute._addFileChildren(LifecycleOffboardingRouteChildren)
-
-interface LifecycleOnboardingRouteChildren {
-  LifecycleOnboardingIdRoute: typeof LifecycleOnboardingIdRoute
-}
-
-const LifecycleOnboardingRouteChildren: LifecycleOnboardingRouteChildren = {
-  LifecycleOnboardingIdRoute: LifecycleOnboardingIdRoute,
-}
-
-const LifecycleOnboardingRouteWithChildren =
-  LifecycleOnboardingRoute._addFileChildren(LifecycleOnboardingRouteChildren)
-
-interface PayrollRunsIdRouteChildren {
-  PayrollRunsIdEditRoute: typeof PayrollRunsIdEditRoute
-}
-
-const PayrollRunsIdRouteChildren: PayrollRunsIdRouteChildren = {
-  PayrollRunsIdEditRoute: PayrollRunsIdEditRoute,
-}
-
-const PayrollRunsIdRouteWithChildren = PayrollRunsIdRoute._addFileChildren(
-  PayrollRunsIdRouteChildren,
-)
-
-interface PayrollRunsRouteChildren {
-  PayrollRunsIdRoute: typeof PayrollRunsIdRouteWithChildren
-  PayrollRunsNewRoute: typeof PayrollRunsNewRoute
-}
-
-const PayrollRunsRouteChildren: PayrollRunsRouteChildren = {
-  PayrollRunsIdRoute: PayrollRunsIdRouteWithChildren,
-  PayrollRunsNewRoute: PayrollRunsNewRoute,
-}
-
-const PayrollRunsRouteWithChildren = PayrollRunsRoute._addFileChildren(
-  PayrollRunsRouteChildren,
-)
-
-interface PeoplePositionsRouteChildren {
-  PeoplePositionsIdRoute: typeof PeoplePositionsIdRoute
-}
-
-const PeoplePositionsRouteChildren: PeoplePositionsRouteChildren = {
-  PeoplePositionsIdRoute: PeoplePositionsIdRoute,
-}
-
-const PeoplePositionsRouteWithChildren = PeoplePositionsRoute._addFileChildren(
-  PeoplePositionsRouteChildren,
-)
-
-interface RecruitmentCandidatesRouteChildren {
-  RecruitmentCandidatesIdRoute: typeof RecruitmentCandidatesIdRoute
-}
-
-const RecruitmentCandidatesRouteChildren: RecruitmentCandidatesRouteChildren = {
-  RecruitmentCandidatesIdRoute: RecruitmentCandidatesIdRoute,
-}
-
-const RecruitmentCandidatesRouteWithChildren =
-  RecruitmentCandidatesRoute._addFileChildren(
-    RecruitmentCandidatesRouteChildren,
+const HrmLifecycleMovementsRouteWithChildren =
+  HrmLifecycleMovementsRoute._addFileChildren(
+    HrmLifecycleMovementsRouteChildren,
   )
 
-interface RecruitmentRequisitionsRouteChildren {
-  RecruitmentRequisitionsNewRoute: typeof RecruitmentRequisitionsNewRoute
+interface HrmLifecycleOffboardingRouteChildren {
+  HrmLifecycleOffboardingIdRoute: typeof HrmLifecycleOffboardingIdRoute
 }
 
-const RecruitmentRequisitionsRouteChildren: RecruitmentRequisitionsRouteChildren =
+const HrmLifecycleOffboardingRouteChildren: HrmLifecycleOffboardingRouteChildren =
   {
-    RecruitmentRequisitionsNewRoute: RecruitmentRequisitionsNewRoute,
+    HrmLifecycleOffboardingIdRoute: HrmLifecycleOffboardingIdRoute,
   }
 
-const RecruitmentRequisitionsRouteWithChildren =
-  RecruitmentRequisitionsRoute._addFileChildren(
-    RecruitmentRequisitionsRouteChildren,
+const HrmLifecycleOffboardingRouteWithChildren =
+  HrmLifecycleOffboardingRoute._addFileChildren(
+    HrmLifecycleOffboardingRouteChildren,
   )
 
-interface RelationsCasesRouteChildren {
-  RelationsCasesIdRoute: typeof RelationsCasesIdRoute
+interface HrmLifecycleOnboardingRouteChildren {
+  HrmLifecycleOnboardingIdRoute: typeof HrmLifecycleOnboardingIdRoute
 }
 
-const RelationsCasesRouteChildren: RelationsCasesRouteChildren = {
-  RelationsCasesIdRoute: RelationsCasesIdRoute,
+const HrmLifecycleOnboardingRouteChildren: HrmLifecycleOnboardingRouteChildren =
+  {
+    HrmLifecycleOnboardingIdRoute: HrmLifecycleOnboardingIdRoute,
+  }
+
+const HrmLifecycleOnboardingRouteWithChildren =
+  HrmLifecycleOnboardingRoute._addFileChildren(
+    HrmLifecycleOnboardingRouteChildren,
+  )
+
+interface HrmPayrollRunsIdRouteChildren {
+  HrmPayrollRunsIdEditRoute: typeof HrmPayrollRunsIdEditRoute
 }
 
-const RelationsCasesRouteWithChildren = RelationsCasesRoute._addFileChildren(
-  RelationsCasesRouteChildren,
+const HrmPayrollRunsIdRouteChildren: HrmPayrollRunsIdRouteChildren = {
+  HrmPayrollRunsIdEditRoute: HrmPayrollRunsIdEditRoute,
+}
+
+const HrmPayrollRunsIdRouteWithChildren =
+  HrmPayrollRunsIdRoute._addFileChildren(HrmPayrollRunsIdRouteChildren)
+
+interface HrmPayrollRunsRouteChildren {
+  HrmPayrollRunsIdRoute: typeof HrmPayrollRunsIdRouteWithChildren
+  HrmPayrollRunsNewRoute: typeof HrmPayrollRunsNewRoute
+}
+
+const HrmPayrollRunsRouteChildren: HrmPayrollRunsRouteChildren = {
+  HrmPayrollRunsIdRoute: HrmPayrollRunsIdRouteWithChildren,
+  HrmPayrollRunsNewRoute: HrmPayrollRunsNewRoute,
+}
+
+const HrmPayrollRunsRouteWithChildren = HrmPayrollRunsRoute._addFileChildren(
+  HrmPayrollRunsRouteChildren,
 )
 
-interface TalentReviewsRouteChildren {
-  TalentReviewsIdRoute: typeof TalentReviewsIdRoute
+interface HrmPeoplePositionsRouteChildren {
+  HrmPeoplePositionsIdRoute: typeof HrmPeoplePositionsIdRoute
 }
 
-const TalentReviewsRouteChildren: TalentReviewsRouteChildren = {
-  TalentReviewsIdRoute: TalentReviewsIdRoute,
+const HrmPeoplePositionsRouteChildren: HrmPeoplePositionsRouteChildren = {
+  HrmPeoplePositionsIdRoute: HrmPeoplePositionsIdRoute,
 }
 
-const TalentReviewsRouteWithChildren = TalentReviewsRoute._addFileChildren(
-  TalentReviewsRouteChildren,
-)
+const HrmPeoplePositionsRouteWithChildren =
+  HrmPeoplePositionsRoute._addFileChildren(HrmPeoplePositionsRouteChildren)
+
+interface HrmRecruitmentCandidatesRouteChildren {
+  HrmRecruitmentCandidatesIdRoute: typeof HrmRecruitmentCandidatesIdRoute
+}
+
+const HrmRecruitmentCandidatesRouteChildren: HrmRecruitmentCandidatesRouteChildren =
+  {
+    HrmRecruitmentCandidatesIdRoute: HrmRecruitmentCandidatesIdRoute,
+  }
+
+const HrmRecruitmentCandidatesRouteWithChildren =
+  HrmRecruitmentCandidatesRoute._addFileChildren(
+    HrmRecruitmentCandidatesRouteChildren,
+  )
+
+interface HrmRecruitmentRequisitionsRouteChildren {
+  HrmRecruitmentRequisitionsNewRoute: typeof HrmRecruitmentRequisitionsNewRoute
+}
+
+const HrmRecruitmentRequisitionsRouteChildren: HrmRecruitmentRequisitionsRouteChildren =
+  {
+    HrmRecruitmentRequisitionsNewRoute: HrmRecruitmentRequisitionsNewRoute,
+  }
+
+const HrmRecruitmentRequisitionsRouteWithChildren =
+  HrmRecruitmentRequisitionsRoute._addFileChildren(
+    HrmRecruitmentRequisitionsRouteChildren,
+  )
+
+interface HrmRelationsCasesRouteChildren {
+  HrmRelationsCasesIdRoute: typeof HrmRelationsCasesIdRoute
+}
+
+const HrmRelationsCasesRouteChildren: HrmRelationsCasesRouteChildren = {
+  HrmRelationsCasesIdRoute: HrmRelationsCasesIdRoute,
+}
+
+const HrmRelationsCasesRouteWithChildren =
+  HrmRelationsCasesRoute._addFileChildren(HrmRelationsCasesRouteChildren)
+
+interface HrmTalentReviewsRouteChildren {
+  HrmTalentReviewsIdRoute: typeof HrmTalentReviewsIdRoute
+}
+
+const HrmTalentReviewsRouteChildren: HrmTalentReviewsRouteChildren = {
+  HrmTalentReviewsIdRoute: HrmTalentReviewsIdRoute,
+}
+
+const HrmTalentReviewsRouteWithChildren =
+  HrmTalentReviewsRoute._addFileChildren(HrmTalentReviewsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ApprovalsRoute: ApprovalsRoute,
-  HelpRoute: HelpRoute,
-  SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
   SpeakUpRoute: SpeakUpRoute,
-  AttendanceIdRoute: AttendanceIdRoute,
-  AttendanceClockRoute: AttendanceClockRoute,
-  AttendanceNewRoute: AttendanceNewRoute,
-  ConfigurationBusinessRoute: ConfigurationBusinessRoute,
-  ConfigurationComplianceRoute: ConfigurationComplianceRoute,
-  ConfigurationOrganisationRoute: ConfigurationOrganisationRoute,
-  ConfigurationProcessRoute: ConfigurationProcessRoute,
-  ConfigurationRolesRoute: ConfigurationRolesRoute,
-  ConfigurationTechnicalRoute: ConfigurationTechnicalRoute,
-  EmployeesIdRoute: EmployeesIdRouteWithChildren,
-  EmployeesNewRoute: EmployeesNewRoute,
-  ExperienceAnnouncementsRoute: ExperienceAnnouncementsRoute,
-  ExperienceKnowledgeRoute: ExperienceKnowledgeRoute,
-  ExperienceLettersRoute: ExperienceLettersRoute,
-  LeaveIdRoute: LeaveIdRoute,
-  LeaveNewRoute: LeaveNewRoute,
-  LifecycleAlumniRoute: LifecycleAlumniRoute,
-  LifecycleAssetsRoute: LifecycleAssetsRoute,
-  LifecycleJourneysRoute: LifecycleJourneysRoute,
-  LifecycleMobilityRoute: LifecycleMobilityRoute,
-  LifecycleMovementsRoute: LifecycleMovementsRouteWithChildren,
-  LifecycleOffboardingRoute: LifecycleOffboardingRouteWithChildren,
-  LifecycleOnboardingRoute: LifecycleOnboardingRouteWithChildren,
-  PayCompensationRoute: PayCompensationRoute,
-  PayrollExceptionsRoute: PayrollExceptionsRoute,
-  PayrollRunsRoute: PayrollRunsRouteWithChildren,
-  PayslipsIdRoute: PayslipsIdRoute,
-  PeopleDataQualityRoute: PeopleDataQualityRoute,
-  PeopleDocumentsRoute: PeopleDocumentsRoute,
-  PeopleOrgRoute: PeopleOrgRoute,
-  PeoplePositionsRoute: PeoplePositionsRouteWithChildren,
-  PeoplePrivacyRoute: PeoplePrivacyRoute,
-  RecruitmentCandidatesRoute: RecruitmentCandidatesRouteWithChildren,
-  RecruitmentOffersRoute: RecruitmentOffersRoute,
-  RecruitmentRequisitionsRoute: RecruitmentRequisitionsRouteWithChildren,
-  RecruitmentVacanciesRoute: RecruitmentVacanciesRoute,
-  RelationsCasesRoute: RelationsCasesRouteWithChildren,
-  RelationsDisciplineRoute: RelationsDisciplineRoute,
-  RelationsEthicsRoute: RelationsEthicsRoute,
-  RelationsLabourRoute: RelationsLabourRoute,
-  RelationsSafetyRoute: RelationsSafetyRoute,
-  ReportsBuilderRoute: ReportsBuilderRoute,
-  RequestsIdRoute: RequestsIdRoute,
-  RequestsNewRoute: RequestsNewRoute,
-  TalentFeedbackRoute: TalentFeedbackRoute,
-  TalentGoalsRoute: TalentGoalsRoute,
-  TalentLearningRoute: TalentLearningRoute,
-  TalentReviewsRoute: TalentReviewsRouteWithChildren,
-  TalentSuccessionRoute: TalentSuccessionRoute,
-  TimeSchedulesRoute: TimeSchedulesRoute,
-  TimeTimesheetsRoute: TimeTimesheetsRoute,
-  TimeToilRoute: TimeToilRoute,
-  TimeTravelRoute: TimeTravelRoute,
-  TimeUtilisationRoute: TimeUtilisationRoute,
-  AttendanceIndexRoute: AttendanceIndexRoute,
-  ConfigurationIndexRoute: ConfigurationIndexRoute,
-  EmployeesIndexRoute: EmployeesIndexRoute,
-  LeaveIndexRoute: LeaveIndexRoute,
-  LifecycleIndexRoute: LifecycleIndexRoute,
-  PayrollIndexRoute: PayrollIndexRoute,
-  PayslipsIndexRoute: PayslipsIndexRoute,
-  RecruitmentIndexRoute: RecruitmentIndexRoute,
-  RelationsIndexRoute: RelationsIndexRoute,
-  ReportsIndexRoute: ReportsIndexRoute,
-  RequestsIndexRoute: RequestsIndexRoute,
-  TalentIndexRoute: TalentIndexRoute,
-  TimeExpensesNewRoute: TimeExpensesNewRoute,
-  TimeExpensesIndexRoute: TimeExpensesIndexRoute,
+  HrmApprovalsRoute: HrmApprovalsRoute,
+  HrmHelpRoute: HrmHelpRoute,
+  HrmSetupRoute: HrmSetupRoute,
+  HrmIndexRoute: HrmIndexRoute,
+  HrmAttendanceIdRoute: HrmAttendanceIdRoute,
+  HrmAttendanceClockRoute: HrmAttendanceClockRoute,
+  HrmAttendanceNewRoute: HrmAttendanceNewRoute,
+  HrmConfigurationBusinessRoute: HrmConfigurationBusinessRoute,
+  HrmConfigurationComplianceRoute: HrmConfigurationComplianceRoute,
+  HrmConfigurationOrganisationRoute: HrmConfigurationOrganisationRoute,
+  HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,
+  HrmConfigurationRolesRoute: HrmConfigurationRolesRoute,
+  HrmConfigurationTechnicalRoute: HrmConfigurationTechnicalRoute,
+  HrmEmployeesIdRoute: HrmEmployeesIdRouteWithChildren,
+  HrmEmployeesNewRoute: HrmEmployeesNewRoute,
+  HrmExperienceAnnouncementsRoute: HrmExperienceAnnouncementsRoute,
+  HrmExperienceKnowledgeRoute: HrmExperienceKnowledgeRoute,
+  HrmExperienceLettersRoute: HrmExperienceLettersRoute,
+  HrmLeaveIdRoute: HrmLeaveIdRoute,
+  HrmLeaveNewRoute: HrmLeaveNewRoute,
+  HrmLifecycleAlumniRoute: HrmLifecycleAlumniRoute,
+  HrmLifecycleAssetsRoute: HrmLifecycleAssetsRoute,
+  HrmLifecycleJourneysRoute: HrmLifecycleJourneysRoute,
+  HrmLifecycleMobilityRoute: HrmLifecycleMobilityRoute,
+  HrmLifecycleMovementsRoute: HrmLifecycleMovementsRouteWithChildren,
+  HrmLifecycleOffboardingRoute: HrmLifecycleOffboardingRouteWithChildren,
+  HrmLifecycleOnboardingRoute: HrmLifecycleOnboardingRouteWithChildren,
+  HrmPayCompensationRoute: HrmPayCompensationRoute,
+  HrmPayrollExceptionsRoute: HrmPayrollExceptionsRoute,
+  HrmPayrollRunsRoute: HrmPayrollRunsRouteWithChildren,
+  HrmPayslipsIdRoute: HrmPayslipsIdRoute,
+  HrmPeopleDataQualityRoute: HrmPeopleDataQualityRoute,
+  HrmPeopleDocumentsRoute: HrmPeopleDocumentsRoute,
+  HrmPeopleOrgRoute: HrmPeopleOrgRoute,
+  HrmPeoplePositionsRoute: HrmPeoplePositionsRouteWithChildren,
+  HrmPeoplePrivacyRoute: HrmPeoplePrivacyRoute,
+  HrmRecruitmentCandidatesRoute: HrmRecruitmentCandidatesRouteWithChildren,
+  HrmRecruitmentOffersRoute: HrmRecruitmentOffersRoute,
+  HrmRecruitmentRequisitionsRoute: HrmRecruitmentRequisitionsRouteWithChildren,
+  HrmRecruitmentVacanciesRoute: HrmRecruitmentVacanciesRoute,
+  HrmRelationsCasesRoute: HrmRelationsCasesRouteWithChildren,
+  HrmRelationsDisciplineRoute: HrmRelationsDisciplineRoute,
+  HrmRelationsEthicsRoute: HrmRelationsEthicsRoute,
+  HrmRelationsLabourRoute: HrmRelationsLabourRoute,
+  HrmRelationsSafetyRoute: HrmRelationsSafetyRoute,
+  HrmReportsBuilderRoute: HrmReportsBuilderRoute,
+  HrmRequestsIdRoute: HrmRequestsIdRoute,
+  HrmRequestsNewRoute: HrmRequestsNewRoute,
+  HrmTalentFeedbackRoute: HrmTalentFeedbackRoute,
+  HrmTalentGoalsRoute: HrmTalentGoalsRoute,
+  HrmTalentLearningRoute: HrmTalentLearningRoute,
+  HrmTalentReviewsRoute: HrmTalentReviewsRouteWithChildren,
+  HrmTalentSuccessionRoute: HrmTalentSuccessionRoute,
+  HrmTimeSchedulesRoute: HrmTimeSchedulesRoute,
+  HrmTimeTimesheetsRoute: HrmTimeTimesheetsRoute,
+  HrmTimeToilRoute: HrmTimeToilRoute,
+  HrmTimeTravelRoute: HrmTimeTravelRoute,
+  HrmTimeUtilisationRoute: HrmTimeUtilisationRoute,
+  HrmAttendanceIndexRoute: HrmAttendanceIndexRoute,
+  HrmConfigurationIndexRoute: HrmConfigurationIndexRoute,
+  HrmEmployeesIndexRoute: HrmEmployeesIndexRoute,
+  HrmLeaveIndexRoute: HrmLeaveIndexRoute,
+  HrmLifecycleIndexRoute: HrmLifecycleIndexRoute,
+  HrmPayrollIndexRoute: HrmPayrollIndexRoute,
+  HrmPayslipsIndexRoute: HrmPayslipsIndexRoute,
+  HrmRecruitmentIndexRoute: HrmRecruitmentIndexRoute,
+  HrmRelationsIndexRoute: HrmRelationsIndexRoute,
+  HrmReportsIndexRoute: HrmReportsIndexRoute,
+  HrmRequestsIndexRoute: HrmRequestsIndexRoute,
+  HrmTalentIndexRoute: HrmTalentIndexRoute,
+  HrmTimeExpensesNewRoute: HrmTimeExpensesNewRoute,
+  HrmTimeExpensesIndexRoute: HrmTimeExpensesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

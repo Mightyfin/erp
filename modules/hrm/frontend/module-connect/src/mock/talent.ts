@@ -829,7 +829,7 @@ const courses: Course[] = [
   {
     id: "cr-101",
     title: "Working at Height — refresher",
-    provider: "Meridian Safety Academy",
+    provider: "Mighty Finance Solutions Safety Academy",
     mode: "Classroom",
     durationHours: 4,
     mandatory: true,
@@ -893,7 +893,7 @@ const courses: Course[] = [
   {
     id: "cr-106",
     title: "CMMS advanced planning and scheduling",
-    provider: "Meridian Digital Skills",
+    provider: "Mighty Finance Solutions Digital Skills",
     mode: "E-learning",
     durationHours: 5,
     mandatory: false,
@@ -917,7 +917,7 @@ const courses: Course[] = [
   {
     id: "cr-108",
     title: "Data protection and the GDPR for people managers",
-    provider: "Meridian Compliance",
+    provider: "Mighty Finance Solutions Compliance",
     mode: "E-learning",
     durationHours: 2,
     mandatory: true,
@@ -930,7 +930,7 @@ const courses: Course[] = [
   {
     id: "cr-109",
     title: "Inclusive recruitment and fair assessment",
-    provider: "Meridian People Academy",
+    provider: "Mighty Finance Solutions People Academy",
     mode: "Virtual classroom",
     durationHours: 4,
     mandatory: false,

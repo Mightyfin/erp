@@ -80,7 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       // Vendor identity, not tenant identity. MightyFin is who makes this; the
-      // employer whose data is on screen (Meridian, in the mocks) is a tenant and
+      // employer whose data is on screen (Mighty Finance Solutions, in the mocks) is a tenant and
       // must stay swappable — see 00-architecture-position.md §7 on standalone sales.
       { title: "MightyFin HRM — HR workspace" },
       { name: "description", content: "HR operations workspace for leave, attendance, requests and pay." },
@@ -99,8 +99,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
       },
+      { rel: "icon", href: "/mightyfin-mark.png", type: "image/png" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
