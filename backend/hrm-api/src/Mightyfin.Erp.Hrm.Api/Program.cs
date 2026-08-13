@@ -138,6 +138,21 @@ builder.Services.AddSingleton(new ApiVersioning { CurrentVersion = 1 });
 
 var app = builder.Build();
 
+// ---------- Apply migrations at startup ----------
+// A dedicated "migrate" container can also launch the same binary with
+// --apply-migrations-only to run migrations before the API starts serving.
+// The API itself applies any pending migrations on startup as a safety net,
+// exactly like the Go ERP stack's migrate service + API pair.
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<HrmDbContext>().Database.Migrate();
+}
+if (args.Contains("--apply-migrations-only"))
+{
+    Console.WriteLine("Migrations applied. Exiting.");
+    return;
+}
+
 // ---------- Cross-cutting middleware ----------
 app.UseCors();
 
