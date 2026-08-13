@@ -1,0 +1,38 @@
+services:
+  hrm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: erp-hrm-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      # Keyword-format connection string; NpgsqlConnectionStringNormalizer also
+      # accepts the postgresql:// URI form used by the Go services.
+      - ConnectionStrings__Hrm=Host=postgres;Port=5432;Database=erp;Username=erp;Password=${ERP_DB_PASSWORD}
+      - ERP__AuthMode=${ERP_AUTH_MODE:-enabled}
+      - HRM__DefaultTenantId=${HRM_DEFAULT_TENANT_ID:-local-tenant}
+      - Auth__Issuer=${KEYCLOAK_ISSUER:-}
+      - Auth__Audience=${KEYCLOAK_AUDIENCE:-}
+    depends_on:
+      - postgres
+
+  # Optional: local Postgres for development (production reuses the shared
+  # `erp-postgres-1` container on the host network).
+  postgres:
+    image: postgres:17-alpine
+    container_name: erp-hrm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${ERP_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - hrm-pgdata:/var/lib/postgresql/data
+
+volumes:
+  hrm-pgdata:

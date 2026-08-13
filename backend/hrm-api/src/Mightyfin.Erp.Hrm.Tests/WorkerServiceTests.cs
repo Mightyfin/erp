@@ -1,0 +1,108 @@
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Mightyfin.Erp.Hrm.Application;
+using Mightyfin.Erp.Hrm.Application.Workers;
+using Mightyfin.Erp.Hrm.Domain.Entities;
+using Mightyfin.Erp.Hrm.Infrastructure;
+using Mightyfin.Erp.Hrm.Infrastructure.Data;
+using Xunit;
+
+namespace Mightyfin.Erp.Hrm.Tests;
+
+/// <summary>Permissive double for <see cref="IAuthzService"/> used by the service layer.</summary>
+internal sealed class PermissiveAuthz : IAuthzService
+{
+    public void RequireAnyRole(params string[] roles) { }
+    public bool CanAccessSensitive(string category) => true;
+}
+
+/// <summary>Simple id provider double for tests.</summary>
+internal sealed class UlidIdProvider : IIdProvider
+{
+    public string NewCorrelationId() => System.Guid.NewGuid().ToString();
+}
+
+/// <summary>Fixed tenant accessor so tests run against a known tenant.</summary>
+internal sealed class FixedTenantAccessor(string tenant) : ITenantAccessor
+{
+    public string GetTenantId() => tenant;
+}
+
+/// <summary>SQLite in-memory EF context wired up with the same tenant-scoping
+/// rules as the production context (global query filters + tenant auto-fill).
+/// SQLite in-memory is used rather than the InMemory provider because EF Core
+/// 10's InMemory provider has a bug with Guid-V7 primary keys: inserting a
+/// child entity via navigation after the parent was loaded throws a spurious
+/// DbUpdateConcurrencyException.</summary>
+internal static class TestDbContextFactory
+{
+    public static HrmDbContext Create(string tenant = "test-tenant")
+    {
+        var conn = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=hrm-tests-" + System.Guid.NewGuid() + ";Mode=Memory;Cache=Shared");
+        conn.Open();
+        var opts = new DbContextOptionsBuilder<HrmDbContext>()
+            .UseSqlite(conn)
+            .Options;
+        var ctx = new HrmDbContext(opts, new FixedTenantAccessor(tenant));
+        ctx.Database.EnsureCreated();
+        return ctx;
+    }
+}
+
+public class WorkerServiceTests
+{
+    private static (WorkerServiceImpl service, HrmDbContext ctx) Build(string tenant = "test-tenant")
+    {
+        var ctx = TestDbContextFactory.Create(tenant);
+        var repo = new WorkerRepository(ctx);
+        var service = new WorkerServiceImpl(repo, new PermissiveAuthz(), new UlidIdProvider());
+        return (service, ctx);
+    }
+
+    [Fact]
+    public async Task CreateWorker_SetsTenantId()
+    {
+        var (service, ctx) = Build();
+        var dto = await service.CreateAsync(
+            new WorkerCreateRequest(EmployeeNo: "EMP-001", FirstName: "Test", LastName: "Worker", WorkerType: "employee"),
+            CancellationToken.None);
+        var worker = await ctx.Workers.FirstAsync();
+        Assert.Equal("test-tenant", worker.TenantId);
+        Assert.Equal("Test Worker", worker.FullName);
+        Assert.Equal("pre-hire", worker.Status);
+        Assert.Equal("EMP-001", worker.EmployeeNo);
+    }
+
+    [Fact]
+    public async Task CreateWorker_SetsDefaultNationality()
+    {
+        var (service, ctx) = Build();
+        await service.CreateAsync(
+            new WorkerCreateRequest(EmployeeNo: "EMP-001", FirstName: "Test", LastName: "Worker", WorkerType: "employee"),
+            CancellationToken.None);
+
+        // TenantId is auto-populated by the DbContext on save.
+        var worker = await ctx.Workers.FirstAsync();
+        Assert.Equal("Zambian", worker.Nationality);
+    }
+
+    [Fact]
+    public async Task TenantFilter_ScopesQueriesToCurrentTenant()
+    {
+        var ctx = TestDbContextFactory.Create("tenant-a");
+        ctx.Workers.Add(new Worker { EmployeeNo = "EMP-A1", FirstName = "A", LastName = "One", WorkerType = "employee", Status = "pre-hire" });
+        await ctx.SaveChangesAsync();
+
+        var otherCtx = TestDbContextFactory.Create("tenant-b");
+        otherCtx.Workers.Add(new Worker { EmployeeNo = "EMP-B1", FirstName = "B", LastName = "One", WorkerType = "employee", Status = "pre-hire" });
+        await otherCtx.SaveChangesAsync();
+
+        // Each context only sees its own tenant thanks to the global query filter.
+        Assert.Equal(1, await ctx.Workers.CountAsync());
+        Assert.Equal(1, await otherCtx.Workers.CountAsync());
+        Assert.Equal("EMP-A1", (await ctx.Workers.FirstAsync()).EmployeeNo);
+        Assert.Equal("EMP-B1", (await otherCtx.Workers.FirstAsync()).EmployeeNo);
+    }
+}
+

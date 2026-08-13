@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD_FILE: /run/secrets/erp_postgres_password
+    secrets:
+      - erp_postgres_password
+    volumes:
+      - /srv/mightyfin/data/erp/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: .
+    image: mightyfin/erp-api:local
+    entrypoint: ["/erp-migrate"]
+    env_file:
+      - /home/mightyfin/.config/mightyfin/erp/.env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: .
+    image: mightyfin/erp-api:local
+    restart: unless-stopped
+    env_file:
+      - /home/mightyfin/.config/mightyfin/erp/.env
+    ports:
+      - "127.0.0.1:28910:8080"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/erp-api", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+secrets:
+  erp_postgres_password:
+    file: /home/mightyfin/.config/mightyfin/erp/postgres_password

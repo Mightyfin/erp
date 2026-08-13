@@ -1,0 +1,127 @@
+namespace Mightyfin.Erp.Hrm.Domain.Entities;
+
+/// <summary>J-group 07: A salary component — the atomic unit of a payslip.
+/// Components are reusable, versioned, and mapped to tax/accounting treatment.</summary>
+public class SalaryComponent : Entity, IVersioned
+{
+    public string Code { get; set; } = null!;          // basic | housing-allowance | transport | napsa-ee | nhima-ee | paye | loan-recovery
+    public string Name { get; set; } = null!;
+    public string ComponentType { get; set; } = null!; // earning | deduction | employer-contribution | tax
+    public string CalculationBasis { get; set; } = "fixed"; // fixed | percent-of | formula | slab
+    public string? BasisComponentCode { get; set; }    // when percent-of / formula references another component
+    public decimal? Rate { get; set; }                 // percentage rate (0..100) when basis is percent-of
+    public decimal? FixedAmount { get; set; }
+    public decimal? Ceiling { get; set; }              // statutory ceiling (NAPSA)
+    public bool IsTaxable { get; set; }
+    public bool IsStatutory { get; set; }
+    public string? GlAccountRef { get; set; }          // accounting integration
+    public int Priority { get; set; } = 100;           // evaluation order in the engine
+    public int Version { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveTo { get; set; }
+}
+
+/// <summary>J-group 06: A reusable package of component assignments (which
+/// components apply to which grade/worker class), versioned.</summary>
+public class SalaryStructure : Entity, IVersioned
+{
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public int Version { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
+    public ICollection<SalaryStructureItem> Items { get; set; } = new List<SalaryStructureItem>();
+}
+
+public class SalaryStructureItem : Entity
+{
+    public Guid StructureId { get; set; }
+    public SalaryStructure? Structure { get; set; }
+    public Guid ComponentId { get; set; }
+    public SalaryComponent? Component { get; set; }
+    public decimal? DefaultAmount { get; set; }      // default fixed amount for this component
+    public bool IsOptional { get; set; }
+    public int Order { get; set; }
+}
+
+/// <summary>Worker-to-structure assignment: per-worker overrides of component
+/// amounts (basic salary etc.), effective-dated.</summary>
+public class WorkerPayrollProfile : Entity, IEffectiveDated
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public Guid StructureId { get; set; }
+    public SalaryStructure? Structure { get; set; }
+    public Guid PayGroupId { get; set; }
+    public PayGroup? PayGroup { get; set; }
+    public ICollection<WorkerComponentValue> ComponentValues { get; set; } = new List<WorkerComponentValue>();
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveTo { get; set; }
+}
+
+public class WorkerComponentValue : Entity
+{
+    public Guid ProfileId { get; set; }
+    public WorkerPayrollProfile? Profile { get; set; }
+    public Guid ComponentId { get; set; }
+    public SalaryComponent? Component { get; set; }
+    public decimal Amount { get; set; }
+}
+
+/// <summary>J-groups 03-04: Pay group defining frequency, calendar and currency.</summary>
+public class PayGroup : Entity
+{
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string Frequency { get; set; } = "monthly"; // monthly | semi-monthly | biweekly | weekly
+    public string Currency { get; set; } = "ZMW";
+    public int CalendarDayOfMonth { get; set; } = 25;  // standard payday
+    public int InputCutoffDaysBeforePayday { get; set; } = 5;
+    public bool IsDefault { get; set; }
+}
+
+/// <summary>J-group 03: Payroll periods created from the group's calendar.</summary>
+public class PayPeriod : Entity
+{
+    public Guid PayGroupId { get; set; }
+    public PayGroup? PayGroup { get; set; }
+    public string PeriodLabel { get; set; } = null!;  // e.g. "Aug 2026"
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
+    public DateOnly CutoffDate { get; set; }
+    public DateOnly PayDate { get; set; }
+    public string Status { get; set; } = "open";      // open | locked | closed
+    public bool IsCurrent { get; set; }
+}
+
+/// <summary>J-group 11: Versioned tax slabs (ZRA PAYE) — configuration, not code
+/// constants. Slabs are progressive: each bracket applies its rate to the band.</summary>
+public class TaxSlab : Entity, IVersioned
+{
+    public string TaxYear { get; set; } = null!;      // e.g. "2026"
+    public decimal MinAmount { get; set; }
+    public decimal? MaxAmount { get; set; }           // null = top band
+    public decimal Rate { get; set; }                 // percent
+    public int Sequence { get; set; }
+    public int Version { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveTo { get; set; }
+}
+
+/// <summary>J-group 10: Employee/employer statutory contribution rules (NAPSA,
+/// NHIMA, WCFCB) with ceilings, floors and exemptions.</summary>
+public class ContributionRule : Entity, IVersioned
+{
+    public string Code { get; set; } = null!;         // napsa-ee | napsa-er | nhima | wcfcb
+    public string Name { get; set; } = null!;
+    public string Payer { get; set; } = null!;        // employee | employer
+    public decimal Rate { get; set; }
+    public decimal? Ceiling { get; set; }
+    public decimal? Floor { get; set; }
+    public string? TiedComponentCode { get; set; }    // earning basis, e.g. "basic"
+    public int Version { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveTo { get; set; }
+}
