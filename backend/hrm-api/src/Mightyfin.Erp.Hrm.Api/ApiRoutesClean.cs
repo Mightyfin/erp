@@ -487,6 +487,17 @@ public static class Routes
             var request = await ReadBodyAsync<OfferCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateOfferAsync(request, ct));
         });
+        g.MapPost("/vacancies/{id:guid}/publish", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.PublishVacancyAsync(id, ct));
+        g.MapPost("/vacancies/{id:guid}/close", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.CloseVacancyAsync(id, ct));
+        g.MapPost("/offers/{id:guid}/accept", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OfferAcceptRequest>(http, ct) ?? new OfferAcceptRequest();
+            return Results.Ok(await svc.AcceptOfferAsync(id, request, ct));
+        });
+        g.MapPost("/offers/{id:guid}/issue", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.IssueOfferAsync(id, ct));
     }
 
     public static void RegisterRelations(WebApplication app)
@@ -498,6 +509,11 @@ public static class Routes
         {
             var request = await ReadBodyAsync<RelationsCaseCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateCaseAsync(request, ct));
+        });
+        g.MapPatch("/cases/{id:guid}", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsCaseUpdate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateCaseAsync(id, request, ct));
         });
     }
 

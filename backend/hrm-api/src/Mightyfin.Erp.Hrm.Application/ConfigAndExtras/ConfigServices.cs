@@ -15,21 +15,33 @@ public interface IRecruitmentService
 {
     Task<Paged<VacancyDto>> ListVacanciesAsync(string? status, CancellationToken ct);
     Task<VacancyDto> CreateVacancyAsync(VacancyCreate request, CancellationToken ct);
+    Task<VacancyDto> PublishVacancyAsync(Guid vacancyId, CancellationToken ct);
+    Task<VacancyDto> CloseVacancyAsync(Guid vacancyId, CancellationToken ct);
     Task<Paged<CandidateDto>> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct);
     Task<CandidateDto> CreateCandidateAsync(CandidateCreate request, CancellationToken ct);
     Task<CandidateDto> AdvanceCandidateAsync(Guid candidateId, CandidateAdvanceRequest request, CancellationToken ct);
     Task<OfferDto> CreateOfferAsync(OfferCreate request, CancellationToken ct);
+    Task<OfferDto> IssueOfferAsync(Guid offerId, CancellationToken ct);
+    Task<OfferAcceptResultDto> AcceptOfferAsync(Guid offerId, OfferAcceptRequest request, CancellationToken ct);
 }
 public sealed record VacancyDto(Guid Id, string JobTitle, string? Grade, string Status, string OrgUnitName, DateTimeOffset CreatedAt);
 public sealed record CandidateDto(Guid Id, Guid VacancyId, string FullName, string? Email, string? Phone, string Stage, string? Notes, DateTimeOffset CreatedAt);
 public sealed record OfferDto(Guid Id, Guid CandidateId, decimal BaseSalary, string ContractType, string Status, DateTimeOffset CreatedAt);
+/// <summary>M7: result of accepting an offer — the candidate is converted into a
+/// preboarding worker record with an initial assignment (ties to M2 onboarding).</summary>
+public sealed record OfferAcceptResultDto(Guid OfferId, Guid WorkerId, string EmployeeNo, Guid AssignmentId, string Status);
+/// <summary>M7: accept an issued offer and convert the candidate to a worker.</summary>
+public sealed record OfferAcceptRequest(string? EmployeeNo = null, string? StartDate = null, Guid? LocationId = null, Guid? LegalEntityId = null);
+public sealed record CandidateStageLogEntry(string Stage, string? Score, string? Notes, DateTimeOffset ChangedAt);
 
 /// <summary>Employee relations cases (M7): restricted-access case records.</summary>
 public interface IRelationsService
 {
     Task<Paged<RelationsCaseDto>> ListCasesAsync(string? category, CancellationToken ct);
     Task<RelationsCaseDto> CreateCaseAsync(RelationsCaseCreate request, CancellationToken ct);
+    Task<RelationsCaseDto> UpdateCaseAsync(Guid caseId, RelationsCaseUpdate request, CancellationToken ct);
 }
+public sealed record RelationsCaseUpdate(string? Status, string? Severity, string? Summary, string? Description, string? Outcome = null);
 public sealed record RelationsCaseDto(Guid Id, Guid? SubjectWorkerId, string CaseType, string Category, string Severity, string Summary, string Status, DateTimeOffset CreatedAt);
 
 /// <summary>Documents & reports (M8).</summary>
@@ -81,16 +93,23 @@ public interface IRecruitmentRepository
 {
     Task<(List<Vacancy> Items, int Total)> ListVacanciesAsync(string? status, CancellationToken ct);
     Task<Vacancy> CreateVacancyAsync(Vacancy vacancy, CancellationToken ct);
+    Task<Vacancy?> GetVacancyAsync(Guid id, CancellationToken ct);
+    Task<Vacancy> UpdateVacancyAsync(Vacancy vacancy, CancellationToken ct);
     Task<(List<Candidate> Items, int Total)> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct);
     Task<Candidate> CreateCandidateAsync(Candidate candidate, CancellationToken ct);
     Task<Candidate?> GetCandidateAsync(Guid id, CancellationToken ct);
     Task<Offer> CreateOfferAsync(Offer offer, CancellationToken ct);
+    Task<Offer?> GetOfferAsync(Guid id, CancellationToken ct);
+    Task<Offer> UpdateOfferAsync(Offer offer, CancellationToken ct);
+    Task<int> CountCandidatesForVacancyAsync(Guid vacancyId, CancellationToken ct);
 }
 
 public interface IRelationsRepository
 {
     Task<(List<RelationsCase> Items, int Total)> ListCasesAsync(string? category, CancellationToken ct);
     Task<RelationsCase> CreateCaseAsync(RelationsCase caseRecord, CancellationToken ct);
+    Task<RelationsCase?> GetCaseAsync(Guid id, CancellationToken ct);
+    Task<RelationsCase> UpdateCaseAsync(RelationsCase caseRecord, CancellationToken ct);
 }
 
 public interface IDocumentsRepository
@@ -122,6 +141,8 @@ public sealed class Candidate : Entity
     public string? Source { get; set; }
     public string? Notes { get; set; }
     public string Stage { get; set; } = "screening"; // screening | shortlisted | interviewed | offered | hired | rejected
+    public string? StageScore { get; set; }          // interview scorecard score
+    public DateTimeOffset? StageChangedAt { get; set; }
     public ICollection<Offer> Offers { get; set; } = new List<Offer>();
 }
 
@@ -149,4 +170,5 @@ public sealed class RelationsCase : Entity
     public string Description { get; set; } = null!;
     public string Status { get; set; } = "open";        // open | in-progress | resolved | closed
     public string Classification { get; set; } = "restricted";
+    public string? Outcome { get; set; }               // filled on resolved/closed
 }

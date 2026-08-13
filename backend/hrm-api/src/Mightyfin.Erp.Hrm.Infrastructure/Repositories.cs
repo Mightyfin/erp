@@ -847,7 +847,15 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
     }
     public async Task<Vacancy> CreateVacancyAsync(Vacancy vacancy, CancellationToken ct)
     {
-        db.Vacancies.Add(vacancy);
+        db.Set<Vacancy>().Add(vacancy);
+        await db.SaveChangesAsync(ct);
+        return vacancy;
+    }
+    public async Task<Vacancy?> GetVacancyAsync(Guid id, CancellationToken ct)
+        => await db.Vacancies.Include(v => v.OrgUnit).FirstOrDefaultAsync(v => v.Id == id, ct);
+    public async Task<Vacancy> UpdateVacancyAsync(Vacancy vacancy, CancellationToken ct)
+    {
+        db.Set<Vacancy>().Update(vacancy);
         await db.SaveChangesAsync(ct);
         return vacancy;
     }
@@ -860,7 +868,13 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
     }
     public async Task<Candidate> CreateCandidateAsync(Candidate candidate, CancellationToken ct)
     {
-        db.Candidates.Update(candidate);
+        // Candidates are either freshly created or re-saved after stage advances
+        // (tracked by GetCandidateAsync navigation load), so use the entry state.
+        var entry = db.Entry(candidate);
+        if (entry.State == Microsoft.EntityFrameworkCore.EntityState.Detached)
+            db.Set<Candidate>().Add(candidate);
+        else
+            db.Set<Candidate>().Update(candidate);
         await db.SaveChangesAsync(ct);
         return candidate;
     }
@@ -868,10 +882,20 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
         => await db.Candidates.FirstOrDefaultAsync(c => c.Id == id, ct);
     public async Task<Offer> CreateOfferAsync(Offer offer, CancellationToken ct)
     {
-        db.Offers.Add(offer);
+        db.Set<Offer>().Add(offer);
         await db.SaveChangesAsync(ct);
         return offer;
     }
+    public async Task<Offer?> GetOfferAsync(Guid id, CancellationToken ct)
+        => await db.Offers.FirstOrDefaultAsync(o => o.Id == id, ct);
+    public async Task<Offer> UpdateOfferAsync(Offer offer, CancellationToken ct)
+    {
+        db.Set<Offer>().Update(offer);
+        await db.SaveChangesAsync(ct);
+        return offer;
+    }
+    public async Task<int> CountCandidatesForVacancyAsync(Guid vacancyId, CancellationToken ct)
+        => await db.Candidates.CountAsync(c => c.VacancyId == vacancyId, ct);
 }
 
 public sealed class RelationsRepository(HrmDbContext db) : IRelationsRepository
@@ -885,7 +909,15 @@ public sealed class RelationsRepository(HrmDbContext db) : IRelationsRepository
     }
     public async Task<RelationsCase> CreateCaseAsync(RelationsCase caseRecord, CancellationToken ct)
     {
-        db.RelationsCases.Add(caseRecord);
+        db.Set<RelationsCase>().Add(caseRecord);
+        await db.SaveChangesAsync(ct);
+        return caseRecord;
+    }
+    public async Task<RelationsCase?> GetCaseAsync(Guid id, CancellationToken ct)
+        => await db.RelationsCases.FirstOrDefaultAsync(c => c.Id == id, ct);
+    public async Task<RelationsCase> UpdateCaseAsync(RelationsCase caseRecord, CancellationToken ct)
+    {
+        db.Set<RelationsCase>().Update(caseRecord);
         await db.SaveChangesAsync(ct);
         return caseRecord;
     }

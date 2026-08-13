@@ -180,10 +180,10 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
 
     private static string GenerateAccessCode()
     {
-        var bytes = RandomNumberGenerator.GetBytes(8);
+        var bytes = RandomNumberGenerator.GetBytes(10);
         var chars = new StringBuilder();
         foreach (var b in bytes) chars.Append("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[(int)b % 32]);
-        return chars.ToString(0, 10);
+        return chars.ToString();
     }
 
     private static HrRequestDto Map(HrRequest r) => new(
