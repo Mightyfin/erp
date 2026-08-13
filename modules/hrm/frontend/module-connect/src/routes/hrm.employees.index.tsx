@@ -11,6 +11,7 @@ import type { ColumnDef } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { useMock } from "@/platform/use-mock";
+import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/employees/")({
   head: () => ({
@@ -31,8 +32,12 @@ const views = [
   { id: "prehire", label: "Pre-hire" },
 ];
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
 function EmployeesPage() {
-  const state = useMock(() => api.employees());
+  const state = USE_REAL
+    ? useApi(() => realApi.employees().then((page) => adaptWorkers(page.items)))
+    : useMock(() => api.employees());
   const [view, setView] = useState("all");
 
   const columns: ColumnDef<Employee>[] = [

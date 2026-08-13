@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { employees } from "@/mock/data";
 import { documentsApi } from "@/mock/documents";
 import type { Classification, EmployeeDocument } from "@/mock/documents";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
@@ -32,7 +33,49 @@ export const Route = createFileRoute("/hrm/people/documents")({
   component: DocumentsPage,
 });
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+/** Known demo worker so the documents page can show the real file. */
+const REAL_WORKER_ID = "019ffa91-5917-7617-96fb-8f3d11849049";
+const REAL_WORKER_NAME = "Smoke M3Worker";
+
 const name = (id: string) => employees.find((e) => e.id === id)?.fullName ?? "Unknown employee";
+
+/** Maps backend worker-document DTOs (`{ items, ... }` under `/hrm/documents/worker/{id}`)
+ *  to the UI `EmployeeDocument` shape used by the rest of the page. */
+function adaptDocuments(raw: unknown): EmployeeDocument[] {
+  const items = (Array.isArray(raw)
+    ? raw
+    : (raw as { items?: unknown[] })?.items ?? []) as Array<{
+    id?: string;
+    workerId?: string;
+    category?: string;
+    title?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+    classification?: string;
+    expiryDate?: string | null;
+  }>;
+  return items.map((d, i) => ({
+    id: d.id ?? `doc-${i}`,
+    employeeId: REAL_WORKER_ID,
+    name: d.title || d.fileName || "Untitled document",
+    category: d.category ?? "General",
+    classification: ((d.classification === "restricted"
+      ? "Restricted"
+      : d.classification === "confidential"
+        ? "Confidential"
+        : "General") as Classification),
+    visibleTo: "HR operations and the employee",
+    version: 1,
+    issued: "",
+    expires: d.expiryDate && d.expiryDate !== "0001-01-01T00:00:00+00:00" ? d.expiryDate.slice(0, 10) : undefined,
+    signature: "Not required",
+    retention: "Retained per schedule",
+    sizeKb: Math.round((d.sizeBytes ?? 0) / 1024),
+  }));
+}
 
 const TODAY = new Date("2026-07-29");
 const daysUntil = (iso: string) =>
@@ -92,7 +135,11 @@ function ExpiryCell({ d }: { d: EmployeeDocument }) {
 }
 
 function DocumentsPage() {
-  const docs = useMock(() => documentsApi.all());
+  const mockDocs = useMock(() => documentsApi.all());
+  const realDocs = useApi(() =>
+    realApi.workerDocuments(REAL_WORKER_ID).then((raw) => adaptDocuments(raw)),
+  );
+  const docs = USE_REAL ? realDocs : mockDocs;
   const templates = useMock(() => documentsApi.templates());
   const [view, setView] = useState("all");
 
@@ -176,7 +223,7 @@ function DocumentsPage() {
                 activeView={view}
                 onViewChange={setView}
                 searchPlaceholder="Search document, employee or category"
-                searchFields={(d) => `${d.id} ${d.name} ${d.category} ${name(d.employeeId)}`}
+                searchFields={(d) => `${d.id} ${d.name} ${d.category} ${USE_REAL && d.employeeId === REAL_WORKER_ID ? REAL_WORKER_NAME : name(d.employeeId)}`}
                 filters={[
                   {
                     id: "classification",
@@ -193,8 +240,7 @@ function DocumentsPage() {
                 ]}
                 bulkActions={[{ label: "Export selection (audited)", onSelect: () => undefined }]}
                 columns={[
-                  {
-                    id: "name",
+                                    { id: "name",
                     header: "Document",
                     cell: (d) => (
                       <span className="block min-w-0 max-w-72">
@@ -206,7 +252,7 @@ function DocumentsPage() {
                       </span>
                     ),
                   },
-                  { id: "employee", header: "Employee", cell: (d) => <span className="block max-w-48 truncate">{name(d.employeeId)}</span> },
+                  { id: "employee", header: "Employee", cell: (d) => <span className="block max-w-48 truncate">{USE_REAL && d.employeeId === REAL_WORKER_ID ? REAL_WORKER_NAME : name(d.employeeId)}</span> },
                   { id: "category", header: "Category", cell: (d) => d.category },
                   { id: "classification", header: "Classification", cell: (d) => <ClassificationTag value={d.classification} /> },
                   { id: "signature", header: "Signature", cell: (d) => <SignatureCell d={d} /> },
@@ -225,9 +271,22 @@ function DocumentsPage() {
                           variant="ghost"
                           size="sm"
                           className="h-7 gap-1.5 px-2 text-xs"
-                          onClick={() =>
-                            feedback.note("Document preview is not available in this build.")
-                          }
+                          onClick={async () => {
+                            if (USE_REAL) {
+                              try {
+                                const { url, fileName } = await realApi.downloadDocument(d.id, d.name);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = fileName;
+                                a.click();
+                                return;
+                              } catch (err) {
+                                feedback.blocked("Could not open the document.", String(err));
+                                return;
+                              }
+                            }
+                            feedback.note("Document preview is not available in this build.");
+                          }}
                         >
                           <Download className="size-3.5" aria-hidden />
                           Open
