@@ -313,6 +313,13 @@ public static class Routes
             => await svc.ListTaxSlabsAsync(taxYear, ct));
         g.MapGet("/contribution-rules", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListContributionRulesAsync(ct));
+        g.MapGet("/profiles", async ([FromQuery] Guid? workerId, IPayrollService svc, CancellationToken ct)
+            => await svc.ListProfilesAsync(workerId, ct));
+        g.MapPost("/profiles/{workerId:guid}", async (Guid workerId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkerPayrollProfileCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpsertProfileAsync(workerId, request, ct));
+        });
         g.MapPost("/runs", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -320,6 +327,8 @@ public static class Routes
         });
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
+        g.MapPost("/runs/{id:guid}/lock", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            await svc.LockRunAsync(id, ct));
         g.MapPost("/runs/{id:guid}/calculate", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             await svc.CalculateRunAsync(id, ct));
         g.MapGet("/runs/{id:guid}/lines", async (Guid id, IPayrollService svc, CancellationToken ct)

@@ -107,6 +107,11 @@ public sealed record ProtectedDisclosureStatusResponse(string CaseReference, str
 // ===================== Payroll =====================
 
 public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
+public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
+    List<WorkerComponentValueCreate> Values);
+public sealed record WorkerComponentValueCreate(Guid ComponentId, string? ComponentCode = null, decimal Amount = 0);
+public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? WorkerName, Guid PayGroupId, string? PayGroupName, string EffectiveFrom, List<WorkerComponentValueDto> Values);
+public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentCode, string ComponentName, decimal Amount);
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,
     int ExceptionCount, string? CalcVersion, DateTimeOffset CreatedAt);

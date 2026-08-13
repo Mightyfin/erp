@@ -26,9 +26,12 @@ public sealed class WorkerPrincipal
             c.FirstOrDefault(x => x.Type == type)?.Value ?? "";
         var roles = claims.Where(c => c.Type is "realm_access.roles" or ClaimTypes.Role or "roles")
                           .Select(c => c.Value).ToArray();
+        var isDeveloperFallback = string.Equals(First(claims, ClaimTypes.NameIdentifier), "dev-user-001", StringComparison.Ordinal)
+            && string.Equals(First(claims, "preferred_username"), "developer", StringComparison.Ordinal);
         return new WorkerPrincipal
         {
             SubjectId = First(claims, "sub"),
+            IsDeveloperFallback = isDeveloperFallback,
             TenantId = First(claims, "tenant"),
             Environment = First(claims, "environment") switch { "" => "local", var v => v },
             Roles = roles,

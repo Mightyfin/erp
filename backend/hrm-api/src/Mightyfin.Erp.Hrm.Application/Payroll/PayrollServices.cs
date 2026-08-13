@@ -1,5 +1,8 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Mightyfin.Erp.Hrm.Domain.Entities;
+
+[assembly: InternalsVisibleTo("Mightyfin.Erp.Hrm.Tests")]
 
 namespace Mightyfin.Erp.Hrm.Application.Payroll;
 
@@ -15,9 +18,14 @@ public interface IPayrollService
     Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct);
 
+    // M5 setup: worker payroll profiles (basic salary + allowances per worker)
+    Task<List<WorkerPayrollProfileDto>> ListProfilesAsync(Guid? workerId, CancellationToken ct);
+    Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
+
     // Run lifecycle
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct);
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
+    Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct);
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct);
@@ -87,11 +95,78 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     /// per enrolled worker profile, taxes via progressive slab lookup, caps
     /// statutory contributions at ceilings, and records explainable line
     /// components with a pinned rule-version snapshot.</summary>
+    public async Task<List<WorkerPayrollProfileDto>> ListProfilesAsync(Guid? workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var profiles = await repo.ListProfilesAsync(workerId, ct);
+        return profiles.Select(MapProfile).ToList();
+    }
+
+    public async Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var worker = await repo.GetWorkerAsync(workerId, ct) ?? throw new DomainException("worker-not-found", $"Worker {workerId} does not exist.");
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct)
+            ?? throw new DomainException("pay-group-not-found", "Pay group does not exist.");
+        if (!DateOnly.TryParse(request.EffectiveFrom, out var effective))
+            throw new DomainException("bad-date", "EffectiveFrom must be a valid date (yyyy-MM-dd).");
+        var allComponents = await repo.ListAllComponentsAsync(ct);
+        var normalizedValues = new List<WorkerComponentValueCreate>();
+        foreach (var v in request.Values)
+        {
+            var comp = await repo.GetComponentByIdAsync(v.ComponentId, ct);
+            if (comp is null && !string.IsNullOrWhiteSpace(v.ComponentCode))
+                comp = allComponents.FirstOrDefault(c => c.Code.Equals(v.ComponentCode, StringComparison.OrdinalIgnoreCase));
+            if (comp is null)
+                throw new DomainException("component-not-found", $"Component {v.ComponentCode ?? v.ComponentId.ToString()} does not exist.");
+            normalizedValues.Add(new WorkerComponentValueCreate(comp.Id, comp.Code, v.Amount));
+        }
+        request = request with { Values = normalizedValues };
+
+        var defaultStructure = await repo.FindStructureAsync("ZMW-STANDARD", ct);
+
+        var existing = await repo.FindOpenProfileAsync(workerId, ct);
+        WorkerPayrollProfile profile;
+        if (existing is null)
+        {
+            profile = new WorkerPayrollProfile
+            {
+                WorkerId = workerId, PayGroupId = request.PayGroupId, EffectiveFrom = effective,
+                StructureId = defaultStructure?.Id ?? Guid.Empty,
+            };
+            await repo.CreateProfileAsync(profile, ct);
+        }
+        else
+        {
+            existing.PayGroupId = request.PayGroupId;
+            profile = existing;
+        }
+        await repo.DeleteProfileValuesAsync(profile.Id, ct);
+        foreach (var v in request.Values)
+            profile.ComponentValues.Add(new WorkerComponentValue { ComponentId = v.ComponentId, Amount = v.Amount });
+        await repo.UpdateProfileAsync(profile, ct);
+        return MapProfile(await repo.FindOpenProfileAsync(workerId, ct) ?? profile);
+    }
+
+    /// <summary>Locks the run for editing (freeze inputs before calculation).
+    /// Segregation of duties: only draft runs can be locked; calculate then
+    /// proceeds from locked.</summary>
+    public async Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "draft")
+            throw new DomainException("run-not-lockable", $"Run is in status {run.Status}; only draft runs can be locked.");
+        run.Status = "locked";
+        await repo.UpdateRunAsync(run, ct);
+        return MapRun(run);
+    }
+
     public async Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct)
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
-        if (run.Status is not "draft" and not "calculated")
+        if (run.Status is not "locked" and not "calculated")
             throw new DomainException("run-not-calculation-ready", $"Run is in status {run.Status} and cannot be calculated.");
         run.Status = "calculating";
         await repo.UpdateRunAsync(run, ct);
@@ -199,8 +274,19 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         p.YtdGross, p.YtdTax, p.YtdNet, p.Status, p.DocumentUrl, p.ReleasedAt, p.SupersedesId);
 
     private static PayrollRunDto MapRun(PayrollRun r) => new(
-        r.Id, r.Status, "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
+        r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
         r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt);
+
+    private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
+        p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
+        p.ComponentValues.Select(v => new WorkerComponentValueDto(v.ComponentId,
+            v.Component?.Code ?? "", v.Component?.Name ?? "", v.Amount)).ToList());
+
+    private async Task<string> GetComponentCode(Guid componentId, CancellationToken ct)
+    {
+        var c = await repo.GetComponentByIdAsync(componentId, ct);
+        return c?.Code ?? "";
+    }
 }
 
 /// <summary>In-memory component evaluator for one worker in one run (unit-testable).</summary>
@@ -227,14 +313,21 @@ internal sealed class CalcContext
     {
         decimal amount = comp.CalculationBasis switch
         {
-            "fixed" => comp.FixedAmount ?? 0,
+            // fixed basis: structure default first, then worker profile override
+            "fixed" => comp.FixedAmount ?? ProfileAmount(comp.Id),
             "percent-of" => Resolve(comp.BasisComponentCode ?? "") * (comp.Rate ?? 0) / 100m,
             "slab" => ApplySlabs(Resolve(comp.BasisComponentCode ?? "basic")),
             _ => 0,
         };
 
-        // statutory rules cap/override (NAPSA ceiling example: min(pay*rate, ceiling))
-        var rule = _rules.FirstOrDefault(r => r.TiedComponentCode == comp.Code && r.IsActive);
+        // statutory rules override (NAPSA ceiling example: min(pay*rate, ceiling)).
+        // A rule is tied to an EARNING component (TiedComponentCode) and applies to
+        // the deduction/tax/contribution component whose BasisComponentCode matches it.
+        // Rule.Code must match the statutory component's code; TiedComponentCode
+        // identifies the earning basis the percentage is taken from.
+        var rule = comp.ComponentType != "earning"
+            ? _rules.FirstOrDefault(r => r.Code == comp.Code && r.IsActive)
+            : null;
         if (rule is not null)
         {
             var basis = Resolve(rule.TiedComponentCode ?? "");
@@ -255,35 +348,51 @@ internal sealed class CalcContext
     private decimal Resolve(string code) =>
         code switch
         {
-            "basic" or "gross" => Gross,
-            "taxable" => Gross, // simplified: full gross taxable; leave basis config extensible
+            "gross" or "taxable" => Gross, // 'gross'/'taxable' are engine keywords
             _ => _profile.ComponentValues.FirstOrDefault(v => v.Component?.Code == code)?.Amount ?? _values.GetValueOrDefault(code, 0),
         };
 
+    private decimal ProfileAmount(Guid componentId) =>
+        _profile.ComponentValues.FirstOrDefault(v => v.ComponentId == componentId)?.Amount ?? 0;
+
+    private decimal _lastTaxable;
+
     private decimal ApplySlabs(decimal taxable)
     {
+        _lastTaxable = taxable;
         decimal tax = 0;
         foreach (var slab in _slabs.Where(s => s.IsActive).OrderBy(s => s.Sequence))
         {
             if (taxable <= slab.MinAmount) break;
             var upper = slab.MaxAmount ?? taxable;
-            tax += Math.Min(taxable, upper) - slab.MinAmount * 0m > 0
-                ? (Math.Min(taxable, upper) - slab.MinAmount) * slab.Rate / 100m : 0;
+            var band = Math.Min(taxable, upper) - slab.MinAmount;
+            if (band > 0) tax += band * slab.Rate / 100m;
         }
         return tax;
     }
 
-    private static string BuildExplanation(SalaryComponent comp, decimal amount) =>
+    private string BuildExplanation(SalaryComponent comp, decimal amount) =>
         comp.CalculationBasis switch
         {
             "percent-of" => $"{comp.Rate}% of {comp.BasisComponentCode ?? "basis"}",
-            "slab" => "Progressive slab calculation per active tax year",
+            "slab" => $"Progressive PAYE slab calculation on taxable income K{_lastTaxable:N2} (ZRA bands)",
             _ => comp.Ceiling.HasValue ? $"Fixed/capped at ceiling {comp.Ceiling}" : "Fixed amount",
         };
 }
 
 public interface IPayrollRepository
 {
+    Task<List<PayGroup>> ListPayGroupsAllAsync(CancellationToken ct);
+    Task<PayGroup?> GetPayGroupAsync(Guid id, CancellationToken ct);
+    Task<List<SalaryComponent>> ListAllComponentsAsync(CancellationToken ct);
+    Task<SalaryComponent?> GetComponentByIdAsync(Guid id, CancellationToken ct);
+    Task<List<WorkerPayrollProfile>> ListProfilesAsync(Guid? workerId, CancellationToken ct);
+    Task<WorkerPayrollProfile?> FindOpenProfileAsync(Guid workerId, CancellationToken ct);
+    Task<WorkerPayrollProfile> CreateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct);
+    Task<WorkerPayrollProfile> UpdateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct);
+    Task DeleteProfileValuesAsync(Guid profileId, CancellationToken ct);
+    Task<SalaryStructure?> FindStructureAsync(string code, CancellationToken ct);
+    Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct);
     Task<List<SalaryComponent>> ListComponentsAsync(string? type, CancellationToken ct);
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);

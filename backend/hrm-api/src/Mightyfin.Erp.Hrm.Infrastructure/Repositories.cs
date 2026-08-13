@@ -499,9 +499,65 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         if (!string.IsNullOrWhiteSpace(type)) q = q.Where(c => c.ComponentType == type);
         return await q.Where(c => c.IsActive).OrderBy(c => c.Priority).ToListAsync(ct);
     }
+    public async Task<SalaryStructure?> FindStructureAsync(string code, CancellationToken ct) =>
+        await db.SalaryStructures.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Code == code && s.IsActive, ct);
+
+    public async Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.Id == id, ct);
 
     public async Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct)
         => await db.PayGroups.ToListAsync(ct);
+    public async Task<List<PayGroup>> ListPayGroupsAllAsync(CancellationToken ct)
+        => await db.PayGroups.ToListAsync(ct);
+    public async Task<PayGroup?> GetPayGroupAsync(Guid id, CancellationToken ct)
+        => await db.PayGroups.FirstOrDefaultAsync(g => g.Id == id, ct);
+    public async Task<List<SalaryComponent>> ListAllComponentsAsync(CancellationToken ct)
+        => await db.SalaryComponents.Where(c => c.IsActive).OrderBy(c => c.Priority).ToListAsync(ct);
+    public async Task<SalaryComponent?> GetComponentByIdAsync(Guid id, CancellationToken ct)
+        => await db.SalaryComponents.FirstOrDefaultAsync(c => c.Id == id, ct);
+    public async Task<List<WorkerPayrollProfile>> ListProfilesAsync(Guid? workerId, CancellationToken ct)
+    {
+        var q = db.WorkerPayrollProfiles
+            .Include(p => p.Worker).Include(p => p.PayGroup)
+            .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
+            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime));
+        if (workerId.HasValue) q = q.Where(p => p.WorkerId == workerId.Value);
+        return (await q.OrderByDescending(p => p.EffectiveFrom).ToListAsync(ct))
+            .GroupBy(p => p.WorkerId).Select(g => g.First()).ToList();
+    }
+    public async Task<WorkerPayrollProfile?> FindOpenProfileAsync(Guid workerId, CancellationToken ct)
+        => await db.WorkerPayrollProfiles
+            .Include(p => p.Worker).Include(p => p.PayGroup)
+            .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
+            .Where(p => p.WorkerId == workerId && (!p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime)))
+            .OrderByDescending(p => p.EffectiveFrom).FirstOrDefaultAsync(ct);
+    public async Task<WorkerPayrollProfile> CreateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct)
+    {
+        db.WorkerPayrollProfiles.Add(profile);
+        await db.SaveChangesAsync(ct);
+        return profile;
+    }
+    public async Task<WorkerPayrollProfile> UpdateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct)
+    {
+        // EF Core 10 state-propagation: re-attach detached component values as Added
+        foreach (var v in profile.ComponentValues)
+            if (db.Entry(v).State == EntityState.Detached)
+            {
+                v.ProfileId = profile.Id;
+                db.WorkerComponentValues.Add(v);
+            }
+        if (db.Entry(profile).State == EntityState.Detached)
+            db.WorkerPayrollProfiles.Update(profile);
+        await db.SaveChangesAsync(ct);
+        return profile;
+    }
+    public async Task DeleteProfileValuesAsync(Guid profileId, CancellationToken ct)
+    {
+        var values = await db.WorkerComponentValues.Where(v => v.ProfileId == profileId).ToListAsync(ct);
+        db.WorkerComponentValues.RemoveRange(values);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct)
         => await db.PayPeriods.Where(p => p.PayGroupId == payGroupId).OrderByDescending(p => p.StartDate).ToListAsync(ct);
