@@ -55,6 +55,7 @@ builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
 builder.Services.AddScoped<IConfigRepository, ConfigRepository>();
 builder.Services.AddScoped<IConfigService, ConfigServiceImpl>();
+builder.Services.AddScoped<IConfigAdminService, ConfigAdminServiceImpl>();
 builder.Services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
 builder.Services.AddScoped<IRecruitmentService, RecruitmentServiceImpl>();
 builder.Services.AddScoped<IRelationsRepository, RelationsRepository>();
@@ -111,6 +112,8 @@ app.Use(async (ctx, next) =>
             "unauthorized" => StatusCodes.Status401Unauthorized,
             "not-found" or "worker-not-found" or "payroll-run-not-found" or "candidate-not-found" or "pay-period-not-found" or "letter-not-found" or "hr-request-not-found" => StatusCodes.Status404NotFound,
             "conflict" or "employee-no-exists" or "run-already-exists" or "movement-not-allowed" => StatusCodes.Status409Conflict,
+            "legal-entity-code-taken" or "location-code-taken" or "org-unit-code-taken" or "leave-type-code-taken"
+                or "unit-close-backdated" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status422UnprocessableEntity,
         };
         ctx.Response.StatusCode = code;

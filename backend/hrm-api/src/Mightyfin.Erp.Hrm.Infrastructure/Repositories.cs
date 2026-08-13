@@ -432,6 +432,44 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
                 && (string.IsNullOrWhiteSpace(periodFrom) || l.Run.PayPeriod.StartDate >= DateOnly.Parse(periodFrom))
                 && (string.IsNullOrWhiteSpace(periodTo) || l.Run.PayPeriod.EndDate <= DateOnly.Parse(periodTo)))
             .ToListAsync(ct);
+
+    // ---- M1 CRUD ----
+    public async Task<LegalEntity?> GetLegalEntityAsync(Guid id, CancellationToken ct) => await db.LegalEntities.FirstOrDefaultAsync(e => e.Id == id, ct);
+    public async Task<LegalEntity> CreateLegalEntityAsync(LegalEntity entity, CancellationToken ct)
+    { db.LegalEntities.Add(entity); await db.SaveChangesAsync(ct); return entity; }
+    public async Task<LegalEntity> UpdateLegalEntityAsync(LegalEntity entity, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return entity; }
+    public async Task<WorkLocation?> GetLocationAsync(Guid id, CancellationToken ct) => await db.WorkLocations.FirstOrDefaultAsync(l => l.Id == id, ct);
+    public async Task<WorkLocation> CreateLocationAsync(WorkLocation location, CancellationToken ct)
+    { db.WorkLocations.Add(location); await db.SaveChangesAsync(ct); return location; }
+    public async Task<WorkLocation> UpdateLocationAsync(WorkLocation location, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return location; }
+    public async Task<OrgUnit?> GetOrgUnitAsync(Guid id, CancellationToken ct) => await db.OrgUnits.FirstOrDefaultAsync(u => u.Id == id, ct);
+    public async Task<OrgUnit> CreateOrgUnitAsync(OrgUnit unit, CancellationToken ct)
+    { db.OrgUnits.Add(unit); await db.SaveChangesAsync(ct); return unit; }
+    public async Task<OrgUnit> UpdateOrgUnitAsync(OrgUnit unit, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return unit; }
+    public async Task<WorkCalendar> CreateCalendarAsync(WorkCalendar calendar, CancellationToken ct)
+    { db.WorkCalendars.Add(calendar); await db.SaveChangesAsync(ct); return calendar; }
+    public async Task<WorkCalendar> UpdateCalendarAsync(WorkCalendar calendar, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return calendar; }
+    public async Task<PublicHoliday> CreateHolidayAsync(PublicHoliday holiday, CancellationToken ct)
+    { db.PublicHolidays.Add(holiday); await db.SaveChangesAsync(ct); return holiday; }
+    public async Task<PublicHoliday?> GetHolidayAsync(Guid id, CancellationToken ct) => await db.PublicHolidays.FirstOrDefaultAsync(h => h.Id == id, ct);
+    public async Task<PublicHoliday> UpdateHolidayAsync(PublicHoliday holiday, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return holiday; }
+    public async Task DeleteHolidayAsync(Guid id, CancellationToken ct)
+    {
+        var holiday = await db.PublicHolidays.FirstOrDefaultAsync(h => h.Id == id, ct);
+        if (holiday is not null) { db.PublicHolidays.Remove(holiday); await db.SaveChangesAsync(ct); }
+    }
+    public async Task<LeaveType?> GetLeaveTypeAsync(Guid id, CancellationToken ct) => await db.LeaveTypes.FirstOrDefaultAsync(t => t.Id == id, ct);
+    public async Task<LeaveType> CreateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct)
+    { db.LeaveTypes.Add(leaveType); await db.SaveChangesAsync(ct); return leaveType; }
+    public async Task<LeaveType> UpdateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return leaveType; }
+    public async Task<CapabilityConfig> UpdateCapabilityAsync(CapabilityConfig capability, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return capability; }
 }
 
 public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentRepository

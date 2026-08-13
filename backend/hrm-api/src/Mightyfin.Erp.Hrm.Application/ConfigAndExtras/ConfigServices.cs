@@ -54,6 +54,27 @@ public interface IConfigRepository
     Task<List<Worker>> ListAllWorkersAsync(string? status, CancellationToken ct);
     Task<List<LeaveRequest>> ListLeaveRequestsAllAsync(string? status, CancellationToken ct);
     Task<List<PayrollRunLine>> ListRunLinesAllAsync(string periodFrom, string periodTo, CancellationToken ct);
+
+    // M1 CRUD contracts
+    Task<LegalEntity?> GetLegalEntityAsync(Guid id, CancellationToken ct);
+    Task<LegalEntity> CreateLegalEntityAsync(LegalEntity entity, CancellationToken ct);
+    Task<LegalEntity> UpdateLegalEntityAsync(LegalEntity entity, CancellationToken ct);
+    Task<WorkLocation?> GetLocationAsync(Guid id, CancellationToken ct);
+    Task<WorkLocation> CreateLocationAsync(WorkLocation location, CancellationToken ct);
+    Task<WorkLocation> UpdateLocationAsync(WorkLocation location, CancellationToken ct);
+    Task<OrgUnit?> GetOrgUnitAsync(Guid id, CancellationToken ct);
+    Task<OrgUnit> CreateOrgUnitAsync(OrgUnit unit, CancellationToken ct);
+    Task<OrgUnit> UpdateOrgUnitAsync(OrgUnit unit, CancellationToken ct);
+    Task<WorkCalendar> CreateCalendarAsync(WorkCalendar calendar, CancellationToken ct);
+    Task<WorkCalendar> UpdateCalendarAsync(WorkCalendar calendar, CancellationToken ct);
+    Task<PublicHoliday> CreateHolidayAsync(PublicHoliday holiday, CancellationToken ct);
+    Task<PublicHoliday?> GetHolidayAsync(Guid id, CancellationToken ct);
+    Task<PublicHoliday> UpdateHolidayAsync(PublicHoliday holiday, CancellationToken ct);
+    Task DeleteHolidayAsync(Guid id, CancellationToken ct);
+    Task<LeaveType?> GetLeaveTypeAsync(Guid id, CancellationToken ct);
+    Task<LeaveType> CreateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct);
+    Task<LeaveType> UpdateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct);
+    Task<CapabilityConfig> UpdateCapabilityAsync(CapabilityConfig capability, CancellationToken ct);
 }
 
 public interface IRecruitmentRepository

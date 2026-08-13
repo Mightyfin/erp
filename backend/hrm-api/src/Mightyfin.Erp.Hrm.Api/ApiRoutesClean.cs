@@ -210,6 +210,99 @@ public static class Routes
         g.MapGet("/config", async (IConfigService svc, CancellationToken ct) => await svc.GetConfigAsync(ct));
         g.MapGet("/leave-types", async ([FromQuery] bool includeInactive, IConfigService svc, CancellationToken ct) =>
             await svc.ListLeaveTypesAsync(includeInactive, ct));
+
+        // ---------- M1: organization configuration CRUD ----------
+        g.MapGet("/legal-entities", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListLegalEntitiesAsync(ct));
+        g.MapGet("/legal-entities/{id:guid}", async (Guid id, IConfigAdminService svc, CancellationToken ct) => await svc.GetLegalEntityAsync(id, ct));
+        g.MapPost("/legal-entities", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LegalEntityCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created($"/api/hrm/admin/legal-entities/{request.Code}", await svc.CreateLegalEntityAsync(request, ct));
+        });
+        g.MapPatch("/legal-entities/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LegalEntityUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateLegalEntityAsync(id, request, ct));
+        });
+
+        g.MapGet("/locations", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListLocationsAsync(ct));
+        g.MapPost("/locations", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkLocationCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateLocationAsync(request, ct));
+        });
+        g.MapPatch("/locations/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkLocationUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateLocationAsync(id, request, ct));
+        });
+
+        g.MapGet("/org-units", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListOrgUnitsAsync(ct));
+        g.MapGet("/org-units/tree", async (IConfigAdminService svc, CancellationToken ct) => await svc.GetOrgUnitTreeAsync(ct));
+        g.MapPost("/org-units", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OrgUnitCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateOrgUnitAsync(request, ct));
+        });
+        g.MapPatch("/org-units/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OrgUnitUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateOrgUnitAsync(id, request, ct));
+        });
+        g.MapPost("/org-units/{id:guid}/close", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OrgUnitCloseRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            await svc.CloseOrgUnitAsync(id, request, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/calendars", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListCalendarsAsync(ct));
+        g.MapGet("/calendars/{id:guid}", async (Guid id, IConfigAdminService svc, CancellationToken ct) => await svc.GetCalendarAsync(id, ct));
+        g.MapPost("/calendars", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkCalendarCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateCalendarAsync(request, ct));
+        });
+        g.MapPatch("/calendars/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkCalendarUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateCalendarAsync(id, request, ct));
+        });
+        g.MapPost("/holidays", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PublicHolidayCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.AddHolidayAsync(request, ct));
+        });
+        g.MapPatch("/holidays/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PublicHolidayUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateHolidayAsync(id, request, ct));
+        });
+        g.MapDelete("/holidays/{id:guid}", async (Guid id, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteHolidayAsync(id, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/leave-types/full", async ([FromQuery] bool includeInactive, IConfigAdminService svc, CancellationToken ct) =>
+            await svc.ListLeaveTypesAsync(includeInactive, ct));
+        g.MapPost("/leave-types", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveTypeCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateLeaveTypeAsync(request, ct));
+        });
+        g.MapPatch("/leave-types/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveTypeUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateLeaveTypeAsync(id, request, ct));
+        });
+
+        g.MapGet("/capabilities", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListCapabilitiesAsync(ct));
+        g.MapPatch("/capabilities/{featureKey}", async (string featureKey, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<CapabilityUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateCapabilityAsync(featureKey, request, ct));
+        });
     }
 
     public static void RegisterRecruitment(WebApplication app)

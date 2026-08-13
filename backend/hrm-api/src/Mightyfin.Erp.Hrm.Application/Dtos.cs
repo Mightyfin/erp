@@ -145,3 +145,100 @@ public sealed record RelationsCaseCreate(Guid? SubjectWorkerId, string CaseType,
 public sealed record WorkerDocumentCreate(Guid WorkerId, string Category, string Title, string FileName, string ContentType, string Classification = "internal");
 public sealed record ReportQuery(string ReportType, string? FromDate = null, string? ToDate = null, Guid? OrgUnitId = null, Guid? LocationId = null);
 public sealed record ReportDto(string ReportType, string GeneratedAt, Dictionary<string, object?> Summary, List<Dictionary<string, object?>> Rows);
+
+// ===================== Organization & config (M1) =====================
+
+// ---------- Legal entities ----------
+public sealed record LegalEntityCreateRequest(
+    string Code, string RegisteredName, string? TradingName = null,
+    string? PacraNumber = null, string? Tpin = null, string? NapsaEmployerRef = null,
+    string? NhimaEmployerRef = null, string? WcfcbEmployerRef = null,
+    string Currency = "ZMW", string CountryCode = "ZM", bool IsDefault = false);
+public sealed record LegalEntityUpdateRequest(
+    string? RegisteredName = null, string? TradingName = null, string? PacraNumber = null,
+    string? Tpin = null, string? NapsaEmployerRef = null, string? NhimaEmployerRef = null,
+    string? WcfcbEmployerRef = null, string? Currency = null, bool? IsDefault = null);
+public sealed record LegalEntityDtoFull(
+    Guid Id, string Code, string RegisteredName, string? TradingName, string? PacraNumber,
+    string? Tpin, string? NapsaEmployerRef, string? NhimaEmployerRef, string? WcfcbEmployerRef,
+    string Currency, string CountryCode, bool IsDefault, DateTimeOffset CreatedAt);
+
+// ---------- Work locations ----------
+public sealed record WorkLocationCreateRequest(
+    string Code, string Name, Guid LegalEntityId, string? AddressLine = null,
+    string? Province = null, string? District = null, string? City = null,
+    string Type = "branch", Guid? DefaultCalendarId = null);
+public sealed record WorkLocationUpdateRequest(
+    string? Name = null, string? AddressLine = null, string? Province = null,
+    string? District = null, string? City = null, string? Type = null,
+    Guid? DefaultCalendarId = null);
+public sealed record WorkLocationDtoFull(
+    Guid Id, string Code, string Name, Guid LegalEntityId, string? LegalEntityName,
+    string? AddressLine, string? Province, string? District, string? City,
+    string Type, Guid? DefaultCalendarId, string? CalendarName, DateTimeOffset CreatedAt);
+
+// ---------- Org units ----------
+public sealed record OrgUnitCreateRequest(
+    string Code, string Name, Guid LegalEntityId, Guid? ParentId = null,
+    string UnitType = "department", string? CostCentreRef = null, Guid? ManagerId = null,
+    string EffectiveFrom = null!, string? EffectiveTo = null);
+public sealed record OrgUnitUpdateRequest(
+    string? Name = null, Guid? ParentId = null, string? UnitType = null,
+    string? CostCentreRef = null, Guid? ManagerId = null,
+    string? EffectiveTo = null, string? Status = null);
+public sealed record OrgUnitDtoFull(
+    Guid Id, string Code, string Name, Guid LegalEntityId, string? LegalEntityName,
+    Guid? ParentId, string? UnitType, string? CostCentreRef, Guid? ManagerId,
+    string? ManagerName, string EffectiveFrom, string? EffectiveTo, string Status,
+    DateTimeOffset CreatedAt);
+public sealed record OrgUnitCloseRequest(string EffectiveDate, string? Reason = null);
+public sealed record OrgUnitTreeDto(
+    Guid Id, string Code, string Name, string? UnitType, string Status,
+    Guid? ManagerId, string? ManagerName, string EffectiveFrom, string? EffectiveTo,
+    List<OrgUnitTreeDto> Children);
+
+// ---------- Work calendars ----------
+public sealed record WorkCalendarCreateRequest(
+    string Name, Guid LegalEntityId, string CountryCode = "ZM",
+    int StandardWeeklyHours = 45, string WeekendDays = "sat,sun", bool IsDefault = false);
+public sealed record WorkCalendarUpdateRequest(
+    string? Name = null, int? StandardWeeklyHours = null, string? WeekendDays = null,
+    bool? IsDefault = null);
+public sealed record WorkCalendarDtoFull(
+    Guid Id, string Name, Guid LegalEntityId, string? LegalEntityName, string CountryCode,
+    int StandardWeeklyHours, string WeekendDays, bool IsDefault, int HolidayCount,
+    List<PublicHolidayDto> Holidays, DateTimeOffset CreatedAt);
+
+// ---------- Public holidays ----------
+public sealed record PublicHolidayCreateRequest(
+    Guid CalendarId, string Name, string HolidayDate, string? ObservedOn = null,
+    bool IsRecurring = false, string? Description = null);
+public sealed record PublicHolidayUpdateRequest(
+    string? Name = null, string? HolidayDate = null, string? ObservedOn = null,
+    bool? IsRecurring = null, string? Description = null);
+public sealed record PublicHolidayDto(
+    Guid Id, Guid CalendarId, string Name, string HolidayDate, string? ObservedOn,
+    bool IsRecurring, string? Description);
+
+// ---------- Leave types ----------
+public sealed record LeaveTypeCreateRequest(
+    string Code, string Name, string Category = "paid", int DefaultDaysPerYear = 24,
+    decimal MaxConsecutiveDays = 999, bool RequiresEvidence = false, int MinNoticeDays = 0,
+    bool AllowsPartialDays = false, int CarryForwardDays = 0,
+    int CarryForwardExpiryMonths = 0, bool AllowNegative = false,
+    string EffectiveFrom = null!, string? EffectiveTo = null);
+public sealed record LeaveTypeUpdateRequest(
+    string? Name = null, string? Category = null, int? DefaultDaysPerYear = null,
+    decimal? MaxConsecutiveDays = null, bool? RequiresEvidence = null,
+    int? MinNoticeDays = null, bool? AllowsPartialDays = null, int? CarryForwardDays = null,
+    int? CarryForwardExpiryMonths = null, bool? AllowNegative = null,
+    string? EffectiveTo = null, bool? IsActive = null);
+public sealed record LeaveTypeDtoFull(
+    Guid Id, string Code, string Name, string Category, int DefaultDaysPerYear,
+    decimal MaxConsecutiveDays, bool RequiresEvidence, int MinNoticeDays,
+    bool AllowsPartialDays, int CarryForwardDays, int CarryForwardExpiryMonths,
+    bool AllowNegative, string EffectiveFrom, string? EffectiveTo, bool IsActive,
+    DateTimeOffset CreatedAt);
+
+// ---------- Capabilities ----------
+public sealed record CapabilityUpdateRequest(string? Tier = null, bool? IsEnabled = null, string? Description = null);
