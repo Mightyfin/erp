@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import type {
   LegalEntityConfig,
+  LocationKind,
   OrgUnitConfig,
   ScheduledChange,
   WorkLocation,
@@ -34,7 +35,8 @@ import { DetailSection } from "@/platform/components/RecordDetail";
 import { EmptyState } from "@/platform/components/States";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { useMock } from "@/platform/use-mock";
+import type { TimelineEvent } from "@/mock/types";
+import { realApi, useApi } from "@/platform/use-api";
 import { feedback } from "@/platform/feedback";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 
@@ -66,6 +68,70 @@ interface DraftClosure {
   unitName: string;
   effectiveFrom: string;
   reason: string;
+}
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const kindMap: Record<string, LocationKind> = {
+  branch: "Office",
+  headoffice: "Head office",
+  plant: "Plant",
+  depot: "Depot",
+  yard: "Yard",
+  office: "Office",
+  works: "Works",
+};
+
+function adaptEntities(rows: unknown[]): LegalEntityConfig[] {
+  return (rows as Record<string, unknown>[]).map((e) => ({
+    id: String(e.id ?? ""),
+    entityId: String(e.id ?? ""),
+    registeredName: String(e.registeredName ?? ""),
+    country: String(e.countryCode ?? "ZM"),
+    legalIdLabel: String(e.pacraNumber ? "PACRA" : "TPIN"),
+    legalId: String(e.pacraNumber ?? e.tpin ?? "—"),
+    currency: String(e.currency ?? "ZMW"),
+    payrollCountryPack: String(e.countryCode ?? "ZM") === "ZM" ? "Zambian payroll pack" : "—",
+    registeredAddress: "—",
+    employees: 0,
+    branches: 0,
+    effectiveFrom: String(e.createdAt ?? "").slice(0, 10) || todayIso,
+  })) as LegalEntityConfig[];
+}
+
+type OrgUnitWithEntity = OrgUnitConfig & { _entityName?: string };
+function adaptUnits(rows: unknown[]): OrgUnitWithEntity[] {
+  return (rows as Record<string, unknown>[]).map((u) => ({
+    id: String(u.id ?? ""),
+    name: String(u.name ?? ""),
+    code: String(u.code ?? ""),
+    costCentre: String(u.costCentreRef ?? "—"),
+    entityId: String(u.legalEntityId ?? ""),
+    branch: "—",
+    parent: u.parentId ? String(u.parentId) : undefined,
+    employees: 0,
+    positions: 0,
+    references: [],
+    effectiveFrom: String(u.effectiveFrom ?? "").slice(0, 10) || todayIso,
+    effectiveTo: u.effectiveTo ? String(u.effectiveTo).slice(0, 10) : undefined,
+  })) as OrgUnitWithEntity[];
+}
+
+type WorkLocationWithEntity = WorkLocation & { _entityName?: string };
+function adaptLocations(rows: unknown[]): WorkLocationWithEntity[] {
+  return (rows as Record<string, unknown>[]).map((l) => ({
+    id: String(l.id ?? ""),
+    entityId: String(l.legalEntityId ?? ""),
+    _entityName: String(l.legalEntityName ?? ""),
+    name: String(l.name ?? ""),
+    code: String(l.code ?? ""),
+    kind: kindMap[String(l.type ?? "")] ?? "Office",
+    address: String(l.addressLine ?? l.city ?? ""),
+    timeZone: "Africa/Lusaka",
+    employees: 0,
+    positions: 0,
+    effectiveFrom: String(l.createdAt ?? "").slice(0, 10) || todayIso,
+  })) as WorkLocationWithEntity[];
 }
 
 const closureReasons = [
@@ -298,7 +364,7 @@ function EntityTable({ rows, asAt }: { rows: LegalEntityConfig[]; asAt: string }
   );
 }
 
-function LocationTable({ rows, asAt }: { rows: WorkLocation[]; asAt: string }) {
+function LocationTable({ rows, asAt }: { rows: WorkLocationWithEntity[]; asAt: string }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full min-w-[48rem] text-left text-sm">
@@ -363,7 +429,11 @@ function LocationTable({ rows, asAt }: { rows: WorkLocation[]; asAt: string }) {
                   {l.address} · {l.timeZone}
                 </span>
               </th>
-              <td className="px-3 py-3">{shortEntityName(l.entityId)}</td>
+              <td className="px-3 py-3">
+                {l._entityName
+                  ? shortEntityName(l._entityName || l.entityId)
+                  : shortEntityName(l.entityId)}
+              </td>
               <td className="px-3 py-3">{l.kind}</td>
               <td className="px-3 py-3 whitespace-nowrap">
                 <span className="block">{fmt(l.effectiveFrom)}</span>
@@ -470,13 +540,35 @@ function ScheduledChangeItem({
 
 /* -------------------------------------------------------------------------- */
 
+async function loadOrganisation() {
+  if (!USE_REAL) return adminConfigApi.organisation();
+  const [rawEntities, units, locations] = await Promise.all([
+    realApi.legalEntities(),
+    realApi.orgUnits(),
+    realApi.locations(),
+  ]);
+  const entities = Array.isArray(rawEntities) ? rawEntities : (rawEntities as { items?: unknown[] }).items ?? [];
+  const adaptedEntities = adaptEntities(entities);
+  const unitsArr = Array.isArray(units) ? units : (units as { items?: unknown[] }).items ?? [];
+  const locationsArr = Array.isArray(locations) ? locations : (locations as { items?: unknown[] }).items ?? [];
+  const adaptedUnits = adaptUnits(unitsArr);
+  const adaptedLocations = adaptLocations(locationsArr);
+  return {
+    entities: adaptedEntities,
+    units: adaptedUnits as OrgUnitConfig[],
+    locations: adaptedLocations as WorkLocation[],
+    scheduled: [] as ScheduledChange[],
+    audit: [] as TimelineEvent[],
+  };
+}
+
 function OrganisationConfig() {
-  const state = useMock(() => adminConfigApi.organisation());
+  const state = useApi(loadOrganisation);
   const [asAt, setAsAt] = useState(todayIso);
   const [drafts, setDrafts] = useState<DraftClosure[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const columns: ColumnDef<OrgUnitConfig>[] = [
+  const columns: ColumnDef<OrgUnitWithEntity>[] = [
     {
       id: "unit",
       header: "Department",
@@ -495,7 +587,14 @@ function OrganisationConfig() {
       header: "Cost centre",
       cell: (u) => <span className="font-mono text-xs">{u.costCentre}</span>,
     },
-    { id: "entity", header: "Entity", cell: (u) => shortEntityName(u.entityId) },
+    {
+      id: "entity",
+      header: "Entity",
+      cell: (u) =>
+        u._entityName
+          ? shortEntityName(u._entityName || u.entityId)
+          : shortEntityName(u.entityId),
+    },
     { id: "branch", header: "Location", cell: (u) => u.branch },
     {
       id: "inuse",

@@ -11,6 +11,8 @@ import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail"
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
+import { feedback } from "@/platform/feedback";
 
 export const Route = createFileRoute("/hrm/lifecycle/offboarding/$id")({
   head: () => ({
@@ -76,6 +78,25 @@ function ClearanceRow({ task, showCategory }: { task: ClearanceTask; showCategor
       ) : null}
     </li>
   );
+}
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+async function submitSeparation(workerId: string): Promise<void> {
+  try {
+    await realApi.offboardWorker(workerId, {});
+    feedback.submitted("Separation signed off.", "The clearance checklist was completed and the final settlement released.");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("offboarding-blocked")) {
+      feedback.blocked(
+        "Offboarding blocked by open clearance items.",
+        "Clear the open items below (assets, access, final pay) before the separation can be signed off.",
+      );
+    } else {
+      feedback.note("Separation could not be signed off.", message);
+    }
+  }
 }
 
 function OffboardingDetail() {
@@ -224,8 +245,8 @@ function OffboardingDetail() {
                   { label: "Clearance sheet (mock)", href: "#" },
                 ]}
                 delegates={["Mutale Kabwe (Manager)", "Thandiwe Banda (HR operations)", "Payroll duty approver"]}
-                disabled={settled}
-                onDecision={() => undefined}
+                disabled={settled || !USE_REAL}
+                onDecision={() => submitSeparation(c.employeeId ?? c.id)}
               />
             </RecordDetail>
           );

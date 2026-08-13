@@ -9,7 +9,7 @@ import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/recruitment/vacancies")({
   head: () => ({
@@ -30,10 +30,50 @@ export const Route = createFileRoute("/hrm/recruitment/vacancies")({
   component: VacanciesList,
 });
 
-const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Unknown entity";
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Mighty Finance Solutions Industrial Services Zambia Ltd";
+
+/**
+ * The backend vacancy record carries far fewer fields than the design mock
+ * (id, jobTitle, grade, status, orgUnitName, createdAt). Everything else on
+ * the row — applicants, days open, channels, next action — is derived or
+ * defaulted until those surfaces exist in the backend.
+ */
+function adaptVacancy(raw: unknown): Vacancy {
+  const r = raw as Record<string, unknown>;
+  const status = String(r.status ?? "draft");
+  const created = String(r.createdAt ?? "").slice(0, 10);
+  const now = new Date().toISOString().slice(0, 10);
+  const daysOpen = created && status !== "closed" && status !== "cancelled" ? Math.max(0, Math.floor((new Date(now).getTime() - new Date(created).getTime()) / 86_400_000)) : 0;
+  return {
+    id: String(r.id ?? ""),
+    requisitionId: String(r.requisitionId ?? "—"),
+    jobTitle: String(r.jobTitle ?? ""),
+    department: String(r.orgUnitName ?? "—"),
+    branch: String(r.location ?? "—"),
+    grade: String(r.grade ?? "—"),
+    entityId: String(r.legalEntityId ?? "ent-zm1"),
+    postingStatus: (status === "published" || status === "open") ? "External" : status === "closed" || status === "cancelled" ? "Closed" : "Draft",
+    channels: (r.channels as string[]) ?? [],
+    applicants: 0,
+    shortlisted: 0,
+    interviewsBooked: 0,
+    daysOpen,
+    openedOn: created || "—",
+    closingDate: String(r.closingDate ?? "—"),
+    nextAction: status === "closed" || status === "cancelled" ? "Vacancy closed" : "Post vacancy",
+    dueDate: String(r.closingDate ?? "—"),
+    owner: String(r.owner ?? "Talent acquisition"),
+  } satisfies Vacancy;
+}
 
 function VacanciesList() {
-  const state = useMock(() => recruitmentApi.vacancies());
+  const state = useApi(async (): Promise<Vacancy[]> => {
+    if (!USE_REAL) return recruitmentApi.vacancies();
+    const res = await realApi.recruitmentVacancies();
+    return (res.items as unknown[]).map(adaptVacancy);
+  }, []);
   const [view, setView] = useState("live");
 
   return (
@@ -72,7 +112,7 @@ function VacanciesList() {
             activeView={view}
             onViewChange={setView}
             searchPlaceholder="Search vacancy, job title or requisition"
-            searchFields={(v) => `${v.id} ${v.jobTitle} ${v.requisitionId} ${v.branch} ${v.department}`}
+            searchFields={(v) => `${v.id} ${v.jobTitle} ${v.requisitionId} ${v.department}`}
             filters={[
               {
                 id: "posting",
@@ -178,21 +218,12 @@ function VacanciesList() {
                 cell: (v) => <span className="block max-w-56 truncate text-xs">{entityName(v.entityId)}</span>,
               },
               {
-                id: "channels",
-                header: "Advertised on",
-                defaultVisible: false,
-                cell: (v) => (
-                  <span className="block max-w-56 text-xs">
-                    {v.channels.length ? v.channels.join(", ") : "Not advertised yet"}
-                  </span>
-                ),
-              },
-              {
                 id: "department",
                 header: "Department",
                 defaultVisible: false,
                 cell: (v) => <span className="text-xs">{v.department}</span>,
               },
+              { id: "grade", header: "Grade", defaultVisible: false, cell: (v) => <span className="text-xs">{v.grade}</span> },
             ]}
           />
         )}

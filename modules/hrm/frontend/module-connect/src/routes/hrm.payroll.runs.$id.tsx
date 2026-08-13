@@ -22,6 +22,7 @@ import { CalculationExplainer } from "@/platform/components/CalculationExplainer
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
+import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
@@ -400,11 +401,64 @@ function PayLines({
   );
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+function adaptRun(raw: unknown): PayRun {
+  const r = raw as Record<string, unknown>;
+  const statusMap: Record<string, string> = {
+    draft: "Draft",
+    calculated: "Calculated",
+    approved: "Approved",
+    paid: "Paid",
+    locked: "Closed",
+    closed: "Closed",
+  };
+  const status = statusMap[String(r.status ?? "")] ?? String(r.status ?? "Draft");
+  return {
+    id: String(r.id ?? ""),
+    period: String(r.periodLabel ?? r.period ?? ""),
+    entityId: "",
+    entityName: String(r.entityName ?? "Mighty Finance Solutions Industrial Zambia Ltd"),
+    payGroup: String(r.payGroup ?? "Monthly ZMW"),
+    currency: String(r.currency ?? "ZMW"),
+    status: status as PayRun["status"],
+    owner: String(r.preparedBy ?? r.owner ?? "Payroll officer"),
+    nextAction: status === "calculated" ? "Send for approval" : status === "approved" ? "Release payslips" : "Calculate run",
+    dueDate: String(r.cutoffDate ?? ""),
+    preparedBy: String(r.preparedBy ?? "Payroll officer"),
+    approvedBy: status === "approved" || status === "paid" || status === "locked" ? "HR admin" : undefined,
+    totals: { headcount: 0, gross: 0, deductions: 0, employerCost: 0, net: 0 },
+    included: 0,
+    excluded: [],
+    stages: [],
+    timeline: [],
+  };
+}
+
 function RunDetail() {
   const { id } = Route.useParams();
-  const state = useMock(() => payrollRunApi.run(id), [id]);
+  const state = useApi(
+    async (): Promise<PayRun | null> => {
+      if (!USE_REAL) return payrollRunApi.run(id);
+      try {
+        return adaptRun(await realApi.payrollRun(id));
+      } catch {
+        return null;
+      }
+    },
+    [id],
+  );
   const exceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
-  const lines = useMock(() => payrollRunApi.linesFor(id), [id]);
+  const lines = useApi(async (): Promise<RunLine[]> => {
+    if (!USE_REAL) return payrollRunApi.linesFor(id);
+    try {
+      return (await realApi.payrollRunLines(id)) as RunLine[];
+    } catch {
+      return [];
+    }
+  }, [id]);
+  const [calculating, setCalculating] = useState(false);
+  const [locking, setLocking] = useState(false);
 
   // `/payroll/runs/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
@@ -454,6 +508,51 @@ function RunDetail() {
               <DetailSection
                 title="Calculate"
                 description="Gross to net for every included employee. The payroll engine does the work; this shows what it did, employee by employee."
+                action={
+                  USE_REAL ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={calculating || run.status === "Paid" || run.status === "Closed" || run.status === "Approved"}
+                        onClick={async () => {
+                          setCalculating(true);
+                          try {
+                            await realApi.calculatePayrollRun(run.id);
+                            feedback.submitted("Calculation complete.", "Review pay lines and variances before sending for approval.");
+                            await state.reload();
+                          } catch (e) {
+                            feedback.blocked("Calculation failed", e instanceof Error ? e.message : "Unknown error.");
+                          } finally {
+                            setCalculating(false);
+                          }
+                        }}
+                      >
+                        {calculating ? "Calculating…" : "Calculate run"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={locking || run.status !== "Approved"}
+                        onClick={async () => {
+                          setLocking(true);
+                          try {
+                            await realApi.lockPayrollRun(run.id);
+                            feedback.submitted("Run locked.", "No further changes can be made to this period.");
+                            await state.reload();
+                          } catch (e) {
+                            feedback.blocked("Lock failed", e instanceof Error ? e.message : "Unknown error.");
+                          } finally {
+                            setLocking(false);
+                          }
+                        }}
+                      >
+                        {locking ? "Locking…" : "Lock run"}
+                      </Button>
+                    </div>
+                  ) : undefined
+                }
               >
                 <CalculationPanel
                   runId={run.id}
@@ -594,7 +693,21 @@ function RunDetail() {
                         { id: "p3", label: "Material variance explained", outcome: "warn", detail: "One variance above 2% has a recorded explanation." },
                       ]}
                       conflicts={[]}
-                      onDecision={(decision, reason) => {
+                      onDecision={async (decision, reason) => {
+                        if (USE_REAL && decision === "approve") {
+                          try {
+                            await realApi.payrollRunApprove(run.id);
+                            feedback.submitted(
+                              `${run.period} approved for ${run.included} employees.`,
+                              "Payslips can now be released. Releasing them does not pay anyone.",
+                            );
+                            await state.reload();
+                            return;
+                          } catch (e) {
+                            feedback.blocked("Approval failed", e instanceof Error ? e.message : "Unknown error.");
+                            return;
+                          }
+                        }
                         if (decision === "approve") {
                           feedback.submitted(
                             `${run.period} approved for ${run.included} employees.`,
@@ -622,7 +735,7 @@ function RunDetail() {
                 <ReleaseActions run={run} />
                 <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  Nothing in this build pays anyone, files anything or posts to a ledger.
+                  {USE_REAL ? "Payslip release is recorded against the run; payment and ledger posting are handled downstream." : "Nothing in this build pays anyone, files anything or posts to a ledger."}
                 </p>
               </DetailSection>
             </RecordDetail>

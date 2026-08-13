@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, Check, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { entities } from "@/mock/data";
 import { money, pipelineStages, recruitmentApi } from "@/mock/recruitment";
-import type { Candidate, Scorecard } from "@/mock/recruitment";
+import type { Candidate, CandidateSource, Scorecard } from "@/mock/recruitment";
+import type { RequestStatus } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { Async } from "@/platform/components/Async";
@@ -11,7 +13,8 @@ import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail"
 import { RestrictedState } from "@/platform/components/States";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
+import { feedback } from "@/platform/feedback";
 
 export const Route = createFileRoute("/hrm/recruitment/candidates/$id")({
   head: () => ({
@@ -32,7 +35,80 @@ export const Route = createFileRoute("/hrm/recruitment/candidates/$id")({
   component: CandidateDetail,
 });
 
-const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Unknown entity";
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Mighty Finance Solutions Industrial Services Zambia Ltd";
+
+const stageMap: Record<string, string> = {
+  applied: "Applied",
+  screening: "Screening",
+  shortlisted: "Shortlisted",
+  interview: "Interview",
+  offer: "Offer",
+  hired: "Hired",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+};
+
+/** Build a candidate context from the backend (no single context endpoint yet). */
+async function loadCandidateContext(id: string): Promise<{
+  candidate: Candidate | null;
+  vacancy: { id: string; jobTitle: string; branch: string; entityId: string } | null;
+  requisition: { id: string; grade: string; jobTitle: string } | null;
+  peers: { id: string; fullName: string; stage: string }[];
+}> {
+  const vacancies = await realApi.recruitmentVacancies();
+  for (const raw of vacancies.items) {
+    const v = raw as Record<string, unknown>;
+    const vacancyId = String(v.id ?? "");
+    try {
+      const res = await realApi.vacancyCandidates(vacancyId);
+      const match = (res.items as unknown[]).find((c) => String((c as Record<string, unknown>).id ?? "") === id);
+      if (!match) continue;
+      const r = match as Record<string, unknown>;
+      const stage = (stageMap[String(r.stage ?? "")] ?? String(r.stage ?? "Applied")) as Candidate["stage"];
+      const appliedOn = String(r.createdAt ?? "").slice(0, 10);
+      const candidate: Candidate = {
+        id: String(r.id ?? ""),
+        reference: String(r.reference ?? r.id ?? ""),
+        fullName: String(r.fullName ?? ""),
+        vacancyId,
+        appliedOn: appliedOn || "—",
+        stage,
+        source: (String(r.source ?? "") as CandidateSource) || "Careers portal",
+        sourceDetail: String(r.sourceDetail ?? ""),
+        status: "In progress" as RequestStatus,
+        owner: String(r.owner ?? "Talent acquisition"),
+        nextAction: "Screen application",
+        dueDate: "—",
+        location: String(r.location ?? "Lusaka, Zambia"),
+        rightToWork: String(r.rightToWork ?? "—"),
+        noticePeriod: String(r.noticePeriod ?? "—"),
+        currentRole: String(r.currentRole ?? ""),
+        salaryExpectation: String(r.salaryExpectation ?? ""),
+        consent: { lawfulBasis: "Consent", obtainedOn: appliedOn, retainUntil: "—", state: "Consent current", note: "" },
+        scorecards: [],
+        checks: [],
+        policy: [],
+        conflicts: [],
+        timeline: [],
+      } satisfies Candidate;
+      const vacancy = {
+        id: vacancyId,
+        jobTitle: String(v.jobTitle ?? ""),
+        branch: String(v.orgUnitName ?? v.location ?? "—"),
+        entityId: String((v as Record<string, unknown>).legalEntityId ?? "ent-zm1"),
+      };
+      const peers = (res.items as unknown[])
+        .filter((c) => String((c as Record<string, unknown>).id ?? "") !== id)
+        .map((p) => ({ id: String((p as Record<string, unknown>).id ?? ""), fullName: String((p as Record<string, unknown>).fullName ?? ""), stage: String((p as Record<string, unknown>).stage ?? "") }));
+      return { candidate, vacancy, requisition: null, peers };
+    } catch {
+      continue;
+    }
+  }
+  return { candidate: null, vacancy: null, requisition: null, peers: [] };
+}
 
 /** Ratings are shown as a number out of five and as a bar, never as colour alone. */
 function Rating({ value, label }: { value: number; label: string }) {
@@ -138,7 +214,11 @@ function Pipeline({ candidate }: { candidate: Candidate }) {
 
 function CandidateDetail() {
   const { id } = Route.useParams();
-  const state = useMock(() => recruitmentApi.candidateContext(id), [id]);
+  const [advancing, setAdvancing] = useState<string | null>(null);
+  const state = useApi(async () => {
+    if (!USE_REAL) return recruitmentApi.candidateContext(id);
+    return loadCandidateContext(id);
+  }, [id]);
 
   return (
     <AppShell>
@@ -313,8 +393,24 @@ function CandidateDetail() {
                 conflicts={c.conflicts}
                 evidence={c.scorecards.map((s) => ({ label: `Scorecard — ${s.stage} (${s.interviewer})`, href: "#" }))}
                 delegates={["Sanne Verhoeven (Operations Director)", "Thandiwe Banda (HR operations)"]}
-                disabled={!offerDecidable}
-                onDecision={() => undefined}
+                disabled={!offerDecidable || advancing !== null}
+                onDecision={async (decision, reason, _delegate) => {
+                  if (!USE_REAL) return;
+                  const targetStage = decision === "approve" ? "hired" : decision === "return" ? "screening" : "rejected";
+                  setAdvancing(targetStage);
+                  try {
+                    await realApi.advanceCandidate(c.id, { stage: targetStage, notes: reason });
+                    feedback.submitted(
+                      decision === "approve" ? `Candidate advanced to ${targetStage}.` : `Candidate moved to ${targetStage}.`,
+                      reason || "The decision and its reason are recorded against the candidate.",
+                    );
+                    await state.reload();
+                  } catch (e) {
+                    feedback.blocked("Could not advance the candidate", e instanceof Error ? e.message : "Unknown error.");
+                  } finally {
+                    setAdvancing(null);
+                  }
+                }}
               />
             </RecordDetail>
           );

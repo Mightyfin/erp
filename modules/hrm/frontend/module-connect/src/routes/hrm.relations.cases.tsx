@@ -7,7 +7,7 @@ import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/relations/cases")({
   head: () => ({
@@ -21,8 +21,63 @@ export const Route = createFileRoute("/hrm/relations/cases")({
   component: CasesList,
 });
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const typeMap: Record<string, string> = {
+  grievance: "Grievance",
+  misconduct: "Misconduct allegation",
+  harassment: "Bullying or harassment",
+  bullying: "Bullying or harassment",
+  discrimination: "Discrimination",
+  dispute: "Workplace dispute",
+};
+
+const stageMap: Record<string, string> = {
+  "new": "Intake",
+  open: "Intake",
+  "in-progress": "Investigation",
+  investigation: "Investigation",
+  hearing: "Hearing",
+  "findings-made": "Findings",
+  appeal: "Appeal",
+  closed: "Closed",
+};
+
+/**
+ * The backend case record is deliberately triage-level (id, caseType, category,
+ * severity, summary, status, createdAt, subjectWorkerId) — subject names are
+ * not returned so the design promise of "never the allegation / anonymised
+ * subjects" is honoured at the API layer.
+ */
+function adaptCase(raw: unknown): RelationsCase {
+  const r = raw as Record<string, unknown>;
+  const stage = (stageMap[String(r.status ?? "")] ?? String(r.status ?? "Intake")) as RelationsCase["stage"];
+  const created = String(r.createdAt ?? "").slice(0, 10);
+  return {
+    id: String(r.id ?? ""),
+    type: (typeMap[String(r.caseType ?? "")] ?? String(r.caseType ?? "Grievance")) as RelationsCase["type"],
+    summary: String(r.summary ?? "—"),
+    subject: "Subject withheld — conflict check required",
+    anonymised: true,
+    raisedBy: String(r.raisedBy ?? "Employee"),
+    stage,
+    owner: "Employee relations officer",
+    nextAction: stage === "Closed" ? "File findings" : "Complete conflict-of-interest check",
+    dueDate: "—",
+    opened: created || "—",
+    conflicted: [],
+    allegations: [],
+    evidence: [],
+    timeline: [],
+  } satisfies RelationsCase;
+}
+
 function CasesList() {
-  const state = useMock(() => relationsApi.cases());
+  const state = useApi(async (): Promise<RelationsCase[]> => {
+    if (!USE_REAL) return relationsApi.cases();
+    const res = await realApi.relationsCases();
+    return (res.items as unknown[]).map(adaptCase);
+  }, []);
   const [view, setView] = useState("open");
   // `/relations/cases/$id` is generated as a child of this route.
   const childMatches = useChildMatches();

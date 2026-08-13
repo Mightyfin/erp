@@ -19,6 +19,7 @@ import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail"
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/lifecycle/onboarding/$id")({
   head: () => ({
@@ -83,9 +84,24 @@ function rank(t: LifecycleTask) {
   return 2;
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
 function OnboardingDetail() {
   const { id } = Route.useParams();
   const state = useMock(() => lifecycleApi.onboarding(id), [id]);
+  // Real backend only exposes a triage-level onboarding snapshot (joined counts,
+  // no per-task detail), so the checklist keeps its mock structure while the
+  // progress strip below reads the live numbers whenever possible.
+  const progressState = useApi(async () => {
+    if (!USE_REAL) return null;
+    try {
+      const workerId = id; // case id doubles as the worker id in this screen
+      const snap = await realApi.workerOnboarding(workerId);
+      return snap as { tasksCompleted?: number; tasksTotal?: number; isOnboarded?: boolean };
+    } catch {
+      return null;
+    }
+  }, [id]);
 
   return (
     <AppShell>
@@ -126,6 +142,14 @@ function OnboardingDetail() {
                 )
               }
               summary={[
+                ...(progressState.data && progressState.data.tasksTotal
+                  ? [
+                      {
+                        label: "Live checklist progress",
+                        value: `${progressState.data.tasksCompleted ?? 0}/${progressState.data.tasksTotal}${progressState.data.isOnboarded ? " · onboarded" : ""}`,
+                      },
+                    ]
+                  : []),
                 { label: "Joiner", value: person },
                 { label: "Role", value: c.jobTitle },
                 { label: "Organisation", value: `${c.entity} · ${c.branch}` },

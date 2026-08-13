@@ -9,6 +9,7 @@ import { RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/leave/$id")({
   head: () => ({
@@ -22,45 +23,123 @@ export const Route = createFileRoute("/hrm/leave/$id")({
   component: LeaveDetail,
 });
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const mockStatus: Record<string, string> = {
+  submitted: "Submitted",
+  approved: "Approved",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+  in_review: "In review",
+};
+
 function LeaveDetail() {
   const { id } = Route.useParams();
-  const state = useMock(() => api.leaveRequest(id), [id]);
+
+  // Real mode: load the list and pick the row matching this id.
+  const state = useApi(
+    () =>
+      realApi
+        .leaveRequests({ page: 1, pageSize: 200 })
+        .then((page) => {
+          const raw = page.items.find((r) => String((r as { id?: unknown }).id) === id);
+          return raw ?? null;
+        }),
+    [id],
+  );
+
+  // Mock mode fallback (kept for green-UI development).
+  const mockState = useMock(() => api.leaveRequest(id), [id]);
 
   return (
     <AppShell>
-      <Async state={state} rows={3}>
+      <Async state={USE_REAL ? state : mockState} rows={3}>
         {(r) => {
           if (!r) return <RestrictedState />;
-          const w = employees.find((x) => x.id === r.employeeId);
-          const bal = r.type === "Annual" ? balanceFor(r.employeeId) : null;
+          const row = r as Record<string, unknown>;
+          const backend = USE_REAL;
+          const requestId = String(row.id ?? "");
+          const employeeId = String(row.workerId ?? "");
+          const type = String(row.leaveTypeCode ?? "");
+          const from = String(row.startDate ?? "");
+          const to = String(row.endDate ?? "");
+          const days = Number(row.requestedDays ?? 0);
+          const status = mockStatus[String(row.status ?? "")] ?? String(row.status ?? "");
+
+          // Mock-row fields when not running against the real backend.
+          const w = !backend ? employees.find((x) => x.id === String(row.employeeId ?? "")) : undefined;
+          const bal = !backend && type === "Annual" ? balanceFor(String(row.employeeId ?? "")) : null;
+          const m = r as unknown as {
+            employeeId?: string;
+            type?: string;
+            from?: string;
+            to?: string;
+            days?: number;
+            status: string;
+            owner?: string;
+            nextAction?: string;
+            dueDate?: string;
+            reason?: string;
+            policy?: { label: string; outcome: string; detail?: string }[];
+            conflicts?: string[];
+            timeline?: { id?: unknown; at?: unknown; actor?: unknown; event?: unknown; detail?: unknown }[];
+          };
+
           return (
             <RecordDetail
-              reference={r.id}
-              title={`${r.type} leave — ${w?.fullName ?? "Unknown employee"}`}
-              subtitle={`${r.from} → ${r.to} · ${r.days} days`}
-              status={r.status}
-              owner={r.owner}
-              nextAction={`${r.nextAction} · due ${r.dueDate}`}
+              reference={requestId}
+              title={`${type} leave — ${w?.fullName ?? (backend ? String(row.workerName ?? "Unknown employee") : "Unknown employee")}`}
+              subtitle={`${from} → ${to} · ${days} days`}
+              status={m.status ?? status}
+              owner={String(row.workerName ?? m.owner ?? "")}
+              nextAction={`${m.nextAction ?? "Awaiting decision"}${m.dueDate ? ` · due ${m.dueDate}` : ""}`}
               summary={[
-                { label: "Employee", value: w?.fullName },
-                { label: "Job title", value: w?.jobTitle },
-                { label: "Leave type", value: r.type },
-                { label: "Days", value: r.days },
+                { label: "Employee", value: w?.fullName ?? String(row.workerName ?? "—") },
+                { label: "Job title", value: w?.jobTitle ?? "—" },
+                { label: "Leave type", value: type },
+                { label: "Days", value: days },
                 {
                   label: "Balance if approved",
                   value: bal
-                    ? `${Math.round((bal.available - r.days) * 10) / 10} days, from ${bal.available} now`
-                    : "Not applicable",
+                    ? `${Math.round((bal.available - days) * 10) / 10} days, from ${bal.available} now`
+                    : backend
+                      ? "Checked against live balance at decision time"
+                      : "Not applicable",
                 },
-                { label: "Reason", value: r.reason ?? "Not given" },
+                { label: "Reason", value: String(row.reason ?? m.reason ?? "Not given") },
               ]}
-              timeline={<StatusTimeline title="History" events={r.timeline} />}
+              timeline={
+                <StatusTimeline
+                  title="History"
+                  events={(m.timeline ?? []).map((t, i) => ({
+                    id: String(t.id ?? `ev-${i}`),
+                    at: String(t.at ?? ""),
+                    actor: String(t.actor ?? ""),
+                    event: String(t.event ?? ""),
+                    detail: String(t.detail ?? ""),
+                  }))}
+                />
+              }
             >
               <ApprovalPanel
-                decisionSummary={`Approve ${r.days} days of ${r.type.toLowerCase()} leave for ${w?.fullName ?? "this employee"}.`}
-                policy={r.policy}
-                conflicts={r.conflicts}
-                onDecision={() => undefined}
+                decisionSummary={`Decide ${days} days of ${type.toLowerCase()} leave for ${w?.fullName ?? String(row.workerName ?? "this employee")}.`}
+                policy={
+                  (Array.isArray(m.policy) ? m.policy.map((p) => ({
+                    id: String(p.label),
+                    label: String(p.label),
+                    outcome: (String(p.outcome ?? "pass") as "pass" | "warn" | "fail"),
+                    detail: String(p.detail ?? ""),
+                  })) : []) as unknown as import("@/mock/types").PolicyResult[]
+                }
+                conflicts={m.conflicts ?? []}
+                onDecision={
+                  backend
+                    ? async (d, reason) => {
+                        await realApi.decideLeaveRequest(requestId, d, reason || undefined);
+                        state.reload();
+                      }
+                    : (() => undefined)
+                }
               />
             </RecordDetail>
           );

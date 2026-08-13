@@ -3,13 +3,14 @@ import { useState } from "react";
 import { EyeOff, Info, Lock, ScaleIcon, ShieldAlert, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { relationsApi } from "@/mock/relations";
+import type { RelationsCase } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { MaskedValue } from "@/platform/components/Sensitive";
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/relations/cases/$id")({
   head: () => ({
@@ -72,9 +73,49 @@ function ConflictGate({
   );
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const stageMap: Record<string, string> = {
+  "new": "Intake",
+  open: "Intake",
+  "in-progress": "Investigation",
+  investigation: "Investigation",
+  hearing: "Hearing",
+  "findings-made": "Findings",
+  appeal: "Appeal",
+  closed: "Closed",
+};
+
+async function loadCase(id: string): Promise<RelationsCase | null> {
+  const res = await realApi.relationsCases();
+  const raw = (res.items as unknown[]).find((c) => String((c as Record<string, unknown>).id ?? "") === id);
+  if (!raw) return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    id: String(r.id ?? ""),
+    type: (String(r.caseType ?? "Grievance")).replace(/^./, (s) => s.toUpperCase()) as RelationsCase["type"],
+    summary: String(r.summary ?? "—"),
+    subject: "Subject withheld — conflict check required",
+    anonymised: true,
+    raisedBy: String(r.raisedBy ?? "Employee"),
+    stage: (stageMap[String(r.status ?? "")] ?? String(r.status ?? "Intake")) as RelationsCase["stage"],
+    owner: "Employee relations officer",
+    nextAction: "Complete conflict-of-interest check",
+    dueDate: "—",
+    opened: String(r.createdAt ?? "").slice(0, 10) || "—",
+    conflicted: [],
+    allegations: [],
+    evidence: [],
+    timeline: [],
+  } satisfies RelationsCase;
+}
+
 function CaseDetail() {
   const { id } = Route.useParams();
-  const state = useMock(() => relationsApi.caseItem(id), [id]);
+  const state = useApi(async (): Promise<RelationsCase | null> => {
+    if (!USE_REAL) return relationsApi.caseItem(id);
+    return loadCase(id);
+  }, [id]);
   const [declared, setDeclared] = useState(false);
 
   return (

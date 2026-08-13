@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -32,6 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { employees } from "@/mock/data";
 import { holidayNote, timeclockApi } from "@/mock/timeclock";
+import { realApi, useApi } from "@/platform/use-api";
 import type { CoverageDay, OpenShift, RosterDay, ShiftKind, SwapCandidate } from "@/mock/timeclock";
 import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
@@ -83,6 +84,45 @@ const decisionDue = (date: string) => {
   d.setUTCDate(d.getUTCDate() - 2);
   return longDate(d.toISOString().slice(0, 10));
 };
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+const SCHEDULE_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
+
+const rosterDayKind = (r: Record<string, unknown>): string => {
+  const st = String(r.status ?? "");
+  if (r.isPublicHoliday) return "Public holiday";
+  if (!r.isWorkingDay) return "Rest day";
+  if (st.startsWith("missing") || st === "no-shift") return "Rest day";
+  return r.shiftName ? "Normal shift" : "Rest day";
+};
+
+function adaptRoster(rows: unknown[]): RosterDay[] {
+  const today = new Date().toISOString().slice(0, 10);
+  return rows.map((raw, i) => {
+    const r = raw as Record<string, unknown>;
+    const date = String(r.date ?? "");
+    const shiftName = typeof r.shiftName === "string" && r.shiftName ? String(r.shiftName) : "Unscheduled";
+    return {
+      id: String(r.date ?? `roster-${i}`),
+      date,
+      dayLabel: new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+      }),
+      kind: rosterDayKind(r) as RosterDay["kind"],
+      shiftName,
+      start: typeof r.shiftStart === "string" ? String(r.shiftStart) : null,
+      end: typeof r.shiftEnd === "string" ? String(r.shiftEnd) : null,
+      location: typeof r.calendarName === "string" ? String(r.calendarName) : "Lusaka HQ",
+      isToday: date === today,
+      changeable: r.isWorkingDay === true && !r.isPublicHoliday && typeof r.shiftName === "string" && !!r.shiftName,
+      note: String(r.status ?? ""),
+      leave: undefined,
+    } satisfies RosterDay;
+  });
+}
 
 const newReference = (prefix: string) => `${prefix}-2026-0${Math.floor(Math.random() * 900) + 100}`;
 
@@ -548,7 +588,11 @@ function CoverageSection({ days }: { days: CoverageDay[] }) {
 /* ------------------------------------------------------------------ page */
 
 function SchedulePage() {
-  const schedule = useMock(() => timeclockApi.schedule());
+  const mockSchedule = useMemo(() => timeclockApi.schedule(), []);
+  const schedule = useApi(
+    async () => (USE_REAL ? adaptRoster((await realApi.roster(SCHEDULE_WORKER)) as unknown[]) : await mockSchedule),
+    [],
+  );
   const candidates = useMock(() => timeclockApi.swapCandidates());
   const coverage = useMock(() => timeclockApi.coverage());
   const open = useMock(() => timeclockApi.openShifts());

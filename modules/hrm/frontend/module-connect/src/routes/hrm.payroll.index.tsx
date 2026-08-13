@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CheckCircle2, Clock } from "lucide-react";
 import { AppShell } from "@/platform/components/AppShell";
+import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/payroll/")({
   head: () => ({
@@ -25,6 +27,22 @@ const areas: { label: string; status: "available" | "next"; detail: string; to?:
 ];
 
 function PayrollHome() {
+  const config = useApi(
+    async () => {
+      const [components, payGroups, rules] = await Promise.all([
+        realApi.payrollComponents(),
+        realApi.payrollPayGroups(),
+        realApi.payrollContributionRules(),
+      ]);
+      const groupIds = payGroups as unknown as { id?: string }[];
+      const periods = groupIds.length && groupIds[0]?.id ? await realApi.payrollPayGroupPeriods(groupIds[0].id) : [];
+      const allPeriods = periods as unknown as { periodLabel?: string; cutoffDate?: string; status?: string }[];
+      const current = allPeriods.find((p) => p.status === "open") ?? allPeriods[allPeriods.length - 1] ?? null;
+      return { components, payGroups, rules, current };
+    },
+    [],
+  );
+
   return (
     <AppShell>
       <PageHeader
@@ -33,23 +51,27 @@ function PayrollHome() {
         description="This is the administrative workspace — running payroll, not just viewing a payslip. Restricted to Payroll and HR admin roles."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted-foreground">Current period</p>
-          <p className="mt-1 text-lg font-semibold">July 2026</p>
-          <p className="mt-1 text-xs text-muted-foreground">Cutoff: 30 Jul 2026, 18:00 CAT</p>
-        </div>
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted-foreground">Readiness</p>
-          <p className="mt-1 text-lg font-semibold text-warning">2 blocking exceptions</p>
-          <p className="mt-1 text-xs text-muted-foreground">1 missing bank detail, 1 unresolved attendance correction</p>
-        </div>
-        <div className="rounded-lg border bg-surface p-4">
-          <p className="text-xs text-muted-foreground">Headcount in scope</p>
-          <p className="mt-1 text-lg font-semibold">8 employees</p>
-          <p className="mt-1 text-xs text-muted-foreground">3 entities</p>
-        </div>
-      </div>
+      <Async state={config}>
+        {(c) => (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Current period</p>
+              <p className="mt-1 text-lg font-semibold">{c.current?.periodLabel ? `${c.current.periodLabel} (${c.current.status ?? "closed"})` : "No open period"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Cutoff: {c.current?.cutoffDate ?? "see period details"}</p>
+            </div>
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Pay setup</p>
+              <p className="mt-1 text-lg font-semibold">{(c.components as unknown[]).length} components · {(c.rules as unknown[]).length} rules</p>
+              <p className="mt-1 text-xs text-muted-foreground">{(c.payGroups as unknown[]).length} pay group{(c.payGroups as unknown[]).length === 1 ? "" : "s"}</p>
+            </div>
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Readiness</p>
+              <p className="mt-1 text-lg font-semibold text-warning">Check before running</p>
+              <p className="mt-1 text-xs text-muted-foreground">Missing data, variances and exceptions surface on the run itself.</p>
+            </div>
+          </div>
+        )}
+      </Async>
 
       <div>
         <h2 className="mt-6 text-sm font-semibold">Payroll areas</h2>

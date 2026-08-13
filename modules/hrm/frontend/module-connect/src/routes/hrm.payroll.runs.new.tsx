@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { Async } from "@/platform/components/Async";
+import { realApi, useApi } from "@/platform/use-api";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -73,6 +75,8 @@ function ReadinessRow({ item }: { item: (typeof READINESS)[number] }) {
   );
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
 function NewRun() {
   const navigate = useNavigate();
   const [ref, setRef] = useState<string | null>(null);
@@ -85,6 +89,27 @@ function NewRun() {
     POPULATION.filter((p) => !p.in).map((p) => p.name),
   );
   const [note, setNote] = useState("");
+
+  const setup = useApi(
+    async () => {
+      const groups = (await realApi.payrollPayGroups()) as unknown as { id?: string }[];
+      const groupId = groups[0]?.id ?? "";
+      const periods = groupId
+        ? ((await realApi.payrollPayGroupPeriods(groupId)) as unknown as {
+            id: string;
+            periodLabel: string;
+            cutoffDate: string;
+            payDate: string;
+            status: string;
+          }[])
+        : [];
+      return { periods, groupId };
+    },
+    [],
+  );
+  const chosenPeriod =
+    setup.data?.periods.find((p) => p.periodLabel === period) ??
+    (setup.data?.periods ?? [])[0];
 
   const entity = ENTITIES.find((e) => e.id === entityId) ?? ENTITIES[0];
   const included = POPULATION.filter((p) => !excluded.includes(p.name));
@@ -123,14 +148,17 @@ function NewRun() {
 
           <div>
             <Label htmlFor="group">Pay group</Label>
-            <Select value={payGroup} onValueChange={setPayGroup}>
+            <Select value={USE_REAL && setup.data?.periods.length ? setup.data.groupId : payGroup} onValueChange={setPayGroup}>
               <SelectTrigger id="group" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PAY_GROUPS.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
+                {(USE_REAL && setup.data?.periods.length
+                  ? [{ id: setup.data.groupId, name: "Monthly ZMW" }]
+                  : PAY_GROUPS.map((g) => ({ id: g, name: g }))
+                ).map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -140,15 +168,28 @@ function NewRun() {
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor="period">Period</Label>
-              <Input id="period" type="month" className="mt-1" value={period} onChange={(e) => setPeriod(e.target.value)} />
+              {USE_REAL && setup.data?.periods.length ? (
+                <Select value={period} onValueChange={setPeriod}>
+                  <SelectTrigger id="period" className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {setup.data.periods.map((p) => (
+                      <SelectItem key={p.id} value={p.periodLabel}>
+                        {p.periodLabel} ({p.status})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="period" type="month" className="mt-1" value={period} onChange={(e) => setPeriod(e.target.value)} />
+              )}
             </div>
             <div>
               <Label htmlFor="cutoff">Time cutoff</Label>
-              <Input id="cutoff" type="date" className="mt-1" value={cutoff} onChange={(e) => setCutoff(e.target.value)} />
+              <Input id="cutoff" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.cutoffDate ? chosenPeriod.cutoffDate : cutoff} readOnly={USE_REAL && !!chosenPeriod?.cutoffDate} onChange={(e) => setCutoff(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="paydate">Pay date</Label>
-              <Input id="paydate" type="date" className="mt-1" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+              <Input id="paydate" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.payDate ? chosenPeriod.payDate : payDate} readOnly={USE_REAL && !!chosenPeriod?.payDate} onChange={(e) => setPayDate(e.target.value)} />
             </div>
           </div>
 
@@ -306,9 +347,29 @@ function NewRun() {
         flowId="payroll-run-new"
         steps={steps}
         submitLabel="Open the run"
-        onSubmit={() => {
+        onSubmit={async () => {
           if (dateProblem) {
             feedback.blocked("Cannot open this run", dateProblem);
+            return;
+          }
+          if (USE_REAL) {
+            if (!setup.data?.periods.length || !chosenPeriod) {
+              feedback.blocked(
+                "No open period available",
+                "Ask an admin to open a pay period for this pay group first.",
+              );
+              return;
+            }
+            try {
+              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: setup.data.groupId });
+              setRef(String((r as { id?: string }).id ?? chosenPeriod.id));
+              feedback.submitted(
+                "Run opened against the selected period.",
+                "Next: calculate gross to net. Nothing has been paid.",
+              );
+            } catch (e) {
+              feedback.blocked("Could not open the run", e instanceof Error ? e.message : "Unknown error.");
+            }
             return;
           }
           const created = `RUN-${period.replace("-", "-")}-${entity.id.replace("ent-", "").toUpperCase()}-M`;
