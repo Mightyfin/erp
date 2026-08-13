@@ -31,11 +31,13 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         var total = await q.CountAsync(ct);
         var page = Math.Max(filters.Page, 1);
         var size = Math.Clamp(filters.PageSize, 1, 100);
+        // Order client-side: EF Core's SQLite provider cannot translate ORDER BY
+        // on DateTimeOffset columns (CreatedAt) into SQL.
         var items = await q.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
             .Include(w => w.OrgUnit).Include(w => w.Location)
-            .OrderByDescending(w => w.CreatedAt)
             .Skip((page - 1) * size).Take(size)
             .ToListAsync(ct);
+        items = items.OrderByDescending(w => w.CreatedAt).ToList();
         return (items, total);
     }
 
@@ -84,8 +86,8 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
 
     public async Task<(List<Movement> Items, int Total)> ListMovementsAsync(Guid workerId, CancellationToken ct)
     {
-        var items = await db.Movements.Where(m => m.WorkerId == workerId)
-            .OrderByDescending(m => m.CreatedAt).ToListAsync(ct);
+        var items = (await db.Movements.Where(m => m.WorkerId == workerId).ToListAsync(ct))
+            .OrderByDescending(m => m.CreatedAt).ToList();
         return (items, items.Count);
     }
 
@@ -189,8 +191,9 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         var q = db.LeaveRequests.AsQueryable();
         if (workerId.HasValue) q = q.Where(l => l.WorkerId == workerId.Value);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(l => l.Status == status);
-        var items = await q.Include(l => l.Worker)
-            .OrderByDescending(l => l.CreatedAt).Take(200).ToListAsync(ct);
+        // Order client-side: SQLite cannot translate ORDER BY on DateTimeOffset.
+        var items = (await q.Include(l => l.Worker).Take(200).ToListAsync(ct))
+            .OrderByDescending(l => l.CreatedAt).ToList();
         return (items, items.Count);
     }
 
@@ -202,14 +205,14 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
     }
 
     public async Task<List<LeaveBalanceLedger>> GetBalancesAsync(Guid workerId, string leaveTypeCode, CancellationToken ct)
-        => await db.LeaveBalanceLedgers
+        => (await db.LeaveBalanceLedgers
             .Where(l => l.WorkerId == workerId && l.LeaveTypeCode == leaveTypeCode)
-            .OrderByDescending(l => l.CreatedAt).ToListAsync(ct);
+            .ToListAsync(ct)).OrderByDescending(l => l.CreatedAt).ToList();
 
     public async Task<List<LeaveBalanceLedger>> GetLedgerAsync(Guid workerId, CancellationToken ct)
-        => await db.LeaveBalanceLedgers
+        => (await db.LeaveBalanceLedgers
             .Where(l => l.WorkerId == workerId)
-            .OrderByDescending(l => l.CreatedAt).ToListAsync(ct);
+            .ToListAsync(ct)).OrderByDescending(l => l.CreatedAt).ToList();
 
     public async Task<LeaveType?> GetLeaveTypeAsync(string code, CancellationToken ct)
         => await db.LeaveTypes.FirstOrDefaultAsync(t => t.Code == code && t.IsActive, ct);
@@ -243,8 +246,8 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         var q = db.AttendanceCorrections.AsQueryable();
         if (workerId.HasValue) q = q.Where(c => c.WorkerId == workerId.Value);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
-        var items = await q.Include(c => c.Worker)
-            .OrderByDescending(c => c.CreatedAt).Take(100).ToListAsync(ct);
+        var items = (await q.Include(c => c.Worker).Take(100).ToListAsync(ct))
+            .OrderByDescending(c => c.CreatedAt).ToList();
         return (items, items.Count);
     }
 
@@ -268,7 +271,8 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
 
     public async Task<AttendanceRecord> UpdateAttendanceAsync(AttendanceRecord record, CancellationToken ct)
     {
-        db.AttendanceRecords.Update(record);
+        if (db.Entry(record).State == EntityState.Detached)
+            db.AttendanceRecords.Update(record);
         await db.SaveChangesAsync(ct);
         return record;
     }
@@ -278,7 +282,7 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         var q = db.AttendanceRecords.Where(a => a.WorkerId == workerId);
         if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
         if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
-        return await q.Include(a => a.Worker).OrderBy(a => a.WorkDate).Take(200).ToListAsync(ct);
+        return await q.Include(a => a.Worker).Take(200).ToListAsync(ct); // already bounded by from/to window; keep insert order
     }
 
     public async Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct)
@@ -286,7 +290,8 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
 
     public async Task<AttendanceCorrection> UpdateCorrectionAsync(AttendanceCorrection correction, CancellationToken ct)
     {
-        db.AttendanceCorrections.Update(correction);
+        if (db.Entry(correction).State == EntityState.Detached)
+            db.AttendanceCorrections.Update(correction);
         await db.SaveChangesAsync(ct);
         return correction;
     }
@@ -296,7 +301,8 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
 
     public async Task<LeaveRequest> UpdateLeaveRequestAsync(LeaveRequest request, CancellationToken ct)
     {
-        db.LeaveRequests.Update(request);
+        if (db.Entry(request).State == EntityState.Detached)
+            db.LeaveRequests.Update(request);
         await db.SaveChangesAsync(ct);
         return request;
     }
@@ -346,21 +352,57 @@ public sealed class WorkflowRepository(HrmDbContext db) : IWorkflowRepository
 
     public async Task<WorkflowRequest> UpdateRequestAsync(WorkflowRequest request, CancellationToken ct)
     {
-        db.WorkflowRequests.Update(request);
+        // EF Core 10 demotes children added via the parent's collection to Modified
+        // when the parent is Modified (state-propagation behavior change), turning the
+        // child INSERT into an UPDATE with 0 rows affected. Re-attach brand-new
+        // (detached) children directly to the context as Added with the FK set, which
+        // keeps them as INSERTs alongside the parent UPDATE.
+        foreach (var decision in request.Decisions)
+        {
+            if (db.Entry(decision).State == EntityState.Detached)
+            {
+                decision.RequestId = request.Id;
+                db.WorkflowDecisions.Add(decision);
+            }
+        }
+        if (db.Entry(request).State == EntityState.Detached)
+            db.WorkflowRequests.Update(request);
         await db.SaveChangesAsync(ct);
         return request;
     }
 
     public async Task<(List<WorkflowRequest> Items, int Total)> ListOpenRequestsAsync(CancellationToken ct)
     {
-        var items = await db.WorkflowRequests.Include(w => w.Decisions)
+        var items = (await db.WorkflowRequests.Include(w => w.Decisions)
             .Where(w => w.Status == "submitted" || w.Status == "in-review")
-            .OrderByDescending(w => w.CreatedAt).ToListAsync(ct);
+            .ToListAsync(ct)).OrderByDescending(w => w.CreatedAt).ToList();
         return (items, items.Count);
     }
 
     public async Task<Guid?> FindManagerOfAsync(Guid workerId, CancellationToken ct)
         => await db.Workers.Where(w => w.Id == workerId).Select(w => w.ManagerId).FirstOrDefaultAsync(ct);
+
+    public async Task<bool> IsDelegateForAsync(Guid delegatorId, Guid actorId, string workflowType, DateOnly date, CancellationToken ct)
+        => await db.ApprovalDelegations.AnyAsync(d =>
+            d.DelegatorId == delegatorId && d.DelegateWorkerId == actorId && d.IsActive &&
+            d.FromDate <= date && (d.ToDate == null || d.ToDate >= date) &&
+            (d.Scope == null || d.Scope == workflowType), ct);
+
+    public async Task<Guid?> GetActiveDelegationForAsync(Guid delegatorId, string workflowType, DateOnly date, CancellationToken ct)
+    {
+        var delegation = await db.ApprovalDelegations
+            .Where(d => d.DelegatorId == delegatorId && d.IsActive &&
+                        d.FromDate <= date && (d.ToDate == null || d.ToDate >= date) &&
+                        (d.Scope == null || d.Scope == workflowType))
+            .OrderBy(d => d.Scope == null ? 1 : 0) // type-specific scope wins over blanket scope
+            .Select(d => (Guid?)d.DelegateWorkerId).FirstOrDefaultAsync(ct);
+        return delegation;
+    }
+
+    public async Task<Dictionary<Guid, string>> GetWorkerNamesAsync(IEnumerable<Guid> ids, CancellationToken ct)
+        => await db.Workers.Where(w => ids.Contains(w.Id))
+            .Select(w => new { w.Id, Name = $"{w.FirstName} {w.LastName}".Trim() })
+            .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 }
 
 // ===================== Experience =====================
@@ -371,8 +413,8 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
         var q = db.HrRequests.AsQueryable();
         if (workerId.HasValue) q = q.Where(r => r.WorkerId == workerId.Value);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
-        var items = await q.Include(r => r.Messages).Include(r => r.Worker)
-            .OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync(ct);
+        var items = (await q.Include(r => r.Messages).Include(r => r.Worker)
+            .Take(100).ToListAsync(ct)).OrderByDescending(r => r.CreatedAt).ToList();
         return (items, items.Count);
     }
 
@@ -388,7 +430,20 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
 
     public async Task<HrRequest> UpdateRequestAsync(HrRequest request, CancellationToken ct)
     {
-        db.HrRequests.Update(request);
+        // EF Core 10 demotes children added via the parent's collection to Modified
+        // when the parent is Modified (state-propagation behavior change). Re-attach
+        // brand-new (detached) messages directly to the context as Added with the FK
+        // set, which keeps them as INSERTs alongside the parent UPDATE.
+        foreach (var msg in request.Messages)
+        {
+            if (db.Entry(msg).State == EntityState.Detached)
+            {
+                msg.RequestId = request.Id;
+                db.HrRequestMessages.Add(msg);
+            }
+        }
+        if (db.Entry(request).State == EntityState.Detached)
+            db.HrRequests.Update(request);
         await db.SaveChangesAsync(ct);
         return request;
     }
@@ -398,8 +453,8 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
         var q = db.HrLetters.AsQueryable();
         if (workerId.HasValue) q = q.Where(l => l.WorkerId == workerId.Value);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(l => l.Status == status);
-        var items = await q.Include(l => l.Worker)
-            .OrderByDescending(l => l.CreatedAt).Take(100).ToListAsync(ct);
+        var items = (await q.Include(l => l.Worker)
+            .Take(100).ToListAsync(ct)).OrderByDescending(l => l.CreatedAt).ToList();
         return (items, items.Count);
     }
 
@@ -415,7 +470,8 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
 
     public async Task<HrLetter> UpdateLetterAsync(HrLetter letter, CancellationToken ct)
     {
-        db.HrLetters.Update(letter);
+        if (db.Entry(letter).State == EntityState.Detached)
+            db.HrLetters.Update(letter);
         await db.SaveChangesAsync(ct);
         return letter;
     }
@@ -474,7 +530,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct)
     {
-        db.PayrollRuns.Update(run);
+        if (db.Entry(run).State == EntityState.Detached)
+            db.PayrollRuns.Update(run);
         await db.SaveChangesAsync(ct);
         return run;
     }
@@ -543,8 +600,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct)
     {
-        var items = await db.Payslips.Where(p => p.WorkerId == workerId)
-            .OrderByDescending(p => p.ReleasedAt).ToListAsync(ct);
+        var items = (await db.Payslips.Where(p => p.WorkerId == workerId).ToListAsync(ct))
+            .OrderByDescending(p => p.ReleasedAt).ToList();
         return (items, items.Count);
     }
 
@@ -680,8 +737,8 @@ public sealed class DocumentsRepository(HrmDbContext db) : IDocumentsRepository
 {
     public async Task<(List<WorkerDocument> Items, int Total)> ListDocumentsAsync(Guid workerId, CancellationToken ct)
     {
-        var items = await db.WorkerDocuments.Where(d => d.WorkerId == workerId && !d.IsArchived)
-            .OrderByDescending(d => d.CreatedAt).ToListAsync(ct);
+        var items = (await db.WorkerDocuments.Where(d => d.WorkerId == workerId && !d.IsArchived).ToListAsync(ct))
+            .OrderByDescending(d => d.CreatedAt).ToList();
         return (items, items.Count);
     }
     public async Task<WorkerDocument> CreateDocumentAsync(WorkerDocument document, CancellationToken ct)

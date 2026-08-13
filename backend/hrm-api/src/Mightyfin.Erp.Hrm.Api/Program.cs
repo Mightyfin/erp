@@ -44,10 +44,13 @@ builder.Services.AddSingleton<IIdProvider, IdProvider>();
 // ---------- Services ----------
 builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
 builder.Services.AddScoped<IWorkerService, WorkerServiceImpl>();
+builder.Services.AddScoped<IWorkerResolver, WorkerResolver>();
 builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();
 builder.Services.AddScoped<ITimeRepository, TimeRepository>();
 builder.Services.AddScoped<ITimeService, TimeServiceImpl>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
+builder.Services.AddSingleton<ILetterTemplates, LetterTemplatesImpl>();
+builder.Services.AddScoped<IMergeDataProvider, MergeDataProviderImpl>();
 builder.Services.AddScoped<ILeaveEffectApplier, LeaveEffectApplierImpl>();
 builder.Services.AddScoped<IWorkflowService, WorkflowServiceImpl>();
 builder.Services.AddScoped<IExperienceRepository, ExperienceRepository>();
@@ -163,6 +166,7 @@ internal sealed class DeveloperAuthHandler : Microsoft.AspNetCore.Authentication
                 new System.Security.Claims.Claim("preferred_username", "developer"),
                 new System.Security.Claims.Claim("tenant", Context.RequestServices.GetRequiredService<ITenantAccessor>().GetTenantId()),
                 new System.Security.Claims.Claim("realm_access.roles", "hr_admin"),
+                new System.Security.Claims.Claim("worker_id", Context.RequestServices.GetRequiredService<IWorkerResolver>().ResolveDev()),
             ], "dev"));
         return Task.FromResult(Microsoft.AspNetCore.Authentication.AuthenticateResult.Success(
             new Microsoft.AspNetCore.Authentication.AuthenticationTicket(claims, "dev")));

@@ -27,6 +27,16 @@ public static class Routes
             new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
     }
 
+    // Helper: resolve the calling worker from the authenticated principal.
+    // Prefers the Keycloak `worker_id` claim; falls back to the subject id when
+    // it is a valid worker GUID (matches the dev-auth fallback worker mapping).
+    private static Guid? ResolveWorkerId(HttpContext http)
+    {
+        var raw = http.User.FindFirst("worker_id")?.Value
+            ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return string.IsNullOrEmpty(raw) || !System.Guid.TryParse(raw, out var id) ? null : id;
+    }
+
     public static void RegisterWorkers(WebApplication app)
     {
         var g = app.MapGroup("/api/hrm/workers").RequireAuthorization();
@@ -230,10 +240,15 @@ public static class Routes
         g.MapPost("/requests/{id:guid}/decisions", async (Guid id, HttpContext http, IWorkflowService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<WorkflowDecisionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            var actorSubject = http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(actorSubject))
-                return Results.Unauthorized();
-            return Results.Ok(await svc.DecideAsync(id, Guid.Parse(actorSubject), request, ct));
+            var actorSubject = http.User.FindFirst("worker_id")?.Value ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(actorSubject) || !System.Guid.TryParse(actorSubject, out var actorId))
+                return Results.Json(new ApiError("missing-actor", "The authenticated actor could not be resolved to a worker id; pass a 'worker_id' claim or use the actor_id query parameter.", []), statusCode: 401);
+            return Results.Ok(await svc.DecideAsync(id, actorId, request, ct));
+        });
+        g.MapPost("/requests/{id:guid}/escalate", async (Guid id, HttpContext http, IWorkflowService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkflowEscalateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.EscalateAsync(id, request.ActorId, ct));
         });
     }
 
@@ -245,20 +260,31 @@ public static class Routes
         g.MapPost("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.CreateRequestAsync(request, ct));
+            var workerId = request.WorkerId ?? ResolveWorkerId(http);
+            if (workerId is null)
+                return Results.UnprocessableEntity(new ApiError("missing-worker", "WorkerId is required; either include worker_id in the body or authenticate as the worker.", []));
+            return Results.Created("", await svc.CreateRequestAsync(workerId.Value, request, ct));
         });
         g.MapPost("/requests/{id:guid}/messages", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestMessageCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            await svc.AddMessageAsync(id, request, ct);
+            var actorRole = http.User.IsInRole("hr_ops") || http.User.IsInRole("hr_admin") ? "hr_ops" : "employee";
+            await svc.AddMessageAsync(id, ResolveWorkerId(http), actorRole, request, ct);
             return Results.Ok();
+        });
+        g.MapPost("/requests/{id:guid}/resolve", async (Guid id, IExperienceService svc, CancellationToken ct) =>
+        {
+            return Results.Ok(await svc.ResolveRequestAsync(id, ct));
         });
         g.MapGet("/letters", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IExperienceService svc, CancellationToken ct)
             => await svc.ListLettersAsync(workerId, status, ct));
         g.MapPost("/letters", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrLetterCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.CreateLetterAsync(request, ct));
+            var workerId = request.WorkerId ?? ResolveWorkerId(http);
+            if (workerId is null)
+                return Results.UnprocessableEntity(new ApiError("missing-worker", "WorkerId is required; either include worker_id in the body or authenticate as the worker.", []));
+            return Results.Created("", await svc.CreateLetterAsync(workerId.Value, request, ct));
         });
         g.MapPost("/letters/{id:guid}/approve", async (Guid id, IExperienceService svc, CancellationToken ct) =>
         {

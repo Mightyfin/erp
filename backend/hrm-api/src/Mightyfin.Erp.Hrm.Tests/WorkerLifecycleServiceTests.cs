@@ -23,7 +23,7 @@ public class WorkerLifecycleServiceTests
 
         // Seed org structure the lifecycle service validates references against.
         var entity = new LegalEntity { RegisteredName = "TestCo", Code = "TST", PacraNumber = "123" };
-        var unit = new OrgUnit { Name = "Engineering", Code = "ENG", Status = "active" };
+        var unit = new OrgUnit { Name = "Engineering", Code = "ENG", Status = "active", LegalEntityId = entity.Id };
         var location = new WorkLocation { Name = "Lusaka HQ", Code = "LUN", LegalEntityId = entity.Id };
         ctx.LegalEntities.Add(entity);
         ctx.OrgUnits.Add(unit);

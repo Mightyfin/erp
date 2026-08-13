@@ -29,16 +29,24 @@ internal sealed class FixedTenantAccessor(string tenant) : ITenantAccessor
     public string GetTenantId() => tenant;
 }
 
-/// <summary>In-memory EF context wired up with the same tenant-scoping rules
-/// as the production context (global query filters + tenant auto-fill).</summary>
+/// <summary>SQLite in-memory EF context wired up with the same tenant-scoping
+/// rules as the production context (global query filters + tenant auto-fill).
+/// SQLite in-memory is used rather than the InMemory provider because EF Core
+/// 10's InMemory provider has a bug with Guid-V7 primary keys: inserting a
+/// child entity via navigation after the parent was loaded throws a spurious
+/// DbUpdateConcurrencyException.</summary>
 internal static class TestDbContextFactory
 {
     public static HrmDbContext Create(string tenant = "test-tenant")
     {
+        var conn = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=hrm-tests-" + System.Guid.NewGuid() + ";Mode=Memory;Cache=Shared");
+        conn.Open();
         var opts = new DbContextOptionsBuilder<HrmDbContext>()
-            .UseInMemoryDatabase("hrm-tests-" + System.Guid.NewGuid())
+            .UseSqlite(conn)
             .Options;
-        return new HrmDbContext(opts, new FixedTenantAccessor(tenant));
+        var ctx = new HrmDbContext(opts, new FixedTenantAccessor(tenant));
+        ctx.Database.EnsureCreated();
+        return ctx;
     }
 }
 
@@ -98,4 +106,3 @@ public class WorkerServiceTests
     }
 }
 
-// Diag removed

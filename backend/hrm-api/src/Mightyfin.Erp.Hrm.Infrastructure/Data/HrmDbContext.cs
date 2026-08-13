@@ -18,16 +18,30 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Data;
 public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenantAccessor tenant) : DbContext(options)
 {
     /// <summary>Auto-populates <see cref="Entity.TenantId"/> on all newly added
-    /// entities so every row is tenant-scoped from day one.</summary>
+    /// entities so every row is tenant-scoped from day one (both sync and async
+    /// save paths).</summary>
+    public override int SaveChanges()
+    {
+        FillTenantIds();
+        return base.SaveChanges();
+    }
+
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        FillTenantIds();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void FillTenantIds()
     {
         var tenantId = tenant.GetTenantId();
         foreach (var entry in ChangeTracker.Entries<Entity>().Where(e => e.State == EntityState.Added))
         {
             if (string.IsNullOrEmpty(entry.Entity.TenantId))
                 entry.Entity.TenantId = tenantId;
+            if (entry.Entity.CreatedAt == DateTimeOffset.MinValue)
+                entry.Entity.CreatedAt = DateTimeOffset.UtcNow;
         }
-        return base.SaveChangesAsync(cancellationToken);
     }
 
     // Organization

@@ -83,15 +83,20 @@ public sealed record AttendanceCorrectionCreate(
 // ===================== Workflows =====================
 
 public sealed record WorkflowDecisionRequest(string Action, string? Reason = null, Guid? DelegatedToId = null);
+public sealed record WorkflowRequestDto(Guid Id, string WorkflowType, Guid? SubjectWorkerId, string? SubjectName, string Status, string? PayloadJson,
+    string? RejectionReason, string? ReturnNote, Guid? CurrentApproverId, string? CurrentApproverName,
+    DateTimeOffset? DueAt, DateTimeOffset? EscalatedAt, DateTimeOffset CreatedAt, List<WorkflowDecisionDto> Decisions);
+public sealed record WorkflowDecisionDto(Guid Id, Guid RequestId, Guid ActorId, string? ActorName, string Action, string? Reason, Guid? DelegatedToId, string? DelegatedToName, DateTimeOffset CreatedAt);
+public sealed record WorkflowEscalateRequest(Guid ActorId);
 public sealed record WorkQueueItemDto(Guid RequestId, string WorkflowType, string Status,
     Guid? SubjectWorkerId, string? SubjectName, string? CurrentApproverName,
     DateTimeOffset? DueAt, bool IsOverdue, DateTimeOffset CreatedAt);
 
 // ===================== HR requests & letters =====================
 
-public sealed record HrRequestCreate(string Category, string Subject, string Body, string Confidentiality = "normal");
+public sealed record HrRequestCreate(string Category, string Subject, string Body, string Confidentiality = "normal", Guid? WorkerId = null);
 public sealed record HrRequestMessageCreate(string Body, bool IsInternalNote = false);
-public sealed record HrLetterCreate(string LetterType, string Addressee, string Purpose);
+public sealed record HrLetterCreate(string LetterType, string Addressee, string Purpose, Guid? WorkerId = null);
 
 // ===================== Speak up =====================
 
