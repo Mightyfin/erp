@@ -1,9 +1,13 @@
 # Mightyfin ERP — HRM module production stack
-# Runs behind the shared Cloudflare Tunnel (hrm.mightyfin.com -> localhost:28912).
-# The web service joins erp_default so it can resolve erp-postgres-1 via DNS,
-# and it serves the static React build + proxies /api/hrm -> hrn-api:8080.
-# The API itself joins erp_default so its own connections to erp-postgres-1
-# also resolve; nothing binds to a public interface except 127.0.0.1 ports.
+# Follows the host conventions:
+#   - Everything runs as a Docker Compose stack in /home/mightyfin/production/hrm,
+#     image tag :local, built from the cloned repo (deployment/hrm/Dockerfile).
+#   - Secrets/env live under /home/mightyfin/.config/mightyfin/hrm/.env.
+#   - Only 127.0.0.1 ports are bound on the host (127.0.0.1:28912).
+#   - Public exposure is done by the shared Traefik ingress (traefik-traefik-1),
+#     exactly like efaas-origin / auth.mightyfinance.co.zm: Host rule on the
+#     websecure entrypoint with the letsencrypt certresolver.
+#   - erp_default is joined so erp-postgres-1 (the ERP database) resolves by DNS.
 
 services:
   hrn-api:
@@ -15,8 +19,6 @@ services:
     restart: unless-stopped
     env_file:
       - /home/mightyfin/.config/mightyfin/hrm/.env
-    ports:
-      - "127.0.0.1:28911:8080"
     networks:
       - erp_default
     depends_on:
@@ -71,6 +73,13 @@ services:
       - hrn-web
     networks:
       - erp_default
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.hrm.rule: "Host(`hrm.mightyfinance.co.zm`)"
+      traefik.http.routers.hrm.entrypoints: "websecure"
+      traefik.http.routers.hrm.tls: "true"
+      traefik.http.routers.hrm.tls.certresolver: "letsencrypt"
+      traefik.http.services.hrm.loadbalancer.server.port: "80"
 
 networks:
   erp_default:
