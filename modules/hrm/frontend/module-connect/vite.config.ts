@@ -7,6 +7,12 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  nitro: {
+    // The bundled config defaults to the `cloudflare` preset, which only runs on
+    // Cloudflare Workers. For our Docker/nginx production host we build a plain
+    // Node.js HTTP server instead.
+    preset: "node-server",
+  },
   vite: {
     server: {
       allowedHosts: [
