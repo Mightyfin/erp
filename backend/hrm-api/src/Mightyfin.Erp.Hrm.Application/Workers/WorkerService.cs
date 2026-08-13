@@ -44,9 +44,13 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
     public async Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        // The UI never asks HR to type an employee number; issue one when empty.
+        var employeeNo = string.IsNullOrWhiteSpace(request.EmployeeNo)
+            ? await IssueEmployeeNoAsync(repo, ct)
+            : request.EmployeeNo;
         var worker = new Worker
         {
-            EmployeeNo = request.EmployeeNo,
+            EmployeeNo = employeeNo,
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -216,12 +220,24 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         await repo.ExecuteMovementAsync(m, ct);
     }
 
+    /// <summary>Issues the next sequential employee number (EMP-0001, EMP-0002, ...) for the tenant, safe under concurrent create via the DB unique index fallback check.</summary>
+    private static async Task<string> IssueEmployeeNoAsync(IWorkerRepository repo, CancellationToken ct)
+    {
+        for (var n = 1; n < 1000; n++)
+        {
+            var candidate = $"EMP-{n:D4}";
+            if (!await repo.ExistsAsync(candidate, ct))
+                return candidate;
+        }
+        return $"EMP-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+    }
+
     private static WorkerDto Map(Worker w) => new(
         w.Id, w.EmployeeNo, w.FirstName, w.MiddleName, w.LastName, w.FullName, w.PreferredName,
         w.Email, w.Phone, w.PhotoUrl, w.Nrc, w.PassportNo, w.Tpin, w.NapsaNumber, w.NhimaNumber,
         w.Nationality, w.DateOfBirth, w.SubjectId, w.WorkerType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
-        w.ManagerId.HasValue ? "" : null, w.Grade, w.JobTitle,
+        w.Manager?.FullName, w.Grade, w.JobTitle,
         w.StartDate?.ToString(), w.EndDate?.ToString(),
         w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList(),
         w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList(),

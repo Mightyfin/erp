@@ -34,7 +34,7 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         // Order client-side: EF Core's SQLite provider cannot translate ORDER BY
         // on DateTimeOffset columns (CreatedAt) into SQL.
         var items = await q.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
-            .Include(w => w.OrgUnit).Include(w => w.Location)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .Skip((page - 1) * size).Take(size)
             .ToListAsync(ct);
         items = items.OrderByDescending(w => w.CreatedAt).ToList();
@@ -43,7 +43,7 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
 
     public async Task<Worker?> GetByIdAsync(Guid id, CancellationToken ct)
         => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
-            .Include(w => w.OrgUnit).Include(w => w.Location)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.Id == id, ct);
 
     public async Task<Worker> CreateAsync(Worker worker, CancellationToken ct)
@@ -69,6 +69,9 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         worker.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<bool> ExistsAsync(string employeeNo, CancellationToken ct)
+        => await db.Workers.AnyAsync(w => w.EmployeeNo == employeeNo, ct);
 
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {

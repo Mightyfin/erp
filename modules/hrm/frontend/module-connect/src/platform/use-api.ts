@@ -131,6 +131,25 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/documents/worker/${workerId}`),
   reports: (params: Record<string, unknown>) =>
     hrmApi.get<unknown>("/hrm/reports", params),
+  /** Create a worker and return the created WorkerDto. */
+  createWorker: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/workers", body),
+  /** Patch-update a worker (fields sent as-is, backend accepts partial). */
+  updateWorker: (id: string, body: Record<string, unknown>) =>
+    hrmApi.put<Record<string, unknown>>(`/hrm/workers/${id}`, body),
+  /** Soft-archive a worker. */
+  archiveWorker: (id: string) => hrmApi.post<unknown>(`/hrm/workers/${id}/archive`, null),
+  /** Upload a document for a worker. */
+  uploadDocument: (workerId: string, file: File, category: string, title: string) =>
+    hrmApi.uploadDocument(workerId, file, category, title),
+  /** Org units (config) — used for department placement selects. */
+  orgUnits: () => hrmApi.get<unknown[]>("/hrm/admin/org-units"),
+  /** Work locations (config) — used for location placement selects. */
+  locations: async () => {
+    // Config endpoints return a paginated envelope { items, totalCount, ... }
+    const page = await hrmApi.get<{ items?: unknown[] }>('/hrm/admin/locations');
+    return page.items ?? page;
+  },
   /** Download a document and return { url, fileName }. Caller revokes url. */
   downloadDocument: async (documentId: string, fileName: string) => {
     const url = await hrmApi.downloadDocument(documentId);

@@ -35,6 +35,7 @@ public class Worker : Entity
     public Guid? LocationId { get; set; }
     public WorkLocation? Location { get; set; }
     public Guid? ManagerId { get; set; }
+    public Worker? Manager { get; set; }
     public string? Grade { get; set; }
     public string? JobTitle { get; set; }
     public DateOnly? StartDate { get; set; }

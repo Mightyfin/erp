@@ -16,6 +16,7 @@ public interface IWorkerRepository
     Task<Worker?> GetByIdAsync(Guid id, CancellationToken ct);
     Task<Worker> CreateAsync(Worker worker, CancellationToken ct);
     Task<Worker> UpdateAsync(Worker worker, CancellationToken ct);
+    Task<bool> ExistsAsync(string employeeNo, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
     Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<Assignment> CreateAssignmentAsync(Assignment assignment, CancellationToken ct);

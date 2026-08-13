@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Download,
+  FilePlus,
   FileSignature,
   Gavel,
   Lock,
@@ -142,6 +143,25 @@ function DocumentsPage() {
   const docs = USE_REAL ? realDocs : mockDocs;
   const templates = useMock(() => documentsApi.templates());
   const [view, setView] = useState("all");
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  /** Upload a file to the real backend for the demo worker, then reload. */
+  const onUpload = async (file: File) => {
+    if (!USE_REAL || !file) return;
+    setUploading(true);
+    try {
+      await realApi.uploadDocument(REAL_WORKER_ID, file, file.name.includes("contract") ? "Contract" : "General", file.name);
+      docs.reload();
+      feedback.saved(`${file.name} added to ${REAL_WORKER_NAME}'s file.`);
+      feedback.note("It is retained under the document schedule — nothing here is silently deleted.");
+    } catch (err) {
+      feedback.blocked("The file could not be uploaded.", String(err));
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
 
   return (
     <AppShell>
@@ -149,16 +169,51 @@ function DocumentsPage() {
         eyebrow="People"
         title="Documents and employee files"
         description="Who may open a document is decided by its classification, not by who it is about. Nothing here is deleted on request — it is retained, held or lawfully disposed of on a schedule."
-        primaryAction={<Button
-            onClick={() =>
-              feedback.note(
-                "Choose a template below to generate a document.",
-                "Templates are managed in Configuration, under Process design.",
-              )
-            }
-          >
-            Generate from template
-          </Button>}
+        primaryAction={
+          USE_REAL ? (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                className="hidden"
+                aria-label="Choose a document to upload"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onUpload(f);
+                }}
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInput.current?.click()}
+                disabled={uploading}
+              >
+                <FilePlus className="size-4" aria-hidden />
+                {uploading ? "Uploading…" : "Upload document"}
+              </Button>
+              <Button
+                onClick={() =>
+                  feedback.note(
+                    "Choose a template below to generate a document.",
+                    "Templates are managed in Configuration, under Process design.",
+                  )
+                }
+              >
+                Generate from template
+              </Button>
+            </>
+          ) : (
+            <Button
+              onClick={() =>
+                feedback.note(
+                  "Choose a template below to generate a document.",
+                  "Templates are managed in Configuration, under Process design.",
+                )
+              }
+            >
+              Generate from template
+            </Button>
+          )
+        }
       />
 
       <Async state={docs} rows={5}>
