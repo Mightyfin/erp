@@ -1,6 +1,7 @@
 using Mightyfin.Erp.Hrm.Application.Workers;
 using System.Globalization;
 using Mightyfin.Erp.Hrm.Application.Time;
+using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
 namespace Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
@@ -251,13 +252,33 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
         return new Paged<WorkerDocumentDto>(items.Select(d => new WorkerDocumentDto(d.Id, d.WorkerId, d.Category, d.Title, d.FileName, d.ContentType, d.SizeBytes, d.Classification, d.ExpiryDate?.ToString())).ToList(), total, 1, 50);
     }
 
-    public async Task<WorkerDocumentDto> RegisterDocumentAsync(WorkerDocumentCreate request, string storagePath, long sizeBytes, CancellationToken ct)
+    public async Task<WorkerDocumentDto> UploadDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        var d = new WorkerDocument { WorkerId = request.WorkerId, Category = request.Category, Title = request.Title, FileName = request.FileName, ContentType = request.ContentType, Classification = request.Classification, StoragePath = storagePath, SizeBytes = sizeBytes, IsLatest = true };
+        if (!ValidDocumentCategories.Contains(category))
+            throw new DomainException("document-invalid-category", $"Category '{category}' is not valid. Valid categories: {string.Join(", ", ValidDocumentCategories)}.");
+        if (!AllowedContentTypes.Any(a => contentType.StartsWith(a, StringComparison.OrdinalIgnoreCase)))
+            throw new DomainException("document-invalid-content-type", $"Content type '{contentType}' is not allowed. Allowed types: {string.Join(", ", AllowedContentTypes)}.");
+        const long MaxSizeBytes = 25 * 1024 * 1024;
+        if (sizeBytes > MaxSizeBytes)
+            throw new DomainException("document-too-large", $"Document size {sizeBytes} bytes exceeds the {MaxSizeBytes} byte limit.");
+        var d = new WorkerDocument { WorkerId = workerId, Category = category, Title = title, FileName = fileName, ContentType = contentType, Classification = "internal", StoragePath = storagePath, SizeBytes = sizeBytes, IsLatest = true };
         var created = await repo.CreateDocumentAsync(d, ct);
         return new WorkerDocumentDto(created.Id, created.WorkerId, created.Category, created.Title, created.FileName, created.ContentType, created.SizeBytes, created.Classification, created.ExpiryDate?.ToString());
     }
+
+    public async Task<(WorkerDocument Document, Stream Stream)> GetDocumentStreamAsync(Guid documentId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
+        var doc = await repo.GetDocumentAsync(documentId, ct)
+            ?? throw new DomainException("document-not-found", $"Document {documentId} does not exist.");
+        if (!File.Exists(doc.StoragePath))
+            throw new DomainException("document-missing", $"The stored file for document {documentId} is missing on disk at {doc.StoragePath}.");
+        return (doc, new FileStream(doc.StoragePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan));
+    }
+
+    private static readonly HashSet<string> ValidDocumentCategories = new(StringComparer.OrdinalIgnoreCase) { "contract", "id", "qualification", "medical", "certificate", "letter", "evidence" };
+    private static readonly string[] AllowedContentTypes = { "application/pdf", "image/png", "image/jpeg", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
 
     /// <summary>Report engine (M8): headcount, leave, and payroll register built
     /// from ledger-consistent queries; rows returned as key-value dicts so the
@@ -300,4 +321,127 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
         }
         return new ReportDto(query.ReportType, now.ToString("o"), summary, rows);
     }
+}
+
+/// <summary>Data-quality engine (M8): completeness of the statutory identity
+/// pack, duplicate identity detection, and expiring documents.</summary>
+public sealed class DqServiceImpl(IConfigRepository configRepo, IDocumentsRepository docRepo, IAuthzService authz) : IDqService
+{
+    public async Task<List<DqResult>> RunChecksAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "hr_ops");
+        var results = new List<DqResult>();
+
+        // Rule 1 — statutory completeness: every active worker should carry the
+        // Zambian identity pack needed for payroll and leave reporting.
+        var workers = await configRepo.ListAllWorkersAsync("active", ct);
+        foreach (var w in workers)
+        {
+            var missing = new List<string>();
+            if (string.IsNullOrWhiteSpace(w.Email)) missing.Add("email");
+            if (string.IsNullOrWhiteSpace(w.Phone)) missing.Add("phone");
+            if (string.IsNullOrWhiteSpace(w.Nrc)) missing.Add("nrc");
+            if (string.IsNullOrWhiteSpace(w.Tpin)) missing.Add("tpin");
+            if (string.IsNullOrWhiteSpace(w.NapsaNumber)) missing.Add("napsa_number");
+            if (string.IsNullOrWhiteSpace(w.NhimaNumber)) missing.Add("nhima_number");
+            if (w.OrgUnitId is null) missing.Add("org_unit");
+            if (w.StartDate is null) missing.Add("start_date");
+            if (missing.Count > 0)
+                results.Add(new DqResult("completeness", "medium", w.Id, $"Missing: {string.Join(", ", missing)}"));
+        }
+
+        // Rule 2 — identity duplicates across the tenant.
+        var all = await configRepo.ListAllWorkersAsync(null, ct);
+        var byEmail = all.Where(w => !string.IsNullOrWhiteSpace(w.Email)).GroupBy(w => w.Email!.Trim().ToLowerInvariant()).Where(g => g.Count() > 1);
+        foreach (var g in byEmail)
+            foreach (var w in g)
+                results.Add(new DqResult("duplicate-email", "high", w.Id, $"Email '{w.Email}' shared by {g.Count()} workers."));
+        var byNrc = all.Where(w => !string.IsNullOrWhiteSpace(w.Nrc)).GroupBy(w => w.Nrc!.Trim()).Where(g => g.Count() > 1);
+        foreach (var g in byNrc)
+            foreach (var w in g)
+                results.Add(new DqResult("duplicate-nrc", "high", w.Id, $"NRC '{w.Nrc}' shared by {g.Count()} workers."));
+        var byPhone = all.Where(w => !string.IsNullOrWhiteSpace(w.Phone)).GroupBy(w => w.Phone!.Trim()).Where(g => g.Count() > 1);
+        foreach (var g in byPhone)
+            foreach (var w in g)
+                results.Add(new DqResult("duplicate-phone", "high", w.Id, $"Phone '{w.Phone}' shared by {g.Count()} workers."));
+
+        // Rule 3 — documents expiring within 90 days (medical certificates, etc.).
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(90));
+        var docs = await docRepo.ListAllDocumentsAsync(ct);
+        foreach (var d in docs.Where(d => d.ExpiryDate.HasValue && d.ExpiryDate.Value <= cutoff))
+            results.Add(new DqResult("document-expiring", "low", d.WorkerId, $"Document '{d.Title}' (category {d.Category}) expires {d.ExpiryDate.Value:yyyy-MM-dd}."));
+
+        return results;
+    }
+}
+
+/// <summary>Zambian statutory export engine (M8). Produces CSV files for NAPSA
+/// remittance, NHIMA remittance, the ZRA PAYE register, and a NAPSA bank
+/// payment file, all derived from released (non-reversed) payroll run lines.</summary>
+public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, IAuthzService authz) : IStatutoryExportService
+{
+    public async Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var lines = await payrollRepo.ListReleasedRunLinesForPeriodAsync(payPeriodId, ct);
+        var label = lines.FirstOrDefault()?.Run?.PayPeriod?.PeriodLabel ?? payPeriodId.ToString();
+        if (lines.Count == 0)
+            throw new DomainException("export-no-data", $"No released payroll data found for period {payPeriodId}.");
+
+        var fileName = exportType switch
+        {
+            "napsa" => $"napsa-remittance-{label}.csv",
+            "nhima" => $"nhima-remittance-{label}.csv",
+            "zra" => $"zra-paye-register-{label}.csv",
+            "napsa-bankfile" => $"napsa-bankfile-{label}.txt",
+            _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported. Use napsa, nhima, zra, or napsa-bankfile.")
+        };
+
+        var withComponents = new List<(PayrollRunLine Line, Dictionary<string, decimal> Amounts)>(lines.Count);
+        foreach (var l in lines)
+        {
+            var amounts = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            foreach (var comp in l.Components)
+                amounts[comp.ComponentCode] = amounts.TryGetValue(comp.ComponentCode, out var prev) ? prev + comp.Amount : comp.Amount;
+            withComponents.Add((l, amounts));
+        }
+
+        var rows = exportType switch
+        {
+            "napsa" => withComponents.Select(t => NapsaRow(t.Line, t.Amounts)),
+            "nhima" => withComponents.Select(t => NhimaRow(t.Line, t.Amounts)),
+            "zra" => withComponents.Select(t => ZraRow(t.Line, t.Amounts)),
+            "napsa-bankfile" => withComponents.Select(t => NapsaBankRow(t.Line, t.Amounts)),
+            _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported.")
+        };
+
+        var joined = string.Join("\r\n", rows);
+        var file = Path.Combine(Path.GetTempPath(), fileName);
+        await File.WriteAllTextAsync(file, joined + "\r\n", ct);
+        return file;
+    }
+
+    private static string Csv(params object?[] values) =>
+        string.Join(",", values.Select(v => CsvField(v?.ToString() ?? "")));
+
+    private static string CsvField(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n') ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+
+    private static string NapsaRow(PayrollRunLine l, Dictionary<string, decimal> a) =>
+        Csv("EE", WorkerNo(l), FullNameOf(l), l.Worker?.NapsaNumber ?? "", Math.Round(a.TryGetValue("napsa-ee", out var v) ? v : 0, 2),
+            Math.Round(a.TryGetValue("napsa-er", out var e) ? e : 0, 2), Math.Round((a.TryGetValue("napsa-ee", out var e1) ? e1 : 0) + (a.TryGetValue("napsa-er", out var e2) ? e2 : 0), 2));
+
+    private static string NhimaRow(PayrollRunLine l, Dictionary<string, decimal> a) =>
+        Csv("EE", WorkerNo(l), FullNameOf(l), l.Worker?.NhimaNumber ?? "", Math.Round(a.TryGetValue("nhima-ee", out var v) ? v : 0, 2),
+            Math.Round(a.TryGetValue("nhima-er", out var e) ? e : 0, 2), Math.Round((a.TryGetValue("nhima-ee", out var e1) ? e1 : 0) + (a.TryGetValue("nhima-er", out var e2) ? e2 : 0), 2));
+
+    private static string ZraRow(PayrollRunLine l, Dictionary<string, decimal> a) =>
+        Csv(WorkerNo(l), FullNameOf(l), l.Worker?.Tpin ?? "", Math.Round(l.GrossPay, 2), Math.Round(a.TryGetValue("paye", out var v) ? v : 0, 2), Math.Round(l.NetPay, 2));
+
+    private static string NapsaBankRow(PayrollRunLine l, Dictionary<string, decimal> a) =>
+        // Fixed-width NAPSA bank payment file: name left-padded, member number, amount in ngwee (cents) right-padded.
+        $"{FullNameOf(l),-30}{(l.Worker?.NapsaNumber ?? "").PadRight(9)}{((long)Math.Round(a.TryGetValue("napsa-ee", out var v) ? v : 0, 2) * 100).ToString().PadLeft(12, '0')}";
+
+    private static string WorkerNo(PayrollRunLine l) => l.Worker?.EmployeeNo ?? "";
+    private static string FullNameOf(PayrollRunLine l) => $"{l.Worker?.FirstName ?? ""} {l.Worker?.LastName ?? ""}".Trim();
 }

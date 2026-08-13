@@ -48,10 +48,26 @@ public sealed record RelationsCaseDto(Guid Id, Guid? SubjectWorkerId, string Cas
 public interface IDocumentsService
 {
     Task<Paged<WorkerDocumentDto>> ListDocumentsAsync(Guid workerId, CancellationToken ct);
-    Task<WorkerDocumentDto> RegisterDocumentAsync(WorkerDocumentCreate request, string storagePath, long sizeBytes, CancellationToken ct);
+    Task<WorkerDocumentDto> UploadDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
+    Task<(WorkerDocument Document, Stream Stream)> GetDocumentStreamAsync(Guid documentId, CancellationToken ct);
     Task<ReportDto> GetReportAsync(ReportQuery query, CancellationToken ct);
 }
 public sealed record WorkerDocumentDto(Guid Id, Guid WorkerId, string Category, string Title, string FileName, string ContentType, long SizeBytes, string Classification, string? ExpiryDate);
+
+/// <summary>Data-quality engine (M8): workspace rules evaluated per worker or
+/// across the tenant — completeness, identity duplicates, and expiring documents.</summary>
+public interface IDqService
+{
+    Task<List<DqResult>> RunChecksAsync(CancellationToken ct);
+}
+public sealed record DqResult(string Rule, string Severity, Guid WorkerId, string Detail);
+
+/// <summary>Statutory export engine (M8): Zambian remittance files and registers
+/// produced from released payroll runs.</summary>
+public interface IStatutoryExportService
+{
+    Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct);
+}
 
 /// <summary>Persistence contracts implemented by EF Core in Infrastructure.</summary>
 public interface IConfigRepository
@@ -116,6 +132,8 @@ public interface IDocumentsRepository
 {
     Task<(List<WorkerDocument> Items, int Total)> ListDocumentsAsync(Guid workerId, CancellationToken ct);
     Task<WorkerDocument> CreateDocumentAsync(WorkerDocument document, CancellationToken ct);
+    Task<WorkerDocument?> GetDocumentAsync(Guid id, CancellationToken ct);
+    Task<List<WorkerDocument>> ListAllDocumentsAsync(CancellationToken ct);
 }
 
 // Domain entities for recruitment/relations (kept small for M7)

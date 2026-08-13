@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -522,16 +525,54 @@ public static class Routes
         var g = app.MapGroup("/api/hrm/documents").RequireAuthorization();
         g.MapGet("/worker/{workerId:guid}", async (Guid workerId, IDocumentsService svc, CancellationToken ct) =>
             await svc.ListDocumentsAsync(workerId, ct));
-        g.MapPost("/", async (HttpContext http, IDocumentsService svc, CancellationToken ct) =>
+        g.MapPost("/upload", async (HttpContext http, IDocumentsService svc, CancellationToken ct) =>
         {
-            var request = await ReadBodyAsync<WorkerDocumentCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.RegisterDocumentAsync(request, "/tmp/erp-docs", 0, ct));
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.FirstOrDefault(f => f.Name.Equals("file", StringComparison.OrdinalIgnoreCase))
+                ?? throw new DomainException("bad-request", "No file uploaded in the 'file' part.");
+            if (file.Length == 0)
+                throw new DomainException("bad-request", "Uploaded file is empty.");
+            var workerId = Guid.Parse(form["workerId"].ToString());
+            var category = form["category"].ToString();
+            var title = form["title"].ToString();
+            var storageDir = Path.Combine(Path.GetTempPath(), "erp-docs");
+            Directory.CreateDirectory(storageDir);
+            var storagePath = Path.Combine(storageDir, $"{Guid.NewGuid():N}-{file.FileName}");
+            await using (var fs = File.Create(storagePath))
+                await file.CopyToAsync(fs, ct);
+            return Results.Created("", await svc.UploadDocumentAsync(
+                workerId, category, title, file.FileName, file.ContentType ?? "application/octet-stream",
+                file.Length, storagePath, ct));
+        });
+        g.MapGet("/{id:guid}/download", async (Guid id, IDocumentsService svc, CancellationToken ct) =>
+        {
+            var (doc, stream) = await svc.GetDocumentStreamAsync(id, ct);
+            return Results.File(stream, doc.ContentType, doc.FileName);
         });
         var reports = app.MapGroup("/api/hrm/reports").RequireAuthorization();
         reports.MapGet("/", async ([AsParameters] ReportQuery query, IDocumentsService svc, CancellationToken ct) =>
             await svc.GetReportAsync(query, ct));
     }
+
+    public static void RegisterDq(WebApplication app)
+    {
+        var g = app.MapGroup("/api/hrm/dq").RequireAuthorization();
+        g.MapGet("/checks", async (IDqService svc, CancellationToken ct) => await svc.RunChecksAsync(ct));
+    }
+
+    public static void RegisterStatutory(WebApplication app)
+    {
+        var g = app.MapGroup("/api/hrm/statutory-exports").RequireAuthorization();
+        g.MapGet("/", async ([AsParameters] StatutoryExportQuery q, IStatutoryExportService svc, CancellationToken ct) =>
+        {
+            var file = await svc.GenerateAsync(q.ExportType, q.PeriodId, ct);
+            var bytes = await File.ReadAllBytesAsync(file, ct);
+            File.Delete(file);
+            return Results.File(bytes, "text/csv", $"{q.ExportType}-{q.PeriodId:N}.csv");
+        });
+    }
 }
 
 // Route-local binding types.
 public sealed record PayrollRunApprovalNote(string? Note);
+public sealed record StatutoryExportQuery(string ExportType, Guid PeriodId);

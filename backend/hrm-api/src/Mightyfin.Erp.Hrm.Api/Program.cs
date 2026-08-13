@@ -67,6 +67,8 @@ builder.Services.AddScoped<IRelationsRepository, RelationsRepository>();
 builder.Services.AddScoped<IRelationsService, RelationsServiceImpl>();
 builder.Services.AddScoped<IDocumentsRepository, DocumentsRepository>();
 builder.Services.AddScoped<IDocumentsService, DocumentsServiceImpl>();
+builder.Services.AddScoped<IDqService, DqServiceImpl>();
+builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>();
 
 // ---------- AuthN: OIDC via Keycloak, with developer-fallback mode ----------
 var authMode = builder.Configuration["ERP:AuthMode"] ?? builder.Configuration["HRM:AuthMode"] ?? "oidc";
@@ -146,6 +148,8 @@ Routes.RegisterConfig(app);
 Routes.RegisterRecruitment(app);
 Routes.RegisterRelations(app);
 Routes.RegisterDocuments(app);
+Routes.RegisterDq(app);
+Routes.RegisterStatutory(app);
 
 app.Run();
 

@@ -748,7 +748,7 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
             .Select(r => r.Id).ToListAsync(ct);
         if (runIds.Count == 0) return [];
-        return await db.PayrollRunLines.Include(l => l.Components)
+        return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker).Include(l => l.Run)
             .Where(l => runIds.Contains(l.RunId)).ToListAsync(ct);
     }
 
@@ -927,7 +927,7 @@ public sealed class DocumentsRepository(HrmDbContext db) : IDocumentsRepository
 {
     public async Task<(List<WorkerDocument> Items, int Total)> ListDocumentsAsync(Guid workerId, CancellationToken ct)
     {
-        var items = (await db.WorkerDocuments.Where(d => d.WorkerId == workerId && !d.IsArchived).ToListAsync(ct))
+        var items = (await db.WorkerDocuments.Where(d => d.WorkerId == workerId).ToListAsync(ct))
             .OrderByDescending(d => d.CreatedAt).ToList();
         return (items, items.Count);
     }
@@ -937,4 +937,8 @@ public sealed class DocumentsRepository(HrmDbContext db) : IDocumentsRepository
         await db.SaveChangesAsync(ct);
         return document;
     }
+    public async Task<WorkerDocument?> GetDocumentAsync(Guid id, CancellationToken ct) =>
+        await db.WorkerDocuments.FirstOrDefaultAsync(d => d.Id == id, ct);
+    public async Task<List<WorkerDocument>> ListAllDocumentsAsync(CancellationToken ct) =>
+        await db.WorkerDocuments.ToListAsync(ct);
 }
