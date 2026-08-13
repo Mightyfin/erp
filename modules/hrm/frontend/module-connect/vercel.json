@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/hrm/:path*",
-      "destination": "https://api.mightyfinance.co.zm/api/hrm/:path*"
+      "destination": "https://erp.mightyfinance.co.zm/api/hrm/:path*"
     }
   ],
   "routes": [
