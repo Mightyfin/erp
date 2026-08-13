@@ -57,6 +57,7 @@ builder.Services.AddScoped<IExperienceRepository, ExperienceRepository>();
 builder.Services.AddScoped<IExperienceService, ExperienceServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
+builder.Services.AddScoped<IPayslipDocumentService, PayslipDocumentServiceImpl>();
 builder.Services.AddScoped<IConfigRepository, ConfigRepository>();
 builder.Services.AddScoped<IConfigService, ConfigServiceImpl>();
 builder.Services.AddScoped<IConfigAdminService, ConfigAdminServiceImpl>();

@@ -114,7 +114,8 @@ public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? Wor
 public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentCode, string ComponentName, decimal Amount);
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,
-    int ExceptionCount, string? CalcVersion, DateTimeOffset CreatedAt);
+    int ExceptionCount, string? CalcVersion, DateTimeOffset CreatedAt,
+    bool IsReversal = false, Guid? ReversesRunId = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components);
@@ -123,6 +124,12 @@ public sealed record PayrollLineComponentDto(string ComponentCode, string Compon
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,
     decimal TotalDeductions, decimal NetPay, string? YtdGross, string? YtdTax, string? YtdNet,
     string Status, string? DocumentUrl, DateTimeOffset? ReleasedAt, Guid? SupersedesId);
+public sealed record PayrollRunReverseCreate(string? Reason = null);
+public sealed record EmployerLiabilityRow(string ComponentCode, string ComponentName, string Payer,
+    decimal TotalAmount, int WorkerCount);
+public sealed record EmployerLiabilityReportDto(string PeriodLabel, string TaxYear,
+    List<EmployerLiabilityRow> Rows, decimal TotalStatutory, DateTimeOffset GeneratedAt);
+public sealed record PayslipGenerateRequest(Guid PayslipId);
 
 // ===================== Admin config =====================
 

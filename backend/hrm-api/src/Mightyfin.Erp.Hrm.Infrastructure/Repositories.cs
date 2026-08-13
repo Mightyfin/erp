@@ -575,7 +575,11 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         => await db.PayrollRuns.Include(r => r.PayPeriod).FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public async Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct)
-        => await db.PayrollRuns.FirstOrDefaultAsync(r => r.PayPeriodId == payPeriodId, ct);
+        // Only an open (non-terminal) run blocks a new run: reversed/closed runs are
+        // historical and a fresh replacement run may be created after reversal.
+        => await db.PayrollRuns.FirstOrDefaultAsync(
+            r => r.PayPeriodId == payPeriodId && r.Status != "reversed" && r.Status != "closed" && !r.IsReversal,
+            ct);
 
     public async Task<PayrollRun> CreateRunAsync(PayrollRun run, CancellationToken ct)
     {
@@ -597,11 +601,13 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
-        var profiles = await db.WorkerPayrollProfiles
+        var profiles = (await db.WorkerPayrollProfiles
             .Include(p => p.Worker).ThenInclude(w => w!.BankDetails)
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
-            .Where(p => p.PayGroupId == period.PayGroupId && (!p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime)))
-            .ToListAsync(ct);
+            .Where(p => p.PayGroupId == period.PayGroupId)
+            .ToListAsync(ct))
+            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime))
+            .ToList();
         var components = await db.SalaryComponents.Where(c => c.IsActive).OrderBy(c => c.Priority).ToListAsync(ct);
         var rules = await db.ContributionRules.Where(r => r.IsActive).ToListAsync(ct);
         var year = period.StartDate.Year.ToString();
@@ -632,26 +638,94 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task FinalizePayslipsAsync(Guid runId, CancellationToken ct)
     {
+        var run = await db.PayrollRuns.Include(r => r.PayPeriod)
+            .FirstAsync(r => r.Id == runId, ct);
         var lines = await db.PayrollRunLines.Include(l => l.Worker)
             .Where(l => l.RunId == runId).ToListAsync(ct);
-        int idx = 0;
+
+        // YTD accumulation: released (non-reversed) runs in the same pay group
+        // and tax year, ordered chronologically by period label.
+        var taxYear = run.PayPeriod?.StartDate.Year.ToString() ?? DateTime.UtcNow.Year.ToString();
+        var periodStartYear = run.PayPeriod?.StartDate.Year ?? DateTime.UtcNow.Year;
+        var prior = await (from r in db.PayrollRuns
+                           join p in db.PayPeriods on r.PayPeriodId equals p.Id
+                           where r.PayGroupId == run.PayGroupId
+                              && r.PayGroupId == p.PayGroupId
+                              && r.Status == "released" && !r.IsReversal && r.Id != run.Id
+                              && p.StartDate.Year == periodStartYear
+                           select new { Run = r, Period = p }).ToListAsync(ct);
+        prior = prior.OrderBy(x => x.Period.StartDate).ThenBy(x => x.Run.CreatedAt).ToList();
+
+        // If this run is a replacement for a reversal, chain each replacement
+        // payslip to the original slip it supersedes.
+        Func<PayrollRunLine, Guid?> originalSlipFor = _ => null;
+        var originalSlips = new Dictionary<Guid, Guid>();
+        if (run.IsReversal && run.ReversesRunId is not null)
+        {
+            var originals = await db.Payslips
+                .Join(db.PayrollRunLines, s => s.RunLineId, l => l.Id, (s, l) => new { Slip = s, Line = l })
+                .Where(x => x.Line.RunId == run.ReversesRunId)
+                .Where(x => x.Slip.Status == "superseded")
+                .Select(x => new { x.Slip.Id, x.Line.WorkerId }).ToListAsync(ct);
+            foreach (var o in originals)
+                originalSlips[o.WorkerId] = o.Id;
+            originalSlipFor = ln => originalSlips.TryGetValue(ln.WorkerId, out var oid) ? oid : null;
+        }
+
+        // Sequence the payslip number past any existing slips for the same
+        // worker's monthly prefix so the unique payslip_no index never collides.
+        var prefix = $"PSL-{DateTime.UtcNow:yyyyMM}";
+        var maxSeq = (await db.Payslips
+            .Where(s => s.PayslipNo.StartsWith(prefix))
+            .Select(s => (string?)s.PayslipNo)
+            .ToListAsync(ct))
+            .Select(n => n!.Substring(prefix.Length + 1))
+            .Select(part => int.TryParse(part.Split('-').Last(), out var v) ? v : 0)
+            .DefaultIfEmpty(0).Max();
+        int idx = maxSeq;
         foreach (var line in lines)
         {
             idx++;
+            var ytdGross = prior.Sum(x => x.Run.TotalGross) + line.GrossPay;
+            var ytdNet = prior.Sum(x => x.Run.TotalNet) + line.NetPay;
+            var ytdTax = prior.Sum(x => x.Run.TotalDeductions) + line.TotalDeductions;
             db.Payslips.Add(new Payslip
             {
                 RunLineId = line.Id,
                 WorkerId = line.WorkerId,
+                SupersedesId = originalSlipFor(line),
                 PayslipNo = $"PSL-{DateTime.UtcNow:yyyyMM}-{line.Worker?.EmployeeNo ?? "???"}-{idx:D3}",
                 Version = 1,
                 GrossPay = line.GrossPay,
                 TotalDeductions = line.TotalDeductions,
                 NetPay = line.NetPay,
+                YtdGross = ytdGross.ToString("F2"),
+                YtdTax = ytdTax.ToString("F2"),
+                YtdNet = ytdNet.ToString("F2"),
                 Status = "final",
                 ReleasedAt = DateTimeOffset.UtcNow,
             });
         }
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>On release of a reversal run, supersede the original run's
+    /// payslips (supersedes idempotently: only payslips still final get voided).</summary>
+    public async Task<int> SupersedeOriginalPayslipsAsync(Guid originalRunId, CancellationToken ct)
+    {
+        var originals = await db.Payslips
+            .Join(db.PayrollRunLines, s => s.RunLineId, l => l.Id, (s, l) => new { Slip = s, Line = l })
+            .Where(x => x.Line.RunId == originalRunId)
+            .Where(x => x.Slip.Status == "final")
+            .Select(x => x.Slip).ToListAsync(ct);
+        int count = 0;
+        foreach (var slip in originals)
+        {
+            slip.Status = "superseded";
+            count++;
+        }
+        await db.SaveChangesAsync(ct);
+        return count;
     }
 
     public async Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct)
@@ -663,6 +737,34 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct)
         => await db.Payslips.FirstOrDefaultAsync(p => p.Id == id, ct);
+
+    public async Task<PayrollRun?> FindRunByReversesIdAsync(Guid reversesRunId, CancellationToken ct)
+        => await db.PayrollRuns.FirstOrDefaultAsync(r => r.ReversesRunId == reversesRunId && r.IsReversal, ct);
+
+    public async Task<List<PayrollRunLine>> ListReleasedRunLinesForPeriodAsync(Guid payPeriodId, CancellationToken ct)
+    {
+        // Statutory aggregates across all released, non-reversed runs in the period.
+        var runIds = await db.PayrollRuns
+            .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
+            .Select(r => r.Id).ToListAsync(ct);
+        if (runIds.Count == 0) return [];
+        return await db.PayrollRunLines.Include(l => l.Components)
+            .Where(l => runIds.Contains(l.RunId)).ToListAsync(ct);
+    }
+
+    public async Task<PayrollRunLine?> GetRunLineForPayslipAsync(Guid payslipId, CancellationToken ct)
+    {
+        var slip = await db.Payslips.FirstOrDefaultAsync(s => s.Id == payslipId, ct);
+        if (slip is null) return null;
+        return await db.PayrollRunLines.Include(l => l.Components)
+            .FirstOrDefaultAsync(l => l.Id == slip.RunLineId, ct);
+    }
+
+    public async Task UpdatePayslipAsync(Payslip payslip, CancellationToken ct)
+    {
+        db.Payslips.Update(payslip);
+        await db.SaveChangesAsync(ct);
+    }
 }
 
 // ===================== Config / extras =====================

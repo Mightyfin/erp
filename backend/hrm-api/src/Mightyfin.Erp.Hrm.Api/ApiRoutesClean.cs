@@ -345,6 +345,17 @@ public static class Routes
             => await svc.GetPayslipsAsync(workerId, ct));
         g.MapGet("/payslips/id/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetPayslipByIdAsync(id, ct));
+
+        // ---------- M6: reversal, liability reports, payslip documents ----------
+        g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();
+            return Results.Ok(await svc.ReverseRunAsync(id, request, ct));
+        });
+        g.MapGet("/reports/employer-liability/{periodId:guid}", async (Guid periodId, IPayrollService svc, CancellationToken ct)
+            => await svc.EmployerLiabilityReportAsync(periodId, ct));
+        g.MapPost("/payslips/{id:guid}/generate", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GeneratePayslipDocumentAsync(id, ct)));
     }
 
     public static void RegisterConfig(WebApplication app)

@@ -30,6 +30,16 @@ public interface IPayrollService
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct);
     Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct);
+
+    // M6: reversal of a released run (audit-preserving — never deletes history)
+    Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct);
+
+    // M6: YTD-aware payslip document generation
+    Task<PayslipDto> GeneratePayslipDocumentAsync(Guid payslipId, CancellationToken ct);
+
+    // M6: statutory employer liability report for a period (ZRA PAYE, NAPSA, NHIMA)
+    Task<EmployerLiabilityReportDto> EmployerLiabilityReportAsync(Guid payPeriodId, CancellationToken ct);
+
     Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<PayslipDto?> GetPayslipByIdAsync(Guid id, CancellationToken ct);
 }
@@ -39,7 +49,8 @@ public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate,
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
 
-public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService authz) : IPayrollService
+public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService authz,
+    IPayslipDocumentService payslipDocument) : IPayrollService
 {
     public async Task<List<SalaryComponentDto>> ListComponentsAsync(string? type, CancellationToken ct)
     {
@@ -251,8 +262,116 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
         run.Status = "released";
         await repo.UpdateRunAsync(run, ct);
+        // Reversal runs negate the original: supersede its payslips FIRST so the
+        // replacement payslips generated below can chain to them via SupersedesId.
+        if (run.IsReversal && run.ReversesRunId.HasValue)
+        {
+            await repo.SupersedeOriginalPayslipsAsync(run.ReversesRunId.Value, ct);
+            var original = await repo.GetRunAsync(run.ReversesRunId.Value, ct);
+            if (original is not null && original.Status == "reversed")
+            {
+                original.Status = "closed"; // release cycle complete
+                await repo.UpdateRunAsync(original, ct);
+            }
+        }
         await repo.FinalizePayslipsAsync(run.Id, ct);
         return MapRun(run);
+    }
+
+    /// <summary>Reverses a released run audit-preservingly: creates a new draft
+    /// reversal run in the same period whose release negates the original. The
+    /// original run's payslips are superseded once the reversal is released; the
+    /// original's status moves to reversed and it can never be re-released.</summary>
+    public async Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "released")
+            throw new DomainException("run-not-reversible", $"Run is in status {run.Status}; only released runs can be reversed.");
+        if (run.IsReversal)
+            throw new DomainException("run-already-reversal", "A reversal run cannot itself be reversed; create a new regular run instead.");
+
+        // Idempotency: at most one reversal run per original run.
+        var existingReversal = await repo.FindRunByReversesIdAsync(run.Id, ct);
+        if (existingReversal is not null)
+            throw new DomainException("run-reversal-exists", $"Run {id} already has a reversal run {existingReversal.Id} (status {existingReversal.Status}).");
+
+        // Mark original as reversed so it is excluded from control totals.
+        run.Status = "reversed";
+        await repo.UpdateRunAsync(run, ct);
+
+        var reversal = new PayrollRun
+        {
+            PayPeriodId = run.PayPeriodId,
+            PayGroupId = run.PayGroupId,
+            Status = "draft",
+            IsReversal = true,
+            ReversesRunId = run.Id,
+        };
+        await repo.CreateRunAsync(reversal, ct);
+        return MapRun(reversal);
+    }
+
+    /// <summary>Employer statutory liability for a period, aggregated across all
+    /// released (non-reversed) runs: ZRA PAYE, NAPSA EE+ER and NHIMA EE+ER.</summary>
+    public async Task<EmployerLiabilityReportDto> EmployerLiabilityReportAsync(Guid payPeriodId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var period = await repo.GetPeriodAsync(payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", $"Pay period {payPeriodId} does not exist.");
+
+        var lines = await repo.ListReleasedRunLinesForPeriodAsync(payPeriodId, ct);
+        var components = (await repo.ListAllComponentsAsync(ct))
+            .GroupBy(c => c.Code, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        // aggregate per statutory component code, split by payer
+        var agg = new Dictionary<string, EmployerLiabilityRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in lines)
+        {
+            foreach (var lc in line.Components)
+            {
+                if (!lc.IsStatutory) continue;
+                var payer = lc.ComponentType switch
+                {
+                    "employer-contribution" => "employer",
+                    "deduction" => "employee",
+                    "tax" => "employee",
+                    _ => "other",
+                };
+                var key = $"{lc.ComponentCode}:{payer}";
+                if (!agg.TryGetValue(key, out var row))
+                {
+                    components.TryGetValue(lc.ComponentCode, out var comp);
+                    row = new EmployerLiabilityRow(lc.ComponentCode, lc.ComponentName, payer, 0, 0);
+                    agg[key] = row;
+                }
+                agg[key] = row with { TotalAmount = row.TotalAmount + lc.Amount, WorkerCount = row.WorkerCount + 1 };
+            }
+        }
+        var rows = agg.Values.OrderByDescending(r => r.TotalAmount).ToList();
+        return new EmployerLiabilityReportDto(
+            period.PeriodLabel,
+            period.PeriodLabel.Contains("-") && period.PeriodLabel.Length >= 4 ? period.PeriodLabel[..4] : (period.PeriodLabel.Length >= 4 ? period.PeriodLabel[^4..] : ""),
+            rows,
+            rows.Where(r => r.Payer == "employer").Sum(r => r.TotalAmount),
+            DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>Generates a payslip PDF document and stores its URL on the
+    /// payslip (idempotent — re-generating replaces the document).</summary>
+    public async Task<PayslipDto> GeneratePayslipDocumentAsync(Guid payslipId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin");
+        var slip = await repo.GetPayslipAsync(payslipId, ct)
+            ?? throw new DomainException("payslip-not-found", $"Payslip {payslipId} does not exist.");
+        var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
+            ?? throw new DomainException("payslip-line-missing", $"Payslip {payslipId} has no run line.");
+
+        slip.DocumentUrl = await payslipDocument.GenerateAsync(slip, line, ct);
+        slip.Status = "final";
+        await repo.UpdatePayslipAsync(slip, ct);
+        return MapPayslip(slip);
     }
 
     public async Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, CancellationToken ct)
@@ -275,7 +394,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
 
     private static PayrollRunDto MapRun(PayrollRun r) => new(
         r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
-        r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt);
+        r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
@@ -408,6 +527,11 @@ public interface IPayrollRepository
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);
     Task FinalizePayslipsAsync(Guid runId, CancellationToken ct);
+    Task<int> SupersedeOriginalPayslipsAsync(Guid originalRunId, CancellationToken ct);
+    Task<PayrollRun?> FindRunByReversesIdAsync(Guid reversesRunId, CancellationToken ct);
+    Task<List<PayrollRunLine>> ListReleasedRunLinesForPeriodAsync(Guid payPeriodId, CancellationToken ct);
+    Task<PayrollRunLine?> GetRunLineForPayslipAsync(Guid payslipId, CancellationToken ct);
+    Task UpdatePayslipAsync(Payslip payslip, CancellationToken ct);
     Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
 }

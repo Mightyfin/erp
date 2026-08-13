@@ -76,7 +76,7 @@ public class Payslip : Entity
     public string? YtdGross { get; set; }
     public string? YtdTax { get; set; }
     public string? YtdNet { get; set; }
-    public string Status { get; set; } = "released";  // draft | released | corrected | voided
+    public string Status { get; set; } = "final";       // final | corrected | voided | superseded
     public string? DocumentUrl { get; set; }
     public DateTimeOffset? ReleasedAt { get; set; }
     public ICollection<PayslipAccessLog> AccessLogs { get; set; } = new List<PayslipAccessLog>();
