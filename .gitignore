@@ -47,3 +47,9 @@ Thumbs.db
 # Office lock/temp files, so an open .docx never blocks or dirties a commit
 ~$*
 .~lock.*#
+
+# .NET
+bin/
+obj/
+*.user
+.vs/

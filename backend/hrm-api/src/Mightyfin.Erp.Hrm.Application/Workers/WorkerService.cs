@@ -1,0 +1,229 @@
+using Mightyfin.Erp.Hrm.Domain.Entities;
+
+namespace Mightyfin.Erp.Hrm.Application.Workers;
+
+/// <summary>Worker record CRUD and search. All queries are tenant-scoped and
+/// honour status filters; search indexes employee number, name and NRC.</summary>
+public interface IWorkerService
+{
+    Task<Paged<WorkerDto>> ListAsync(WorkerListFilters filters, CancellationToken ct);
+    Task<WorkerDto?> GetByIdAsync(Guid id, CancellationToken ct);
+    Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct);
+    Task<WorkerDto> UpdateAsync(Guid id, WorkerUpdateRequest request, CancellationToken ct);
+    Task ArchiveAsync(Guid id, CancellationToken ct);
+    Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
+    Task<AssignmentDto> CreateAssignmentAsync(AssignmentCreateRequest request, CancellationToken ct);
+    Task<Paged<MovementDto>> ListMovementsAsync(Guid workerId, CancellationToken ct);
+    Task<MovementDto> CreateMovementAsync(MovementCreateRequest request, CancellationToken ct);
+    Task ExecuteMovementAsync(Guid movementId, CancellationToken ct);
+}
+
+public sealed record AssignmentDto(Guid Id, string JobTitle, string? Grade, string ContractType,
+    string Status, string StartDate, string? EndDate, string OrgUnitName, string LocationName);
+
+public sealed record MovementDto(Guid Id, string MovementType, string Status, string Reason,
+    string EffectiveDate, string? ToOrgUnitName, string? ToJobTitle, string? ToGrade,
+    DateTimeOffset CreatedAt);
+
+public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService authz, IIdProvider idGen) : IWorkerService
+{
+    public async Task<Paged<WorkerDto>> ListAsync(WorkerListFilters filters, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager");
+        var (items, total) = await repo.ListAsync(filters, ct);
+        return new Paged<WorkerDto>(items.Select(Map).ToList(), total, filters.Page, filters.PageSize);
+    }
+
+    public async Task<WorkerDto?> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee");
+        var w = await repo.GetByIdAsync(id, ct);
+        return w is null ? null : Map(w);
+    }
+
+    public async Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var worker = new Worker
+        {
+            EmployeeNo = request.EmployeeNo,
+            FirstName = request.FirstName,
+            MiddleName = request.MiddleName,
+            LastName = request.LastName,
+            PreferredName = request.PreferredName,
+            Email = request.Email,
+            Phone = request.Phone,
+            Nrc = request.Nrc,
+            PassportNo = request.PassportNo,
+            Tpin = request.Tpin,
+            NapsaNumber = request.NapsaNumber,
+            NhimaNumber = request.NhimaNumber,
+            Nationality = request.Nationality ?? "Zambian",
+            DateOfBirth = request.DateOfBirth,
+            WorkerType = request.WorkerType,
+            Status = request.StartDate is not null ? "active" : "pre-hire",
+            OrgUnitId = request.OrgUnitId,
+            LocationId = request.LocationId,
+            ManagerId = request.ManagerId,
+            Grade = request.Grade,
+            JobTitle = request.JobTitle,
+            StartDate = request.StartDate is null ? null : DateOnly.Parse(request.StartDate),
+        };
+        foreach (var ec in request.EmergencyContacts ?? [])
+            worker.EmergencyContacts.Add(new EmergencyContact { Relationship = ec.Relationship, FullName = ec.FullName, Phone = ec.Phone, IsPrimary = ec.IsPrimary });
+        foreach (var bd in request.BankDetails ?? [])
+            worker.BankDetails.Add(new WorkerBankDetail { BankName = bd.BankName, BranchCode = bd.BranchCode, AccountNumber = bd.AccountNumber, AccountName = bd.AccountName, PaymentMethod = bd.PaymentMethod, MobileMoneyNumber = bd.MobileMoneyNumber, IsPrimary = bd.IsPrimary });
+        var created = await repo.CreateAsync(worker, ct);
+        return Map(created);
+    }
+
+    public async Task<WorkerDto> UpdateAsync(Guid id, WorkerUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var worker = await repo.GetByIdAsync(id, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {id} does not exist.");
+        if (request.FirstName is not null) worker.FirstName = request.FirstName;
+        if (request.MiddleName is not null) worker.MiddleName = request.MiddleName;
+        if (request.LastName is not null) worker.LastName = request.LastName;
+        if (request.PreferredName is not null) worker.PreferredName = request.PreferredName;
+        if (request.Email is not null) worker.Email = request.Email;
+        if (request.Phone is not null) worker.Phone = request.Phone;
+        if (request.Nrc is not null) worker.Nrc = request.Nrc;
+        if (request.PassportNo is not null) worker.PassportNo = request.PassportNo;
+        if (request.Tpin is not null) worker.Tpin = request.Tpin;
+        if (request.NapsaNumber is not null) worker.NapsaNumber = request.NapsaNumber;
+        if (request.NhimaNumber is not null) worker.NhimaNumber = request.NhimaNumber;
+        if (request.Nationality is not null) worker.Nationality = request.Nationality;
+        if (request.DateOfBirth is not null) worker.DateOfBirth = request.DateOfBirth;
+        if (request.OrgUnitId.HasValue) worker.OrgUnitId = request.OrgUnitId.Value;
+        if (request.LocationId.HasValue) worker.LocationId = request.LocationId.Value;
+        if (request.ManagerId.HasValue) worker.ManagerId = request.ManagerId.Value;
+        if (request.Grade is not null) worker.Grade = request.Grade;
+        if (request.JobTitle is not null) worker.JobTitle = request.JobTitle;
+        if (request.Status is not null) worker.Status = request.Status;
+        if (request.EndDate is not null) worker.EndDate = DateOnly.Parse(request.EndDate);
+        if (request.EmergencyContacts is not null)
+        {
+            worker.EmergencyContacts.Clear();
+            foreach (var ec in request.EmergencyContacts)
+                worker.EmergencyContacts.Add(new EmergencyContact { Relationship = ec.Relationship, FullName = ec.FullName, Phone = ec.Phone, IsPrimary = ec.IsPrimary });
+        }
+        if (request.BankDetails is not null)
+        {
+            worker.BankDetails.Clear();
+            foreach (var bd in request.BankDetails)
+                worker.BankDetails.Add(new WorkerBankDetail { BankName = bd.BankName, BranchCode = bd.BranchCode, AccountNumber = bd.AccountNumber, AccountName = bd.AccountName, PaymentMethod = bd.PaymentMethod, MobileMoneyNumber = bd.MobileMoneyNumber, IsPrimary = bd.IsPrimary });
+        }
+        var updated = await repo.UpdateAsync(worker, ct);
+        return Map(updated);
+    }
+
+    public async Task ArchiveAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        await repo.ArchiveAsync(id, ct);
+    }
+
+    public async Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager");
+        var (items, total) = await repo.ListAssignmentsAsync(workerId, ct);
+        return new Paged<AssignmentDto>(items.Select(a => new AssignmentDto(
+            a.Id, a.JobTitle ?? "", a.Grade, a.ContractType, a.Status,
+            a.StartDate.ToString(), a.EndDate?.ToString(),
+            a.OrgUnit?.Name ?? "", a.Location?.Name ?? "")).ToList(), total, 1, 50);
+    }
+
+    public async Task<AssignmentDto> CreateAssignmentAsync(AssignmentCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var a = new Assignment
+        {
+            WorkerId = request.WorkerId,
+            LegalEntityId = request.LegalEntityId,
+            OrgUnitId = request.OrgUnitId,
+            LocationId = request.LocationId,
+            ManagerId = request.ManagerId,
+            JobTitle = request.JobTitle,
+            Grade = request.Grade,
+            PositionNo = request.PositionNo,
+            ContractType = request.ContractType,
+            WorkPattern = request.WorkPattern,
+            ProbationMonths = request.ProbationMonths,
+            NoticeDays = request.NoticeDays,
+            StartDate = DateOnly.Parse(request.StartDate),
+            EndDate = request.EndDate is null ? null : DateOnly.Parse(request.EndDate),
+            EffectiveFrom = DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime),
+            Status = "current",
+        };
+        var created = await repo.CreateAssignmentAsync(a, ct);
+        return new AssignmentDto(created.Id, created.JobTitle ?? "", created.Grade, created.ContractType,
+            created.Status, created.StartDate.ToString(), created.EndDate?.ToString(),
+            created.OrgUnit?.Name ?? "", created.Location?.Name ?? "");
+    }
+
+    public async Task<Paged<MovementDto>> ListMovementsAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager");
+        var (items, total) = await repo.ListMovementsAsync(workerId, ct);
+        return new Paged<MovementDto>(items.Select(m => new MovementDto(
+            m.Id, m.MovementType, m.Status, m.Reason, m.EffectiveDate.ToString(),
+            null, m.ToJobTitle, m.ToGrade, m.CreatedAt)).ToList(), total, 1, 50);
+    }
+
+    public async Task<MovementDto> CreateMovementAsync(MovementCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager");
+        var worker = await repo.GetByIdAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {request.WorkerId} does not exist.");
+        var m = new Movement
+        {
+            WorkerId = request.WorkerId,
+            MovementType = request.MovementType,
+            Reason = request.Reason,
+            EffectiveDate = DateOnly.Parse(request.EffectiveDate),
+            FromOrgUnitId = worker.OrgUnitId,
+            FromJobTitle = worker.JobTitle,
+            FromGrade = worker.Grade,
+            ToOrgUnitId = request.ToOrgUnitId,
+            ToJobTitle = request.ToJobTitle,
+            ToGrade = request.ToGrade,
+            ToLocationId = request.ToLocationId,
+            ToManagerId = request.ToManagerId,
+            SalaryChange = request.SalaryChange,
+            Status = "pending",
+        };
+        var created = await repo.CreateMovementAsync(m, ct);
+        return new MovementDto(created.Id, created.MovementType, created.Status, created.Reason,
+            created.EffectiveDate.ToString(), null, created.ToJobTitle, created.ToGrade, created.CreatedAt);
+    }
+
+    public async Task ExecuteMovementAsync(Guid movementId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var m = await repo.GetMovementAsync(movementId, ct)
+            ?? throw new DomainException("movement-not-found", $"Movement {movementId} does not exist.");
+        if (m.Status != "approved")
+            throw new DomainException("movement-not-approved", "Only approved movements can be executed.");
+        if (m.EffectiveDate > DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime))
+            throw new DomainException("movement-not-due", "Movement effective date is in the future.");
+        var worker = await repo.GetByIdAsync(m.WorkerId, ct)!;
+        if (m.ToOrgUnitId.HasValue) worker!.OrgUnitId = m.ToOrgUnitId.Value;
+        if (m.ToJobTitle is not null) worker!.JobTitle = m.ToJobTitle;
+        if (m.ToGrade is not null) worker!.Grade = m.ToGrade;
+        if (m.ToLocationId.HasValue) worker!.LocationId = m.ToLocationId.Value;
+        if (m.ToManagerId.HasValue) worker!.ManagerId = m.ToManagerId.Value;
+        await repo.ExecuteMovementAsync(m, ct);
+    }
+
+    private static WorkerDto Map(Worker w) => new(
+        w.Id, w.EmployeeNo, w.FirstName, w.MiddleName, w.LastName, w.FullName, w.PreferredName,
+        w.Email, w.Phone, w.PhotoUrl, w.Nrc, w.PassportNo, w.Tpin, w.NapsaNumber, w.NhimaNumber,
+        w.Nationality, w.DateOfBirth, w.SubjectId, w.WorkerType, w.Status,
+        w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
+        w.ManagerId.HasValue ? "" : null, w.Grade, w.JobTitle,
+        w.StartDate?.ToString(), w.EndDate?.ToString(),
+        w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList(),
+        w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList(),
+        w.CreatedAt, w.UpdatedAt);
+}
