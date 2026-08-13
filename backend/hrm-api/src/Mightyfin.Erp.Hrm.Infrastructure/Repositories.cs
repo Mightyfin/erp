@@ -230,7 +230,7 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         {
             WorkerId = workerId,
             LeaveTypeCode = leaveTypeCode,
-            Days = -days,
+            Days = days, // caller passes a negative value (-requestedDays) for a reservation
             Reason = "request",
             ReferenceId = referenceId,
             ReferenceType = "leave-request",
@@ -254,6 +254,81 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         await db.SaveChangesAsync(ct);
         return correction;
     }
+
+    // ----- M3 attendance, roster, decisions -----
+    public async Task<AttendanceRecord?> GetAttendanceAsync(Guid workerId, DateOnly workDate, CancellationToken ct)
+        => await db.AttendanceRecords.FirstOrDefaultAsync(a => a.WorkerId == workerId && a.WorkDate == workDate, ct);
+
+    public async Task<AttendanceRecord> CreateAttendanceAsync(AttendanceRecord record, CancellationToken ct)
+    {
+        db.AttendanceRecords.Add(record);
+        await db.SaveChangesAsync(ct);
+        return record;
+    }
+
+    public async Task<AttendanceRecord> UpdateAttendanceAsync(AttendanceRecord record, CancellationToken ct)
+    {
+        db.AttendanceRecords.Update(record);
+        await db.SaveChangesAsync(ct);
+        return record;
+    }
+
+    public async Task<List<AttendanceRecord>> ListAttendanceAsync(Guid workerId, DateOnly? from, DateOnly? to, CancellationToken ct)
+    {
+        var q = db.AttendanceRecords.Where(a => a.WorkerId == workerId);
+        if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
+        if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
+        return await q.Include(a => a.Worker).OrderBy(a => a.WorkDate).Take(200).ToListAsync(ct);
+    }
+
+    public async Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct)
+        => await db.AttendanceCorrections.Include(c => c.Worker).FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public async Task<AttendanceCorrection> UpdateCorrectionAsync(AttendanceCorrection correction, CancellationToken ct)
+    {
+        db.AttendanceCorrections.Update(correction);
+        await db.SaveChangesAsync(ct);
+        return correction;
+    }
+
+    public async Task<LeaveRequest?> GetLeaveRequestAsync(Guid id, CancellationToken ct)
+        => await db.LeaveRequests.Include(l => l.Worker).FirstOrDefaultAsync(l => l.Id == id, ct);
+
+    public async Task<LeaveRequest> UpdateLeaveRequestAsync(LeaveRequest request, CancellationToken ct)
+    {
+        db.LeaveRequests.Update(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+
+    public async Task ReleaseReservationAsync(Guid leaveRequestId, CancellationToken ct)
+    {
+        // reverse a reservation: rows that were negative "request" entries for this reference become positive
+        var rows = await db.LeaveBalanceLedgers
+            .Where(l => l.ReferenceId == leaveRequestId && l.ReferenceType == "leave-request" && l.Days < 0 && l.Reason == "request")
+            .ToListAsync(ct);
+        foreach (var r in rows)
+        {
+            r.Reason = "request-release";
+            r.Days = -r.Days;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task ConvertReservationAsync(Guid leaveRequestId, CancellationToken ct)
+    {
+        // convert an open reservation into a permanent (taken) deduction: keep the negative
+        // sign, change reason so balance math counts it under "taken" instead of "reserved"
+        var rows = await db.LeaveBalanceLedgers
+            .Where(l => l.ReferenceId == leaveRequestId && l.ReferenceType == "leave-request" && l.Days < 0 && l.Reason == "request")
+            .ToListAsync(ct);
+        foreach (var r in rows)
+            r.Reason = "approval";
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct)
+        => await db.WorkCalendars.Include(c => c.Holidays).ToListAsync(ct);
 }
 
 // ===================== Workflow =====================

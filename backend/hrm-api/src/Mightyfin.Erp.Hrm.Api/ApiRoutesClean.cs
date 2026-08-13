@@ -187,6 +187,11 @@ public static class Routes
             var request = await ReadBodyAsync<LeaveRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateLeaveAsync(request, ct));
         });
+        g.MapPost("/leave/{id:guid}/decide", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<TimeDecisionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideLeaveAsync(id, request, ct));
+        });
         g.MapGet("/leave/balances/{workerId:guid}", async (Guid workerId, ITimeService svc, CancellationToken ct)
             => await svc.GetBalancesAsync(workerId, ct));
         g.MapGet("/corrections", async ([FromQuery] Guid? workerId, [FromQuery] string? status, ITimeService svc, CancellationToken ct)
@@ -196,6 +201,23 @@ public static class Routes
             var request = await ReadBodyAsync<AttendanceCorrectionCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateCorrectionAsync(request, ct));
         });
+        g.MapPost("/corrections/{id:guid}/decide", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<TimeDecisionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideCorrectionAsync(id, request, ct));
+        });
+
+        // M3 attendance: punch, today record, range and roster
+        g.MapPost("/attendance/{workerId:guid}/clock-in", async (Guid workerId, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.ClockInAsync(workerId, ct)));
+        g.MapPost("/attendance/{workerId:guid}/clock-out", async (Guid workerId, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.ClockOutAsync(workerId, ct)));
+        g.MapGet("/attendance/{workerId:guid}/today", async (Guid workerId, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
+        g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
+            => await svc.ListAttendanceAsync(workerId, from, to, ct));
+        g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
+            => await svc.GetRosterAsync(workerId, from, to, ct));
     }
 
     public static void RegisterWorkflow(WebApplication app)

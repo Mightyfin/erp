@@ -265,3 +265,21 @@ public sealed record MovementDetailDto(
     string? ToGrade, Guid? ToLocationId, Guid? ToManagerId, decimal? SalaryChange,
     DateTimeOffset CreatedAt);
 public sealed record OffboardingResultDto(bool Cleared, string[] OpenItems);
+
+// ===================== Time — attendance, roster, decisions (M3) =====================
+
+/// <summary>Clock punch response with the derived worker state.</summary>
+public sealed record PunchResultDto(Guid Id, Guid WorkerId, string WorkDate, string ClockIn, string ClockOut,
+    string Source, string DerivedStatus, decimal TotalHours, string State);
+
+public sealed record AttendanceRecordDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
+    string? ClockIn, string? ClockOut, string Source, string DerivedStatus, decimal TotalHours);
+
+/// <summary>Roster day for the worker: expected shift, attendance, exceptions, cutoff.</summary>
+public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDay, string? ClockIn, string? ClockOut,
+    string? Status, string? ShiftName, string? ShiftStart, string? ShiftEnd, string? CalendarName,
+    bool IsPublicHoliday, string? PublicHolidayName, string? PayrollCutoff, string? CorrectionRef);
+
+/// <summary>Decision on a leave request or attendance correction (submitted via
+/// /time/leave/{id}/decide or /time/corrections/{id}/decide).</summary>
+public sealed record TimeDecisionRequest(string Action, string? Reason = null);

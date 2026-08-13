@@ -14,6 +14,18 @@ public interface ITimeRepository
     Task ReserveBalanceAsync(Guid workerId, string leaveTypeCode, decimal days, Guid referenceId, CancellationToken ct);
     Task<(List<AttendanceCorrection> Items, int Total)> ListCorrectionsAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<AttendanceCorrection> CreateCorrectionAsync(AttendanceCorrection correction, CancellationToken ct);
+    // M3 attendance, roster, decisions
+    Task<AttendanceRecord?> GetAttendanceAsync(Guid workerId, DateOnly workDate, CancellationToken ct);
+    Task<AttendanceRecord> CreateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
+    Task<AttendanceRecord> UpdateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
+    Task<List<AttendanceRecord>> ListAttendanceAsync(Guid workerId, DateOnly? from, DateOnly? to, CancellationToken ct);
+    Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct);
+    Task<AttendanceCorrection> UpdateCorrectionAsync(AttendanceCorrection correction, CancellationToken ct);
+    Task<LeaveRequest?> GetLeaveRequestAsync(Guid id, CancellationToken ct);
+    Task<LeaveRequest> UpdateLeaveRequestAsync(LeaveRequest request, CancellationToken ct);
+    Task ReleaseReservationAsync(Guid leaveRequestId, CancellationToken ct);
+    Task ConvertReservationAsync(Guid leaveRequestId, CancellationToken ct);
+    Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct);
 }
 
 /// <summary>Workflow/approval engine interface: every approvable action opens a
