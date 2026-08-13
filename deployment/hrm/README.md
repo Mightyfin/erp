@@ -1,71 +1,53 @@
 # HRM Module — Production Deployment
 
-This document describes how the HRM module (ASP.NET Core 10 API + React 19 frontend) is deployed on the Mightyfin production server `187.124.27.67`, following the same conventions as the rest of the ERP platform.
+This document describes how the HRM module (ASP.NET Core 10 API + React 19 frontend) is deployed. **Everything public lives under a single subdomain, `erp.mightyfinance.co.zm`**: the frontend is hosted on Vercel, and the API rides the existing Cloudflare Tunnel behind a wildcard hostname rule, so the browser never sees any other host.
 
 ## Architecture
 
-The HRM stack runs as a Docker Compose stack on the production host behind the shared **Traefik** ingress (the same mechanism that exposes `efaas-origin.mightyfinance.co.zm` and `auth.mightyfinance.co.zm`). Nothing binds to a public interface: the web proxy binds `127.0.0.1:28912` and the API binds `127.0.0.1:28911`, and Traefik terminates TLS (Let's Encrypt) on `:443` using host-label routing.
-
 ```
-Public (https://hrm.mightyfinance.co.zm)
-        |  Cloudflare (proxy)
-        v
-Traefik (:443, websecure, letsencrypt certresolver)
-        |  Host(`hrm.mightyfinance.co.zm`)
-        v
-hrm-proxy-1  nginx:alpine  (127.0.0.1:28912)
-   ├─ /api/hrm/*  -> hrn-api:8080   (.NET 10 Minimal APIs)
-   ├─ /health/*   -> hrn-api:8080
-   └─ /*         -> hrn-web:3000    (TanStack Start SSR, Node 22)
+erp.mightyfinance.co.zm  (DNS -> Vercel, Vercel TLS cert)
+├─ /hrm/*               frontend routes        <- served by Vercel
+└─ /api/hrm/*           vercel.json rewrite    -> https://erp.mightyfinance.co.zm/api/hrm/*
+                                                    (leaves Vercel edge, hits Cloudflare edge,
+                                                     tunnel wildcard rule picks it up)
 
-hrn-api-1        (127.0.0.1:28911)  joins erp_default -> erp-postgres-1:5432
-hrm-migrate-1    one-shot, applies EF Core migrations at each deploy
+Cloudflare Tunnel (remote config)
+├─ rule: erp.mightyfinance.co.zm (root) -> http://localhost:28910   [Go ERP API, unchanged]
+└─ rule: *.mightyfinance.co.zm path /api/hrm -> http://localhost:28912
+     (hrm-proxy nginx)
+     ├─ /api/hrm/* -> hrn-api:8080  (.NET 10 API, erp DB via erp_default)
+     └─ /health/*  -> hrn-api:8080
 ```
 
-## Services
+The wildcard rule requires **no DNS record** — tunnel wildcard hostnames match at Cloudflare's edge regardless of DNS, and it does not create or alter any DNS entry. It cannot be reached by typing the name in a browser (no DNS, no resolution); it is only reachable via the rewrite that Vercel performs on the ERP subdomain. The Go ERP API's root tunnel rule is untouched.
 
-| Service | Image | Host port | Purpose |
-|---|---|---|---|
-| `hrn-api` | `mightyfin/hrm-api:local` | `127.0.0.1:28911` | ASP.NET Core 10 API. Builds and runs `dotnet test` then `dotnet publish` (multi-stage .NET 10 SDK → `aspnet:10.0-noble`). Health probe is a bash `/dev/tcp` check because the image has no curl/wget. |
-| `hrm-migrate` | same image | — | Runs `dotnet Mightyfin.Erp.Hrm.Api.dll --apply-migrations-only`; `hrn-api` waits for `service_completed_successfully`. |
-| `hrn-web` | `mightyfin/hrm-web:local` | 3000 (internal) | TanStack Start SSR build (`node-server` nitro preset), pnpm install, `VITE_HRM_API_BASE=/api/hrm`. |
-| `hrm-proxy` | `nginx:alpine` | `127.0.0.1:28912` | Reverse proxy: `/api/hrm` → API, everything else → SSR frontend. Carries the Traefik labels. |
+## Vercel hosting
 
-The `erp_default` network is declared external so the API can resolve `erp-postgres-1` by container name, reusing the existing ERP database (no second Postgres).
-
-## Deployment layout on the server
+The Vercel project is created from the fork's `modules/hrm/frontend/module-connect` folder (root directory setting). Required project env vars:
 
 ```
-/home/mightyfin/production/hrm/
-├── code/            # git clone of the fork (deployed at main)
-└── nginx.conf       # copy of deployment/hrm/nginx.conf mounted into hrm-proxy-1
+VITE_HRM_API_BASE=/api/hrm
+VITE_USE_REAL_API=true
+VITE_HRM_TENANT_ID=019ffa8b-0fb0-71e6-849a-f76e5a28e0b5
 ```
 
-Secrets/env live at `/home/mightyfin/.config/mightyfin/hrm/.env`, consistent with `/home/mightyfin/.config/mightyfin/erp/.env`:
+`vercel.json` in the module folder declares the build (`vite build` → `.output/public` static export for Vercel), the `/api/hrm` rewrite back to the ERP subdomain, and security headers. The domain `erp.mightyfinance.co.zm` is attached in Vercel and its Cloudflare DNS record points at Vercel.
 
-```
-ASPNETCORE_URLS=http://+:8080
-ConnectionStrings__Hrm=Host=erp-postgres-1;Port=5432;Database=erp;Username=erp;Password=***
-ERP__AuthMode=disabled
-HRM__DefaultTenantId=019ffa8b-0fb0-71e6-849a-f76e5a28e0b5
-HRM__AllowedOrigins=https://hrm.mightyfinance.co.zm,http://localhost:5173
-```
+## Cloudflare Tunnel configuration
 
-## Deploy / rebuild
+All changes happen in the Zero Trust dashboard (Networks → Tunnels → tunnel → Public hostnames), using the existing tunnel:
 
-```bash
-cd /home/mightyfin/production/hrm/code && git pull
-cd /home/mightyfin/production/hrm
-docker compose -f code/deployment/hrm/docker-compose.prod.yml build   # runs 87+ backend tests
-docker compose -f code/deployment/hrm/docker-compose.prod.yml up -d
-```
+| Subdomain | Path | Type | URL | Effect |
+|---|---|---|---|---|
+| erp.mightyfinance.co.zm | *(root)* | HTTP | http://localhost:28910 | existing rule — unchanged |
+| *.mightyfinance.co.zm | /api/hrm | HTTP | http://localhost:28912 | new rule, appended |
 
-The migrations service runs automatically on every `up` (apply-only mode); the API refuses to start until it succeeds.
+The existing `erp.mightyfinance.co.zm` root rule and the `efaas-origin` / `auth` rules remain exactly as they are.
 
-## DNS note
+## Server-side stack
 
-`hrm.mightyfinance.co.zm` must resolve to `187.124.27.67` (proxied or DNS-only via Cloudflare) for Traefik's Let's Encrypt HTTP-01 challenge to succeed. Until the record exists, the route is reachable only by `Host` header on `https://127.0.0.1/`.
+The API stack runs as Docker Compose at `/home/mightyfin/production/hrm` on `187.124.27.67` (image built from this repo, tag `:local`, tests run during build, migrations applied at startup). It reuses the shared `erp-postgres-1` database over the `erp_default` network, binds only to `127.0.0.1` (API `:28911`, web proxy `:28912`), and follows the platform's env convention at `/home/mightyfin/.config/mightyfin/hrm/.env`. The Go ERP API on `:28910`, `admin-lms`, and the `efaas` stacks are untouched.
 
 ## Conventions respected
 
-The deployment deliberately introduces **no new networking**: it reuses the existing Traefik ingress, the `erp_default` bridge network, the shared `erp-postgres-1` container, the `:local` image-tag convention, the `/home/mightyfin/production/*` stack layout, and the `/home/mightyfin/.config/mightyfin/*` env convention. The Go ERP API on `127.0.0.1:28910`, `admin-lms`, and the `efaas` stacks are untouched.
+The deployment deliberately introduces **no new networking**: it reuses the existing token-based Cloudflare Tunnel (remote config), the `erp_default` bridge network, the shared `erp-postgres-1` container, the `:local` image-tag convention, the `/home/mightyfin/production/*` stack layout, and the `/home/mightyfin/.config/mightyfin/*` env convention. No new subdomain or DNS record is created.
