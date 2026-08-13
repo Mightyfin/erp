@@ -19,6 +19,8 @@ services:
     restart: unless-stopped
     env_file:
       - /home/mightyfin/.config/mightyfin/hrm/.env
+    ports:
+      - "127.0.0.1:28911:8080"
     networks:
       - erp_default
     depends_on:
