@@ -242,3 +242,26 @@ public sealed record LeaveTypeDtoFull(
 
 // ---------- Capabilities ----------
 public sealed record CapabilityUpdateRequest(string? Tier = null, bool? IsEnabled = null, string? Description = null);
+
+// ===================== Worker lifecycle (M2) =====================
+
+// ---------- Shared shapes (used by routes & tests) ----------
+public sealed record EmergencyContactRequest(string Relationship, string FullName, string? Phone = null, bool IsPrimary = false);
+public sealed record BankDetailRequest(string BankName, string BranchCode, string AccountNumber,
+    string AccountName, string PaymentMethod = "bank", string? MobileMoneyNumber = null, bool IsPrimary = false);
+public sealed record AssignmentUpdateRequest(
+    Guid? OrgUnitId = null, Guid? LocationId = null, Guid? ManagerId = null,
+    string? JobTitle = null, string? Grade = null, string? PositionNo = null,
+    string? ContractType = null, string? WorkPattern = null, int? ProbationMonths = null,
+    int? NoticeDays = null, string? EndDate = null, string? EffectiveTo = null, string? Status = null);
+// AssignmentDto and MovementDto are defined in Workers/WorkerService.cs (shared surface).
+// M2 lifecycle adds its own richer projections below.
+public sealed record OnboardingPlanDto(Guid WorkerId, bool IsOnboarded, int TasksCompleted, int TasksTotal);
+public sealed record MovementImpactDto(string Field, string From, string To);
+public sealed record MovementDetailDto(
+    Guid Id, Guid WorkerId, string MovementType, string Status, string EffectiveDate,
+    string Reason, Guid? FromOrgUnitId, string? FromOrgUnitName, string? FromJobTitle,
+    string? FromGrade, Guid? ToOrgUnitId, string? ToOrgUnitName, string? ToJobTitle,
+    string? ToGrade, Guid? ToLocationId, Guid? ToManagerId, decimal? SalaryChange,
+    DateTimeOffset CreatedAt);
+public sealed record OffboardingResultDto(bool Cleared, string[] OpenItems);

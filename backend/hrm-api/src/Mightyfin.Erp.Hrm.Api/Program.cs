@@ -44,6 +44,7 @@ builder.Services.AddSingleton<IIdProvider, IdProvider>();
 // ---------- Services ----------
 builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
 builder.Services.AddScoped<IWorkerService, WorkerServiceImpl>();
+builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();
 builder.Services.AddScoped<ITimeRepository, TimeRepository>();
 builder.Services.AddScoped<ITimeService, TimeServiceImpl>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
@@ -111,7 +112,7 @@ app.Use(async (ctx, next) =>
             "forbidden" => StatusCodes.Status403Forbidden,
             "unauthorized" => StatusCodes.Status401Unauthorized,
             "not-found" or "worker-not-found" or "payroll-run-not-found" or "candidate-not-found" or "pay-period-not-found" or "letter-not-found" or "hr-request-not-found" => StatusCodes.Status404NotFound,
-            "conflict" or "employee-no-exists" or "run-already-exists" or "movement-not-allowed" => StatusCodes.Status409Conflict,
+            "conflict" or "employee-no-exists" or "run-already-exists" or "movement-not-allowed" or "offboarding-blocked" => StatusCodes.Status409Conflict,
             "legal-entity-code-taken" or "location-code-taken" or "org-unit-code-taken" or "leave-type-code-taken"
                 or "unit-close-backdated" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status422UnprocessableEntity,

@@ -59,24 +59,110 @@ public static class Routes
             return Results.Ok();
         });
 
-        g.MapGet("/{id:guid}/assignments", async (Guid id, IWorkerService svc, CancellationToken ct)
-            => await svc.ListAssignmentsAsync(id, ct));
-        g.MapPost("/assignments", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        // M2 lifecycle surface
+        RegisterWorkerLifecycleRoutes(g);
+    }
+
+    private static void RegisterWorkerLifecycleRoutes(RouteGroupBuilder g)
+    {
+        g.MapGet("/{workerId:guid}/assignments", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListAssignmentsAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/assignments", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<AssignmentCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.CreateAssignmentAsync(request, ct));
+            var created = await svc.CreateAssignmentAsync(workerId, request, ct);
+            return Results.Created($"/api/hrm/workers/{workerId}/assignments/{created.Id}", created);
         });
-        g.MapGet("/{id:guid}/movements", async (Guid id, IWorkerService svc, CancellationToken ct)
-            => await svc.ListMovementsAsync(id, ct));
-        g.MapPost("/movements", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        g.MapPatch("/{workerId:guid}/assignments/{assignmentId:guid}", async (Guid workerId, Guid assignmentId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<AssignmentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateAssignmentAsync(workerId, assignmentId, request, ct));
+        });
+        g.MapPost("/{workerId:guid}/assignments/{assignmentId:guid}/end", async (Guid workerId, Guid assignmentId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.EndAssignmentAsync(workerId, assignmentId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/movements", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListMovementsAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/movements", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<MovementCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.CreateMovementAsync(request, ct));
+            var created = await svc.CreateMovementAsync(workerId, request, ct);
+            return Results.Created($"/api/hrm/workers/{workerId}/movements/{created.Id}", created);
         });
-        g.MapPost("/movements/{movementId:guid}/execute", async (Guid movementId, IWorkerService svc, CancellationToken ct) =>
+        g.MapGet("/{workerId:guid}/movements/{movementId:guid}", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.GetMovementAsync(workerId, movementId, ct));
+        g.MapGet("/{workerId:guid}/movements/{movementId:guid}/preview", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.PreviewMovementAsync(workerId, movementId, ct));
+        g.MapPost("/{workerId:guid}/movements/{movementId:guid}/submit", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct) =>
         {
-            await svc.ExecuteMovementAsync(movementId, ct);
+            await svc.SubmitMovementAsync(workerId, movementId, ct);
             return Results.Ok();
+        });
+        g.MapPost("/{workerId:guid}/movements/{movementId:guid}/approve", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.ApproveMovementAsync(workerId, movementId, ct);
+            return Results.Ok();
+        });
+        g.MapPost("/{workerId:guid}/movements/{movementId:guid}/reject", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.RejectMovementAsync(workerId, movementId, ct);
+            return Results.Ok();
+        });
+        g.MapPost("/{workerId:guid}/movements/{movementId:guid}/cancel", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.CancelMovementAsync(workerId, movementId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/emergency-contacts", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListEmergencyContactsAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/emergency-contacts", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<EmergencyContactRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.AddEmergencyContactAsync(workerId, request, ct);
+            return Results.Created("", created);
+        });
+        g.MapPatch("/{workerId:guid}/emergency-contacts/{contactId:guid}", async (Guid workerId, Guid contactId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<EmergencyContactRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateEmergencyContactAsync(workerId, contactId, request, ct));
+        });
+        g.MapDelete("/{workerId:guid}/emergency-contacts/{contactId:guid}", async (Guid workerId, Guid contactId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteEmergencyContactAsync(workerId, contactId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/bank-details", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListBankDetailsAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/bank-details", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<BankDetailRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.AddBankDetailAsync(workerId, request, ct);
+            return Results.Created("", created);
+        });
+        g.MapPatch("/{workerId:guid}/bank-details/{bankId:guid}", async (Guid workerId, Guid bankId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<BankDetailRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateBankDetailAsync(workerId, bankId, request, ct));
+        });
+        g.MapDelete("/{workerId:guid}/bank-details/{bankId:guid}", async (Guid workerId, Guid bankId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteBankDetailAsync(workerId, bankId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/onboarding", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.GetOnboardingAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/offboard", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var result = await svc.OffboardAsync(workerId, ct);
+            if (!result.Cleared)
+                return Results.Conflict(new ApiError("offboarding-blocked", "Offboarding blocked by open clearance items.", result.OpenItems));
+            return Results.Ok(result);
         });
     }
 

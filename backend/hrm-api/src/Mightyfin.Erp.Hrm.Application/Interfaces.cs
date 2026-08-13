@@ -23,6 +23,26 @@ public interface IWorkerRepository
     Task<Movement> CreateMovementAsync(Movement movement, CancellationToken ct);
     Task<Movement?> GetMovementAsync(Guid id, CancellationToken ct);
     Task ExecuteMovementAsync(Movement movement, CancellationToken ct);
+
+    // M2 lifecycle extras
+    Task<List<Assignment>> ListAllAssignmentsAsync(CancellationToken ct);
+    Task<Assignment> UpdateAssignmentAsync(Assignment assignment, CancellationToken ct);
+    Task<List<LegalEntity>> ListAllLegalEntitiesAsync(CancellationToken ct);
+    Task<List<OrgUnit>> ListAllOrgUnitsAsync(CancellationToken ct);
+    Task<List<WorkLocation>> ListAllLocationsAsync(CancellationToken ct);
+    Task<List<Worker>> ListAllWorkersAsync(Guid? orgUnitId, CancellationToken ct);
+
+    // Emergency contacts
+    Task<EmergencyContact?> GetEmergencyContactAsync(Guid id, CancellationToken ct);
+    Task<EmergencyContact> AddEmergencyContactAsync(EmergencyContact contact, CancellationToken ct);
+    Task UpdateEmergencyContactAsync(EmergencyContact contact, CancellationToken ct);
+    Task DeleteEmergencyContactAsync(Guid id, CancellationToken ct);
+
+    // Bank details
+    Task<WorkerBankDetail?> GetBankDetailAsync(Guid id, CancellationToken ct);
+    Task<WorkerBankDetail> AddBankDetailAsync(WorkerBankDetail detail, CancellationToken ct);
+    Task UpdateBankDetailAsync(WorkerBankDetail detail, CancellationToken ct);
+    Task DeleteBankDetailAsync(Guid id, CancellationToken ct);
 }
 
 /// <summary>Authorization: role requirement checks against the current principal.</summary>

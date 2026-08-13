@@ -101,8 +101,82 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
 
     public async Task ExecuteMovementAsync(Movement movement, CancellationToken ct)
     {
-        movement.Status = "executed";
         db.Movements.Update(movement);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<Assignment>> ListAllAssignmentsAsync(CancellationToken ct)
+        => await db.Assignments.Include(a => a.LegalEntity).Include(a => a.OrgUnit).Include(a => a.Location)
+            .ToListAsync(ct);
+
+    public async Task<Assignment> UpdateAssignmentAsync(Assignment assignment, CancellationToken ct)
+    {
+        db.Assignments.Update(assignment);
+        await db.SaveChangesAsync(ct);
+        return assignment;
+    }
+
+    public async Task<List<LegalEntity>> ListAllLegalEntitiesAsync(CancellationToken ct)
+        => await db.LegalEntities.ToListAsync(ct);
+
+    public async Task<List<OrgUnit>> ListAllOrgUnitsAsync(CancellationToken ct)
+        => await db.OrgUnits.ToListAsync(ct);
+
+    public async Task<List<WorkLocation>> ListAllLocationsAsync(CancellationToken ct)
+        => await db.WorkLocations.ToListAsync(ct);
+
+    public async Task<List<Worker>> ListAllWorkersAsync(Guid? orgUnitId, CancellationToken ct)
+    {
+        var q = db.Workers.AsQueryable();
+        if (orgUnitId.HasValue) q = q.Where(w => w.OrgUnitId == orgUnitId.Value);
+        return await q.ToListAsync(ct);
+    }
+
+    public async Task<EmergencyContact?> GetEmergencyContactAsync(Guid id, CancellationToken ct)
+        => await db.EmergencyContacts.FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public async Task<EmergencyContact> AddEmergencyContactAsync(EmergencyContact contact, CancellationToken ct)
+    {
+        db.EmergencyContacts.Add(contact);
+        await db.SaveChangesAsync(ct);
+        return contact;
+    }
+
+    public async Task UpdateEmergencyContactAsync(EmergencyContact contact, CancellationToken ct)
+    {
+        db.EmergencyContacts.Update(contact);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteEmergencyContactAsync(Guid id, CancellationToken ct)
+    {
+        var contact = await GetEmergencyContactAsync(id, ct)
+            ?? throw new DomainException("contact-not-found", $"Emergency contact {id} does not exist.");
+        db.EmergencyContacts.Remove(contact);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<WorkerBankDetail?> GetBankDetailAsync(Guid id, CancellationToken ct)
+        => await db.WorkerBankDetails.FirstOrDefaultAsync(b => b.Id == id, ct);
+
+    public async Task<WorkerBankDetail> AddBankDetailAsync(WorkerBankDetail detail, CancellationToken ct)
+    {
+        db.WorkerBankDetails.Add(detail);
+        await db.SaveChangesAsync(ct);
+        return detail;
+    }
+
+    public async Task UpdateBankDetailAsync(WorkerBankDetail detail, CancellationToken ct)
+    {
+        db.WorkerBankDetails.Update(detail);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteBankDetailAsync(Guid id, CancellationToken ct)
+    {
+        var detail = await GetBankDetailAsync(id, ct)
+            ?? throw new DomainException("bank-detail-not-found", $"Bank detail {id} does not exist.");
+        db.WorkerBankDetails.Remove(detail);
         await db.SaveChangesAsync(ct);
     }
 }
