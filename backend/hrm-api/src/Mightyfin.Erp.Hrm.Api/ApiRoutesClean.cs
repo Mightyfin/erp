@@ -339,13 +339,21 @@ public static class Routes
         var g = app.MapGroup($"{HrmPrefix}/experience").RequireAuthorization();
         g.MapGet("/requests", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IExperienceService svc, CancellationToken ct)
             => await svc.ListRequestsAsync(workerId, status, ct));
-        g.MapPost("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        g.MapPost("/requests", async (HttpContext http, IExperienceService svc, IWorkerService ws, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
-            if (workerId is null)
-                return Results.UnprocessableEntity(new ApiError("missing-worker", "WorkerId is required; either include worker_id in the body or authenticate as the worker.", []));
-            return Results.Created("", await svc.CreateRequestAsync(workerId.Value, request, ct));
+            // M22: without a worker_id claim, resolve the caller via the M14
+            // subject identity link instead of the raw sub Guid (a Keycloak
+            // subject uuid parses as a Guid but is never a worker record).
+            if (workerId is null && http.User.FindFirst("worker_id")?.Value is null)
+            {
+                var subject = ResolveSubjectId(http);
+                if (!string.IsNullOrEmpty(subject))
+                    workerId = (await ws.GetBySubjectAsync(subject, ct))?.Id;
+            }
+            // workerId null = HR-initiated internal request (no worker record).
+            return Results.Created("", await svc.CreateRequestAsync(workerId, request, ct));
         });
         g.MapPost("/requests/{id:guid}/messages", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {

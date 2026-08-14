@@ -14,7 +14,7 @@ public interface IExperienceService
 {
     // HR requests
     Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct);
-    Task<HrRequestDto> CreateRequestAsync(Guid workerId, HrRequestCreate request, CancellationToken ct);
+    Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct);
     Task<HrRequestDto> AddMessageAsync(Guid requestId, Guid? actorWorkerId, string actorRole, HrRequestMessageCreate message, CancellationToken ct);
     Task<HrRequestDto> ResolveRequestAsync(Guid requestId, CancellationToken ct);
 
@@ -42,7 +42,7 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
     }
 
-    public async Task<HrRequestDto> CreateRequestAsync(Guid workerId, HrRequestCreate request, CancellationToken ct)
+    public async Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
         var req = new HrRequest
