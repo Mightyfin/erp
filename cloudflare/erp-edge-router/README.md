@@ -9,7 +9,8 @@ Cloudflare Worker routing for `erp.mightyfinance.co.zm`.
   no backend or origin subdomain is required.
 
 The `ERP_BACKEND` binding targets the `erp-backend` VPC service, which reaches
-`127.0.0.1:28910` through the existing `mightyfin-gate` Cloudflare Tunnel.
+the ASP.NET HRM stack at `127.0.0.1:28912` through the existing
+`mightyfin-gate` Cloudflare Tunnel.
 
 Deploy from this directory with `npx wrangler deploy`.
 
