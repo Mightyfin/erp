@@ -547,7 +547,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<SalaryStructure?> FindStructureByCodeAsync(string code, CancellationToken ct) =>
         await db.SalaryStructures.FirstOrDefaultAsync(s => s.Code == code && !s.IsArchived, ct);
     public async Task<List<SalaryStructure>> ListStructuresAsync(CancellationToken ct) =>
-        await db.SalaryStructures.Where(s => !s.IsArchived && s.IsActive).OrderBy(s => s.Code).ToListAsync(ct);
+        await db.SalaryStructures.AsNoTracking()
+            .Include(s => s.Items).ThenInclude(i => i.Component)
+            .Where(s => !s.IsArchived && s.IsActive).OrderBy(s => s.Code).ToListAsync(ct);
     public async Task<SalaryStructure?> GetStructureAsync(Guid id, CancellationToken ct) =>
         await db.SalaryStructures
             .Include(s => s.Items).ThenInclude(i => i.Component)
