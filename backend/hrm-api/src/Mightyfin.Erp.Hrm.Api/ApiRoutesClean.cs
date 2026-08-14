@@ -55,12 +55,13 @@ public static class Routes
     }
 
     // Helper: resolve the calling worker from the authenticated principal.
-    // Prefers the Keycloak `worker_id` claim; falls back to the subject id when
-    // it is a valid worker GUID (matches the dev-auth fallback worker mapping).
+    // Only the explicit `worker_id` claim is trusted; the raw subject id is
+    // deliberately NOT used (a Keycloak subject uuid parses as a Guid but is
+    // never a worker record — the subject→worker mapping lives in M14 and is
+    // resolved via IWorkerService.GetBySubjectAsync where needed).
     private static Guid? ResolveWorkerId(HttpContext http)
     {
-        var raw = http.User.FindFirst("worker_id")?.Value
-            ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var raw = http.User.FindFirst("worker_id")?.Value;
         return string.IsNullOrEmpty(raw) || !System.Guid.TryParse(raw, out var id) ? null : id;
     }
 
