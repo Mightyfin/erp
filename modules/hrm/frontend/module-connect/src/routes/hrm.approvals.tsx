@@ -103,7 +103,7 @@ async function loadQueue(): Promise<Row[]> {
         id: String(x.requestId ?? ""),
         kind: "Workflow" as const,
         title: `${String(x.workflowType ?? "request")} · ${String(x.subjectName ?? "Workflow item")}`,
-        employeeName: String(x.currentApproverName ?? "Workflow queue"),
+        employeeName: String(x.subjectName ?? x.currentApproverName ?? "Workflow queue"),
         status: labelStatus(String(x.status ?? "")),
         opened: typeof x.dueAt === "string" ? String(x.dueAt).slice(0, 10) : "—",
         to: "/hrm/approvals/$id",
