@@ -1,16 +1,19 @@
 # ERP edge router
 
-Cloudflare Worker routing for `erp.mightyfinance.co.zm`.
+Fallback Cloudflare Worker routing for `erp.mightyfinance.co.zm`.
 
 - `/api` and `/api/*` are forwarded through the `ERP_BACKEND` Workers VPC binding.
 - All other requests are forwarded to the ERP Vercel production deployment.
-- The production Worker route is `erp.mightyfinance.co.zm/*` in the
-  `mightyfinance.co.zm` zone. It reuses the existing proxied ERP DNS record;
-  no backend or origin subdomain is required.
+- No production hostname route is currently attached to this Worker.
 
-The `ERP_BACKEND` binding targets the `erp-backend` VPC service, which reaches
-the ASP.NET HRM stack at `127.0.0.1:28912` through the existing
-`mightyfin-gate` Cloudflare Tunnel.
+Production uses the `mightyfin-gate` Tunnel published application as a
+catch-all for `erp.mightyfinance.co.zm`, with no Path value, targeting
+`http://127.0.0.1:28912`. The server nginx proxy routes API requests to the
+ASP.NET API and all other requests to the React SSR frontend.
+
+The retained `ERP_BACKEND` binding targets the `erp-backend` VPC service at
+`127.0.0.1:28912` through the existing Tunnel. It is available if the Worker
+edge architecture is restored later.
 
 Deploy from this directory with `npx wrangler deploy`.
 
