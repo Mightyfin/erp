@@ -68,6 +68,27 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         return worker;
     }
 
+    public async Task SaveChangesAsync(CancellationToken ct)
+    {
+        await db.SaveChangesAsync(ct);
+    }
+
+    // Explicit AddRange + Save so the provider issues INSERTs even when the
+    // entity has a non-default Guid key (Guid.CreateVersion7 initializer),
+    // which otherwise makes collection-attached entities be treated as
+    // existing (Modified) by EF Core's change tracker.
+    public async Task AddEmergencyContactsAsync(IEnumerable<EmergencyContact> contacts, CancellationToken ct)
+    {
+        db.EmergencyContacts.AddRange(contacts);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task AddBankDetailsAsync(IEnumerable<WorkerBankDetail> details, CancellationToken ct)
+    {
+        db.WorkerBankDetails.AddRange(details);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task ArchiveAsync(Guid id, CancellationToken ct)
     {
         var worker = await GetByIdAsync(id, ct)

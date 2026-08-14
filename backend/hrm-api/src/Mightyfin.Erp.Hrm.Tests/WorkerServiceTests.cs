@@ -13,7 +13,7 @@ namespace Mightyfin.Erp.Hrm.Tests;
 /// <summary>Permissive double for <see cref="IAuthzService"/> used by the service layer.</summary>
 internal sealed class PermissiveAuthz : IAuthzService
 {
-    public void RequireAnyRole(params string[] roles) { }
+        public void RequireAnyRole(params string[] roles) { }
     public bool CanAccessSensitive(string category) => true;
 }
 
@@ -43,6 +43,7 @@ internal static class TestDbContextFactory
         conn.Open();
         var opts = new DbContextOptionsBuilder<HrmDbContext>()
             .UseSqlite(conn)
+            
             .Options;
         var ctx = new HrmDbContext(opts, new FixedTenantAccessor(tenant));
         ctx.Database.EnsureCreated();
@@ -151,5 +152,69 @@ public class WorkerServiceTests
         var original = await service.GetBySubjectAsync("60b649a4-74c5-43ba-8bf3-97521f496f41", CancellationToken.None);
         Assert.Equal("EMP-001", original!.EmployeeNo);
     }
-}
 
+    [Fact]
+    public async Task UpdateOwnProfile_NotLinked_Throws()
+    {
+        var (service, _) = Build();
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.UpdateOwnProfileAsync(
+            new WorkerSubjectUpdateRequest(SubjectId: "nobody-here"), CancellationToken.None));
+        Assert.Equal("not-linked", ex.Code);
+    }
+
+    [Fact]
+    public async Task UpdateOwnProfile_AllowedFieldsUpdateOthersStayUnchanged()
+    {
+        var (service, ctx) = Build();
+        ctx.Workers.Add(new Worker
+        {
+            EmployeeNo = "EMP-002",
+            FirstName = "Grace",
+            LastName = "Phiri",
+            WorkerType = "employee",
+            Status = "active",
+            Grade = "Grade 4",
+            JobTitle = "Teller",
+            SubjectId = "subject-grace-002",
+            EmergencyContacts = { new EmergencyContact { Relationship = "Spouse", FullName = "John Phiri", Phone = "0970000001", IsPrimary = true } },
+        });
+        await ctx.SaveChangesAsync();
+
+        var updated = await service.UpdateOwnProfileAsync(new WorkerSubjectUpdateRequest(
+            SubjectId: "subject-grace-002",
+            Phone: "0971111111",
+            Tpin: "1001111111",
+            EmergencyContacts: [new EmergencyContactCreate("Sibling", "Mary Phiri", "0961234567", true)]),
+            CancellationToken.None);
+
+        Assert.Equal("0971111111", updated.Phone);
+        Assert.Equal("1001111111", updated.Tpin);
+        Assert.Equal("Grade 4", updated.Grade);          // admin-only: untouched
+        Assert.Equal("Teller", updated.JobTitle);          // admin-only: untouched
+        Assert.Equal("active", updated.Status);            // admin-only: untouched
+        Assert.Single(updated.EmergencyContacts);
+        Assert.Equal("Mary Phiri", updated.EmergencyContacts[0].FullName);
+        Assert.Null(updated.BankDetails);                  // not sent → left untouched
+    }
+    [Fact]
+    public async Task UpdateOwnProfile_ScalarOnly_Succeeds()
+    {
+        var (service, ctx) = Build();
+        ctx.Workers.Add(new Worker
+        {
+            EmployeeNo = "EMP-003",
+            FirstName = "Sam",
+            LastName = "Zulu",
+            WorkerType = "employee",
+            Status = "active",
+            SubjectId = "subject-sam-003",
+        });
+        await ctx.SaveChangesAsync();
+
+        var updated = await service.UpdateOwnProfileAsync(new WorkerSubjectUpdateRequest(
+            SubjectId: "subject-sam-003",
+            Phone: "0972222222"),
+            CancellationToken.None);
+        Assert.Equal("0972222222", updated.Phone);
+    }
+}

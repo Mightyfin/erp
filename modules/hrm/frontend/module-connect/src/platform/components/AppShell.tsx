@@ -525,7 +525,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   {/* M14 identity link: jump to the signed-in user's own worker record when linked. */}
-                  <Link to="/hrm/employees/$id" params={{ id: myWorker?.id ?? "w-1001" }}>
+                  <Link to={myWorker ? "/hrm/my-profile" : "/hrm/employees/$id"} params={{ id: myWorker?.id ?? "w-1001" }}>
                     My profile{myWorker ? "" : USE_REAL ? " (not linked)" : ""}
                   </Link>
                 </DropdownMenuItem>

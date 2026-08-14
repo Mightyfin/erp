@@ -18,6 +18,9 @@ public interface IWorkerRepository
     Task<Worker?> FindBySubjectIdAsync(string subjectId, CancellationToken ct);
     Task<Worker> CreateAsync(Worker worker, CancellationToken ct);
     Task<Worker> UpdateAsync(Worker worker, CancellationToken ct);
+    Task SaveChangesAsync(CancellationToken ct);
+    Task AddEmergencyContactsAsync(IEnumerable<EmergencyContact> contacts, CancellationToken ct);
+    Task AddBankDetailsAsync(IEnumerable<WorkerBankDetail> details, CancellationToken ct);
     Task<bool> ExistsAsync(string employeeNo, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
     Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct);

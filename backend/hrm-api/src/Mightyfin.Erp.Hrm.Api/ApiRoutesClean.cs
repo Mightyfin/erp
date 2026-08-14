@@ -88,6 +88,19 @@ public static class Routes
                 ? Results.Ok(new { linked = false, worker = (object?)null, subject })
                 : Results.Ok(new { linked = true, worker, subject });
         });
+
+        // M15 self-service: workers update their own profile. The subject is
+        // read from the token and merged into the request; admin-only fields
+        // are not part of the request shape and can never be changed here.
+        g.MapPut("/profile", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var raw = await ReadBodyAsync<WorkerSubjectUpdateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateOwnProfileAsync(raw with { SubjectId = subject }, ct));
+        });
     }
 
     public static void RegisterWorkers(WebApplication app)

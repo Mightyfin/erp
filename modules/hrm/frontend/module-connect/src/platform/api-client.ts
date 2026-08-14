@@ -31,6 +31,24 @@ const TENANT_ID =
   (import.meta.env.VITE_HRM_TENANT_ID as string | undefined)?.trim() ||
   "019ffa8b-0fb0-71e6-849a-f76e5a28e0b5";
 
+// M15 self-service: only the fields a worker may edit on their own record.
+// Admin-only fields (name, grade, job title, status, ...) are deliberately
+// absent so they can never be submitted from the client.
+export interface SelfProfileUpdate {
+  preferredName?: string;
+  email?: string;
+  phone?: string;
+  nrc?: string;
+  passportNo?: string;
+  tpin?: string;
+  napsaNumber?: string;
+  nhimaNumber?: string;
+  nationality?: string;
+  dateOfBirth?: string;
+  emergencyContacts?: { relationship: string; fullName: string; phone?: string; isPrimary: boolean }[];
+  bankDetails?: { bankName: string; branchCode: string; accountNumber: string; accountName: string; isPrimary: boolean; paymentMethod?: string; mobileMoneyNumber?: string }[];
+}
+
 /** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
 export interface LinkedWorker {
   id: string;
@@ -176,6 +194,12 @@ export const hrmApi = {
     hrmApi.get<{ linked: boolean; worker: LinkedWorker | null; subject: string }>(
       "/hrm/me",
     ),
+
+  // M15 self-service: update the worker record linked to the caller's token
+  // subject. PUT /hrm/me/profile — the backend re-reads the subject from the
+  // token, so the client cannot target another worker.
+  updateSelfProfile: (body: SelfProfileUpdate) =>
+    hrmApi.put<{ worker: LinkedWorker }>("/hrm/me/profile", body),
 
   /** Data-quality check summary for the tenant. */
   dqChecks: () => hrmApi.get<unknown>("/hrm/dq/checks"),

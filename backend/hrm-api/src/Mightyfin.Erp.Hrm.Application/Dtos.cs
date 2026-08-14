@@ -23,6 +23,17 @@ public sealed record WorkerCreateRequest(
     List<WorkerBankDetailCreate>? BankDetails = null);
 
 public sealed record EmergencyContactCreate(string Relationship, string FullName, string? Phone, bool IsPrimary);
+
+// M15 self-service: the fields a worker may edit on their own record. SubjectId
+// is filled server-side from the token, never from client input.
+public sealed record WorkerSubjectUpdateRequest(
+    string SubjectId,
+    string? PreferredName = null, string? Email = null, string? Phone = null,
+    string? Nrc = null, string? PassportNo = null, string? Tpin = null,
+    string? NapsaNumber = null, string? NhimaNumber = null,
+    string? Nationality = null, string? DateOfBirth = null,
+    List<EmergencyContactCreate>? EmergencyContacts = null,
+    List<WorkerBankDetailCreate>? BankDetails = null);
 public sealed record WorkerBankDetailCreate(string BankName, string BranchCode, string AccountNumber, string AccountName, bool IsPrimary, string PaymentMethod = "bank", string? MobileMoneyNumber = null);
 
 public sealed record WorkerUpdateRequest(
