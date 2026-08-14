@@ -398,7 +398,8 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
             _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported. Use napsa, nhima, zra, paye-return, or napsa-bankfile.")
         };
 
-        var employer = (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault(e => e.IsDefault);
+        var employer = (await configRepo.ListLegalEntitiesAsync(ct))
+            .FirstOrDefault(e => e.IsDefault) ?? (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault();
 
         var withComponents = new List<(PayrollRunLine Line, Dictionary<string, decimal> Amounts)>(lines.Count);
         foreach (var l in lines)
