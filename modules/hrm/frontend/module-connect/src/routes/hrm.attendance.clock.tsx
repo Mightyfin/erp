@@ -19,6 +19,7 @@ import { timeclockApi } from "@/mock/timeclock";
 import type { ClockState, DaySummary, PunchEvent, PunchKind, TodayRecord } from "@/mock/timeclock";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -634,7 +635,8 @@ function ClockPage() {
   const recent = useMock(() => timeclockApi.recent());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Attendance"
         title="Clock in and out"
@@ -663,5 +665,6 @@ function ClockPage() {
         {(rows) => <RecentDays rows={rows} cutoff="17:00 on 5 August 2026" />}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

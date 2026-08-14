@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, Check, Clock } from "lucide-react";
 import { extrasApi, money } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -23,7 +24,8 @@ function UtilisationPage() {
   const handoff = useMock(() => extrasApi.handoff());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time and leave"
         title="Utilisation and hand-off"
@@ -122,5 +124,6 @@ function UtilisationPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

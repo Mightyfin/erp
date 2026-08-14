@@ -7,6 +7,7 @@ import { money, pipelineStages, recruitmentApi } from "@/mock/recruitment";
 import type { Candidate, CandidateSource, Scorecard } from "@/mock/recruitment";
 import type { RequestStatus } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
@@ -221,7 +222,8 @@ function CandidateDetail() {
   }, [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {({ candidate: c, vacancy, requisition, peers }) => {
           if (!c) return <RestrictedState />;
@@ -417,5 +419,6 @@ function CandidateDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -9,6 +9,7 @@ import { LeaveBalancePanel } from "@/platform/components/LeaveBalancePanel";
 import type { EmployeeProfile } from "@/mock/employeeprofile";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
@@ -335,7 +336,8 @@ function EmployeePage() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(e) =>
           !e ? (
@@ -462,5 +464,6 @@ function EmployeePage() {
         }
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

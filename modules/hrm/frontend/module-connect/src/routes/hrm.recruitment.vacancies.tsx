@@ -5,6 +5,7 @@ import { entities } from "@/mock/data";
 import { recruitmentApi } from "@/mock/recruitment";
 import type { Vacancy } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -77,7 +78,8 @@ function VacanciesList() {
   const [view, setView] = useState("live");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Vacancies"
@@ -229,5 +231,6 @@ function VacanciesList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

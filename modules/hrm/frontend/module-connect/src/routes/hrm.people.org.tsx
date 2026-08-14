@@ -14,6 +14,7 @@ import { entities } from "@/mock/data";
 import type { OrgUnit } from "@/mock/structure";
 import { structureApi } from "@/mock/structure";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { EmptyState } from "@/platform/components/States";
@@ -375,7 +376,8 @@ function OrgStructurePage() {
   const [selectedId, setSelectedId] = useState("");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Organisation structure"
@@ -437,5 +439,6 @@ function OrgStructurePage() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -35,6 +35,7 @@ import { holidayNote, timeclockApi } from "@/mock/timeclock";
 import { realApi, useApi } from "@/platform/use-api";
 import type { CoverageDay, OpenShift, RosterDay, ShiftKind, SwapCandidate } from "@/mock/timeclock";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -607,7 +608,8 @@ function SchedulePage() {
   };
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time operations"
         title="My schedule"
@@ -730,5 +732,6 @@ function SchedulePage() {
         }}
       />
     </AppShell>
+      </AuthGate>
   );
 }

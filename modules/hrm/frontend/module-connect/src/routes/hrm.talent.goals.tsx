@@ -6,6 +6,7 @@ import { employees } from "@/mock/data";
 import type { Goal } from "@/mock/talent";
 import { ME, talentApi } from "@/mock/talent";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -60,7 +61,8 @@ function GoalsPage() {
   const [view, setView] = useState("mine");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Talent · Performance"
         title="Goals"
@@ -207,5 +209,6 @@ function GoalsPage() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

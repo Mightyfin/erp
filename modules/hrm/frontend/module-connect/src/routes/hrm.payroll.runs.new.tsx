@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { realApi, useApi } from "@/platform/use-api";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
@@ -331,7 +332,8 @@ function NewRun() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Start a pay run"
@@ -402,5 +404,6 @@ function NewRun() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

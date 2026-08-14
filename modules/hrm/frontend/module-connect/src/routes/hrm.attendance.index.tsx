@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { AttendanceCorrection, RequestStatus } from "@/mock/types";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -66,7 +67,8 @@ function AttendanceList() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Attendance"
         title="Attendance corrections"
@@ -107,5 +109,6 @@ function AttendanceList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

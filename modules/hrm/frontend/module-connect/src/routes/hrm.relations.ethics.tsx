@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { relationsApi } from "@/mock/relations";
 import type { Declaration } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -28,7 +29,8 @@ function EthicsPage() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Relations and safety"
         title="Ethics and declarations"
@@ -142,5 +144,6 @@ function EthicsPage() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

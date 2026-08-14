@@ -7,7 +7,11 @@
  *   scope queries to the right tenant.
  * - All responses follow the backend's problem-details-ish envelope and this
  *   client normalises them into an `ApiError` class the UI can surface.
+ * - Hybrid auth (M12): when `VITE_USE_REAL_API=true` and the shell holds a
+ *   Keycloak session, requests carry `Authorization: Bearer <access_token>`.
  */
+
+import { getSession } from "@/platform/oidc";
 
 export class ApiError extends Error {
   constructor(
@@ -26,6 +30,9 @@ const BASE = (import.meta.env.VITE_HRM_API_BASE as string | undefined)?.trim()
 const TENANT_ID =
   (import.meta.env.VITE_HRM_TENANT_ID as string | undefined)?.trim() ||
   "019ffa8b-0fb0-71e6-849a-f76e5a28e0b5";
+
+/** Hybrid auth (M12): attach the bearer token when a Keycloak session exists. */
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 204) return undefined as T;
@@ -53,9 +60,18 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 function headers(extra?: Record<string, string>): Record<string, string> {
+  const authHeaders: Record<string, string> = {};
+  // Hybrid auth (M12): when the shell holds a Keycloak session, every API
+  // call carries the bearer token. The backend (JWT bearer mode) resolves
+  // the tenant-scoped identity from the token's claims.
+  if (USE_REAL) {
+    const session = getSession();
+    if (session) authHeaders.Authorization = `Bearer ${session.accessToken}`;
+  }
   return {
     Accept: "application/json",
     "HRM-Default-TenantId": TENANT_ID,
+    ...authHeaders,
     ...extra,
   };
 }

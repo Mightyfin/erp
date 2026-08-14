@@ -5,6 +5,7 @@ import { entities } from "@/mock/data";
 import { api } from "@/mock/service";
 import type { Employee } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
@@ -65,7 +66,8 @@ function EmployeesPage() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Employees"
@@ -106,5 +108,6 @@ function EmployeesPage() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

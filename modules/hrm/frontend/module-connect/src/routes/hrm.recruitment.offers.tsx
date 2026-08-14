@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { extrasApi, money } from "@/mock/extras";
 import type { Offer, Referral } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -43,7 +44,8 @@ function OffersPage() {
   const [tab, setTab] = useState<"offers" | "referrals">("offers");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Offers and referrals"
@@ -124,5 +126,6 @@ function OffersPage() {
         </Async>
       )}
     </AppShell>
+      </AuthGate>
   );
 }

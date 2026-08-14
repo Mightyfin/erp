@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { experienceApi } from "@/mock/experience";
 import type { Announcement } from "@/mock/experience";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -95,7 +96,8 @@ function EngagementPage() {
   const [tab, setTab] = useState<"news" | "surveys" | "recognition" | "wellbeing">("news");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Employee experience"
         title="Engagement"
@@ -312,5 +314,6 @@ function EngagementPage() {
         </>
       ) : null}
     </AppShell>
+      </AuthGate>
   );
 }

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { experienceApi } from "@/mock/experience";
 import type { Article } from "@/mock/experience";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -100,7 +101,8 @@ function KnowledgePage() {
   const [asked, setAsked] = useState(0);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Employee experience"
         title="HR knowledge"
@@ -223,5 +225,6 @@ function KnowledgePage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

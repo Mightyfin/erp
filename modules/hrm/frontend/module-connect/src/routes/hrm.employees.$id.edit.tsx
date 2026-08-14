@@ -10,6 +10,7 @@ import type { Employee } from "@/mock/types";
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
@@ -62,7 +63,8 @@ function EditEmployee() {
   const profileState = useMock(() => employeeProfileApi.profile(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={4}>
         {(employee) => {
           if (!employee) return <RestrictedState />;
@@ -400,5 +402,6 @@ function EditEmployee() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

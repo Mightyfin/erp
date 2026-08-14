@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, CircleDashed } from "lucide-react";
 import { configurationGroups } from "@/modules/hrm/nav";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 
 export const Route = createFileRoute("/hrm/configuration/")({
@@ -21,7 +22,8 @@ function Configuration() {
   const ready = all.filter((i) => i.to).length;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="HRM"
         title="Configuration"
@@ -73,5 +75,6 @@ function Configuration() {
         ))}
       </div>
     </AppShell>
+      </AuthGate>
   );
 }

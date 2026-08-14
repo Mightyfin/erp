@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { Position } from "@/mock/structure";
 import { entityName, formatMoney, positionIncumbentName, structureApi } from "@/mock/structure";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
@@ -72,7 +73,8 @@ function PositionPage() {
   const state = useMock(() => structureApi.position(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(p) =>
           !p ? (
@@ -450,5 +452,6 @@ function PositionPage() {
         }
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

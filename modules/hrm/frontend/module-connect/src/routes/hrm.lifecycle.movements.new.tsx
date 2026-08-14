@@ -10,6 +10,7 @@ import { employees } from "@/mock/data";
 import { currentAssignment, lifecycleApi, movementsFor, TODAY } from "@/mock/lifecycle";
 import type { MovementType } from "@/mock/lifecycle";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -414,7 +415,8 @@ function NewMovement() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Lifecycle"
         title="Raise a movement"
@@ -454,5 +456,6 @@ function NewMovement() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

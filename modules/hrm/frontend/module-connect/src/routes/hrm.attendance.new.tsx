@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { realApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -135,7 +136,8 @@ function NewCorrection() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader eyebrow="Attendance" title="Raise a correction" description="Four short steps. Your draft saves as you go." />
       <GuidedFlow
         flowId="attendance-new"
@@ -172,5 +174,6 @@ function NewCorrection() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

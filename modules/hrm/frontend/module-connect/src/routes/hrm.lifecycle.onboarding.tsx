@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { blockedTasks, displayName, lifecycleApi, overdueTasks, taskProgress, TODAY } from "@/mock/lifecycle";
 import type { OnboardingCase } from "@/mock/lifecycle";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -57,7 +58,8 @@ function OnboardingList() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Lifecycle"
         title="Onboarding"
@@ -185,5 +187,6 @@ function OnboardingList() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

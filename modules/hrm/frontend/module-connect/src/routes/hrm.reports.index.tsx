@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { reportsApi } from "@/mock/reports";
 import type { Metric, ReportDef } from "@/mock/reports";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -64,7 +65,8 @@ function ReportsPage() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Reports"
         title="Reports and analytics"
@@ -172,5 +174,6 @@ function ReportsPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { employees } from "@/mock/data";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { RecordDetail } from "@/platform/components/RecordDetail";
@@ -26,7 +27,8 @@ function AttendanceDetail() {
   const state = useMock(() => api.attendanceItem(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(r) => {
           if (!r) return <RestrictedState />;
@@ -65,5 +67,6 @@ function AttendanceDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -4,6 +4,7 @@ import { EyeOff, ShieldAlert } from "lucide-react";
 import { relationsApi } from "@/mock/relations";
 import type { RelationsCase } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -84,7 +85,8 @@ function CasesList() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Relations and safety"
         title="Employee relations cases"
@@ -164,5 +166,6 @@ function CasesList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

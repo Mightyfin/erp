@@ -5,6 +5,7 @@ import { employees } from "@/mock/data";
 import { blockedTasks, displayName, lifecycleApi, overdueTasks, taskProgress, TODAY } from "@/mock/lifecycle";
 import type { ClearanceCategory, ClearanceTask, TaskState } from "@/mock/lifecycle";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
@@ -104,7 +105,8 @@ function OffboardingDetail() {
   const state = useMock(() => lifecycleApi.offboarding(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(c) => {
           if (!c) return <RestrictedState />;
@@ -253,5 +255,6 @@ function OffboardingDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

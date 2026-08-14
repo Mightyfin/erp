@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { RecordDetail } from "@/platform/components/RecordDetail";
@@ -36,7 +37,8 @@ function RequestDetail() {
   );
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(raw) => {
           if (!raw) return <RestrictedState />;
@@ -94,5 +96,6 @@ function RequestDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

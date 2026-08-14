@@ -27,6 +27,7 @@ import {
   unitStateExplanation,
 } from "@/mock/adminconfig";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
@@ -662,7 +663,8 @@ function OrganisationConfig() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Configuration"
         title="Organisation setup"
@@ -976,5 +978,6 @@ function OrganisationConfig() {
         }}
       />
     </AppShell>
+      </AuthGate>
   );
 }

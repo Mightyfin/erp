@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import type { CertificateState, Course, Enrolment } from "@/mock/talent";
 import { certificateState, daysUntil, talentApi } from "@/mock/talent";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -165,7 +166,8 @@ function LearningPage() {
   const [view, setView] = useState("mine");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Talent · Learning"
         title="Learning and certificates"
@@ -324,5 +326,6 @@ function LearningPage() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

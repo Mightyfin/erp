@@ -3,6 +3,7 @@ import { Download, Info, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { payrollRunApi } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { CalculationExplainer } from "@/platform/components/CalculationExplainer";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -29,7 +30,8 @@ function PayslipDetail() {
   const state = useMock(() => payrollRunApi.payslip(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={4}>
         {(p) => {
           if (!p) return <RestrictedState />;
@@ -187,5 +189,6 @@ function PayslipDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

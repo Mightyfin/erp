@@ -4,6 +4,7 @@ import { CircleSlash, EyeOff, Info } from "lucide-react";
 import { hasLapsed, relationsApi } from "@/mock/relations";
 import type { Warning } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -26,7 +27,8 @@ function DisciplinePage() {
   const [view, setView] = useState("active");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Relations and safety"
         title="Warning register"
@@ -114,5 +116,6 @@ function DisciplinePage() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

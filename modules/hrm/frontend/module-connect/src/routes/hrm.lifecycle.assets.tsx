@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import type { Asset } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -27,7 +28,8 @@ function AssetsPage() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Lifecycle"
         title="Assets and access"
@@ -69,5 +71,6 @@ function AssetsPage() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

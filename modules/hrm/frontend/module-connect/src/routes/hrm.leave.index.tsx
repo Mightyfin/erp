@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/mock/service";
 import type { LeaveRequest } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -93,7 +94,8 @@ function LeaveList() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Leave"
         title="Leave requests"
@@ -142,5 +144,6 @@ function LeaveList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

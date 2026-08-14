@@ -5,6 +5,7 @@ import { employees } from "@/mock/data";
 import type { Review } from "@/mock/talent";
 import { ME, ratingLabel, talentApi } from "@/mock/talent";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -60,7 +61,8 @@ function ReviewsPage() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Talent · Performance"
         title="Performance reviews"
@@ -182,5 +184,6 @@ function ReviewsPage() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

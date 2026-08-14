@@ -3,6 +3,7 @@ import { Info } from "lucide-react";
 import { payrollRunApi } from "@/mock/payrollrun";
 import type { DerivedPayslip } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -26,7 +27,8 @@ function PayslipsList() {
   const state = useMock(() => payrollRunApi.payslips());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Pay"
         title="Payslips"
@@ -80,5 +82,6 @@ function PayslipsList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

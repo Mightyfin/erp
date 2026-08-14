@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { compensationApi, money } from "@/mock/compensation";
 import type { BenefitEnrolment, CompRecord } from "@/mock/compensation";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -58,7 +59,8 @@ function CompensationPage() {
   const [tab, setTab] = useState<"pay" | "benefits" | "equity">("pay");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Compensation and benefits"
@@ -351,5 +353,6 @@ function CompensationPage() {
         </>
       ) : null}
     </AppShell>
+      </AuthGate>
   );
 }

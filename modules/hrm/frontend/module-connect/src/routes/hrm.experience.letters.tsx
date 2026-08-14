@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { employees } from "@/mock/data";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
@@ -279,6 +280,7 @@ function LettersPage() {
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="Letters" title="Request submitted" />
         <NextSteps
@@ -301,6 +303,7 @@ function LettersPage() {
           }
         />
       </AppShell>
+      </AuthGate>
     );
   }
 

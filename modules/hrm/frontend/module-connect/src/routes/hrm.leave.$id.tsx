@@ -3,6 +3,7 @@ import { employees } from "@/mock/data";
 import { balanceFor } from "@/mock/leavebalance";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { RecordDetail } from "@/platform/components/RecordDetail";
@@ -52,7 +53,8 @@ function LeaveDetail() {
   const mockState = useMock(() => api.leaveRequest(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={USE_REAL ? state : mockState} rows={3}>
         {(r) => {
           if (!r) return <RestrictedState />;
@@ -146,5 +148,6 @@ function LeaveDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

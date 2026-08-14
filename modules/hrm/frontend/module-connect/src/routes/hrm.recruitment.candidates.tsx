@@ -5,6 +5,7 @@ import { recruitmentApi, vacancyLabel } from "@/mock/recruitment";
 import type { Candidate, CandidateSource, CandidateStage } from "@/mock/recruitment";
 import type { RequestStatus } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -116,7 +117,8 @@ function CandidatesList() {
   const [view, setView] = useState("live");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Candidates"
@@ -274,5 +276,6 @@ function CandidatesList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

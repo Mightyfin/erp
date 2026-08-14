@@ -4,6 +4,7 @@ import { Check, Radio, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -27,7 +28,8 @@ function LabourPage() {
   const [tab, setTab] = useState<"agreements" | "rollcall">("agreements");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Relations and safety"
         title="Agreements and roll call"
@@ -130,5 +132,6 @@ function LabourPage() {
         </Async>
       )}
     </AppShell>
+      </AuthGate>
   );
 }

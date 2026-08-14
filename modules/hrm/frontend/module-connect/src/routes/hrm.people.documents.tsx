@@ -16,6 +16,7 @@ import { documentsApi } from "@/mock/documents";
 import type { Classification, EmployeeDocument } from "@/mock/documents";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -164,7 +165,8 @@ function DocumentsPage() {
   };
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Documents and employee files"
@@ -428,5 +430,6 @@ function DocumentsPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

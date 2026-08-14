@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { expensesApi } from "@/mock/expenses";
 import type { Timesheet } from "@/mock/expenses";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -126,7 +127,8 @@ function TimesheetsPage() {
   const state = useMock(() => expensesApi.timesheets());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time and leave"
         title="Timesheets"
@@ -185,5 +187,6 @@ function TimesheetsPage() {
         }
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -14,6 +14,7 @@ import { CURRENT_USER, isOutstanding, money, payrollRunApi } from "@/mock/payrol
 import { CalculationPanel } from "@/platform/components/CalculationPanel";
 import type { ControlTotals, PayRun, RunLine, RunStage } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
@@ -465,7 +466,8 @@ function RunDetail() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={4}>
         {(run) => {
           if (!run) return <RestrictedState />;
@@ -743,5 +745,6 @@ function RunDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

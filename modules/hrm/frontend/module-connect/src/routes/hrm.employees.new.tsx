@@ -11,6 +11,7 @@ import { api } from "@/mock/service";
 import { ApiError } from "@/platform/api-client";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -266,6 +267,7 @@ function NewEmployee() {
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="People" title="Employee record created" />
         <NextSteps
@@ -288,6 +290,7 @@ function NewEmployee() {
           }
         />
       </AppShell>
+      </AuthGate>
     );
   }
 

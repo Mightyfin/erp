@@ -41,6 +41,7 @@ import {
 } from "@/mock/adminconfig";
 import type { Role } from "@/mock/types";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { DetailSection } from "@/platform/components/RecordDetail";
@@ -265,7 +266,8 @@ function RolesConfig() {
   const confirmCapability = confirm ? capabilities.find((c) => c.id === confirm.capId) : undefined;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Configuration"
         title="Roles and permissions"
@@ -705,5 +707,6 @@ function RolesConfig() {
         </AlertDialogContent>
       </AlertDialog>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -51,6 +51,8 @@ import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
+import { useAuth } from "@/platform/auth";
+import { SignedInBadge } from "@/platform/components/AuthGate";
 import { modules } from "@/platform/modules";
 import { cn } from "@/lib/utils";
 
@@ -281,6 +283,43 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+
+/** User display line: real identity when OIDC-signed-in, otherwise the demo name. */
+function RealUserLine() {
+  const { user } = useAuth();
+  if (USE_REAL && user?.name) {
+    return (
+      <span className="min-w-0">
+        <span className="block truncate">{user.name}</span>
+        {user.email ? (
+          <span className="block truncate text-xs font-normal text-muted-foreground">
+            {user.email}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+  return <span>Chanda Mwansa-Chileshe</span>;
+}
+
+/** Sign-out action: real OIDC logout in hybrid mode, demo link otherwise. */
+function RealSignOut() {
+  const { signOut } = useAuth();
+  if (USE_REAL) {
+    return (
+      <button type="button" className="flex w-full items-center gap-2 px-2 py-1.5 text-sm" onClick={() => signOut()}>
+        <LogOut className="size-4" aria-hidden /> Sign out
+      </button>
+    );
+  }
+  return (
+    <Link to="/sign-in">
+      <LogOut className="size-4" aria-hidden /> Sign out
+    </Link>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
   const canApprove = useRoleGate()(APPROVER_ROLES);
@@ -455,7 +494,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel className="flex flex-col">
-                  <span>Chanda Mwansa-Chileshe</span>
+                  <RealUserLine />
                   <span className="text-xs font-normal text-muted-foreground">
                     Acting as {workspaces.find((w) => w.id === role)?.label}
                   </span>
@@ -469,9 +508,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/sign-in">
-                    <LogOut className="size-4" aria-hidden /> Sign out
-                  </Link>
+                  <RealSignOut />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

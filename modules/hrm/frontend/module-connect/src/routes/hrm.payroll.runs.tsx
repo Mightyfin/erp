@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { money, payrollRunApi } from "@/mock/payrollrun";
 import type { PayRun } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -77,7 +78,8 @@ function RunsList() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Pay runs"
@@ -132,5 +134,6 @@ function RunsList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

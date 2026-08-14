@@ -4,6 +4,7 @@ import { TriangleAlert, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -29,7 +30,8 @@ function SuccessionPage() {
   const [tab, setTab] = useState<"roles" | "skills" | "opps">("roles");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Talent"
         title="Succession and skills"
@@ -170,5 +172,6 @@ function SuccessionPage() {
         </Async>
       ) : null}
     </AppShell>
+      </AuthGate>
   );
 }

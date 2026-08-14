@@ -15,6 +15,7 @@ import { dataQualityApi } from "@/mock/dataquality";
 import type { BulkJob, DuplicateCandidate, QualityRule } from "@/mock/dataquality";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -337,7 +338,8 @@ function DataQualityPage() {
   const [tab, setTab] = useState<"rules" | "duplicates" | "bulk" | "imports">("rules");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Data quality and stewardship"
@@ -463,5 +465,6 @@ function DataQualityPage() {
         </Async>
       ) : null}
     </AppShell>
+      </AuthGate>
   );
 }

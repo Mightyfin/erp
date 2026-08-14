@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { relationsApi } from "@/mock/relations";
 import type { RelationsCase } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { MaskedValue } from "@/platform/components/Sensitive";
@@ -119,7 +120,8 @@ function CaseDetail() {
   const [declared, setDeclared] = useState(false);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(c) => {
           if (!c) return <RestrictedState />;
@@ -258,5 +260,6 @@ function CaseDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CheckCircle2, Clock } from "lucide-react";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { realApi, useApi } from "@/platform/use-api";
@@ -44,7 +45,8 @@ function PayrollHome() {
   );
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Payroll"
@@ -102,5 +104,6 @@ function PayrollHome() {
         </ul>
       </div>
     </AppShell>
+      </AuthGate>
   );
 }

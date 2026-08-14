@@ -5,6 +5,7 @@ import { entities } from "@/mock/data";
 import { money, recruitmentApi } from "@/mock/recruitment";
 import type { Requisition } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -48,7 +49,8 @@ function RequisitionsList() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Requisitions"
@@ -207,5 +209,6 @@ function RequisitionsList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }
