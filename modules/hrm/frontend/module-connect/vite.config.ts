@@ -14,6 +14,17 @@ export default defineConfig({
     preset: "node-server",
   },
   vite: {
+    // vite 8 uses Rolldown for production builds. Rolldown's chunk splitting can
+    // produce circular chunk references where a chunk's top-level code calls the
+    // `__exportAll` helper before the chunk that defines it has finished
+    // evaluating (TypeError: __exportAll is not a function → HTTP 500 on every
+    // SSR request). `strictExecutionOrder` forces Rolldown to respect the module
+    // dependency graph when emitting chunks, injecting a small runtime helper.
+    build: {
+      rolldownOptions: {
+        output: { strictExecutionOrder: true },
+      },
+    },
     server: {
       allowedHosts: [
         "5173-i7smg96dlpxvsipskzckw.us3.manus.computer",
