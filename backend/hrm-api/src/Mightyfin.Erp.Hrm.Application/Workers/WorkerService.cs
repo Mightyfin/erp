@@ -100,6 +100,10 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var worker = await repo.GetByIdAsync(id, ct)
             ?? throw new DomainException("worker-not-found", $"Worker {id} does not exist.");
+        // M18 admin CRUD: an archived record is a historical one — edits on it
+        // would silently resurrect a leaver into operational views.
+        if (worker.IsArchived)
+            throw new DomainException("worker-archived", "This worker record is archived. Reactivate it before editing, or create a new record instead.");
         if (request.FirstName is not null) worker.FirstName = request.FirstName;
         if (request.MiddleName is not null) worker.MiddleName = request.MiddleName;
         if (request.LastName is not null) worker.LastName = request.LastName;

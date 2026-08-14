@@ -16,6 +16,9 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
     public async Task<(List<Worker> Items, int Total)> ListAsync(WorkerListFilters filters, CancellationToken ct)
     {
         var q = db.Workers.AsQueryable();
+        // M18 admin CRUD: archived workers stay out of the operational list
+        // unless HR explicitly asks for them.
+        if (!filters.IncludeArchived) q = q.Where(w => !w.IsArchived);
         if (!string.IsNullOrWhiteSpace(filters.Search))
         {
             var s = filters.Search.Trim().ToLower();

@@ -8,7 +8,8 @@ namespace Mightyfin.Erp.Hrm.Application;
 
 public sealed record WorkerListFilters(
     string? Search, string? Status, Guid? OrgUnitId, Guid? LocationId,
-    string? WorkerType, string? Grade, int Page = 1, int PageSize = 25);
+    string? WorkerType, string? Grade, bool IncludeArchived = false,
+    int Page = 1, int PageSize = 25);
 
 public sealed record WorkerCreateRequest(
     string EmployeeNo, string FirstName, string LastName,

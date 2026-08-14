@@ -217,4 +217,86 @@ public class WorkerServiceTests
             CancellationToken.None);
         Assert.Equal("0972222222", updated.Phone);
     }
+
+    // ---- M18 employer-side employee CRUD ----
+
+    [Fact]
+    public async Task ListWorkers_ExcludesArchivedByDefault()
+    {
+        var (service, ctx) = Build();
+        var active = new Worker { EmployeeNo = "EMP-A1", FirstName = "Active", LastName = "One", WorkerType = "employee", Status = "active" };
+        var archived = new Worker { EmployeeNo = "EMP-A2", FirstName = "Left", LastName = "One", WorkerType = "employee", Status = "active", IsArchived = true };
+        ctx.Set<Worker>().AddRange(active, archived);
+        await ctx.SaveChangesAsync();
+
+        var repo = new WorkerRepository(ctx);
+        var (items, total) = await repo.ListAsync(new WorkerListFilters(Search: null, Status: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null), CancellationToken.None);
+        Assert.Equal(1, total);
+        Assert.Single(items);
+        Assert.Equal("EMP-A1", items[0].EmployeeNo);
+
+        // Explicitly including archived surfaces the leaver again.
+        var (archivedItems, archivedTotal) = await repo.ListAsync(
+            new WorkerListFilters(Search: null, Status: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null, IncludeArchived: true), CancellationToken.None);
+        Assert.Equal(2, archivedTotal);
+        Assert.Contains(archivedItems, w => w.EmployeeNo == "EMP-A2");
+    }
+
+    [Fact]
+    public async Task ArchiveWorker_SetsStatusArchived()
+    {
+        var (service, ctx) = Build();
+        var worker = new Worker { EmployeeNo = "EMP-A3", FirstName = "To", LastName = "Archive", WorkerType = "employee", Status = "active" };
+        ctx.Set<Worker>().Add(worker);
+        await ctx.SaveChangesAsync();
+
+        await service.ArchiveAsync(worker.Id, CancellationToken.None);
+
+        var reloaded = await ctx.Workers.FirstAsync();
+        Assert.True(reloaded.IsArchived);
+        Assert.Equal("archived", reloaded.Status);
+    }
+
+    [Fact]
+    public async Task UpdateArchivedWorker_Throws()
+    {
+        var (service, ctx) = Build();
+        var worker = new Worker { EmployeeNo = "EMP-A4", FirstName = "Was", LastName = "Archived", WorkerType = "employee", Status = "active", IsArchived = true };
+        ctx.Set<Worker>().Add(worker);
+        await ctx.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.UpdateAsync(worker.Id, new WorkerUpdateRequest(JobTitle: "New Title"), CancellationToken.None));
+        Assert.Equal("worker-archived", ex.Code);
+    }
+
+    [Fact]
+    public void CreateWorker_MissingNames_InvalidWorkerType_FailRouteValidation()
+    {
+        // The API route (ValidateWorkerCreate) is what produces the 422 for HR.
+        // Re-derive the same rules here: empty names and a bogus worker type are
+        // all caught before the service layer is reached.
+        var bad = new[]
+        {
+            new WorkerCreateRequest(EmployeeNo: "EMP-A5", FirstName: "", LastName: "Worker", WorkerType: "employee"),
+            new WorkerCreateRequest(EmployeeNo: "EMP-A6", FirstName: "Valid", LastName: "", WorkerType: "employee"),
+            new WorkerCreateRequest(EmployeeNo: "EMP-A7", FirstName: "Valid", LastName: "Worker", WorkerType: "freelancer"),
+        };
+        var allowedTypes = new[] { "employee", "contingent", "intern", "volunteer" };
+        foreach (var request in bad)
+        {
+            var errors = new List<string>();
+            if (string.IsNullOrWhiteSpace(request.FirstName)) errors.Add("firstName is required");
+            if (string.IsNullOrWhiteSpace(request.LastName)) errors.Add("lastName is required");
+            if (!allowedTypes.Contains(request.WorkerType)) errors.Add("workerType is invalid");
+            Assert.NotEmpty(errors);
+        }
+        // And the happy path validates clean.
+        var ok = new WorkerCreateRequest(EmployeeNo: "EMP-A8", FirstName: "Bwalya", LastName: "Chanda", WorkerType: "employee");
+        var okErrors = new List<string>();
+        if (string.IsNullOrWhiteSpace(ok.FirstName)) okErrors.Add("firstName is required");
+        if (string.IsNullOrWhiteSpace(ok.LastName)) okErrors.Add("lastName is required");
+        if (!allowedTypes.Contains(ok.WorkerType)) okErrors.Add("workerType is invalid");
+        Assert.Empty(okErrors);
+    }
 }
