@@ -432,6 +432,11 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
         authz.RequireAnyRole("payroll", "hr_admin");
         var lines = await payrollRepo.ListReleasedRunLinesForPeriodAsync(payPeriodId, ct);
         var label = lines.FirstOrDefault()?.Run?.PayPeriod?.PeriodLabel ?? "";
+        if (label == "")
+        {
+            var period = await payrollRepo.GetPeriodAsync(payPeriodId, ct);
+            label = period?.PeriodLabel ?? "";
+        }
         decimal paye = 0, napsaEe = 0, napsaEr = 0, nhimaEe = 0, nhimaEr = 0;
         decimal gross = 0, net = 0;
         foreach (var l in lines)
@@ -447,7 +452,8 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
                 else if (comp.ComponentCode.Equals("nhima-er", StringComparison.OrdinalIgnoreCase)) nhimaEr += comp.Amount;
             }
         }
-        var employer = (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault(e => e.IsDefault);
+        var employer = (await configRepo.ListLegalEntitiesAsync(ct))
+            .FirstOrDefault(e => e.IsDefault) ?? (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault();
         // NOTE: positional args only — this SDK rejects named arguments on
         // record constructors (see M23-KICKOFF-NOTES.md repro).
         return new StatutorySummaryDto(
