@@ -77,8 +77,9 @@ export const hrmModule: ModuleDefinition = {
         {
           label: "Leave",
           items: [
-            { label: "Leave requests", to: "/hrm/leave" },
+            { label: "My leave", to: "/hrm/leave" },
             { label: "Request leave", to: "/hrm/leave/new" },
+            { label: "Leave approvals", to: "/hrm/leave/approvals", roles: ["hr_ops", "hr_admin", "manager"] },
           ],
         },
         {

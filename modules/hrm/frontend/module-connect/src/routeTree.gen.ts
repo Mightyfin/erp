@@ -36,6 +36,7 @@ import { Route as HrmExperienceKnowledgeRouteImport } from './routes/hrm.experie
 import { Route as HrmExperienceLettersRouteImport } from './routes/hrm.experience.letters'
 import { Route as HrmLeaveIndexRouteImport } from './routes/hrm.leave.index'
 import { Route as HrmLeaveIdRouteImport } from './routes/hrm.leave.$id'
+import { Route as HrmLeaveApprovalsRouteImport } from './routes/hrm.leave.approvals'
 import { Route as HrmLeaveNewRouteImport } from './routes/hrm.leave.new'
 import { Route as HrmLifecycleIndexRouteImport } from './routes/hrm.lifecycle.index'
 import { Route as HrmLifecycleAlumniRouteImport } from './routes/hrm.lifecycle.alumni'
@@ -236,6 +237,11 @@ const HrmLeaveIndexRoute = HrmLeaveIndexRouteImport.update({
 const HrmLeaveIdRoute = HrmLeaveIdRouteImport.update({
   id: '/hrm/leave/$id',
   path: '/hrm/leave/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmLeaveApprovalsRoute = HrmLeaveApprovalsRouteImport.update({
+  id: '/hrm/leave/approvals',
+  path: '/hrm/leave/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmLeaveNewRoute = HrmLeaveNewRouteImport.update({
@@ -575,6 +581,7 @@ export interface FileRoutesByFullPath {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -665,6 +672,7 @@ export interface FileRoutesByTo {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -756,6 +764,7 @@ export interface FileRoutesById {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -848,6 +857,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -938,6 +948,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1028,6 +1039,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1119,6 +1131,7 @@ export interface RootRouteChildren {
   HrmExperienceKnowledgeRoute: typeof HrmExperienceKnowledgeRoute
   HrmExperienceLettersRoute: typeof HrmExperienceLettersRoute
   HrmLeaveIdRoute: typeof HrmLeaveIdRoute
+  HrmLeaveApprovalsRoute: typeof HrmLeaveApprovalsRoute
   HrmLeaveNewRoute: typeof HrmLeaveNewRoute
   HrmLifecycleAlumniRoute: typeof HrmLifecycleAlumniRoute
   HrmLifecycleAssetsRoute: typeof HrmLifecycleAssetsRoute
@@ -1363,6 +1376,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/leave/$id'
       fullPath: '/hrm/leave/$id'
       preLoaderRoute: typeof HrmLeaveIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/leave/approvals': {
+      id: '/hrm/leave/approvals'
+      path: '/hrm/leave/approvals'
+      fullPath: '/hrm/leave/approvals'
+      preLoaderRoute: typeof HrmLeaveApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/leave/new': {
@@ -1958,6 +1978,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmExperienceKnowledgeRoute: HrmExperienceKnowledgeRoute,
   HrmExperienceLettersRoute: HrmExperienceLettersRoute,
   HrmLeaveIdRoute: HrmLeaveIdRoute,
+  HrmLeaveApprovalsRoute: HrmLeaveApprovalsRoute,
   HrmLeaveNewRoute: HrmLeaveNewRoute,
   HrmLifecycleAlumniRoute: HrmLifecycleAlumniRoute,
   HrmLifecycleAssetsRoute: HrmLifecycleAssetsRoute,

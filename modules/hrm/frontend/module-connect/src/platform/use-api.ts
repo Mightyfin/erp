@@ -160,9 +160,17 @@ export const realApi = {
   /* Additional surfaces wired for M11 — same { items } envelope shape   */
   /* ------------------------------------------------------------------ */
 
-  /** Time: leave requests (+ optional balances). */
+  /**
+   * M17 admin leave inbox (roles hr_ops / hr_admin / manager): company-wide
+   * leave requests with optional status + worker filters. GET /hrm/time/leave.
+   */
   leaveRequests: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>('/hrm/time/leave', params ?? {}),
+    hrmApi.get<{
+      items: { id: string; workerId: string; workerName: string; leaveTypeCode: string; startDate: string; endDate: string; requestedDays: number; status: string; balanceReserved: boolean; crossesCutoff: boolean; createdAt: string }[];
+      totalCount: number;
+      page: number;
+      pageSize: number;
+    }>('/hrm/time/leave', params ?? {}),
   leaveBalances: (workerId: string) =>
     hrmApi.get<unknown[]>(`/hrm/time/leave/balances/${workerId}`),
   createLeaveRequest: (body: Record<string, unknown>) =>

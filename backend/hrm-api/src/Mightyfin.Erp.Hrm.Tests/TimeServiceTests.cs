@@ -249,6 +249,50 @@ public class TimeServiceTests
         Assert.Equal(12m, annual.Available);
     }
 
+    // ===================== M17: admin leave approvals inbox =====================
+
+    [Fact]
+    public async Task ListLeave_CompanyWide_WhenWorkerIdIsNull()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        await SubmitLeaveAsync(ctx, service, worker);
+
+        // a second, unlinked worker also submits — the admin list must see BOTH
+        var other = new Worker
+        {
+            EmployeeNo = "EMP-TM-002", FirstName = "Second", LastName = "Worker",
+            WorkerType = "employee", Status = "active", Nationality = "ZM",
+            TenantId = "test-tenant", SubjectId = "subject-002",
+        };
+        ctx.Workers.Add(other);
+        ctx.LeaveBalanceLedgers.Add(new LeaveBalanceLedger
+        {
+            WorkerId = other.Id, LeaveTypeCode = "annual", Days = 20m,
+            Reason = "accrual", ReferenceType = "", ForDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            TenantId = "test-tenant",
+        });
+        ctx.SaveChanges();
+        var created2 = await service.CreateLeaveAsync(new LeaveRequestCreate(
+            other.Id, "annual",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)).ToString("yyyy-MM-dd"),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)).ToString("yyyy-MM-dd")),
+            CancellationToken.None);
+
+        // company-wide list: no workerId filter, no status filter
+        var all = await service.ListLeaveAsync(null, null, CancellationToken.None);
+        Assert.Equal(2, all.Items.Count);
+        Assert.Equal(2, all.TotalCount);
+        Assert.Contains(all.Items, r => r.Id == created2.Id);
+        Assert.Contains(all.Items, r => r.Id == created2.Id && r.WorkerId == other.Id);
+
+        // employee-owned filter still works on top
+        var own = await service.ListLeaveAsync(worker.Id, null, CancellationToken.None);
+        Assert.Single(own.Items);
+
+        var submitted = await service.ListLeaveAsync(null, "submitted", CancellationToken.None);
+        Assert.Equal(2, submitted.Items.Count);
+    }
+
     // ===================== M16: self-service leave =====================
 
     private static async Task<LeaveRequestDto> SubmitLeaveAsync(HrmDbContext ctx, TimeServiceImpl service, Worker worker,
