@@ -66,16 +66,15 @@ function toMessages(raw: unknown): ThreadMessage[] {
 
 function RequestDetail() {
   const { id } = Route.useParams();
-  const state = useApi(
+  const state = useApi<Record<string, unknown> | null>(
     async () => {
       const page = await realApi.experienceRequests();
-      const found = (page.items as Record<string, unknown>[]).find((r) => String(r.id) === id);
+      const found = (Array.isArray(page.items) ? page.items : []).find((r) => String((r as Record<string, unknown>).id) === id);
       return (found ?? null) as Record<string, unknown> | null;
     },
     [id],
   );
-  const canAct = useRoleGate(["hr_ops", "hr_admin"]);
-  const { resolveRole } = useAuth();
+  const canAct = useRoleGate()(["hr_ops", "hr_admin"]);
   const [reply, setReply] = useState("");
   const [noteMode, setNoteMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -93,7 +92,6 @@ function RequestDetail() {
           const confidential = String(raw.confidentiality ?? "normal") === "confidential";
           const messages = toMessages(raw.messages);
           const isClosed = ["Resolved", "Closed"].includes(status);
-          const hrRole = resolveRole() === "hr_ops" || resolveRole() === "hr_admin";
 
           const send = async (internal: boolean) => {
             if (!reply.trim()) return;
@@ -191,19 +189,17 @@ function RequestDetail() {
                   ) : null}
                 </ul>
 
-                {!isClosed && (hrRole || canAct) ? (
+                {!isClosed && canAct ? (
                   <div className="mt-5 space-y-3 border-t pt-4">
-                    {hrRole ? (
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={noteMode}
-                          onChange={(e) => setNoteMode(e.target.checked)}
-                          className="h-4 w-4 accent-primary"
-                        />
-                        Internal note — only HR can see this
-                      </label>
-                    ) : null}
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={noteMode}
+                        onChange={(e) => setNoteMode(e.target.checked)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      Internal note — only HR can see this
+                    </label>
                     <Textarea
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}

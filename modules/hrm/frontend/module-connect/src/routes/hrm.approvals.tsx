@@ -30,25 +30,27 @@ interface Row {
   to: string;
 }
 
-const workflowStatus: Record<string, string> = {
+const approvedStatuses: Record<string, string> = {
+  pending: "Pending",
   submitted: "Submitted",
+  open: "Open",
+  "in-progress": "In progress",
   "in-review": "In review",
+  "awaiting-employee": "Awaiting employee",
+  returned: "Returned",
   approved: "Approved",
   rejected: "Rejected",
-  returned: "Returned",
+  resolved: "Resolved",
+  closed: "Closed",
   cancelled: "Cancelled",
 };
 
-const hrStatus: Record<string, string> = {
-  open: "Open",
-  "in-progress": "In progress",
-  "awaiting-employee": "Awaiting employee",
-  resolved: "Resolved",
-  closed: "Closed",
-};
+function labelStatus(raw: string): string {
+  return approvedStatuses[String(raw ?? "").toLowerCase()] ?? String(raw ?? "").replace(/^(.)/, (c) => c.toUpperCase());
+}
 
 function isDecidable(status: string): boolean {
-  return status === "Submitted" || status === "In review" || status === "Returned" || status === "Open" || status === "In progress" || status === "Awaiting employee";
+  return status === "Pending" || status === "Submitted" || status === "In review" || status === "Returned" || status === "Open" || status === "In progress" || status === "Awaiting employee";
 }
 
 async function loadQueue(): Promise<Row[]> {
@@ -66,7 +68,7 @@ async function loadQueue(): Promise<Row[]> {
         kind: "Leave" as const,
         title: `${String(x.leaveTypeCode ?? "leave")} · ${Number(x.requestedDays ?? 0)} days`,
         employeeName: String(x.workerName ?? "Unknown"),
-        status: String(x.status ?? ""),
+        status: labelStatus(String(x.status ?? "")),
         opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
         to: "/hrm/leave/$id",
       };
@@ -76,9 +78,9 @@ async function loadQueue(): Promise<Row[]> {
       return {
         id: String(x.id ?? ""),
         kind: "Attendance" as const,
-        title: `Correction · ${String(x.date ?? String(x.claimDate ?? "—"))}`,
+        title: `Correction · ${String(x.workDate ?? String(x.date ?? String(x.claimDate ?? "—")))}`,
         employeeName: String(x.workerName ?? "Unknown"),
-        status: String(x.status ?? ""),
+        status: labelStatus(String(x.status ?? "")),
         opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
         to: "/hrm/attendance/$id",
       };
@@ -90,7 +92,7 @@ async function loadQueue(): Promise<Row[]> {
         kind: "HR request" as const,
         title: String(x.subject ?? "HR request"),
         employeeName: String(x.workerName ?? "Unknown"),
-        status: hrStatus[String(x.status ?? "")] ?? String(x.status ?? ""),
+        status: labelStatus(String(x.status ?? "")),
         opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
         to: "/hrm/requests/$id",
       };
@@ -102,7 +104,7 @@ async function loadQueue(): Promise<Row[]> {
         kind: "Workflow" as const,
         title: `${String(x.workflowType ?? "request")} · ${String(x.subjectName ?? "Workflow item")}`,
         employeeName: String(x.currentApproverName ?? "Workflow queue"),
-        status: workflowStatus[String(x.status ?? "")] ?? String(x.status ?? ""),
+        status: labelStatus(String(x.status ?? "")),
         opened: typeof x.dueAt === "string" ? String(x.dueAt).slice(0, 10) : "—",
         to: "/hrm/approvals/$id",
       };

@@ -38,27 +38,62 @@ function LeaveDetail() {
   const { id } = Route.useParams();
 
   // Real mode: load the list and pick the row matching this id.
-  const state = useApi(
+  interface LeaveRow {
+    id: string;
+    workerId: string;
+    workerName: string;
+    leaveTypeCode: string;
+    startDate: string;
+    endDate: string;
+    requestedDays: number;
+    status: string;
+    balanceReserved: boolean;
+    crossesCutoff: boolean;
+    createdAt: string;
+  }
+
+  const state = useApi<LeaveRow | null>(
     () =>
       realApi
         .leaveRequests({ page: 1, pageSize: 200 })
         .then((page) => {
           const raw = page.items.find((r) => String((r as { id?: unknown }).id) === id);
-          return raw ?? null;
+          return (raw as LeaveRow | null) ?? null;
         }),
     [id],
   );
 
-  // Mock mode fallback (kept for green-UI development).
-  const mockState = useMock(() => api.leaveRequest(id), [id]);
+  // Mock mode fallback (kept for green-UI development) — mapped into the
+  // same LeaveRow shape so both branches satisfy the Async generic.
+  const mockState = useMock(
+    () =>
+      api.leaveRequest(id).then((raw) => {
+        if (!raw) return null as LeaveRow | null;
+        const x = raw as unknown as Record<string, unknown>;
+        return {
+          id: String(x.id ?? ""),
+          workerId: String(x.employeeId ?? ""),
+          workerName: String(x.owner ?? ""),
+          leaveTypeCode: String(x.type ?? ""),
+          startDate: String(x.from ?? ""),
+          endDate: String(x.to ?? ""),
+          requestedDays: Number(x.days ?? 0),
+          status: String(x.status ?? ""),
+          balanceReserved: false,
+          crossesCutoff: false,
+          createdAt: "",
+        } as LeaveRow | null;
+      }),
+    [id],
+  );
 
   return (
     <AuthGate>
       <AppShell>
-      <Async state={USE_REAL ? state : mockState} rows={3}>
+      <Async<LeaveRow | null> state={USE_REAL ? state : mockState} rows={3}>
         {(r) => {
           if (!r) return <RestrictedState />;
-          const row = r as Record<string, unknown>;
+          const row = r as unknown as Record<string, unknown>;
           const backend = USE_REAL;
           const requestId = String(row.id ?? "");
           const employeeId = String(row.workerId ?? "");
