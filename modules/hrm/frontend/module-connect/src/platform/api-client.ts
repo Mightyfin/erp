@@ -194,6 +194,23 @@ export const hrmApi = {
     return URL.createObjectURL(blob);
   },
 
+  // M23: non-JSON download (statutory CSV filings). Errors still surface as
+  // ApiError; a successful response is returned as a raw Blob.
+  async getBlob(
+    path: string,
+    params?: Record<string, unknown>,
+    extra?: Record<string, string>,
+  ): Promise<Blob> {
+    const res = await fetch(`${BASE}${path}${qs(params ?? {})}`, {
+      headers: { ...headers(extra), Accept: "text/csv" },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+    return res.blob();
+  },
+
   /**
    * M14 identity link: resolve the worker record bound to the caller's Keycloak
    * subject. Returns `{ linked, worker, subject }` — worker is null when the
@@ -215,7 +232,7 @@ export const hrmApi = {
 
   /** Statutory export CSV (NAPSA / NHIMA / ZRA / napsa-bankfile). */
   statutoryExport: (exportType: string, periodId: string) =>
-    hrmApi.get<Blob>(`/hrm/statutory-exports`, { exportType, periodId }),
+    hrmApi.getBlob(`/hrm/statutory-exports`, { exportType, periodId }),
 
   // ---- M16: self-service leave (always keyed on the caller's token subject)
 

@@ -167,7 +167,7 @@ export const hrmModule: ModuleDefinition = {
       icon: BarChart3,
       roles: ["manager", "hr_ops", "hr_admin", "payroll"],
       items: [
-        { label: "Reports and analytics", to: "/hrm/reports" },
+        { label: "Statutory filings", to: "/hrm/reports" },
         { label: "Report builder", to: "/hrm/reports/builder" },
       ],
     },

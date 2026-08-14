@@ -243,6 +243,23 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/tax-slabs", { taxYear }),
   payrollContributionRules: () =>
     hrmApi.get<unknown[]>("/hrm/payroll/contribution-rules"),
+
+  /* ------------------------------------------------------------------ */
+  /* M23 statutory compliance: PAYE return + NAPSA/NHIMA remittance files */
+  /* ------------------------------------------------------------------ */
+
+  /** Generate a statutory CSV for one period and hand back a downloadable blob URL. */
+  statutoryGenerate: async (exportType: string, periodId: string) => {
+    const blob = await hrmApi.statutoryExport(exportType, periodId);
+    const url = URL.createObjectURL(blob);
+    const fileName = `${exportType}-${periodId}.csv`;
+    return { url, fileName };
+  },
+  /** Aggregate statutory liability summary for one period (no download). */
+  statutorySummary: (periodId: string) =>
+    hrmApi.get<Record<string, unknown>>(
+      `/hrm/statutory-exports/summary?periodId=${periodId}`,
+    ),
   payrollStructures: () => hrmApi.get<unknown[]>("/hrm/payroll/structures"),
   updateStructure: (id: string, body: Record<string, unknown>) =>
     hrmApi.patch<unknown>(`/hrm/payroll/structures/${id}`, body),

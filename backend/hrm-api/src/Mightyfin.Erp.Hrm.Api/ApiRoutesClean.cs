@@ -695,6 +695,10 @@ public static class Routes
             File.Delete(file);
             return Results.File(bytes, "text/csv", $"{q.ExportType}-{q.PeriodId:N}.csv");
         });
+        // M23: aggregate statutory liability summary (PAYE/NAPSA/NHIMA totals)
+        // for the reports UI — totals visible without downloading a file.
+        g.MapGet("/summary", async (Guid periodId, IStatutoryExportService svc, CancellationToken ct) =>
+            Results.Ok(await svc.SummaryAsync(periodId, ct)));
     }
 }
 

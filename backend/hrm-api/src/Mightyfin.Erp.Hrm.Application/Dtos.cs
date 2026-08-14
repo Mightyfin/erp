@@ -147,6 +147,15 @@ public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal 
     decimal TotalDeductions, decimal NetPay, string? YtdGross, string? YtdTax, string? YtdNet,
     string Status, string? DocumentUrl, DateTimeOffset? ReleasedAt, Guid? SupersedesId);
 public sealed record PayrollRunReverseCreate(string? Reason = null);
+
+/// <summary>Aggregated statutory liability for one released payroll period
+/// (M23): PAYE, NAPSA and NHIMA split by employee/employer share, plus the
+/// employer's registration references carried on every statutory filing.</summary>
+public sealed record StatutorySummaryDto(string PeriodLabel, int WorkerCount,
+    decimal TotalGross, decimal TotalPaye, decimal TotalNapsaEe, decimal TotalNapsaEr,
+    decimal TotalNhimaEe, decimal TotalNhimaEr, decimal TotalNet,
+    string EmployerName, string EmployerTpin, string NapsaEmployerRef,
+    string NhimaEmployerRef, string Currency);
 public sealed record EmployerLiabilityRow(string ComponentCode, string ComponentName, string Payer,
     decimal TotalAmount, int WorkerCount);
 public sealed record EmployerLiabilityReportDto(string PeriodLabel, string TaxYear,

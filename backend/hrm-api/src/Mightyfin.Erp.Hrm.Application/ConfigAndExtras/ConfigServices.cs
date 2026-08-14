@@ -67,6 +67,8 @@ public sealed record DqResult(string Rule, string Severity, Guid WorkerId, strin
 public interface IStatutoryExportService
 {
     Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct);
+    /// <summary>M23: aggregate statutory liability totals for one period.</summary>
+    Task<StatutorySummaryDto> SummaryAsync(Guid payPeriodId, CancellationToken ct);
 }
 
 /// <summary>Persistence contracts implemented by EF Core in Infrastructure.</summary>
