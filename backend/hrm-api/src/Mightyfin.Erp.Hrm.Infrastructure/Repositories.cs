@@ -893,7 +893,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
             .Select(r => r.Id).ToListAsync(ct);
         if (runIds.Count == 0) return [];
-        return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker).Include(l => l.Run)
+        return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker)
+            .Include(l => l.Run).ThenInclude(r => r!.PayPeriod)
             .Where(l => runIds.Contains(l.RunId)).ToListAsync(ct);
     }
 
