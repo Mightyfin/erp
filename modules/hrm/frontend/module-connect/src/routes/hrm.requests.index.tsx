@@ -134,7 +134,7 @@ function RequestsList() {
                     params={{ id: r.id }}
                     className="font-mono text-xs text-primary underline underline-offset-2"
                   >
-                    {r.id.slice(0, 13)}…
+                    {r.id.slice(0, 8)}…
                   </Link>
                 ),
               },
@@ -143,8 +143,7 @@ function RequestsList() {
                 header: "Employee",
                 cell: (r) => (
                   <span className="block max-w-56 truncate">
-                    {r.employeeName}
-                    <span className="block truncate text-xs text-muted-foreground">{r.employeeId}</span>
+                    {r.employeeName || "\u2014 HR-initiated"}
                   </span>
                 ),
               },
