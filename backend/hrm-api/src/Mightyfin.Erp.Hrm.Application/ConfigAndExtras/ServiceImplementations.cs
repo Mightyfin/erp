@@ -378,7 +378,7 @@ public sealed class DqServiceImpl(IConfigRepository configRepo, IDocumentsReposi
 /// <summary>Zambian statutory export engine (M8). Produces CSV files for NAPSA
 /// remittance, NHIMA remittance, the ZRA PAYE register, and a NAPSA bank
 /// payment file, all derived from released (non-reversed) payroll run lines.</summary>
-public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, IAuthzService authz) : IStatutoryExportService
+public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, IConfigRepository configRepo, IAuthzService authz) : IStatutoryExportService
 {
     public async Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct)
     {
@@ -393,9 +393,12 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
             "napsa" => $"napsa-remittance-{label}.csv",
             "nhima" => $"nhima-remittance-{label}.csv",
             "zra" => $"zra-paye-register-{label}.csv",
+            "paye-return" => $"zra-paye-return-{label}.csv",
             "napsa-bankfile" => $"napsa-bankfile-{label}.txt",
-            _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported. Use napsa, nhima, zra, or napsa-bankfile.")
+            _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported. Use napsa, nhima, zra, paye-return, or napsa-bankfile.")
         };
+
+        var employer = (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault(e => e.IsDefault);
 
         var withComponents = new List<(PayrollRunLine Line, Dictionary<string, decimal> Amounts)>(lines.Count);
         foreach (var l in lines)
@@ -412,6 +415,7 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
             "nhima" => withComponents.Select(t => NhimaRow(t.Line, t.Amounts)),
             "zra" => withComponents.Select(t => ZraRow(t.Line, t.Amounts)),
             "napsa-bankfile" => withComponents.Select(t => NapsaBankRow(t.Line, t.Amounts)),
+            "paye-return" => PayeReturnRows(employer, lines, withComponents),
             _ => throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported.")
         };
 
@@ -419,6 +423,74 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
         var file = Path.Combine(Path.GetTempPath(), fileName);
         await File.WriteAllTextAsync(file, joined + "\r\n", ct);
         return file;
+    }
+
+    /// <summary>Aggregate statutory summary for one period — used by the
+    /// reports UI so totals are visible without downloading a file.</summary>
+    public async Task<StatutorySummaryDto> SummaryAsync(Guid payPeriodId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var lines = await payrollRepo.ListReleasedRunLinesForPeriodAsync(payPeriodId, ct);
+        var label = lines.FirstOrDefault()?.Run?.PayPeriod?.PeriodLabel ?? "";
+        decimal paye = 0, napsaEe = 0, napsaEr = 0, nhimaEe = 0, nhimaEr = 0;
+        decimal gross = 0, net = 0;
+        foreach (var l in lines)
+        {
+            gross += l.GrossPay;
+            net += l.NetPay;
+            foreach (var comp in l.Components)
+            {
+                if (comp.ComponentCode.Equals("paye", StringComparison.OrdinalIgnoreCase)) paye += comp.Amount;
+                else if (comp.ComponentCode.Equals("napsa-ee", StringComparison.OrdinalIgnoreCase)) napsaEe += comp.Amount;
+                else if (comp.ComponentCode.Equals("napsa-er", StringComparison.OrdinalIgnoreCase)) napsaEr += comp.Amount;
+                else if (comp.ComponentCode.Equals("nhima-ee", StringComparison.OrdinalIgnoreCase)) nhimaEe += comp.Amount;
+                else if (comp.ComponentCode.Equals("nhima-er", StringComparison.OrdinalIgnoreCase)) nhimaEr += comp.Amount;
+            }
+        }
+        var employer = (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault(e => e.IsDefault);
+        // NOTE: positional args only — this SDK rejects named arguments on
+        // record constructors (see M23-KICKOFF-NOTES.md repro).
+        return new StatutorySummaryDto(
+            label,
+            lines.Select(l => l.WorkerId).Distinct().Count(),
+            Math.Round(gross, 2), Math.Round(paye, 2),
+            Math.Round(napsaEe, 2), Math.Round(napsaEr, 2),
+            Math.Round(nhimaEe, 2), Math.Round(nhimaEr, 2),
+            Math.Round(net, 2),
+            employer?.TradingName ?? employer?.RegisteredName ?? "",
+            employer?.Tpin ?? "", employer?.NapsaEmployerRef ?? "",
+            employer?.NhimaEmployerRef ?? "", employer?.Currency ?? "ZMW");
+    }
+
+    /// <summary>Monthly PAYE return: employer header block, one worker line
+    /// each, and a totals row — the exact figures an employer files with ZRA.</summary>
+    private List<string> PayeReturnRows(LegalEntity? employer, List<PayrollRunLine> lines, List<(PayrollRunLine Line, Dictionary<string, decimal> Amounts)> withComponents)
+    {
+        var period = lines.First().Run?.PayPeriod;
+        var rows = new List<string>();
+        rows.Add(Csv("ZRA PAYE MONTHLY RETURN"));
+        rows.Add(Csv("Employer", employer?.TradingName ?? employer?.RegisteredName ?? ""));
+        rows.Add(Csv("Employer TPIN", employer?.Tpin ?? ""));
+        rows.Add(Csv("NAPSA Employer Ref", employer?.NapsaEmployerRef ?? ""));
+        rows.Add(Csv("NHIMA Employer Ref", employer?.NhimaEmployerRef ?? ""));
+        rows.Add(Csv("Period", period?.PeriodLabel ?? ""));
+        rows.Add(Csv("Currency", employer?.Currency ?? "ZMW"));
+        rows.Add("");
+        rows.Add(Csv("Employee No", "Employee Name", "TPIN", "NAPSA No", "Gross Pay", "PAYE", "Net Pay"));
+        decimal tGross = 0, tPaye = 0, tNet = 0;
+        foreach (var t in withComponents)
+        {
+            rows.Add(Csv(WorkerNo(t.Line), FullNameOf(t.Line), t.Line.Worker?.Tpin ?? "",
+                t.Line.Worker?.NapsaNumber ?? "", Math.Round(t.Line.GrossPay, 2),
+                Math.Round(t.Amounts.TryGetValue("paye", out var p) ? p : 0, 2),
+                Math.Round(t.Line.NetPay, 2)));
+            tGross += t.Line.GrossPay;
+            tPaye += t.Amounts.TryGetValue("paye", out var p2) ? p2 : 0;
+            tNet += t.Line.NetPay;
+        }
+        rows.Add("");
+        rows.Add(Csv("TOTALS", "", "", "", Math.Round(tGross, 2), Math.Round(tPaye, 2), Math.Round(tNet, 2)));
+        return rows;
     }
 
     private static string Csv(params object?[] values) =>
