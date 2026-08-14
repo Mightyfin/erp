@@ -6,6 +6,7 @@ import { employees } from "@/mock/data";
 import { lifecycleApi, TODAY } from "@/mock/lifecycle";
 import type { MovementRecord } from "@/mock/lifecycle";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -56,7 +57,8 @@ function MovementsList() {
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Lifecycle"
         title="Movements"
@@ -173,5 +175,6 @@ function MovementsList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

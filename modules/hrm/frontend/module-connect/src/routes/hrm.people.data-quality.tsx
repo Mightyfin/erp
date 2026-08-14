@@ -13,7 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { dataQualityApi } from "@/mock/dataquality";
 import type { BulkJob, DuplicateCandidate, QualityRule } from "@/mock/dataquality";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -31,6 +33,44 @@ export const Route = createFileRoute("/hrm/people/data-quality")({
   }),
   component: DataQualityPage,
 });
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+/** Maps the backend `/hrm/dq/checks` envelope to the UI `QualityRule` shape. */
+function adaptDqChecks(raw: unknown[]): QualityRule[] {
+  const grouped = new Map<string, { failing: number; failingDetail: string[] }>();
+  for (const r of raw as Array<{ rule?: string; severity?: string; workerId?: string; detail?: string }>) {
+    const rule = r.rule ?? "unknown";
+    const entry = grouped.get(rule) ?? { failing: 0, failingDetail: [] };
+    entry.failing += 1;
+    if (r.workerId && r.detail) entry.failingDetail.push(`${r.workerId.slice(0, 8)}… — ${r.detail}`);
+    grouped.set(rule, entry);
+  }
+  if (grouped.size === 0) {
+    return [
+      {
+        id: "dq-completeness",
+        rule: "Record completeness",
+        severity: "Advisory",
+        scope: "All workers",
+        owner: "HR operations",
+        passing: 0,
+        failing: 0,
+        consequence: "No failing records found against the real backend.",
+      },
+    ];
+  }
+  return Array.from(grouped.entries()).map(([rule, g]) => ({
+    id: `dq-${rule}`,
+    rule: `Record ${rule}`,
+    severity: "Warning" as const,
+    scope: "All workers",
+    owner: "HR operations",
+    passing: 0,
+    failing: g.failing,
+    consequence: g.failingDetail.slice(0, 2).join("; "),
+  }));
+}
 
 const sevMeta = {
   Blocking: { icon: OctagonAlert, cls: "text-danger" },
@@ -289,14 +329,17 @@ function BulkJobCard({ j }: { j: BulkJob }) {
 }
 
 function DataQualityPage() {
-  const rules = useMock(() => dataQualityApi.rules());
+  const mockRules = useMock(() => dataQualityApi.rules());
+  const realRules = useApi(() => realApi.dqChecks().then((raw) => adaptDqChecks(raw as unknown[])));
+  const rules = USE_REAL ? realRules : mockRules;
   const duplicates = useMock(() => dataQualityApi.duplicates());
   const jobs = useMock(() => dataQualityApi.bulkJobs());
   const imports = useMock(() => dataQualityApi.imports());
   const [tab, setTab] = useState<"rules" | "duplicates" | "bulk" | "imports">("rules");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Data quality and stewardship"
@@ -345,6 +388,9 @@ function DataQualityPage() {
             <span>
               Merging two people who are not the same person is only a recoverable mistake if both
               originals were kept. They are — a merge stays reversible for 90 days.
+              {USE_REAL
+                ? " Duplicates are shown from the demo mock — the backend exposes only quality checks so far."
+                : ""}
             </span>
           </p>
           <Async state={duplicates} rows={3}>
@@ -419,5 +465,6 @@ function DataQualityPage() {
         </Async>
       ) : null}
     </AppShell>
+      </AuthGate>
   );
 }

@@ -3,6 +3,7 @@ import { Info, MapPin, ShieldAlert, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { expensesApi, money } from "@/mock/expenses";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -27,7 +28,8 @@ function TravelPage() {
   const rates = useMock(() => expensesApi.perDiem());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time and leave"
         title="Travel"
@@ -200,5 +202,6 @@ function TravelPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

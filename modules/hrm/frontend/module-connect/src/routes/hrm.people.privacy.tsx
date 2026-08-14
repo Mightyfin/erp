@@ -15,6 +15,7 @@ import {
 import { privacyApi } from "@/mock/privacy";
 import type { ProcessingPurpose } from "@/mock/privacy";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -133,7 +134,8 @@ function PrivacyPage() {
   const requests = useMock(() => privacyApi.requests());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Privacy and consent"
@@ -200,5 +202,6 @@ function PrivacyPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

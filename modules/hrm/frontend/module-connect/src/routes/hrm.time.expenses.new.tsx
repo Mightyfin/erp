@@ -8,6 +8,7 @@ import { claims, claimTotal, money } from "@/mock/expenses";
 import type { ExpenseLine } from "@/mock/expenses";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -201,6 +202,7 @@ function NewClaim() {
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="Expenses" title="Claim submitted" />
         <NextSteps
@@ -223,6 +225,7 @@ function NewClaim() {
           }
         />
       </AppShell>
+      </AuthGate>
     );
   }
 

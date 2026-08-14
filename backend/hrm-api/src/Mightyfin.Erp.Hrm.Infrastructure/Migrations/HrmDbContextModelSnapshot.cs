@@ -2989,6 +2989,8 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
 
                     b.HasIndex("LocationId");
 
+                    b.HasIndex("ManagerId");
+
                     b.HasIndex("OrgUnitId");
 
                     b.ToTable("workers", "hrm");
@@ -3735,12 +3737,18 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasForeignKey("LocationId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Mightyfin.Erp.Hrm.Domain.Entities.Worker", "Manager")
+                        .WithMany()
+                        .HasForeignKey("ManagerId");
+
                     b.HasOne("Mightyfin.Erp.Hrm.Domain.Entities.OrgUnit", "OrgUnit")
                         .WithMany()
                         .HasForeignKey("OrgUnitId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Location");
+
+                    b.Navigation("Manager");
 
                     b.Navigation("OrgUnit");
                 });

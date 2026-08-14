@@ -35,6 +35,11 @@ public interface IWorkflowService
     Task<WorkflowRequest> OpenAsync(string workflowType, Guid subjectId, Guid? subjectWorkerId, string payloadJson, CancellationToken ct);
     Task<WorkflowRequest> DecideAsync(Guid requestId, Guid actorId, WorkflowDecisionRequest decision, CancellationToken ct);
     Task<WorkflowRequest> EscalateAsync(Guid requestId, Guid actorId, CancellationToken ct);
+    // M16: the submitter cancels their own request. Transitions through the
+    // state machine (cancelled is a legal terminal state) and records a
+    // decision row so the trail stays complete.
+    Task<WorkflowRequest> CancelAsync(Guid requestId, CancellationToken ct);
+    Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct);
     Task<Paged<WorkQueueItemDto>> GetWorkQueueAsync(CancellationToken ct);
     Task<WorkflowRequestDto?> GetByIdAsync(Guid id, CancellationToken ct);
     Task ApplyDecisionEffectsAsync(WorkflowRequest request, CancellationToken ct);

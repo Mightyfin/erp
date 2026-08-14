@@ -1,13 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { AlertTriangle, KeyRound, LifeBuoy, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowRight, KeyRound, LifeBuoy, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { workspaces } from "@/mock/data";
-import type { Role } from "@/mock/types";
 import { useApp } from "@/platform/app-context";
+import { useAuth } from "@/platform/auth";
+import {
+  getSession,
+  handleLoginCallback,
+  isSessionValid,
+  startSilentSso,
+} from "@/platform/oidc";
 
 export const Route = createFileRoute("/sign-in")({
   head: () => ({
@@ -21,25 +25,107 @@ export const Route = createFileRoute("/sign-in")({
   component: SignIn,
 });
 
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+
 /**
- * UI-FND-001. Identity is owned by the organisation's identity provider, not by
- * HRM — this screen only collects the handover and resolves it to an employee
- * record. No password is ever stored or validated here; the primary route is a
- * redirect to the IdP. The email/role form below exists solely so this mock
- * build can be explored without one.
+ * ERP-hosted login page (M12 — hybrid auth).
+ *
+ * Behaviour on load:
+ * 1. If the user landed back from Keycloak with `?code`, the PKCE exchange
+ *    runs immediately and, on success, the user is returned to where they
+ *    were heading.
+ * 2. Otherwise a silent SSO attempt (`prompt=none`) is fired: if Keycloak
+ *    already has a session the user is logged in without ever seeing this
+ *    page for long; if Keycloak replies `login_required`, the hosted form
+ *    stays visible and the "Sign in with your organisation account" button
+ *    drives the interactive redirect flow.
+ *
+ * Credentials are never entered or validated by the ERP — the email field
+ * is informational only, and password handling belongs to the IdP's hosted
+ * login form. The demo branch (VITE_USE_REAL_API=false) keeps the old mock
+ * explorer behaviour so the build stays usable without an IdP.
  */
 function SignIn() {
   const navigate = useNavigate();
   const { setRole } = useApp();
-  const [email, setEmail] = useState("amara.cvdb@meridian.co.zm");
-  const [role, setLocalRole] = useState<Role>("hr_admin");
+  const { authenticated } = useAuth();
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [silenceFailed, setSilenceFailed] = useState(false);
 
-  const enter = (as: Role) => {
+  // (1) Handle a redirect back from Keycloak with an authorization code.
+  useEffect(() => {
+    if (USE_REAL && new URLSearchParams(window.location.search).has("code")) {
+      void handleLoginCallback().then((origin) => {
+        if (origin) void navigate({ to: origin });
+      });
+    }
+  }, [navigate]);
+
+  // (2) Auto-login whenever a valid session exists.
+  useEffect(() => {
+    if (!USE_REAL) return;
+    if (authenticated) {
+      void navigate({ to: "/hrm", replace: true });
+      return;
+    }
+    // Only fire the silent round-trip once, and only if no attempt already
+    // came back with `login_required` on this visit.
+    if (silenceFailed) return;
+    const session = getSession();
+    if (isSessionValid(session)) return;
+    startSilentSso(window.location.pathname === "/sign-in" ? "/hrm" : window.location.pathname);
+  }, [authenticated, navigate, silenceFailed]);
+
+  // Listen for the silent redirect returning with `error=login_required`:
+  // the route re-renders without a code and with no session — show the form.
+  useEffect(() => {
+    if (USE_REAL && !authenticated && !new URLSearchParams(window.location.search).has("code")) {
+      setSilenceFailed(true);
+    }
+  }, [authenticated]);
+
+  const enterWithOrganisation = () => {
     setBusy(true);
-    setRole(as);
-    navigate({ to: "/" });
+    startSilentSso("/hrm");
   };
+
+  const continueDemo = () => {
+    setRole("hr_admin");
+    void navigate({ to: "/" });
+  };
+
+  /* ---------------------------------------------------------------- demo */
+
+  if (!USE_REAL) {
+    return (
+      <div className="grid min-h-screen lg:grid-cols-2">
+        <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
+          <img src="/mightyfin-logo-light.png" alt="Mightyfin ERP" className="h-8 w-auto" />
+          <div className="max-w-md">
+            <h1 className="text-2xl font-semibold">Human resources</h1>
+            <p className="mt-3 text-sm text-rail-muted">
+              One place for your profile, leave, attendance, pay and requests.
+            </p>
+          </div>
+          <p className="text-xs text-rail-muted">Demonstration build — no real accounts.</p>
+        </div>
+        <main className="flex items-center justify-center px-4 py-12 sm:px-8">
+          <div className="w-full max-w-sm">
+            <h2 className="text-xl font-semibold">Sign in</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Demo mode — choose a role to explore the app as that kind of user.
+            </p>
+            <Button className="mt-6 w-full" onClick={continueDemo}>
+              Enter the workspace
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* -------------------------------------------------------------- real */
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -63,7 +149,9 @@ function SignIn() {
             </li>
           </ul>
         </div>
-        <p className="text-xs text-rail-muted">Demonstration build — no real data, no real accounts.</p>
+        <p className="text-xs text-rail-muted">
+          Secure sign-in via the platform identity provider.
+        </p>
       </div>
 
       {/* Sign-in panel */}
@@ -78,32 +166,28 @@ function SignIn() {
 
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">Sign in</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Use your organisation account. You will be returned here once your identity provider
-            confirms who you are.
+            Use your organisation account. If you are already signed in with the platform identity
+            provider you will be taken straight in.
           </p>
 
-          <Button className="mt-6 w-full" onClick={() => enter(role)} disabled={busy}>
-            <ShieldCheck className="size-4" aria-hidden />
-            Continue with organisation account
+          <Button className="mt-6 w-full" onClick={enterWithOrganisation} disabled={busy}>
+            {busy ? (
+              "Checking your session\u2026"
+            ) : (
+              <>
+                Continue with organisation account
+                <ArrowRight className="size-4" aria-hidden />
+              </>
+            )}
           </Button>
 
           <div className="my-6 flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">Demonstration sign-in</span>
+            <span className="text-xs text-muted-foreground">Your work email</span>
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
-            <p className="flex gap-2 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <span>
-                This build has no real authentication. Choose a role to explore the app as that kind
-                of user — it changes what you can see, exactly as a real sign-in would.
-              </span>
-            </p>
-          </div>
-
-          <div className="mt-5 space-y-4">
+          <div className="space-y-4">
             <div>
               <Label htmlFor="email">Work email</Label>
               <Input
@@ -113,31 +197,22 @@ function SignIn() {
                 className="mt-1"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@mightyfinance.co.zm"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                Resolved to an employee record. No password is requested or stored.
+                For reference only — your organisation's identity provider verifies who you are.
               </p>
             </div>
 
-            <div>
-              <Label htmlFor="role">Sign in as</Label>
-              <Select value={role} onValueChange={(v) => setLocalRole(v as Role)}>
-                <SelectTrigger id="role" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {workspaces.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.label} — {w.description}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
+              <p className="flex gap-2 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                <span>
+                  No password is requested or stored here. Pressing the button above opens your
+                  organisation's secure sign-in page, where MFA and password policies still apply.
+                </span>
+              </p>
             </div>
-
-            <Button variant="outline" className="w-full" onClick={() => enter(role)} disabled={busy}>
-              Enter the workspace
-            </Button>
           </div>
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

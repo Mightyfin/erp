@@ -3,6 +3,7 @@ import { Check, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -23,7 +24,8 @@ function JourneysPage() {
   const state = useMock(() => extrasApi.journeys());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Lifecycle"
         title="Journeys"
@@ -66,5 +68,6 @@ function JourneysPage() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -136,7 +137,8 @@ function NewRequest() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader eyebrow="HR requests" title="Raise an HR request" description="Four short steps. Your draft saves as you go." />
       <GuidedFlow
         flowId="request-new"
@@ -162,5 +164,6 @@ function NewRequest() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

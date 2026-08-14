@@ -7,6 +7,7 @@ import { money, payrollRunApi } from "@/mock/payrollrun";
 import type { LineComponent, RunLine } from "@/mock/payrollrun";
 import { isEditableSource } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
@@ -218,7 +219,8 @@ function EditRun() {
   const [dropped, setDropped] = useState<string[]>([]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={4}>
         {(run) => {
           if (!run) return <RestrictedState />;
@@ -446,5 +448,6 @@ function EditRun() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

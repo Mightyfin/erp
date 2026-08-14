@@ -8,9 +8,15 @@ public interface IWorkerService
 {
     Task<Paged<WorkerDto>> ListAsync(WorkerListFilters filters, CancellationToken ct);
     Task<WorkerDto?> GetByIdAsync(Guid id, CancellationToken ct);
+    // M14 identity link: worker record bound to the caller's Keycloak subject.
+    Task<WorkerDto?> GetBySubjectAsync(string subjectId, CancellationToken ct);
     Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct);
     Task<WorkerDto> UpdateAsync(Guid id, WorkerUpdateRequest request, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
+    // M15 self-service: workers update their own profile through GET /hrm/me +
+    // PUT /hrm/me/profile. Only employee-owned fields are accepted; admin-only
+    // fields (status, grade, title, org, manager, dates) are never mutable here.
+    Task<WorkerDto> UpdateOwnProfileAsync(WorkerSubjectUpdateRequest request, CancellationToken ct);
     Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<AssignmentDto> CreateAssignmentAsync(AssignmentCreateRequest request, CancellationToken ct);
     Task<Paged<MovementDto>> ListMovementsAsync(Guid workerId, CancellationToken ct);
@@ -41,12 +47,24 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         return w is null ? null : Map(w);
     }
 
+    public async Task<WorkerDto?> GetBySubjectAsync(string subjectId, CancellationToken ct)
+    {
+        // M14 identity link: any authenticated role may resolve themselves.
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee", "investigator");
+        var w = await repo.FindBySubjectIdAsync(subjectId, ct);
+        return w is null ? null : Map(w);
+    }
+
     public async Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        // The UI never asks HR to type an employee number; issue one when empty.
+        var employeeNo = string.IsNullOrWhiteSpace(request.EmployeeNo)
+            ? await IssueEmployeeNoAsync(repo, ct)
+            : request.EmployeeNo;
         var worker = new Worker
         {
-            EmployeeNo = request.EmployeeNo,
+            EmployeeNo = employeeNo,
             FirstName = request.FirstName,
             MiddleName = request.MiddleName,
             LastName = request.LastName,
@@ -82,6 +100,10 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var worker = await repo.GetByIdAsync(id, ct)
             ?? throw new DomainException("worker-not-found", $"Worker {id} does not exist.");
+        // M18 admin CRUD: an archived record is a historical one — edits on it
+        // would silently resurrect a leaver into operational views.
+        if (worker.IsArchived)
+            throw new DomainException("worker-archived", "This worker record is archived. Reactivate it before editing, or create a new record instead.");
         if (request.FirstName is not null) worker.FirstName = request.FirstName;
         if (request.MiddleName is not null) worker.MiddleName = request.MiddleName;
         if (request.LastName is not null) worker.LastName = request.LastName;
@@ -122,6 +144,53 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         await repo.ArchiveAsync(id, ct);
+    }
+
+    public async Task<WorkerDto> UpdateOwnProfileAsync(WorkerSubjectUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee", "investigator");
+        // Self-service is keyed on the token subject, not a caller-supplied id,
+        // so an employee can only ever reach their own record.
+        var worker = await repo.FindBySubjectIdAsync(request.SubjectId, ct)
+            ?? throw new DomainException("not-linked",
+                "The signed-in identity is not linked to a worker record.");
+        if (request.PreferredName is not null) worker.PreferredName = request.PreferredName;
+        if (request.Email is not null) worker.Email = request.Email;
+        if (request.Phone is not null) worker.Phone = request.Phone;
+        if (request.Nrc is not null) worker.Nrc = request.Nrc;
+        if (request.PassportNo is not null) worker.PassportNo = request.PassportNo;
+        if (request.Tpin is not null) worker.Tpin = request.Tpin;
+        if (request.NapsaNumber is not null) worker.NapsaNumber = request.NapsaNumber;
+        if (request.NhimaNumber is not null) worker.NhimaNumber = request.NhimaNumber;
+        if (request.Nationality is not null) worker.Nationality = request.Nationality;
+        if (request.DateOfBirth is not null) worker.DateOfBirth = request.DateOfBirth;
+        // EF Core 10 + SQLite treats entities with a non-default Guid key (Guid.CreateVersion7 initializer)
+        // as "existing" (Modified) when attached to a tracked graph, so new children
+        // must be inserted via explicit AddRange, after deletions are flushed first.
+        var pendingEmergency = new List<EmergencyContact>();
+        var pendingBank = new List<WorkerBankDetail>();
+        if (request.EmergencyContacts is not null)
+        {
+            foreach (var existing in worker.EmergencyContacts.ToList())
+                worker.EmergencyContacts.Remove(existing);
+            foreach (var ec in request.EmergencyContacts)
+                pendingEmergency.Add(new EmergencyContact { WorkerId = worker.Id, Relationship = ec.Relationship, FullName = ec.FullName, Phone = ec.Phone, IsPrimary = ec.IsPrimary });
+        }
+        if (request.BankDetails is not null)
+        {
+            foreach (var existing in worker.BankDetails.ToList())
+                worker.BankDetails.Remove(existing);
+            foreach (var bd in request.BankDetails)
+                pendingBank.Add(new WorkerBankDetail { WorkerId = worker.Id, BankName = bd.BankName, BranchCode = bd.BranchCode, AccountNumber = bd.AccountNumber, AccountName = bd.AccountName, PaymentMethod = bd.PaymentMethod, MobileMoneyNumber = bd.MobileMoneyNumber, IsPrimary = bd.IsPrimary });
+        }
+        await repo.UpdateAsync(worker, ct); // scalars + child deletions flushed first
+        // New children must be inserted via explicit Add (non-default Guid
+        // keys otherwise make collection-attached entities "existing").
+        if (pendingBank.Count > 0)
+            await repo.AddBankDetailsAsync(pendingBank, ct);
+        if (pendingEmergency.Count > 0)
+            await repo.AddEmergencyContactsAsync(pendingEmergency, ct);
+        return Map(worker);
     }
 
     public async Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
@@ -216,14 +285,30 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         await repo.ExecuteMovementAsync(m, ct);
     }
 
+    /// <summary>Issues the next sequential employee number (EMP-0001, EMP-0002, ...) for the tenant, safe under concurrent create via the DB unique index fallback check.</summary>
+    private static async Task<string> IssueEmployeeNoAsync(IWorkerRepository repo, CancellationToken ct)
+    {
+        for (var n = 1; n < 1000; n++)
+        {
+            var candidate = $"EMP-{n:D4}";
+            if (!await repo.ExistsAsync(candidate, ct))
+                return candidate;
+        }
+        return $"EMP-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+    }
+
     private static WorkerDto Map(Worker w) => new(
         w.Id, w.EmployeeNo, w.FirstName, w.MiddleName, w.LastName, w.FullName, w.PreferredName,
         w.Email, w.Phone, w.PhotoUrl, w.Nrc, w.PassportNo, w.Tpin, w.NapsaNumber, w.NhimaNumber,
         w.Nationality, w.DateOfBirth, w.SubjectId, w.WorkerType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
-        w.ManagerId.HasValue ? "" : null, w.Grade, w.JobTitle,
+        w.Manager?.FullName, w.Grade, w.JobTitle,
         w.StartDate?.ToString(), w.EndDate?.ToString(),
-        w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList(),
-        w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList(),
+        w.EmergencyContacts.Count > 0
+            ? w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList()
+            : null,
+        w.BankDetails.Count > 0
+            ? w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList()
+            : null,
         w.CreatedAt, w.UpdatedAt);
 }

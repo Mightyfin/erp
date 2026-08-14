@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { entities } from "@/mock/data";
 import { useApp } from "@/platform/app-context";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -162,7 +163,8 @@ function SetupPage() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="First-run setup"
         title="Set up HR"
@@ -206,5 +208,6 @@ function SetupPage() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

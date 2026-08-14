@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { claimTotal, expensesApi, money } from "@/mock/expenses";
 import type { Claim } from "@/mock/expenses";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -27,7 +28,8 @@ function ExpensesPage() {
   const advances = useMock(() => expensesApi.advances());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time and leave"
         title="Expenses"
@@ -112,5 +114,6 @@ function ExpensesPage() {
         Nothing in this build is actually reimbursed or recovered. Amounts shown are illustrative.
       </p>
     </AppShell>
+      </AuthGate>
   );
 }

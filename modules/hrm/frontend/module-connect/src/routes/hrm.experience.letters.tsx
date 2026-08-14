@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { employees } from "@/mock/data";
-import { api } from "@/mock/service";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
+import { Async } from "@/platform/components/Async";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -70,13 +72,48 @@ const letterTypes: LetterType[] = [
   },
 ];
 
-const issued = [
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
+
+const letterStatus: Record<string, string> = {
+  generated: "Approved",
+  pending: "In review",
+  issued: "Approved",
+  draft: "Draft",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
+interface IssuedLetter {
+  id: string;
+  type: string;
+  addressee: string;
+  requested: string;
+  status: string;
+  verification: string;
+}
+
+function adaptLetters(rows: unknown[]): IssuedLetter[] {
+  return rows.map((raw) => {
+    const r = raw as Record<string, unknown>;
+    return {
+      id: String(r.id ?? ""),
+      type: String(r.letterType ?? "Letter"),
+      addressee: String(r.addressee ?? ""),
+      requested: typeof r.createdAt === "string" ? String(r.createdAt).slice(0, 10) : "",
+      status: letterStatus[String(r.status ?? "")] ?? String(r.status ?? "In review"),
+      verification: String(r.verificationCode ?? ""),
+    } satisfies IssuedLetter;
+  });
+}
+
+const staticLetters: IssuedLetter[] = [
   {
     id: "LT-2026-0441",
     type: "Employment confirmation",
     addressee: "Rabobank — mortgage department",
     requested: "2026-07-18",
-    status: "Approved" as const,
+    status: "Approved",
     verification: "MF-4K7Q-22HD",
   },
   {
@@ -84,7 +121,7 @@ const issued = [
     type: "Salary confirmation",
     addressee: "Stichting Woningnet",
     requested: "2026-05-04",
-    status: "Approved" as const,
+    status: "Approved",
     verification: "MF-9P1X-08LM",
   },
 ];
@@ -216,8 +253,17 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
       steps={steps}
       submitLabel="Request letter"
       onSubmit={async () => {
-        const r = await api.submit("letter", { typeId, addressee });
-        onDone(r.id);
+        if (USE_REAL) {
+          const r = await realApi.createLetter({
+            workerId: DEFAULT_WORKER,
+            letterType: typeId === "salary" ? "salary" : typeId === "visa" ? "visa" : typeId === "service" ? "service" : "reference",
+            addressee: addressee || "To whom it may concern",
+            purpose: type.name,
+          });
+          onDone(String((r as { id?: unknown }).id ?? ""));
+          return;
+        }
+        onDone(`MOCK-${Date.now().toString(36)}`);
       }}
     />
   );
@@ -226,9 +272,15 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
 function LettersPage() {
   const [requesting, setRequesting] = useState(false);
   const [ref, setRef] = useState<string | null>(null);
+  const issuedState = useApi(
+    async (): Promise<IssuedLetter[]> =>
+      USE_REAL ? adaptLetters((await realApi.experienceLetters()).items) : staticLetters,
+    [],
+  );
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="Letters" title="Request submitted" />
         <NextSteps
@@ -251,6 +303,7 @@ function LettersPage() {
           }
         />
       </AppShell>
+      </AuthGate>
     );
   }
 
@@ -303,8 +356,10 @@ function LettersPage() {
 
       <section aria-label="Previously issued" className="pt-2">
         <h2 className="text-sm font-semibold">Previously issued</h2>
-        <ul className="mt-3 divide-y rounded-lg border bg-surface">
-          {issued.map((l) => (
+        <Async state={issuedState}>
+          {(rows) => (
+            <ul className="mt-3 divide-y rounded-lg border bg-surface">
+              {rows.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center gap-3 p-4">
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
@@ -324,9 +379,11 @@ function LettersPage() {
                 <Download className="size-4" aria-hidden />
                 Download
               </Button>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+            </ul>
+          )}
+        </Async>
         <p className="mt-3 text-xs text-muted-foreground">
           Need something not listed here?{" "}
           <Link to="/hrm/requests/new" className="text-primary underline underline-offset-2">

@@ -97,6 +97,29 @@ public sealed class WorkflowServiceImpl(IWorkflowRepository repo, IAuthzService 
         return await repo.UpdateRequestAsync(req, ct);
     }
 
+    public async Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct)
+        => await repo.GetOpenBySubjectAsync(workflowType, subjectWorkerId, ct);
+
+    /// <summary>M16: the submitter cancels their own workflow item. Subject-worker
+    /// ownership is enforced by the caller (TimeService verifies the leave
+    /// request belongs to the signed-in worker); this layer just transitions
+    /// and records the trail. Cancelled is a legal terminal state for every
+    /// non-terminal status.</summary>
+    public async Task<WorkflowRequest> CancelAsync(Guid requestId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        var req = await repo.GetRequestAsync(requestId, ct)
+            ?? throw new DomainException("workflow-request-not-found", $"Request {requestId} does not exist.");
+        if (req.WorkflowType != "leave")
+            throw new DomainException("workflow-wrong-type", "The cancel endpoint only applies to leave requests.");
+        var allowed = Transitions.GetValueOrDefault(req.Status, []);
+        if (!allowed.Contains("cancelled"))
+            throw new DomainException("workflow-invalid-transition", $"Cannot cancel a request in status {req.Status}.");
+        req.Status = "cancelled";
+        req.Decisions.Add(new WorkflowDecision { Action = "cancel" });
+        return await repo.UpdateRequestAsync(req, ct);
+    }
+
     public async Task<Paged<WorkQueueItemDto>> GetWorkQueueAsync(CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
@@ -161,6 +184,9 @@ public interface IWorkflowRepository
 {
     Task<WorkflowRequest> CreateRequestAsync(WorkflowRequest request, CancellationToken ct);
     Task<WorkflowRequest?> GetRequestAsync(Guid id, CancellationToken ct);
+    // M16: locate the open leave workflow for a worker (used to cancel it from
+    // the leave id without the caller needing the workflow id).
+    Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct);
     Task<WorkflowRequest> UpdateRequestAsync(WorkflowRequest request, CancellationToken ct);
     Task<(List<WorkflowRequest> Items, int Total)> ListOpenRequestsAsync(CancellationToken ct);
     Task<Guid?> FindManagerOfAsync(Guid workerId, CancellationToken ct);

@@ -8,6 +8,7 @@ import { employees } from "@/mock/data";
 import type { CompetencyRating, Review } from "@/mock/talent";
 import { ME, ratingLabel, ratingScale, talentApi, TODAY } from "@/mock/talent";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
@@ -331,7 +332,8 @@ function ReviewDetail() {
   const state = useMock(() => talentApi.review(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(review) => {
           if (!review) return <RestrictedState />;
@@ -347,5 +349,6 @@ function ReviewDetail() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

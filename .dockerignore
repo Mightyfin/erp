@@ -1,4 +1,10 @@
 .git
 docs
-modules
 README.md
+**/node_modules
+**/dist
+**/.output
+**/.wrangler
+**/*.log
+**/bun.lockb
+tmp

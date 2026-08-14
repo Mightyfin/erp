@@ -20,6 +20,30 @@ namespace Mightyfin.Erp.Hrm.Api.Routing;
 // AdminConfigClient, RecruitmentClient, RelationsClient, DocumentsClient).
 public static class Routes
 {
+    /// <summary>Base path for all HRM endpoints; set before RegisterAll so both
+    /// the versioned /api/v1/hrm and legacy /api/hrm surfaces resolve to the
+    /// same handlers.</summary>
+    public static string HrmPrefix { get; set; } = "/api/hrm";
+
+    /// <summary>Registers every HRM route group. Called twice: once with
+    /// HrmPrefix="/api/v1/hrm" and once with the legacy "/api/hrm".</summary>
+    public static void RegisterAll(WebApplication app)
+    {
+        RegisterWorkers(app);
+        RegisterTime(app);
+        RegisterWorkflow(app);
+        RegisterExperience(app);
+        RegisterPayroll(app);
+        RegisterConfig(app);
+        RegisterRecruitment(app);
+        RegisterRelations(app);
+        RegisterDocuments(app);
+        RegisterDq(app);
+        RegisterStatutory(app);
+        RegisterMe(app);
+    }
+
+
     // Helper: read a JSON body manually inside a minimal-API handler.
     private static async Task<T?> ReadBodyAsync<T>(HttpContext http, CancellationToken ct)
     {
@@ -40,9 +64,63 @@ public static class Routes
         return string.IsNullOrEmpty(raw) || !System.Guid.TryParse(raw, out var id) ? null : id;
     }
 
+    // Helper: read the Keycloak subject id from the current principal.
+    // JwtSecurityTokenHandler maps the JWT "sub" claim to the
+    // NameIdentifier claim type, so check both the raw "sub" name and the
+    // mapped NameIdentifier type.
+    private static string? ResolveSubjectId(HttpContext http)
+        => http.User.FindFirst("sub")?.Value
+            ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+    // M14 identity link: resolve the worker record bound to the caller's
+    // Keycloak subject. Registered once (not per prefix) because the route is
+    // identical on both surfaces.
+    public static void RegisterMe(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/me").RequireAuthorization();
+        g.MapGet("/", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                return Results.Ok(new { linked = false, worker = (object?)null, reason = "no-subject-claim" });
+            var worker = await svc.GetBySubjectAsync(subject, ct);
+            return worker is null
+                ? Results.Ok(new { linked = false, worker = (object?)null, subject })
+                : Results.Ok(new { linked = true, worker, subject });
+        });
+
+        // M15 self-service: workers update their own profile. The subject is
+        // read from the token and merged into the request; admin-only fields
+        // are not part of the request shape and can never be changed here.
+        g.MapPut("/profile", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var raw = await ReadBodyAsync<WorkerSubjectUpdateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateOwnProfileAsync(raw with { SubjectId = subject }, ct));
+        });
+
+        // M16 self-service: the signed-in worker's own leave inbox (balances +
+        // own requests + cancel) — always keyed on the token subject.
+        g.MapGet("/leave", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            return Results.Ok(await svc.MyLeaveAsync(subject ?? "", ct));
+        });
+        g.MapPost("/leave/{id:guid}/cancel", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+        });
+    }
+
     public static void RegisterWorkers(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/workers").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/workers").RequireAuthorization();
 
         g.MapGet("/", async ([AsParameters] WorkerListFilters filters, IWorkerService svc, CancellationToken ct)
             => await svc.ListAsync(filters, ct));
@@ -57,7 +135,7 @@ public static class Routes
             if (errors.Count != 0)
                 return Results.UnprocessableEntity(new ApiError("validation-failed", string.Join("; ", errors), []));
             var created = await svc.CreateAsync(request, ct);
-            return Results.Created($"/api/hrm/workers/{created.Id}", created);
+            return Results.Created($"{HrmPrefix}/workers/{created.Id}", created);
         });
 
         g.MapPut("/{id:guid}", async (Guid id, HttpContext http, IWorkerService svc, CancellationToken ct) =>
@@ -84,7 +162,7 @@ public static class Routes
         {
             var request = await ReadBodyAsync<AssignmentCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var created = await svc.CreateAssignmentAsync(workerId, request, ct);
-            return Results.Created($"/api/hrm/workers/{workerId}/assignments/{created.Id}", created);
+            return Results.Created($"{HrmPrefix}/workers/{workerId}/assignments/{created.Id}", created);
         });
         g.MapPatch("/{workerId:guid}/assignments/{assignmentId:guid}", async (Guid workerId, Guid assignmentId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
         {
@@ -103,7 +181,7 @@ public static class Routes
         {
             var request = await ReadBodyAsync<MovementCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var created = await svc.CreateMovementAsync(workerId, request, ct);
-            return Results.Created($"/api/hrm/workers/{workerId}/movements/{created.Id}", created);
+            return Results.Created($"{HrmPrefix}/workers/{workerId}/movements/{created.Id}", created);
         });
         g.MapGet("/{workerId:guid}/movements/{movementId:guid}", async (Guid workerId, Guid movementId, IWorkerLifecycleService svc, CancellationToken ct)
             => await svc.GetMovementAsync(workerId, movementId, ct));
@@ -182,7 +260,8 @@ public static class Routes
     private static List<string> ValidateWorkerCreate(WorkerCreateRequest request)
     {
         var errors = new List<string>();
-        if (string.IsNullOrWhiteSpace(request.EmployeeNo)) errors.Add("employeeNo is required");
+        // Employee number is auto-issued by the backend when the request leaves it
+        // empty — the UI deliberately never asks HR to type one ("issued automatically").
         if (string.IsNullOrWhiteSpace(request.FirstName)) errors.Add("firstName is required");
         if (string.IsNullOrWhiteSpace(request.LastName)) errors.Add("lastName is required");
         if (request.WorkerType is not ("employee" or "contingent" or "intern" or "volunteer"))
@@ -192,7 +271,7 @@ public static class Routes
 
     public static void RegisterTime(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/time").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/time").RequireAuthorization();
         g.MapGet("/leave", async ([FromQuery] Guid? workerId, [FromQuery] string? status, ITimeService svc, CancellationToken ct)
             => await svc.ListLeaveAsync(workerId, status, ct));
         g.MapPost("/leave", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
@@ -235,7 +314,7 @@ public static class Routes
 
     public static void RegisterWorkflow(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/workflow").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/workflow").RequireAuthorization();
         g.MapGet("/queue", async (IWorkflowService svc, CancellationToken ct)
             => await svc.GetWorkQueueAsync(ct));
         g.MapGet("/requests/{id:guid}", async (Guid id, IWorkflowService svc, CancellationToken ct)
@@ -257,7 +336,7 @@ public static class Routes
 
     public static void RegisterExperience(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/experience").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/experience").RequireAuthorization();
         g.MapGet("/requests", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IExperienceService svc, CancellationToken ct)
             => await svc.ListRequestsAsync(workerId, status, ct));
         g.MapPost("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
@@ -297,7 +376,7 @@ public static class Routes
         g.MapPost("/speak-up", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ProtectedDisclosureCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("/api/hrm/experience/speak-up/status", await svc.SubmitDisclosureAsync(request, ct));
+            return Results.Created($"{HrmPrefix}/experience/speak-up/status", await svc.SubmitDisclosureAsync(request, ct));
         });
         g.MapGet("/speak-up/status", async ([FromQuery] string caseReference, [FromQuery] string accessCode, IExperienceService svc, CancellationToken ct) =>
             await svc.GetDisclosureStatusAsync(caseReference, accessCode, ct));
@@ -305,11 +384,48 @@ public static class Routes
 
     public static void RegisterPayroll(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/payroll").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/payroll").RequireAuthorization();
         g.MapGet("/components", async ([FromQuery] string? type, IPayrollService svc, CancellationToken ct)
             => await svc.ListComponentsAsync(type, ct));
         g.MapGet("/pay-groups", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListPayGroupsAsync(ct));
+        g.MapGet("/pay-groups/full", async (IPayrollService svc, CancellationToken ct)
+            => await svc.ListPayGroupsFullAsync(ct));
+        g.MapPatch("/pay-groups/{groupId:guid}", async (Guid groupId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayGroupUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdatePayGroupAsync(groupId, request, ct));
+        });
+        g.MapPatch("/tax-slabs/{slabId:guid}", async (Guid slabId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<TaxSlabUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateTaxSlabAsync(slabId, request, ct));
+        });
+        g.MapPatch("/contribution-rules/{ruleId:guid}", async (Guid ruleId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ContributionRuleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateContributionRuleAsync(ruleId, request, ct));
+        });
+        g.MapPatch("/components/{componentId:guid}", async (Guid componentId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryComponentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
+        });
+        // M21: salary structure administration
+        g.MapGet("/structures", async (IPayrollService svc, CancellationToken ct)
+            => await svc.ListStructuresAsync(ct));
+        g.MapGet("/structures/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetStructureAsync(id, ct)));
+        g.MapPost("/structures", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryStructureCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateStructureAsync(request, ct));
+        });
+        g.MapPatch("/structures/{id:guid}", async (Guid id, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryStructureUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateStructureAsync(id, request, ct));
+        });
         g.MapGet("/pay-groups/{groupId:guid}/periods", async (Guid groupId, IPayrollService svc, CancellationToken ct)
             => await svc.ListPeriodsAsync(groupId, ct));
         g.MapGet("/tax-slabs", async ([FromQuery] string taxYear, IPayrollService svc, CancellationToken ct)
@@ -363,7 +479,7 @@ public static class Routes
 
     public static void RegisterConfig(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/admin").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/admin").RequireAuthorization();
         g.MapGet("/config", async (IConfigService svc, CancellationToken ct) => await svc.GetConfigAsync(ct));
         g.MapGet("/leave-types", async ([FromQuery] bool includeInactive, IConfigService svc, CancellationToken ct) =>
             await svc.ListLeaveTypesAsync(includeInactive, ct));
@@ -374,7 +490,7 @@ public static class Routes
         g.MapPost("/legal-entities", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<LegalEntityCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created($"/api/hrm/admin/legal-entities/{request.Code}", await svc.CreateLegalEntityAsync(request, ct));
+            return Results.Created($"{HrmPrefix}/admin/legal-entities/{request.Code}", await svc.CreateLegalEntityAsync(request, ct));
         });
         g.MapPatch("/legal-entities/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
         {
@@ -464,7 +580,7 @@ public static class Routes
 
     public static void RegisterRecruitment(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/recruitment").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/recruitment").RequireAuthorization();
         g.MapGet("/vacancies", async ([FromQuery] string? status, IRecruitmentService svc, CancellationToken ct) =>
             await svc.ListVacanciesAsync(status, ct));
         g.MapPost("/vacancies", async (HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
@@ -505,7 +621,7 @@ public static class Routes
 
     public static void RegisterRelations(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/relations").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/relations").RequireAuthorization();
         g.MapGet("/cases", async ([FromQuery] string? category, IRelationsService svc, CancellationToken ct) =>
             await svc.ListCasesAsync(category, ct));
         g.MapPost("/cases", async (HttpContext http, IRelationsService svc, CancellationToken ct) =>
@@ -522,7 +638,7 @@ public static class Routes
 
     public static void RegisterDocuments(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/documents").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/documents").RequireAuthorization();
         g.MapGet("/worker/{workerId:guid}", async (Guid workerId, IDocumentsService svc, CancellationToken ct) =>
             await svc.ListDocumentsAsync(workerId, ct));
         g.MapPost("/upload", async (HttpContext http, IDocumentsService svc, CancellationToken ct) =>
@@ -549,20 +665,20 @@ public static class Routes
             var (doc, stream) = await svc.GetDocumentStreamAsync(id, ct);
             return Results.File(stream, doc.ContentType, doc.FileName);
         });
-        var reports = app.MapGroup("/api/hrm/reports").RequireAuthorization();
+        var reports = app.MapGroup($"{HrmPrefix}/reports").RequireAuthorization();
         reports.MapGet("/", async ([AsParameters] ReportQuery query, IDocumentsService svc, CancellationToken ct) =>
             await svc.GetReportAsync(query, ct));
     }
 
     public static void RegisterDq(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/dq").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/dq").RequireAuthorization();
         g.MapGet("/checks", async (IDqService svc, CancellationToken ct) => await svc.RunChecksAsync(ct));
     }
 
     public static void RegisterStatutory(WebApplication app)
     {
-        var g = app.MapGroup("/api/hrm/statutory-exports").RequireAuthorization();
+        var g = app.MapGroup($"{HrmPrefix}/statutory-exports").RequireAuthorization();
         g.MapGet("/", async ([AsParameters] StatutoryExportQuery q, IStatutoryExportService svc, CancellationToken ct) =>
         {
             var file = await svc.GenerateAsync(q.ExportType, q.PeriodId, ct);
@@ -576,3 +692,8 @@ public static class Routes
 // Route-local binding types.
 public sealed record PayrollRunApprovalNote(string? Note);
 public sealed record StatutoryExportQuery(string ExportType, Guid PeriodId);
+/// <summary>Current API version resolved from the URL path by Program.cs.</summary>
+public sealed class ApiVersioning
+{
+    public int CurrentVersion { get; set; }
+}

@@ -11,6 +11,7 @@ import { entities } from "@/mock/data";
 import { approversFor, checkEstablishment, grades, money, recruitmentApi } from "@/mock/recruitment";
 import type { RequisitionReason } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -419,7 +420,8 @@ function NewRequisition() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Raise a requisition"
@@ -473,5 +475,6 @@ function NewRequisition() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

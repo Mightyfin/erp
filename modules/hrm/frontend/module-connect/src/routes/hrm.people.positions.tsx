@@ -11,6 +11,7 @@ import {
   structureApi,
 } from "@/mock/structure";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
@@ -183,7 +184,8 @@ function PositionsList() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="People"
         title="Positions"
@@ -320,5 +322,6 @@ function PositionsList() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

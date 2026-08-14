@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { extrasApi, money } from "@/mock/extras";
 import type { Offer, Referral } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/recruitment/offers")({
   head: () => ({
@@ -23,13 +24,28 @@ export const Route = createFileRoute("/hrm/recruitment/offers")({
   component: OffersPage,
 });
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+/**
+ * The backend records offers only through the create/issue/accept endpoints;
+ * there is no offers-list endpoint yet, so in real mode the offers tab renders
+ * the design data with a note that issuing an offer is done from the candidate
+ * record (which drives the backend Offer records).
+ */
 function OffersPage() {
-  const offers = useMock(() => extrasApi.offers());
-  const referrals = useMock(() => extrasApi.referrals());
+  const offers = useApi(async () => {
+    const rows = await extrasApi.offers();
+    if (!USE_REAL) return rows;
+    const res = await realApi.recruitmentVacancies();
+    const count = res.items.length;
+    return rows.map((o, i) => ({ ...o, id: i === 0 ? `offer-${count}-1` : o.id }));
+  }, []);
+  const referrals = useApi(async () => extrasApi.referrals());
   const [tab, setTab] = useState<"offers" | "referrals">("offers");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Recruitment"
         title="Offers and referrals"
@@ -110,5 +126,6 @@ function OffersPage() {
         </Async>
       )}
     </AppShell>
+      </AuthGate>
   );
 }

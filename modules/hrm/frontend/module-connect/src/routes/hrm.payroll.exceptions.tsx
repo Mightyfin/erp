@@ -12,6 +12,7 @@ import {
 } from "@/mock/payrollrun";
 import type { ExceptionOutcome, OutcomeKind, PayrollException, Severity } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ReasonDialog } from "@/platform/components/ReasonDialog";
@@ -240,7 +241,8 @@ function ExceptionsPage() {
   }
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Exceptions"
@@ -359,5 +361,6 @@ function ExceptionsPage() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

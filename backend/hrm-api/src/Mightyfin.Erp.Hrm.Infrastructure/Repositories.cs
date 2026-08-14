@@ -16,6 +16,9 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
     public async Task<(List<Worker> Items, int Total)> ListAsync(WorkerListFilters filters, CancellationToken ct)
     {
         var q = db.Workers.AsQueryable();
+        // M18 admin CRUD: archived workers stay out of the operational list
+        // unless HR explicitly asks for them.
+        if (!filters.IncludeArchived) q = q.Where(w => !w.IsArchived);
         if (!string.IsNullOrWhiteSpace(filters.Search))
         {
             var s = filters.Search.Trim().ToLower();
@@ -34,7 +37,7 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         // Order client-side: EF Core's SQLite provider cannot translate ORDER BY
         // on DateTimeOffset columns (CreatedAt) into SQL.
         var items = await q.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
-            .Include(w => w.OrgUnit).Include(w => w.Location)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .Skip((page - 1) * size).Take(size)
             .ToListAsync(ct);
         items = items.OrderByDescending(w => w.CreatedAt).ToList();
@@ -43,8 +46,16 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
 
     public async Task<Worker?> GetByIdAsync(Guid id, CancellationToken ct)
         => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
-            .Include(w => w.OrgUnit).Include(w => w.Location)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.Id == id, ct);
+
+    // M14 identity link: resolve the worker record bound to a Keycloak subject id.
+    // The global tenant query filter on the DbContext keeps the lookup
+    // tenant-scoped automatically.
+    public async Task<Worker?> FindBySubjectIdAsync(string subjectId, CancellationToken ct)
+        => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
+            .FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
 
     public async Task<Worker> CreateAsync(Worker worker, CancellationToken ct)
     {
@@ -60,6 +71,27 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         return worker;
     }
 
+    public async Task SaveChangesAsync(CancellationToken ct)
+    {
+        await db.SaveChangesAsync(ct);
+    }
+
+    // Explicit AddRange + Save so the provider issues INSERTs even when the
+    // entity has a non-default Guid key (Guid.CreateVersion7 initializer),
+    // which otherwise makes collection-attached entities be treated as
+    // existing (Modified) by EF Core's change tracker.
+    public async Task AddEmergencyContactsAsync(IEnumerable<EmergencyContact> contacts, CancellationToken ct)
+    {
+        db.EmergencyContacts.AddRange(contacts);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task AddBankDetailsAsync(IEnumerable<WorkerBankDetail> details, CancellationToken ct)
+    {
+        db.WorkerBankDetails.AddRange(details);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task ArchiveAsync(Guid id, CancellationToken ct)
     {
         var worker = await GetByIdAsync(id, ct)
@@ -69,6 +101,9 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         worker.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<bool> ExistsAsync(string employeeNo, CancellationToken ct)
+        => await db.Workers.AnyAsync(w => w.EmployeeNo == employeeNo, ct);
 
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {
@@ -350,6 +385,13 @@ public sealed class WorkflowRepository(HrmDbContext db) : IWorkflowRepository
     public async Task<WorkflowRequest?> GetRequestAsync(Guid id, CancellationToken ct)
         => await db.WorkflowRequests.Include(w => w.Decisions).FirstOrDefaultAsync(w => w.Id == id, ct);
 
+    // M16: the leave request id is the workflow subject id for type "leave".
+    public async Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct)
+        => await db.WorkflowRequests.Include(w => w.Decisions)
+            .FirstOrDefaultAsync(w => w.WorkflowType == workflowType
+                && w.SubjectWorkerId == subjectWorkerId
+                && (w.Status == "submitted" || w.Status == "in-review" || w.Status == "returned"), ct);
+
     public async Task<WorkflowRequest> UpdateRequestAsync(WorkflowRequest request, CancellationToken ct)
     {
         // EF Core 10 demotes children added via the parent's collection to Modified
@@ -502,6 +544,47 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<SalaryStructure?> FindStructureAsync(string code, CancellationToken ct) =>
         await db.SalaryStructures.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Code == code && s.IsActive, ct);
+    public async Task<SalaryStructure?> FindStructureByCodeAsync(string code, CancellationToken ct) =>
+        await db.SalaryStructures.FirstOrDefaultAsync(s => s.Code == code && !s.IsArchived, ct);
+    public async Task<List<SalaryStructure>> ListStructuresAsync(CancellationToken ct) =>
+        await db.SalaryStructures.Where(s => !s.IsArchived && s.IsActive).OrderBy(s => s.Code).ToListAsync(ct);
+    public async Task<SalaryStructure?> GetStructureAsync(Guid id, CancellationToken ct) =>
+        await db.SalaryStructures
+            .Include(s => s.Items).ThenInclude(i => i.Component)
+            .FirstOrDefaultAsync(s => s.Id == id && !s.IsArchived, ct);
+    public async Task<SalaryStructure> CreateStructureAsync(SalaryStructure structure, CancellationToken ct)
+    {
+        db.SalaryStructures.Add(structure);
+        await db.SaveChangesAsync(ct);
+        return structure;
+    }
+    public async Task UpdateStructureAsync(SalaryStructure structure, CancellationToken ct)
+    {
+        if (db.Entry(structure).State == EntityState.Detached)
+            db.SalaryStructures.Update(structure);
+        await db.SaveChangesAsync(ct);
+    }
+    /// <summary>EF Core 10 + SQLite Guid-V7 bug: adding child entities via the
+    /// navigation after the parent was saved throws a spurious
+    /// DbUpdateConcurrencyException, so items are attached explicitly and saved
+    /// in a separate phase with no Update() call.</summary>
+    public async Task SetStructureItemsExplicitlyAsync(SalaryStructure structure,
+        List<SalaryStructureItem> items, CancellationToken ct)
+    {
+        foreach (var i in items)
+        {
+            i.StructureId = structure.Id;
+            i.TenantId = structure.TenantId;
+        }
+        db.Set<SalaryStructureItem>().AddRange(items);
+        await db.SaveChangesAsync(ct);
+    }
+    public async Task ClearStructureItemsAsync(Guid structureId, CancellationToken ct)
+    {
+        var items = await db.SalaryStructureItems.Where(i => i.StructureId == structureId).ToListAsync(ct);
+        db.SalaryStructureItems.RemoveRange(items);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct)
         => await db.Workers.FirstOrDefaultAsync(w => w.Id == id, ct);
@@ -568,8 +651,48 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct)
         => await db.TaxSlabs.Where(s => s.TaxYear == taxYear && s.IsActive).OrderBy(s => s.Sequence).ToListAsync(ct);
 
+    public async Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct)
+        => await db.TaxSlabs.FirstOrDefaultAsync(s => s.Id == id, ct);
+
+    public async Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct)
+    {
+        if (db.Entry(slab).State == EntityState.Detached)
+            db.TaxSlabs.Update(slab);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<List<ContributionRule>> ListContributionRulesAsync(CancellationToken ct)
         => await db.ContributionRules.Where(r => r.IsActive).ToListAsync(ct);
+
+    public async Task<ContributionRule?> GetContributionRuleAsync(Guid id, CancellationToken ct)
+        => await db.ContributionRules.FirstOrDefaultAsync(r => r.Id == id, ct);
+
+    public async Task UpdateContributionRuleAsync(ContributionRule rule, CancellationToken ct)
+    {
+        if (db.Entry(rule).State == EntityState.Detached)
+            db.ContributionRules.Update(rule);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdatePayGroupAsync(PayGroup group, CancellationToken ct)
+    {
+        if (db.Entry(group).State == EntityState.Detached)
+            db.PayGroups.Update(group);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UnsetDefaultPayGroupsAsync(CancellationToken ct, Guid keepId)
+    {
+        await db.PayGroups.Where(g => g.IsDefault && g.Id != keepId).ForEachAsync(g => g.IsDefault = false, ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct)
+    {
+        if (db.Entry(component).State == EntityState.Detached)
+            db.SalaryComponents.Update(component);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct)
         => await db.PayrollRuns.Include(r => r.PayPeriod).FirstOrDefaultAsync(r => r.Id == id, ct);

@@ -24,8 +24,44 @@ public sealed class WorkerPrincipal
     {
         static string First(IEnumerable<Claim> c, string type) =>
             c.FirstOrDefault(x => x.Type == type)?.Value ?? "";
-        var roles = claims.Where(c => c.Type is "realm_access.roles" or ClaimTypes.Role or "roles")
-                          .Select(c => c.Value).ToArray();
+        // Microsoft's JWT handler keeps a multivalued JSON-array claim (e.g.
+        // realm_access.roles = ["hr_admin","manager"]) as a SINGLE claim whose
+        // value is the raw JSON array string, so parse it apart when needed.
+        static string[] ParseRoleClaims(Claim claim)
+        {
+            var v = claim.Value?.Trim();
+            if (v is null || v.Length == 0) return [];
+            if (v.StartsWith('['))
+            {
+                return v.Trim('[', ']').Split(',')
+                        .Select(p => p.Trim().Trim('"'))
+                        .Where(s => s.Length > 0)
+                        .ToArray();
+            }
+            return [v];
+        }
+        // Keycloak may emit the roles either as a claim "realm_access.roles"
+        // (one claim per value) or as a single JSON claim "realm_access" with
+        // {"roles":[...]}; handle both shapes.
+        var roleClaims = claims.Where(c => c.Type is "realm_access.roles" or ClaimTypes.Role or "roles")
+            .SelectMany(c => ParseRoleClaims(c));
+        var realmAccess = claims.FirstOrDefault(c => c.Type == "realm_access");
+        if (realmAccess is not null)
+        {
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(realmAccess.Value);
+                if (json.TryGetProperty("roles", out var rolesProp) && rolesProp.ValueKind is System.Text.Json.JsonValueKind.Array)
+                    roleClaims = roleClaims.Concat(rolesProp.EnumerateArray().Select(e => e.GetString() ?? ""));
+                else if (json.ValueKind is System.Text.Json.JsonValueKind.Array)
+                    roleClaims = roleClaims.Concat(json.EnumerateArray().Select(e => e.GetString() ?? ""));
+            }
+            catch { /* malformed json; skip */ }
+        }
+        var roles = roleClaims
+            .Where(r => r.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var isDeveloperFallback = string.Equals(First(claims, ClaimTypes.NameIdentifier), "dev-user-001", StringComparison.Ordinal)
             && string.Equals(First(claims, "preferred_username"), "developer", StringComparison.Ordinal);
         return new WorkerPrincipal

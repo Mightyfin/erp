@@ -271,6 +271,10 @@ internal sealed class StubWorkflowService : IWorkflowService
         => Task.FromResult((WorkflowRequest)null!);
     public Task<WorkflowRequest> DecideAsync(Guid requestId, Guid actorId, WorkflowDecisionRequest decision, CancellationToken ct)
         => Task.FromResult((WorkflowRequest)null!);
+    public Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct)
+        => Task.FromResult<WorkflowRequest?>(null);
+    public Task<WorkflowRequest> CancelAsync(Guid requestId, CancellationToken ct)
+        => Task.FromResult((WorkflowRequest)null!);
     public Task<WorkflowRequest> EscalateAsync(Guid requestId, Guid actorId, CancellationToken ct)
         => Task.FromResult((WorkflowRequest)null!);
     public Task<Paged<WorkQueueItemDto>> GetWorkQueueAsync(CancellationToken ct)

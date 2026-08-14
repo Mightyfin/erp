@@ -15,6 +15,25 @@ using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ---------- Logging: structured JSON in production, console otherwise ----------
+builder.Logging.ClearProviders();
+if (builder.Environment.IsDevelopment())
+{
+    builder.Logging.AddConsole();
+    builder.Logging.SetMinimumLevel(LogLevel.Debug);
+}
+else
+{
+    builder.Logging.AddJsonConsole(o =>
+    {
+        o.IncludeScopes = true;
+        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+        o.JsonWriterOptions = new System.Text.Json.JsonWriterOptions { Indented = false };
+    });
+    builder.Logging.SetMinimumLevel(LogLevel.Information);
+}
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi("hrm");
 builder.Services.AddEndpointsApiExplorer();
@@ -96,13 +115,91 @@ else
 }
 builder.Services.AddAuthorization();
 
+// ---------- Health: readiness probes the database ----------
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connectionString: connStr ?? throw new InvalidOperationException("ConnectionStrings:Hrm is not configured."));
+
+// ---------- API versioning + CORS for the React frontend ----------
+// The React HRM UI (TanStack Start) is served from a separate origin; CORS is
+// enabled only for the configured origin list so the API refuses stray origins.
+var allowedOrigins = (builder.Configuration["HRM:AllowedOrigins"] ?? "http://localhost:3000")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+    p.WithOrigins(allowedOrigins)
+     .AllowAnyHeader()
+     .AllowAnyMethod()
+     .AllowCredentials()
+     .WithExposedHeaders("X-Request-Id", "X-Correlation-Id")));
+
+// Map every route under /api/v{version}/hrm (current = v1) while keeping the
+// legacy /api/hrm/* routes available for existing clients. Version resolution
+// uses the URL path when present; handlers shared between versions.
+builder.Services.AddSingleton(new ApiVersioning { CurrentVersion = 1 });
+
 var app = builder.Build();
+
+// ---------- Apply migrations at startup ----------
+// A dedicated "migrate" container can also launch the same binary with
+// --apply-migrations-only to run migrations before the API starts serving.
+// The API itself applies any pending migrations on startup as a safety net,
+// exactly like the Go ERP stack's migrate service + API pair.
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<HrmDbContext>().Database.Migrate();
+}
+if (args.Contains("--apply-migrations-only"))
+{
+    Console.WriteLine("Migrations applied. Exiting.");
+    return;
+}
+
+// ---------- Cross-cutting middleware ----------
+app.UseCors();
+
+// Assign a per-request id (client-supplied X-Request-Id preferred) and log
+// every request with method/path/status/duration for observability.
+app.Use(async (ctx, next) =>
+{
+    var requestId = ctx.Request.Headers["X-Request-Id"].FirstOrDefault() ?? System.Guid.NewGuid().ToString("N")[..12];
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    ctx.Response.Headers["X-Request-Id"] = requestId;
+    var logger = ctx.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
+    using var scope = logger.BeginScope(new Dictionary<string, object?>
+    {
+        ["RequestId"] = requestId,
+        ["Method"] = ctx.Request.Method,
+        ["Path"] = ctx.Request.Path.Value,
+    });
+    await next(ctx);
+    sw.Stop();
+    logger.LogInformation("{Method} {Path} -> {Status} in {ElapsedMs}ms",
+        ctx.Request.Method, ctx.Request.Path.Value, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
+});
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
 app.MapHealthChecks("/health/live");
-app.MapHealthChecks("/health/ready");
+
+// Readiness probes the database so orchestrators can delay routing traffic
+// until migrations have run and Postgres is reachable.
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    ResponseWriter = async (ctx, report) =>
+    {
+        var status = report.Status == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy ? "healthy" : "degraded";
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsJsonAsync(new { status, checks = report.Entries.Select(e => new { name = e.Key, status = e.Value.Status.ToString(), duration = e.Value.Duration.TotalMilliseconds }) });
+    },
+});
+
+// Root welcome endpoint: confirms a successful deployment and lists supported versions.
+app.MapGet("/", () => Results.Ok(new
+{
+    service = "mightyfin-erp-hrm-api",
+    versions = new[] { "v1" },
+    documentation = app.Environment.IsDevelopment() ? "/openapi/hrm.json" : null,
+}));
 
 // Global error handler: DomainException -> structured ApiError
 app.Use(async (ctx, next) =>
@@ -139,17 +236,14 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // ---------- Route registrations ----------
-Routes.RegisterWorkers(app);
-Routes.RegisterTime(app);
-Routes.RegisterWorkflow(app);
-Routes.RegisterExperience(app);
-Routes.RegisterPayroll(app);
-Routes.RegisterConfig(app);
-Routes.RegisterRecruitment(app);
-Routes.RegisterRelations(app);
-Routes.RegisterDocuments(app);
-Routes.RegisterDq(app);
-Routes.RegisterStatutory(app);
+// URL-based API versioning: the current version is served at /api/v{n}/hrm
+// while the legacy /api/hrm prefix stays available for existing clients.
+// Both surfaces register the same handlers (shared service methods).
+var versioning = app.Services.GetRequiredService<ApiVersioning>();
+Routes.HrmPrefix = $"/api/v{versioning.CurrentVersion}/hrm";
+Routes.RegisterAll(app);
+Routes.HrmPrefix = "/api/hrm"; // legacy prefix, kept for existing clients
+Routes.RegisterAll(app);
 
 app.Run();
 

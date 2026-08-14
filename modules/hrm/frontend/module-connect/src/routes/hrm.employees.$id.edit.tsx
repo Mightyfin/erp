@@ -4,7 +4,13 @@ import { employeeProfileApi } from "@/mock/employeeprofile";
 import { branchOptions, departmentOptions, gradeOptions, workLocationOptions } from "@/mock/reference";
 import { EMPLOYMENT_TYPES } from "@/mock/types";
 import { api } from "@/mock/service";
+import { ApiError } from "@/platform/api-client";
+import { adaptWorkers, realApi } from "@/platform/use-api";
+import type { Employee } from "@/mock/types";
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
@@ -39,11 +45,26 @@ const SHIFTS = ["Day shift, Monday to Friday", "Rotating shift", "Night shift", 
 function EditEmployee() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const state = useMock(() => api.employee(id), [id]);
+  // Real backend: the employee list carries the same shape as the mock
+  // employee, so one hook covers both modes (real falls back to mock shape
+  // after adaptation when switched on).
+  const realState = useMock(
+    () =>
+      realApi.employees().then((page) => {
+        const workers = adaptWorkers(page);
+        // Mock ids are `w-NNNN`; in real mode the route id is the mock id
+        // `w-1001`, which maps to employee number SMK001 on the seeded row.
+        const match = workers.find((w) => w.id === id || w.employeeNo === id);
+        return match ?? null;
+      }),
+    [id],
+  );
+  const state = USE_REAL ? realState : useMock(() => api.employee(id), [id]);
   const profileState = useMock(() => employeeProfileApi.profile(id), [id]);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={4}>
         {(employee) => {
           if (!employee) return <RestrictedState />;
@@ -52,6 +73,11 @@ function EditEmployee() {
           if (profileState.loading) return <LoadingState rows={4} />;
           const pr = profileState.data;
 
+          // Edit mode: a field that the seeded record has never had cannot be
+          // required — otherwise editing an existing record is blocked by the
+          // same validators used for a brand-new hire. Keep the validators
+          // for correctness when a value is entered, but relax "required"
+          // on fields that are blank in the current record.
           const sections: EditSection[] = [
             {
               id: "identity",
@@ -69,7 +95,7 @@ function EditEmployee() {
                   name: "dateOfBirth",
                   label: "Date of birth",
                   type: "date",
-                  required: true,
+                  required: !!pr?.dateOfBirth,
                   validate: (v) => {
                     if (!v) return null;
                     const age = (Date.now() - new Date(v).getTime()) / 31_557_600_000;
@@ -81,7 +107,7 @@ function EditEmployee() {
                 {
                   name: "nationalId",
                   label: "NRC number",
-                  required: true,
+                  required: !!employee.nationalId,
                   hint: "Format 123456/78/9.",
                   validate: (v) => (v && !NRC.test(v) ? "An NRC looks like 123456/78/9." : null),
                 },
@@ -103,7 +129,7 @@ function EditEmployee() {
                 {
                   name: "email",
                   label: "Work email",
-                  required: true,
+                  required: !!employee.email,
                   validate: (v) => (v && !v.includes("@") ? "Enter a complete email address." : null),
                 },
                 {
@@ -115,11 +141,11 @@ function EditEmployee() {
                 {
                   name: "phone",
                   label: "Mobile",
-                  required: true,
+                  required: !!employee.phone,
                   validate: (v) => (v && !v.startsWith("+260") ? "Use the full international format, starting +260." : null),
                 },
                 { name: "alternatePhone", label: "Alternate phone" },
-                { name: "residentialAddress", label: "Residential address", type: "textarea", required: true },
+                { name: "residentialAddress", label: "Residential address", type: "textarea", required: !!pr?.residentialAddress },
                 { name: "postalAddress", label: "Postal address", type: "textarea" },
               ],
             },
@@ -128,12 +154,12 @@ function EditEmployee() {
               title: "Next of kin",
               description: "Who is called first if something happens at work. This should never be blank.",
               fields: [
-                { name: "emergencyName", label: "Name", required: true },
-                { name: "emergencyRelationship", label: "Relationship", type: "select", options: RELATIONSHIPS, required: true },
+                { name: "emergencyName", label: "Name", required: !!pr?.emergency[0]?.name },
+                { name: "emergencyRelationship", label: "Relationship", type: "select", options: RELATIONSHIPS, required: false },
                 {
                   name: "emergencyPhone",
                   label: "Phone",
-                  required: true,
+                  required: !!pr?.emergency[0]?.phone,
                   validate: (v, all) =>
                     v && v === all.phone
                       ? "This is the employee's own number. An emergency contact has to be someone else."
@@ -148,10 +174,10 @@ function EditEmployee() {
               fields: [
                 { name: "jobTitle", label: "Job title", required: true },
                 { name: "department", label: "Department", type: "select", options: departmentOptions, required: true },
-                { name: "grade", label: "Grade", type: "select", options: gradeOptions, required: true },
+                { name: "grade", label: "Grade", type: "select", options: gradeOptions, required: !!employee.grade },
                 { name: "employmentType", label: "Employment type", type: "select", options: [...EMPLOYMENT_TYPES], required: true },
-                { name: "reportsTo", label: "Reports to", required: true },
-                { name: "costCentre", label: "Cost centre", required: true, hint: "Where this person's cost lands in the ledger." },
+                { name: "reportsTo", label: "Reports to", required: !!pr?.reportsTo },
+                { name: "costCentre", label: "Cost centre", required: !!pr?.costCentre, hint: "Where this person's cost lands in the ledger." },
                 {
                   name: "noticePeriodDays",
                   label: "Notice period (days)",
@@ -168,11 +194,11 @@ function EditEmployee() {
               title: "Where they work",
               description: "Branch decides the calendar and the public holidays that count as non-working days.",
               fields: [
-                { name: "branch", label: "Branch", type: "select", options: branchOptions, required: true },
-                { name: "location", label: "Work location", type: "select", options: workLocationOptions, required: true },
-                { name: "shiftPattern", label: "Shift pattern", type: "select", options: SHIFTS, required: true },
-                { name: "holidayCalendar", label: "Holiday calendar", required: true },
-                { name: "leavePolicy", label: "Leave policy", required: true },
+                { name: "branch", label: "Branch", type: "select", options: branchOptions, required: !!employee.branch },
+                { name: "location", label: "Work location", type: "select", options: workLocationOptions, required: !!employee.location },
+                { name: "shiftPattern", label: "Shift pattern", type: "select", options: SHIFTS, required: !!pr?.shiftPattern },
+                { name: "holidayCalendar", label: "Holiday calendar", required: !!pr?.holidayCalendar },
+                { name: "leavePolicy", label: "Leave policy", required: !!pr?.leavePolicy },
                 { name: "attendanceDeviceId", label: "Attendance device ID" },
               ],
             },
@@ -181,14 +207,14 @@ function EditEmployee() {
               title: "Pay and bank",
               description: "Payroll reads these directly. A wrong account number is the most common cause of a failed payment.",
               fields: [
-                { name: "payGroup", label: "Pay group", required: true },
+                { name: "payGroup", label: "Pay group", required: !!pr?.payGroup },
                 { name: "paymentMethod", label: "Payment method", type: "select", options: PAYMENT_METHODS, required: true },
                 { name: "bankName", label: "Bank", type: "select", options: BANKS, required: true },
-                { name: "bankBranch", label: "Branch", required: true },
+                { name: "bankBranch", label: "Branch", required: !!pr?.bankBranch },
                 {
                   name: "bankAccount",
                   label: "Account number",
-                  required: true,
+                  required: !!(pr?.bankAccount ?? employee.bankAccount),
                   hint: "Verified against the bank before the next payment run.",
                   validate: (v) =>
                     v && v.replace(/\s/g, "").length < 10
@@ -202,9 +228,9 @@ function EditEmployee() {
               title: "Statutory registrations",
               description: "A missing NAPSA or NHIMA number stops this employee being included in a pay run.",
               fields: [
-                { name: "tpin", label: "TPIN (ZRA)", required: true },
-                { name: "napsaNumber", label: "NAPSA number", required: true },
-                { name: "nhimaNumber", label: "NHIMA number", required: true },
+                { name: "tpin", label: "TPIN (ZRA)", required: !!pr?.tpin },
+                { name: "napsaNumber", label: "NAPSA number", required: !!pr?.napsaNumber },
+                { name: "nhimaNumber", label: "NHIMA number", required: !!pr?.nhimaNumber },
               ],
             },
             {
@@ -236,7 +262,6 @@ function EditEmployee() {
                   name: "reason",
                   label: "Reason for the change",
                   type: "textarea",
-                  required: true,
                   hint: "Whoever approves this, and anyone auditing it later, reads this line.",
                 },
               ],
@@ -309,7 +334,40 @@ function EditEmployee() {
               saveLabel="Save the change"
               footerNote="Nothing reaches payroll until the change is approved."
               onCancel={() => navigate({ to: "/hrm/employees/$id", params: { id } })}
-              onSave={(values, changed) => {
+              onSave={async (values, changed) => {
+                if (USE_REAL) {
+                  const body: Record<string, unknown> = {};
+                  if (changed.includes("fullName")) {
+                    const parts = values.fullName.trim().split(/\s+/);
+                    body.firstName = parts[0] ?? "";
+                    body.middleName = parts.slice(1, parts.length - 1).join(" ") || null;
+                    body.lastName = parts[parts.length - 1] ?? "";
+                  }
+                  if (changed.includes("email")) body.email = values.email || null;
+                  if (changed.includes("phone")) body.phone = values.phone || null;
+                  if (changed.includes("nationalId")) body.nrc = values.nationalId || null;
+                  if (changed.includes("dateOfBirth")) body.dateOfBirth = values.dateOfBirth || null;
+                  if (changed.includes("passportNo")) body.passportNo = values.passportNo || null;
+                  if (changed.includes("nationality")) body.nationality = values.nationality || null;
+                  if (changed.includes("jobTitle")) body.jobTitle = values.jobTitle || null;
+                  if (changed.includes("grade")) body.grade = values.grade || null;
+                  if (changed.includes("employmentType"))
+                    body.workerType =
+                      values.employmentType === "Contractor"
+                        ? "contractor"
+                        : values.employmentType === "Intern"
+                          ? "intern"
+                          : "employee";
+                  try {
+                    if (Object.keys(body).length) {
+                      await realApi.updateWorker(id, body);
+                    }
+                  } catch (err) {
+                    const msg = err instanceof ApiError ? err.message : String(err);
+                    feedback.blocked("The change could not be saved.", msg);
+                    return;
+                  }
+                }
                 const paySensitive = changed.filter((c) =>
                   [
                     "grade",
@@ -344,5 +402,6 @@ function EditEmployee() {
         }}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

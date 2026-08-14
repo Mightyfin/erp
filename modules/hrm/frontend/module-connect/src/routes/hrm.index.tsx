@@ -6,6 +6,7 @@ import { api } from "@/mock/service";
 import { isPathEnabled } from "@/modules/hrm/scope";
 import { useApp } from "@/platform/app-context";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { WorkQueue } from "@/platform/components/WorkQueue";
@@ -38,7 +39,8 @@ function Home() {
   const ws = workspaces.find((w) => w.id === role)!;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       {hydrated && !setupComplete ? (
         <div className="rounded-lg border border-primary/40 bg-primary-soft p-5">
           <h2 className="flex items-center gap-2 text-base font-semibold text-primary">
@@ -71,5 +73,6 @@ function Home() {
 
       <Async state={queue}>{(items) => <WorkQueue items={inScope(items)} metrics={metrics} />}</Async>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { employees } from "@/mock/data";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -71,7 +72,8 @@ function Approvals() {
   const state = useMock(loadQueue);
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Approvals"
         title="Approvals"
@@ -100,5 +102,6 @@ function Approvals() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

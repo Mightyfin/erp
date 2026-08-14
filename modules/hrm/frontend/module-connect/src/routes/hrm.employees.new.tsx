@@ -1,13 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertTriangle, Info } from "lucide-react";
+import { feedback } from "@/platform/feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { employees, entities } from "@/mock/data";
 import { api } from "@/mock/service";
+import { ApiError } from "@/platform/api-client";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -26,9 +30,12 @@ export const Route = createFileRoute("/hrm/employees/new")({
 
 const employmentTypes = ["Permanent", "Fixed term", "Part time", "Contractor", "Intern"] as const;
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
 function NewEmployee() {
   const navigate = useNavigate();
   const [ref, setRef] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -43,6 +50,9 @@ function NewEmployee() {
   const [endDate, setEndDate] = useState("");
 
   const entity = entities.find((e) => e.id === entityId)!;
+  // Real-backend placement reference data (used only when USE_REAL).
+  const orgUnitsState = useApi(() => realApi.orgUnits(), []);
+  const locationsState = useApi(() => realApi.locations(), []);
   const fullName = [firstName, lastName].filter(Boolean).join(" ");
   const needsEndDate = employmentType === "Fixed term" || employmentType === "Intern";
 
@@ -257,10 +267,11 @@ function NewEmployee() {
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="People" title="Employee record created" />
         <NextSteps
-          reference={`EMP-${ref}`}
+          reference={ref}
           title={`${fullName || "The employee"} has been added as Pre-hire`}
           steps={[
             "Complete the profile — bank details and the NAPSA, NHIMA and TPIN numbers, without which payroll cannot include them.",
@@ -279,6 +290,7 @@ function NewEmployee() {
           }
         />
       </AppShell>
+      </AuthGate>
     );
   }
 
@@ -297,10 +309,77 @@ function NewEmployee() {
       <GuidedFlow
         flowId="employee-new"
         steps={steps}
-        submitLabel="Create employee record"
+        submitLabel={creating ? "Creating…" : "Create employee record"}
         onSubmit={async () => {
-          const r = await api.submit("employee", { fullName, jobTitle, entityId, branch, startDate });
-          setRef(r.id);
+          if (!firstName.trim() || !lastName.trim()) {
+            feedback.blocked("First and last name are required to create the record.", "Go back to the first step and complete the name fields.");
+            setCreating(false);
+            return;
+          }
+          setCreating(true);
+          try {
+            if (USE_REAL) {
+              // The mock "Reports to" list uses mock ids (w-1002). In real mode,
+              // map by employee number to a real worker id where possible.
+              const realEmployees = (await realApi.employees()) as {
+                items?: Array<{ id?: unknown; employeeNo?: unknown }>;
+              };
+              const realList = Array.from(realEmployees.items ?? []);
+              const chosen = employees.find((e) => e.id === managerId);
+              const managerIdGuid = chosen
+                ? realList.find((r) => String(r.employeeNo) === chosen.id)
+                  ? String(realList.find((r) => String(r.employeeNo) === chosen.id)!.id)
+                  : null
+                : null;
+              const orgUnit = USE_REAL
+                ? (orgUnitsState.data as Array<Record<string, unknown>>)?.find(
+                    (o) =>
+                      String(o.name).toLowerCase() === department.toLowerCase() ||
+                      String(o.code ?? "").toLowerCase() === department.toLowerCase(),
+                  )?.id
+                : null;
+              const location = USE_REAL
+                ? (locationsState.data as Array<Record<string, unknown>>)?.find(
+                    (l) => String(l.name).toLowerCase() === branch.toLowerCase(),
+                  )?.id
+                : null;
+              const created = await realApi.createWorker({
+                employeeNo: "",
+                firstName: firstName.trim(),
+                middleName: "",
+                lastName: lastName.trim(),
+                email: email.trim() || null,
+                phone: null,
+                nrc: null,
+                passportNo: null,
+                tpin: null,
+                napsaNumber: null,
+                nhimaNumber: null,
+                nationality: "Zambian",
+                dateOfBirth: null,
+                orgUnitId: orgUnit ?? null,
+                locationId: location ?? null,
+                managerId: managerIdGuid ?? null,
+                grade: null,
+                jobTitle: jobTitle.trim() || null,
+                startDate,
+                workerType:
+                  employmentType === "Contractor" ? "contractor" : employmentType === "Intern" ? "intern" : "employee",
+                emergencyContacts: [],
+                bankDetails: [],
+              });
+              setRef(String(created.employeeNo || created.id));
+              return;
+            }
+            const r = await api.submit("employee", { fullName, jobTitle, entityId, branch, startDate });
+            setRef(`TMP-${r.id}`);
+          } catch (err) {
+            const msg = err instanceof ApiError ? err.message : String(err);
+            feedback.blocked("The employee could not be created.", msg);
+            throw err;
+          } finally {
+            setCreating(false);
+          }
         }}
       />
     </AppShell>

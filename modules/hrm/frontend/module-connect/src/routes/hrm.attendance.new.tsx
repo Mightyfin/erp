@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api } from "@/mock/service";
+import { realApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -32,6 +33,17 @@ const issues = [
   "System or reader failure",
   "Other",
 ] as const;
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
+
+const issueToBackend: Record<string, string> = {
+  "Missing punch": "missed-punch",
+  "Wrong time recorded": "wrong-time",
+  "Wrong shift assigned": "wrong-shift",
+  "Off-site or field duty": "off-site",
+  "System or reader failure": "system-failure",
+};
 
 function NewCorrection() {
   const navigate = useNavigate();
@@ -124,15 +136,27 @@ function NewCorrection() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader eyebrow="Attendance" title="Raise a correction" description="Four short steps. Your draft saves as you go." />
       <GuidedFlow
         flowId="attendance-new"
         steps={steps}
         submitLabel="Submit correction"
         onSubmit={async () => {
-          const r = await api.submit("attendance", { date, issue, claimedIn, claimedOut, reason });
-          setRef(r.id);
+          if (USE_REAL) {
+            const r = await realApi.createCorrection({
+              workerId: DEFAULT_WORKER,
+              workDate: date,
+              issueType: issueToBackend[issue] ?? "other",
+              proposedClockIn: claimedIn || undefined,
+              proposedClockOut: claimedOut || undefined,
+              reason,
+            });
+            setRef(String((r as { id?: unknown }).id ?? ""));
+            return;
+          }
+          setRef(`mock-${Date.now().toString(36)}`);
         }}
         submitted={
           ref ? (
@@ -150,5 +174,6 @@ function NewCorrection() {
         }
       />
     </AppShell>
+      </AuthGate>
   );
 }

@@ -12,6 +12,11 @@ public interface ITimeService
     Task<Paged<LeaveRequestDto>> ListLeaveAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<LeaveRequestDto> CreateLeaveAsync(LeaveRequestCreate request, CancellationToken ct);
     Task<List<LeaveBalanceDto>> GetBalancesAsync(Guid workerId, CancellationToken ct);
+    // M16: self-service leave for the signed-in worker. Keyed on the Keycloak
+    // subject id (not a caller-supplied worker id) so an employee can only see
+    // their own requests and balances.
+    Task<MyLeaveDto> MyLeaveAsync(string subjectId, CancellationToken ct);
+    Task<LeaveRequestDto> CancelLeaveAsync(Guid id, string subjectId, CancellationToken ct);
     Task<Paged<AttendanceCorrectionDto>> ListCorrectionsAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<AttendanceCorrectionDto> CreateCorrectionAsync(AttendanceCorrectionCreate request, CancellationToken ct);
 
@@ -28,11 +33,22 @@ public interface ITimeService
 public sealed record LeaveRequestDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
     string StartDate, string EndDate, decimal RequestedDays, string Status, bool BalanceReserved,
     bool CrossesCutoff, DateTimeOffset CreatedAt);
+
+/// <summary>M16: the signed-in worker's own leave request row, including the
+/// rejection/return reason so the UI can explain why a request was sent back.</summary>
+public sealed record SelfLeaveRequestDto(Guid Id, string LeaveTypeCode, string StartDate, string EndDate,
+    decimal RequestedDays, string Status, string? RejectionReason, bool CrossesCutoff,
+    DateTimeOffset CreatedAt);
+
+/// <summary>M16: single self-service envelope — own identity, balances across
+/// every configured leave type, and own leave requests.</summary>
+public sealed record MyLeaveDto(Guid WorkerId, string WorkerName, string? EmployeeNo, bool Linked,
+    List<LeaveBalanceDto> Balances, List<SelfLeaveRequestDto> Requests);
 public sealed record AttendanceCorrectionDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
     string IssueType, string? ProposedClockIn, string? ProposedClockOut, string? ProposedStatus,
     string Reason, string Status, DateTimeOffset CreatedAt);
 
-public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, IWorkflowService workflow) : ITimeService
+public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, IWorkflowService workflow, IWorkerRepository workers) : ITimeService
 {
     public async Task<Paged<LeaveRequestDto>> ListLeaveAsync(Guid? workerId, string? status, CancellationToken ct)
     {
@@ -330,6 +346,49 @@ public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, I
         if (clockIn.HasValue && clockOut.HasValue) return "present";
         if (clockIn is null && clockOut is null) return "unknown";
         return current is "late" or "early-departure" or "half-day" or "absent" ? current : "present";
+    }
+
+    // ===================== M16: self-service leave =====================
+
+    public async Task<MyLeaveDto> MyLeaveAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await workers.FindBySubjectIdAsync(subjectId, ct);
+        if (worker is null)
+            return new MyLeaveDto(Guid.Empty, "", null, false, [], []);
+        var balances = await GetBalancesAsync(worker.Id, ct);
+        var (items, _) = await repo.ListLeaveRequestsAsync(worker.Id, null, ct);
+        var requests = items.Select(r => new SelfLeaveRequestDto(r.Id, r.LeaveTypeCode, r.StartDate.ToString(),
+            r.EndDate.ToString(), r.RequestedDays, r.Status, r.RejectionReason, r.CrossesCutoff, r.CreatedAt)).ToList();
+        return new MyLeaveDto(worker.Id, worker.FullName, worker.EmployeeNo, true, balances, requests);
+    }
+
+    public async Task<LeaveRequestDto> CancelLeaveAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await workers.FindBySubjectIdAsync(subjectId, ct)
+            ?? throw new DomainException("no-worker-linked", "No worker record is linked to your account.");
+        var lr = await repo.GetLeaveRequestAsync(id, ct)
+            ?? throw new DomainException("leave-not-found", $"Leave request {id} does not exist.");
+        if (lr.WorkerId != worker.Id)
+            throw new DomainException("leave-not-owned", "You can only cancel your own leave requests.");
+        if (lr.Status is not ("submitted" or "in-review" or "returned"))
+            throw new DomainException("leave-not-cancellable",
+                $"Leave request is {lr.Status} and cannot be cancelled. Only open requests can be cancelled.");
+
+        lr.Status = "cancelled";
+        await repo.UpdateLeaveRequestAsync(lr, ct);
+        await repo.ReleaseReservationAsync(lr.Id, ct);
+        // close the approval workflow so nothing is left sitting in an approver's queue.
+        // the workflow request is keyed on the worker, not the leave id
+        var wfReq = await workflow.GetOpenBySubjectAsync("leave", worker.Id, ct);
+        if (wfReq is not null)
+            await workflow.CancelAsync(wfReq.Id, ct);
+        return Map(lr);
     }
 
     private static LeaveRequestDto Map(LeaveRequest r) => new(

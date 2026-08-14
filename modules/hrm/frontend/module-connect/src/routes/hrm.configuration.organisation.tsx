@@ -1,9 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarClock, History, Info, Lock, Pencil, ShieldAlert, Trash2 } from "lucide-react";
+import { CalendarClock, History, Info, Lock, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -13,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import type {
   LegalEntityConfig,
+  LocationKind,
   OrgUnitConfig,
   ScheduledChange,
   WorkLocation,
@@ -26,6 +34,7 @@ import {
   unitStateExplanation,
 } from "@/mock/adminconfig";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
@@ -34,7 +43,9 @@ import { DetailSection } from "@/platform/components/RecordDetail";
 import { EmptyState } from "@/platform/components/States";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { useMock } from "@/platform/use-mock";
+import type { TimelineEvent } from "@/mock/types";
+import { realApi, useApi } from "@/platform/use-api";
+import { useAuth } from "@/platform/auth";
 import { feedback } from "@/platform/feedback";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 
@@ -68,6 +79,70 @@ interface DraftClosure {
   reason: string;
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+const kindMap: Record<string, LocationKind> = {
+  branch: "Office",
+  headoffice: "Head office",
+  plant: "Plant",
+  depot: "Depot",
+  yard: "Yard",
+  office: "Office",
+  works: "Works",
+};
+
+function adaptEntities(rows: unknown[]): LegalEntityConfig[] {
+  return (rows as Record<string, unknown>[]).map((e) => ({
+    id: String(e.id ?? ""),
+    entityId: String(e.id ?? ""),
+    registeredName: String(e.registeredName ?? ""),
+    country: String(e.countryCode ?? "ZM"),
+    legalIdLabel: String(e.pacraNumber ? "PACRA" : "TPIN"),
+    legalId: String(e.pacraNumber ?? e.tpin ?? "—"),
+    currency: String(e.currency ?? "ZMW"),
+    payrollCountryPack: String(e.countryCode ?? "ZM") === "ZM" ? "Zambian payroll pack" : "—",
+    registeredAddress: "—",
+    employees: 0,
+    branches: 0,
+    effectiveFrom: String(e.createdAt ?? "").slice(0, 10) || todayIso,
+  })) as LegalEntityConfig[];
+}
+
+type OrgUnitWithEntity = OrgUnitConfig & { _entityName?: string };
+function adaptUnits(rows: unknown[]): OrgUnitWithEntity[] {
+  return (rows as Record<string, unknown>[]).map((u) => ({
+    id: String(u.id ?? ""),
+    name: String(u.name ?? ""),
+    code: String(u.code ?? ""),
+    costCentre: String(u.costCentreRef ?? "—"),
+    entityId: String(u.legalEntityId ?? ""),
+    branch: "—",
+    parent: u.parentId ? String(u.parentId) : undefined,
+    employees: 0,
+    positions: 0,
+    references: [],
+    effectiveFrom: String(u.effectiveFrom ?? "").slice(0, 10) || todayIso,
+    effectiveTo: u.effectiveTo ? String(u.effectiveTo).slice(0, 10) : undefined,
+  })) as OrgUnitWithEntity[];
+}
+
+type WorkLocationWithEntity = WorkLocation & { _entityName?: string };
+function adaptLocations(rows: unknown[]): WorkLocationWithEntity[] {
+  return (rows as Record<string, unknown>[]).map((l) => ({
+    id: String(l.id ?? ""),
+    entityId: String(l.legalEntityId ?? ""),
+    _entityName: String(l.legalEntityName ?? ""),
+    name: String(l.name ?? ""),
+    code: String(l.code ?? ""),
+    kind: kindMap[String(l.type ?? "")] ?? "Office",
+    address: String(l.addressLine ?? l.city ?? ""),
+    timeZone: "Africa/Lusaka",
+    employees: 0,
+    positions: 0,
+    effectiveFrom: String(l.createdAt ?? "").slice(0, 10) || todayIso,
+  })) as WorkLocationWithEntity[];
+}
+
 const closureReasons = [
   "Merged into another unit",
   "Work location closing",
@@ -80,31 +155,52 @@ const closureReasons = [
 function CloseUnitForm({
   units,
   onAdd,
+  onRefresh,
 }: {
   units: OrgUnitConfig[];
   onAdd: (draft: DraftClosure) => void;
+  onRefresh?: () => void;
 }) {
   const [unitId, setUnitId] = useState("");
   const [date, setDate] = useState("");
   const [reason, setReason] = useState(closureReasons[0]);
+  const [busy, setBusy] = useState(false);
   const unit = units.find((u) => u.id === unitId);
   const invalidDate = Boolean(date) && date < todayIso;
 
   return (
     <form
       className="space-y-4"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         if (!unit || !date || invalidDate) return;
-        onAdd({
-          id: `draft-${unit.id}-${date}`,
-          unitId: unit.id,
-          unitName: `${unit.name} (${unit.code})`,
-          effectiveFrom: date,
-          reason,
-        });
-        setUnitId("");
-        setDate("");
+        if (!USE_REAL) {
+          onAdd({
+            id: `draft-${unit.id}-${date}`,
+            unitId: unit.id,
+            unitName: `${unit.name} (${unit.code})`,
+            effectiveFrom: date,
+            reason,
+          });
+          setUnitId("");
+          setDate("");
+          return;
+        }
+        setBusy(true);
+        try {
+          await realApi.closeOrgUnit(unit.id, date, reason);
+          feedback.saved(`Closed ${unit.name} from ${fmt(date)}.`, () => undefined);
+          setUnitId("");
+          setDate("");
+          onRefresh?.();
+        } catch (err) {
+          feedback.note(
+            "Could not close the unit.",
+            err instanceof Error ? err.message : "Server rejected the closure.",
+          );
+        } finally {
+          setBusy(false);
+        }
       }}
     >
       <div className="grid gap-4 sm:grid-cols-3">
@@ -180,8 +276,8 @@ function CloseUnitForm({
         </div>
       ) : null}
 
-      <Button type="submit" variant="outline" disabled={!unit || !date || invalidDate}>
-        Add to draft changes
+      <Button type="submit" variant="outline" disabled={!unit || !date || invalidDate || busy}>
+        {busy ? "Saving…" : USE_REAL ? "Close unit from date" : "Add to draft changes"}
       </Button>
     </form>
   );
@@ -189,7 +285,143 @@ function CloseUnitForm({
 
 /* -------------------------------------------------------------------------- */
 
-function EntityTable({ rows, asAt }: { rows: LegalEntityConfig[]; asAt: string }) {
+function NewLocationDialog({
+  open,
+  onOpenChange,
+  entities,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  entities: LegalEntityConfig[];
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [entityId, setEntityId] = useState(entities[0]?.entityId ?? "");
+  const [kind, setKind] = useState("branch");
+  const [city, setCity] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!USE_REAL) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New work location</DialogTitle>
+          <DialogDescription>
+            Register a branch, plant or office the company operates from. It can be created before
+            it opens and it stays readable after it closes.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setError(null);
+            if (!name.trim() || !code.trim()) return;
+            setBusy(true);
+            try {
+              await realApi.createLocation({
+                code: code.trim().toUpperCase(),
+                name: name.trim(),
+                legalEntityId: entityId,
+                type: kind,
+                city: city.trim() || undefined,
+              });
+              onSaved();
+              setName("");
+              setCode("");
+              setCity("");
+              onOpenChange(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Server rejected the location.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <Label htmlFor="loc-name">Location name</Label>
+              <Input
+                id="loc-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1.5"
+                required
+              />
+            </div>
+            <div className="min-w-0">
+              <Label htmlFor="loc-code">Code</Label>
+              <Input
+                id="loc-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="mt-1.5"
+                placeholder="e.g. KITWE"
+                required
+              />
+            </div>
+            <div className="min-w-0">
+              <Label htmlFor="loc-entity">Legal entity</Label>
+              <Select value={entityId} onValueChange={setEntityId}>
+                <SelectTrigger id="loc-entity" className="mt-1.5 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {entities.map((e) => (
+                    <SelectItem key={e.entityId} value={e.entityId}>
+                      {e.registeredName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0">
+              <Label htmlFor="loc-kind">Type</Label>
+              <Select value={kind} onValueChange={setKind}>
+                <SelectTrigger id="loc-kind" className="mt-1.5 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="branch">Branch</SelectItem>
+                  <SelectItem value="headoffice">Head office</SelectItem>
+                  <SelectItem value="plant">Plant</SelectItem>
+                  <SelectItem value="office">Office</SelectItem>
+                  <SelectItem value="yard">Yard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <Label htmlFor="loc-city">City</Label>
+            <Input id="loc-city" value={city} onChange={(e) => setCity(e.target.value)} className="mt-1.5" />
+          </div>
+          {error ? (
+            <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || !name.trim() || !code.trim()}>
+              {busy ? "Saving…" : "Create location"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+function EntityTable({ rows, asAt, canAct }: { rows: LegalEntityConfig[]; asAt: string; canAct: boolean }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full min-w-[52rem] text-left text-sm">
@@ -274,21 +506,25 @@ function EntityTable({ rows, asAt }: { rows: LegalEntityConfig[]; asAt: string }
                 </span>
               </td>
               <td className="px-3 py-3 text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  onClick={() =>
-                    feedback.note(
-                      `Editing ${e.registeredName}.`,
-                      "An entity change needs an effective date — it decides which payroll rules apply from when.",
-                    )
-                  }
-                >
-                  <Pencil className="size-3.5" aria-hidden />
-                  Edit
-                  <span className="sr-only"> {e.registeredName}</span>
-                </Button>
+                {canAct ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() =>
+                      feedback.note(
+                        `Editing ${e.registeredName}.`,
+                        "An entity change needs an effective date — it decides which payroll rules apply from when.",
+                      )
+                    }
+                  >
+                    <Pencil className="size-3.5" aria-hidden />
+                    Edit
+                    <span className="sr-only"> {e.registeredName}</span>
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Read-only</span>
+                )}
               </td>
             </tr>
           ))}
@@ -298,7 +534,7 @@ function EntityTable({ rows, asAt }: { rows: LegalEntityConfig[]; asAt: string }
   );
 }
 
-function LocationTable({ rows, asAt }: { rows: WorkLocation[]; asAt: string }) {
+function LocationTable({ rows, asAt, canAct }: { rows: WorkLocationWithEntity[]; asAt: string; canAct: boolean }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full min-w-[48rem] text-left text-sm">
@@ -363,7 +599,11 @@ function LocationTable({ rows, asAt }: { rows: WorkLocation[]; asAt: string }) {
                   {l.address} · {l.timeZone}
                 </span>
               </th>
-              <td className="px-3 py-3">{shortEntityName(l.entityId)}</td>
+              <td className="px-3 py-3">
+                {l._entityName
+                  ? shortEntityName(l._entityName || l.entityId)
+                  : shortEntityName(l.entityId)}
+              </td>
               <td className="px-3 py-3">{l.kind}</td>
               <td className="px-3 py-3 whitespace-nowrap">
                 <span className="block">{fmt(l.effectiveFrom)}</span>
@@ -385,24 +625,27 @@ function LocationTable({ rows, asAt }: { rows: WorkLocation[]; asAt: string }) {
                   </span>
                 ) : null}
               </td>
-              <td className="px-3 py-3 text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  onClick={() =>
-                    feedback.note(
-                      `Editing ${l.name}.`,
-                      "A location change moves people between calendars and holiday sets from the date you give.",
-                    )
-                  }
-                >
-                  <Pencil className="size-3.5" aria-hidden />
-                  Edit
-                  <span className="sr-only"> {l.name}</span>
-                </Button>
-              </td>
-            </tr>
+                            <td className="px-3 py-3 text-right">
+                {canAct ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() =>
+                      feedback.note(
+                        `Editing ${l.name}.`,
+                        "A location change moves people between calendars and holiday sets from the date you give.",
+                      )
+                    }
+                  >
+                    <Pencil className="size-3.5" aria-hidden />
+                    Edit
+                    <span className="sr-only"> {l.name}</span>
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Read-only</span>
+                )}
+              </td>              </tr>
           ))}
         </tbody>
       </table>
@@ -470,13 +713,39 @@ function ScheduledChangeItem({
 
 /* -------------------------------------------------------------------------- */
 
+async function loadOrganisation() {
+  if (!USE_REAL) return adminConfigApi.organisation();
+  const [rawEntities, units, locations] = await Promise.all([
+    realApi.legalEntities(),
+    realApi.orgUnits(),
+    realApi.locations(),
+  ]);
+  const entities = Array.isArray(rawEntities) ? rawEntities : (rawEntities as { items?: unknown[] }).items ?? [];
+  const adaptedEntities = adaptEntities(entities);
+  const unitsArr = Array.isArray(units) ? units : (units as { items?: unknown[] }).items ?? [];
+  const locationsArr = Array.isArray(locations) ? locations : (locations as { items?: unknown[] }).items ?? [];
+  const adaptedUnits = adaptUnits(unitsArr);
+  const adaptedLocations = adaptLocations(locationsArr);
+  return {
+    entities: adaptedEntities,
+    units: adaptedUnits as OrgUnitConfig[],
+    locations: adaptedLocations as WorkLocation[],
+    scheduled: [] as ScheduledChange[],
+    audit: [] as TimelineEvent[],
+  };
+}
+
 function OrganisationConfig() {
-  const state = useMock(() => adminConfigApi.organisation());
+  const state = useApi(loadOrganisation);
+  const userRoles = new Set(useAuth().user?.roles ?? []);
+  const canAct = userRoles.has("hr_admin") || userRoles.has("hr_ops");
   const [asAt, setAsAt] = useState(todayIso);
   const [drafts, setDrafts] = useState<DraftClosure[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [newLocation, setNewLocation] = useState(false);
+  const refresh = state.reload;
 
-  const columns: ColumnDef<OrgUnitConfig>[] = [
+  const columns: ColumnDef<OrgUnitWithEntity>[] = [
     {
       id: "unit",
       header: "Department",
@@ -495,7 +764,14 @@ function OrganisationConfig() {
       header: "Cost centre",
       cell: (u) => <span className="font-mono text-xs">{u.costCentre}</span>,
     },
-    { id: "entity", header: "Entity", cell: (u) => shortEntityName(u.entityId) },
+    {
+      id: "entity",
+      header: "Entity",
+      cell: (u) =>
+        u._entityName
+          ? shortEntityName(u._entityName || u.entityId)
+          : shortEntityName(u.entityId),
+    },
     { id: "branch", header: "Location", cell: (u) => u.branch },
     {
       id: "inuse",
@@ -563,21 +839,16 @@ function OrganisationConfig() {
   ];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Configuration"
         title="Organisation setup"
         description={description}
         primaryAction={
-          <Button
-            onClick={() =>
-              feedback.submitted(
-                "New legal entity started.",
-                "An entity needs a registration number, a country pack and a pay calendar before anyone can be paid under it.",
-              )
-            }
-          >
-            Add legal entity
+          <Button onClick={() => setNewLocation(true)} disabled={!canAct}>
+            <Plus className="size-4" aria-hidden />
+            Add work location
           </Button>
         }
         meta={
@@ -668,14 +939,23 @@ function OrganisationConfig() {
                   title="Legal entities"
                   description="Who employs people, under which registration and in which currency. An entity is never deleted once it has employed anyone."
                 >
-                  <EntityTable rows={data.entities} asAt={asAt} />
+                  <EntityTable rows={data.entities} asAt={asAt} canAct={canAct} />
                 </DetailSection>
 
                 <DetailSection
                   title="Branches and work locations"
                   description="Where employees are based. A location can exist in configuration before it opens and stays readable after it closes."
                 >
-                  <LocationTable rows={data.locations} asAt={asAt} />
+                  <LocationTable rows={data.locations} asAt={asAt} canAct={canAct} />
+                  <NewLocationDialog
+                    open={newLocation}
+                    onOpenChange={setNewLocation}
+                    entities={data.entities}
+                    onSaved={() => {
+                      refresh();
+                      feedback.saved("Location created. It is now available for placement.");
+                    }}
+                  />
                 </DetailSection>
 
                 <DetailSection
@@ -693,11 +973,9 @@ function OrganisationConfig() {
                       {
                         id: "entity",
                         label: "Entity",
-                        options: [
-                          "Mighty Finance Solutions Industrial",
-                          "Mighty Finance Solutions Copperbelt",
-                          "Mighty Finance Solutions Engineering",
-                        ],
+                        options: Array.from(
+                          new Set(data.entities.map((e) => shortEntityName(e.id))),
+                        ),
                         match: (u, v) => shortEntityName(u.entityId) === v,
                       },
                       {
@@ -794,6 +1072,7 @@ function OrganisationConfig() {
                       onAdd={(d) =>
                         setDrafts((s) => [...s.filter((x) => x.unitId !== d.unitId), d])
                       }
+                      onRefresh={refresh}
                     />
                     <p aria-live="polite" className="text-xs text-muted-foreground">
                       {drafts.length === 0
@@ -877,5 +1156,6 @@ function OrganisationConfig() {
         }}
       />
     </AppShell>
+      </AuthGate>
   );
 }

@@ -8,7 +8,8 @@ namespace Mightyfin.Erp.Hrm.Application;
 
 public sealed record WorkerListFilters(
     string? Search, string? Status, Guid? OrgUnitId, Guid? LocationId,
-    string? WorkerType, string? Grade, int Page = 1, int PageSize = 25);
+    string? WorkerType, string? Grade, bool IncludeArchived = false,
+    int Page = 1, int PageSize = 25);
 
 public sealed record WorkerCreateRequest(
     string EmployeeNo, string FirstName, string LastName,
@@ -23,6 +24,17 @@ public sealed record WorkerCreateRequest(
     List<WorkerBankDetailCreate>? BankDetails = null);
 
 public sealed record EmergencyContactCreate(string Relationship, string FullName, string? Phone, bool IsPrimary);
+
+// M15 self-service: the fields a worker may edit on their own record. SubjectId
+// is filled server-side from the token, never from client input.
+public sealed record WorkerSubjectUpdateRequest(
+    string SubjectId,
+    string? PreferredName = null, string? Email = null, string? Phone = null,
+    string? Nrc = null, string? PassportNo = null, string? Tpin = null,
+    string? NapsaNumber = null, string? NhimaNumber = null,
+    string? Nationality = null, string? DateOfBirth = null,
+    List<EmergencyContactCreate>? EmergencyContacts = null,
+    List<WorkerBankDetailCreate>? BankDetails = null);
 public sealed record WorkerBankDetailCreate(string BankName, string BranchCode, string AccountNumber, string AccountName, bool IsPrimary, string PaymentMethod = "bank", string? MobileMoneyNumber = null);
 
 public sealed record WorkerUpdateRequest(
@@ -105,6 +117,16 @@ public sealed record ProtectedDisclosureStatusResponse(string CaseReference, str
     DateTimeOffset? LastUpdatedAt, string? NextStep);
 
 // ===================== Payroll =====================
+
+// ---------- M21: salary structure administration ----------
+public sealed record SalaryStructureItemUpsert(Guid ComponentId, decimal? DefaultAmount = null, bool? IsOptional = null, int? Order = null);
+public sealed record SalaryStructureDto(Guid Id, string Code, string Name, int Version, bool IsActive,
+    List<SalaryStructureItemDto> Items);
+public sealed record SalaryStructureItemDto(Guid Id, Guid ComponentId, string ComponentCode, string ComponentName,
+    decimal? DefaultAmount, bool IsOptional, int Order);
+public sealed record SalaryStructureCreateRequest(string Code, string Name, List<SalaryStructureItemUpsert> Items);
+public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsActive = null,
+    List<SalaryStructureItemUpsert>? Items = null);
 
 public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,

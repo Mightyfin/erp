@@ -15,6 +15,7 @@ import { Route as SpeakUpRouteImport } from './routes/speak-up'
 import { Route as HrmIndexRouteImport } from './routes/hrm.index'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
+import { Route as HrmMyProfileRouteImport } from './routes/hrm.my-profile'
 import { Route as HrmSetupRouteImport } from './routes/hrm.setup'
 import { Route as HrmAttendanceIndexRouteImport } from './routes/hrm.attendance.index'
 import { Route as HrmAttendanceIdRouteImport } from './routes/hrm.attendance.$id'
@@ -24,6 +25,7 @@ import { Route as HrmConfigurationIndexRouteImport } from './routes/hrm.configur
 import { Route as HrmConfigurationBusinessRouteImport } from './routes/hrm.configuration.business'
 import { Route as HrmConfigurationComplianceRouteImport } from './routes/hrm.configuration.compliance'
 import { Route as HrmConfigurationOrganisationRouteImport } from './routes/hrm.configuration.organisation'
+import { Route as HrmConfigurationPayrollRouteImport } from './routes/hrm.configuration.payroll'
 import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.configuration.process'
 import { Route as HrmConfigurationRolesRouteImport } from './routes/hrm.configuration.roles'
 import { Route as HrmConfigurationTechnicalRouteImport } from './routes/hrm.configuration.technical'
@@ -35,6 +37,7 @@ import { Route as HrmExperienceKnowledgeRouteImport } from './routes/hrm.experie
 import { Route as HrmExperienceLettersRouteImport } from './routes/hrm.experience.letters'
 import { Route as HrmLeaveIndexRouteImport } from './routes/hrm.leave.index'
 import { Route as HrmLeaveIdRouteImport } from './routes/hrm.leave.$id'
+import { Route as HrmLeaveApprovalsRouteImport } from './routes/hrm.leave.approvals'
 import { Route as HrmLeaveNewRouteImport } from './routes/hrm.leave.new'
 import { Route as HrmLifecycleIndexRouteImport } from './routes/hrm.lifecycle.index'
 import { Route as HrmLifecycleAlumniRouteImport } from './routes/hrm.lifecycle.alumni'
@@ -127,6 +130,11 @@ const HrmHelpRoute = HrmHelpRouteImport.update({
   path: '/hrm/help',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmMyProfileRoute = HrmMyProfileRouteImport.update({
+  id: '/hrm/my-profile',
+  path: '/hrm/my-profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmSetupRoute = HrmSetupRouteImport.update({
   id: '/hrm/setup',
   path: '/hrm/setup',
@@ -175,6 +183,11 @@ const HrmConfigurationOrganisationRoute =
     path: '/hrm/configuration/organisation',
     getParentRoute: () => rootRouteImport,
   } as any)
+const HrmConfigurationPayrollRoute = HrmConfigurationPayrollRouteImport.update({
+  id: '/hrm/configuration/payroll',
+  path: '/hrm/configuration/payroll',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmConfigurationProcessRoute = HrmConfigurationProcessRouteImport.update({
   id: '/hrm/configuration/process',
   path: '/hrm/configuration/process',
@@ -230,6 +243,11 @@ const HrmLeaveIndexRoute = HrmLeaveIndexRouteImport.update({
 const HrmLeaveIdRoute = HrmLeaveIdRouteImport.update({
   id: '/hrm/leave/$id',
   path: '/hrm/leave/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmLeaveApprovalsRoute = HrmLeaveApprovalsRouteImport.update({
+  id: '/hrm/leave/approvals',
+  path: '/hrm/leave/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmLeaveNewRoute = HrmLeaveNewRouteImport.update({
@@ -551,6 +569,7 @@ export interface FileRoutesByFullPath {
   '/speak-up': typeof SpeakUpRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm/': typeof HrmIndexRoute
   '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
@@ -559,6 +578,7 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
@@ -568,6 +588,7 @@ export interface FileRoutesByFullPath {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -640,6 +661,7 @@ export interface FileRoutesByTo {
   '/speak-up': typeof SpeakUpRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm': typeof HrmIndexRoute
   '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
@@ -648,6 +670,7 @@ export interface FileRoutesByTo {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
@@ -657,6 +680,7 @@ export interface FileRoutesByTo {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -730,6 +754,7 @@ export interface FileRoutesById {
   '/speak-up': typeof SpeakUpRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm/': typeof HrmIndexRoute
   '/hrm/attendance/$id': typeof HrmAttendanceIdRoute
@@ -738,6 +763,7 @@ export interface FileRoutesById {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
+  '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
@@ -747,6 +773,7 @@ export interface FileRoutesById {
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -821,6 +848,7 @@ export interface FileRouteTypes {
     | '/speak-up'
     | '/hrm/approvals'
     | '/hrm/help'
+    | '/hrm/my-profile'
     | '/hrm/setup'
     | '/hrm/'
     | '/hrm/attendance/$id'
@@ -829,6 +857,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/organisation'
+    | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
@@ -838,6 +867,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -910,6 +940,7 @@ export interface FileRouteTypes {
     | '/speak-up'
     | '/hrm/approvals'
     | '/hrm/help'
+    | '/hrm/my-profile'
     | '/hrm/setup'
     | '/hrm'
     | '/hrm/attendance/$id'
@@ -918,6 +949,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/organisation'
+    | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
@@ -927,6 +959,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -999,6 +1032,7 @@ export interface FileRouteTypes {
     | '/speak-up'
     | '/hrm/approvals'
     | '/hrm/help'
+    | '/hrm/my-profile'
     | '/hrm/setup'
     | '/hrm/'
     | '/hrm/attendance/$id'
@@ -1007,6 +1041,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/organisation'
+    | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
@@ -1016,6 +1051,7 @@ export interface FileRouteTypes {
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/approvals'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1089,6 +1125,7 @@ export interface RootRouteChildren {
   SpeakUpRoute: typeof SpeakUpRoute
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmHelpRoute: typeof HrmHelpRoute
+  HrmMyProfileRoute: typeof HrmMyProfileRoute
   HrmSetupRoute: typeof HrmSetupRoute
   HrmIndexRoute: typeof HrmIndexRoute
   HrmAttendanceIdRoute: typeof HrmAttendanceIdRoute
@@ -1097,6 +1134,7 @@ export interface RootRouteChildren {
   HrmConfigurationBusinessRoute: typeof HrmConfigurationBusinessRoute
   HrmConfigurationComplianceRoute: typeof HrmConfigurationComplianceRoute
   HrmConfigurationOrganisationRoute: typeof HrmConfigurationOrganisationRoute
+  HrmConfigurationPayrollRoute: typeof HrmConfigurationPayrollRoute
   HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
   HrmConfigurationRolesRoute: typeof HrmConfigurationRolesRoute
   HrmConfigurationTechnicalRoute: typeof HrmConfigurationTechnicalRoute
@@ -1106,6 +1144,7 @@ export interface RootRouteChildren {
   HrmExperienceKnowledgeRoute: typeof HrmExperienceKnowledgeRoute
   HrmExperienceLettersRoute: typeof HrmExperienceLettersRoute
   HrmLeaveIdRoute: typeof HrmLeaveIdRoute
+  HrmLeaveApprovalsRoute: typeof HrmLeaveApprovalsRoute
   HrmLeaveNewRoute: typeof HrmLeaveNewRoute
   HrmLifecycleAlumniRoute: typeof HrmLifecycleAlumniRoute
   HrmLifecycleAssetsRoute: typeof HrmLifecycleAssetsRoute
@@ -1205,6 +1244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmHelpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/my-profile': {
+      id: '/hrm/my-profile'
+      path: '/hrm/my-profile'
+      fullPath: '/hrm/my-profile'
+      preLoaderRoute: typeof HrmMyProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/setup': {
       id: '/hrm/setup'
       path: '/hrm/setup'
@@ -1266,6 +1312,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/configuration/organisation'
       fullPath: '/hrm/configuration/organisation'
       preLoaderRoute: typeof HrmConfigurationOrganisationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/payroll': {
+      id: '/hrm/configuration/payroll'
+      path: '/hrm/configuration/payroll'
+      fullPath: '/hrm/configuration/payroll'
+      preLoaderRoute: typeof HrmConfigurationPayrollRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/configuration/process': {
@@ -1343,6 +1396,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/leave/$id'
       fullPath: '/hrm/leave/$id'
       preLoaderRoute: typeof HrmLeaveIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/leave/approvals': {
+      id: '/hrm/leave/approvals'
+      path: '/hrm/leave/approvals'
+      fullPath: '/hrm/leave/approvals'
+      preLoaderRoute: typeof HrmLeaveApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/leave/new': {
@@ -1920,6 +1980,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpeakUpRoute: SpeakUpRoute,
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmHelpRoute: HrmHelpRoute,
+  HrmMyProfileRoute: HrmMyProfileRoute,
   HrmSetupRoute: HrmSetupRoute,
   HrmIndexRoute: HrmIndexRoute,
   HrmAttendanceIdRoute: HrmAttendanceIdRoute,
@@ -1928,6 +1989,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationBusinessRoute: HrmConfigurationBusinessRoute,
   HrmConfigurationComplianceRoute: HrmConfigurationComplianceRoute,
   HrmConfigurationOrganisationRoute: HrmConfigurationOrganisationRoute,
+  HrmConfigurationPayrollRoute: HrmConfigurationPayrollRoute,
   HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,
   HrmConfigurationRolesRoute: HrmConfigurationRolesRoute,
   HrmConfigurationTechnicalRoute: HrmConfigurationTechnicalRoute,
@@ -1937,6 +1999,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmExperienceKnowledgeRoute: HrmExperienceKnowledgeRoute,
   HrmExperienceLettersRoute: HrmExperienceLettersRoute,
   HrmLeaveIdRoute: HrmLeaveIdRoute,
+  HrmLeaveApprovalsRoute: HrmLeaveApprovalsRoute,
   HrmLeaveNewRoute: HrmLeaveNewRoute,
   HrmLifecycleAlumniRoute: HrmLifecycleAlumniRoute,
   HrmLifecycleAssetsRoute: HrmLifecycleAssetsRoute,

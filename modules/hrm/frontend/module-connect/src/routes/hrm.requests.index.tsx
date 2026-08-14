@@ -2,14 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { employees } from "@/mock/data";
-import { api } from "@/mock/service";
 import type { HrCase } from "@/mock/types";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/requests/")({
   head: () => ({
@@ -25,12 +25,45 @@ export const Route = createFileRoute("/hrm/requests/")({
 
 const name = (id: string) => employees.find((w) => w.id === id)?.fullName ?? "Unknown employee";
 
+const workflowStatus: Record<string, string> = {
+  submitted: "In review",
+  "in-review": "In review",
+  approved: "Approved",
+  rejected: "Rejected",
+  returned: "Returned",
+  escalated: "Escalated",
+};
+
+function adaptWorkflow(rows: unknown[]): HrCase[] {
+  return rows.map((raw) => {
+    const r = raw as Record<string, unknown>;
+    const status = String(r.status ?? "");
+    return {
+      id: String(r.requestId ?? r.id ?? ""),
+      employeeId: String(r.subjectWorkerId ?? ""),
+      category: String(r.workflowType ?? "General"),
+      subject: String(r.subjectName ?? "Workflow request"),
+      detail: "",
+      priority: "Normal",
+      status: (workflowStatus[status] ?? "In review") as HrCase["status"],
+      owner: String(r.currentApproverName ?? ""),
+      nextAction: status === "submitted" || status === "in-review" ? "Awaiting decision" : "Closed",
+      dueDate: typeof r.dueAt === "string" ? String(r.dueAt).slice(0, 10) : "—",
+      timeline: [],
+    } satisfies HrCase;
+  });
+}
+
 function RequestsList() {
-  const state = useMock(() => api.cases());
+  const state = useApi(
+    async () => adaptWorkflow((await realApi.workflowQueue()).items),
+    [],
+  );
   const [view, setView] = useState("all");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="HR requests"
         title="HR requests"
@@ -52,14 +85,14 @@ function RequestsList() {
             activeView={view}
             onViewChange={setView}
             searchPlaceholder="Search reference, employee or subject"
-            searchFields={(r) => `${r.id} ${name(r.employeeId)} ${r.category} ${r.subject}`}
+            searchFields={(r) => `${r.id} ${r.owner} ${r.category} ${r.subject}`}
             filters={[
-              { id: "category", label: "Category", options: ["Employment letter", "Personal data change"], match: (r, v) => r.category === v },
-              { id: "priority", label: "Priority", options: ["Low", "Normal", "High"], match: (r, v) => r.priority === v },
+              { id: "category", label: "Category", options: ["leave", "letter", "General"] as string[], match: (r, v) => r.category === v },
+              { id: "priority", label: "Priority", options: ["Low", "Normal", "High"] as string[], match: (r, v) => r.priority === v },
             ]}
             columns={[
               { id: "ref", header: "Reference", cell: (r) => <Link to="/hrm/requests/$id" params={{ id: r.id }} className="font-mono text-xs text-primary underline underline-offset-2">{r.id}</Link> },
-              { id: "employee", header: "Employee", cell: (r) => <span className="block max-w-56 truncate">{name(r.employeeId)}</span> },
+              { id: "employee", header: "Employee", cell: (r) => <span className="block max-w-56 truncate">{r.owner || name(r.employeeId)}</span> },
               { id: "category", header: "Category", cell: (r) => r.category },
               { id: "subject", header: "Subject", cell: (r) => <span className="block max-w-64 truncate">{r.subject}</span> },
               { id: "priority", header: "Priority", cell: (r) => r.priority },
@@ -72,5 +105,6 @@ function RequestsList() {
         )}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

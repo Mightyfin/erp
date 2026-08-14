@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import type { ToilEntry } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -29,7 +30,8 @@ function ToilPage() {
   const [view, setView] = useState("available");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Time and leave"
         title="Time off in lieu"
@@ -138,5 +140,6 @@ function ToilPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

@@ -51,6 +51,8 @@ import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
+import { useAuth } from "@/platform/auth";
+import { SignedInBadge } from "@/platform/components/AuthGate";
 import { modules } from "@/platform/modules";
 import { cn } from "@/lib/utils";
 
@@ -281,8 +283,68 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+
+/** User display line: real identity when OIDC-signed-in, otherwise the demo name. */
+function RealUserLine() {
+  const { user, worker, resolvingWorker } = useAuth();
+
+  if (USE_REAL && user?.name) {
+    return (
+      <span className="flex min-w-0 items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
+          {worker?.photoUrl ? (
+            <img src={worker.photoUrl} alt="" className="size-8 object-cover" />
+          ) : (
+            <UserRound className="size-4 text-primary" aria-hidden />
+          )}
+        </span>
+        <span className="min-w-0">
+          {/* M14 identity link: linked worker name wins; falls back to the IdP name. */}
+          <span className="block truncate">
+            {worker?.fullName || user.name}
+            {worker ? (
+              <span className="ml-1.5 rounded border px-1 text-[10px] font-normal text-muted-foreground">
+                {worker.employeeNo}
+              </span>
+            ) : resolvingWorker ? (
+              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">…</span>
+            ) : null}
+          </span>
+          {worker?.jobTitle ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">
+              {worker.jobTitle}
+            </span>
+          ) : user.email ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+          ) : null}
+        </span>
+      </span>
+    );
+  }
+  return <span>Chanda Mwansa-Chileshe</span>;
+}
+
+/** Sign-out action: real OIDC logout in hybrid mode, demo link otherwise. */
+function RealSignOut() {
+  const { signOut } = useAuth();
+  if (USE_REAL) {
+    return (
+      <button type="button" className="flex w-full items-center gap-2 px-2 py-1.5 text-sm" onClick={() => signOut()}>
+        <LogOut className="size-4" aria-hidden /> Sign out
+      </button>
+    );
+  }
+  return (
+    <Link to="/sign-in">
+      <LogOut className="size-4" aria-hidden /> Sign out
+    </Link>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
+  const { worker: myWorker } = useAuth();
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const entity = entities.find((e) => e.id === entityId) ?? entities[0];
@@ -455,23 +517,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel className="flex flex-col">
-                  <span>Chanda Mwansa-Chileshe</span>
+                  <RealUserLine />
                   <span className="text-xs font-normal text-muted-foreground">
                     Acting as {workspaces.find((w) => w.id === role)?.label}
                   </span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/hrm/employees/$id" params={{ id: "w-1001" }}>My profile</Link>
+                  {/* M14 identity link: jump to the signed-in user's own worker record when linked. */}
+                  <Link to={myWorker ? "/hrm/my-profile" : "/hrm/employees/$id"} params={{ id: myWorker?.id ?? "w-1001" }}>
+                    My profile{myWorker ? "" : USE_REAL ? " (not linked)" : ""}
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/hrm/setup">Setup guide</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/sign-in">
-                    <LogOut className="size-4" aria-hidden /> Sign out
-                  </Link>
+                  <RealSignOut />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

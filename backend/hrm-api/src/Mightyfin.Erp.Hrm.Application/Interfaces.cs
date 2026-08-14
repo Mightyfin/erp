@@ -14,8 +14,14 @@ public interface IWorkerRepository
 {
     Task<(List<Worker> Items, int Total)> ListAsync(WorkerListFilters filters, CancellationToken ct);
     Task<Worker?> GetByIdAsync(Guid id, CancellationToken ct);
+    // M14 identity link: resolve the worker record bound to a Keycloak subject id.
+    Task<Worker?> FindBySubjectIdAsync(string subjectId, CancellationToken ct);
     Task<Worker> CreateAsync(Worker worker, CancellationToken ct);
     Task<Worker> UpdateAsync(Worker worker, CancellationToken ct);
+    Task SaveChangesAsync(CancellationToken ct);
+    Task AddEmergencyContactsAsync(IEnumerable<EmergencyContact> contacts, CancellationToken ct);
+    Task AddBankDetailsAsync(IEnumerable<WorkerBankDetail> details, CancellationToken ct);
+    Task<bool> ExistsAsync(string employeeNo, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
     Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<Assignment> CreateAssignmentAsync(Assignment assignment, CancellationToken ct);

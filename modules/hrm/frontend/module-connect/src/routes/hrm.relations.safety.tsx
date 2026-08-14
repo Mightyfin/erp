@@ -10,6 +10,7 @@ import { api } from "@/mock/service";
 import { relationsApi } from "@/mock/relations";
 import type { Incident } from "@/mock/relations";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
@@ -162,6 +163,7 @@ function SafetyPage() {
 
   if (ref) {
     return (
+      <AuthGate>
       <AppShell>
         <PageHeader eyebrow="Health and safety" title="Report submitted" />
         <NextSteps
@@ -175,6 +177,7 @@ function SafetyPage() {
           actions={<Button onClick={() => { setRef(null); setReporting(false); }}>Back to health and safety</Button>}
         />
       </AppShell>
+      </AuthGate>
     );
   }
 

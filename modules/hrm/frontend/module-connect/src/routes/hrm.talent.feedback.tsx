@@ -4,6 +4,7 @@ import { Check, Circle, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { extrasApi } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
@@ -27,7 +28,8 @@ function FeedbackPage() {
   const [tab, setTab] = useState<"feedback" | "plans">("feedback");
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Talent"
         title="Feedback and support plans"
@@ -125,5 +127,6 @@ function FeedbackPage() {
         </Async>
       )}
     </AppShell>
+      </AuthGate>
   );
 }

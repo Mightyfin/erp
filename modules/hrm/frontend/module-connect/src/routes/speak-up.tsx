@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { api } from "@/mock/service";
+import { realApi } from "@/platform/use-api";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -34,7 +34,11 @@ const categories = [
 ] as const;
 
 /** A demo-valid access code so the "check status" path can be exercised. */
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 const DEMO_VALID_CODE = "SU-7742-DEMO";
+
+const severityOf = (category: string): string =>
+  category === "Health and safety" ? "high" : category === "Fraud or financial irregularity" ? "medium" : "low";
 
 function ReportForm() {
   const [ref, setRef] = useState<{ id: string; code: string } | null>(null);
@@ -129,8 +133,12 @@ function ReportForm() {
       steps={steps}
       submitLabel="Submit report"
       onSubmit={async () => {
-        const r = await api.submit("speak-up", { category, narrative, identify });
-        setRef({ id: `${DEMO_VALID_CODE.split("-")[0]}-${r.id}`, code: DEMO_VALID_CODE });
+        if (USE_REAL) {
+          const r = await realApi.speakUp({ category, severity: severityOf(category), description: narrative });
+          setRef({ id: String(r.caseReference ?? ""), code: String(r.accessCode ?? "") });
+          return;
+        }
+        setRef({ id: `${DEMO_VALID_CODE.split("-")[0]}-${Date.now().toString(36)}`, code: DEMO_VALID_CODE });
       }}
       submitted={
         ref ? (
@@ -157,9 +165,36 @@ function StatusCheck() {
     <div className="max-w-lg space-y-4 rounded-lg border bg-surface p-5">
       <div>
         <Label htmlFor="access-code">Access code</Label>
-        <Input id="access-code" className="mt-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder="SU-XXXX-XXXX" />
+        <Input id="access-code" className="mt-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Case reference and access code, separated by a space" />
       </div>
-      <Button onClick={() => setChecked(code.trim())}>Check status</Button>
+      <Button
+        onClick={async () => {
+          const trimmed = code.trim();
+          if (!trimmed) return;
+          if (trimmed === DEMO_VALID_CODE) {
+            setChecked(DEMO_VALID_CODE);
+            return;
+          }
+          const parts = trimmed.split(/\s+/);
+          if (parts.length < 2) {
+            setChecked(`nf-${trimmed}`);
+            return;
+          }
+          try {
+            const r = (await realApi.speakUpStatus(parts[0], parts[1])) as unknown as Record<string, unknown>;
+            if (!r.caseReference) {
+              setChecked(`nf-${trimmed}`);
+              return;
+            }
+            setChecked(`${r.caseReference}|${String(r.nextStep ?? "In review")}|${typeof r.lastUpdatedAt === "string" ? String(r.lastUpdatedAt).slice(0, 10) : ""}`);
+            return;
+          } catch {
+            setChecked(`nf-${trimmed}`);
+          }
+        }}
+      >
+        Check status
+      </Button>
 
       {checked ? (
         checked === DEMO_VALID_CODE ? (
@@ -170,9 +205,19 @@ function StatusCheck() {
               progress. No further action is needed from you right now.
             </p>
           </div>
-        ) : (
-          <UndisclosableNotFound reference={checked} />
-        )
+        ) : checked.startsWith("nf-") ? (
+          <UndisclosableNotFound reference={checked.slice(3)} />
+        ) : (() => {
+            const [ref, nextStep, updated] = checked.split("|");
+            return (
+              <div className="rounded-md border border-success/30 bg-success-soft p-4 text-sm">
+                <p className="font-medium text-success">{nextStep}</p>
+                <p className="mt-1 text-foreground">
+                  Your report {ref} is with a restricted investigator{updated ? ` · updated ${updated}` : ""}. No further action is needed from you right now.
+                </p>
+              </div>
+            );
+          })()
       ) : null}
     </div>
   );

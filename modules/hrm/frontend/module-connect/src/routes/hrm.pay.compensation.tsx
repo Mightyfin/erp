@@ -1,28 +1,54 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { EyeOff, Info, ShieldAlert, TrendingUp } from "lucide-react";
+import { Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { compensationApi, money } from "@/mock/compensation";
-import type { BenefitEnrolment, CompRecord } from "@/mock/compensation";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
-import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
-import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
+import { useAuth } from "@/platform/auth";
 import { feedback } from "@/platform/feedback";
 
 export const Route = createFileRoute("/hrm/pay/compensation")({
   head: () => ({
     meta: [
       { title: "Compensation and benefits — Mightyfin ERP HRM" },
-      { name: "description", content: "Pay against band, benefit enrolment, review cycles, pay-gap reporting and insurance claims." },
+      {
+        name: "description",
+        content:
+          "Per-worker salary structures and component amounts driving the next pay run. Benefits and review cycles are not yet administered here.",
+      },
       { property: "og:title", content: "Compensation and benefits — Mightyfin ERP HRM" },
-      { property: "og:description", content: "Pay against band, benefit enrolment, review cycles, pay-gap reporting and insurance claims." },
+      {
+        property: "og:description",
+        content:
+          "Per-worker salary structures and component amounts driving the next pay run. Benefits and review cycles are not yet administered here.",
+      },
     ],
   }),
   component: CompensationPage,
 });
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+type Raw = Record<string, unknown>;
 
 /** Compa-ratio is shown as a number and a word — never a bare colour. */
 function CompaRatio({ value }: { value: number }) {
@@ -37,42 +63,251 @@ function CompaRatio({ value }: { value: number }) {
   );
 }
 
-function RangeBar({ pct }: { pct: number }) {
+/* ------------------------------------------------------------------ */
+
+async function loadCompensation() {
+  if (!USE_REAL) return { workers: [], profiles: [], components: [], groups: [] };
+  const [workers, profiles, components, groups] = await Promise.all([
+    realApi.employees({ page: 1, pageSize: 200, status: "active" }),
+    realApi.payrollProfiles(),
+    realApi.payrollComponents(),
+    realApi.payrollPayGroups(),
+  ]);
+  return {
+    workers: Array.isArray(workers) ? (workers as Raw[]) : (workers?.items ?? []) as Raw[],
+    profiles: Array.isArray(profiles) ? (profiles as Raw[]) : [],
+    components: Array.isArray(components) ? (components as Raw[]) : [],
+    groups: Array.isArray(groups) ? (groups as Raw[]) : [],
+  };
+}
+
+function WorkerPayDialog({
+  worker,
+  state,
+  open,
+  onOpenChange,
+}: {
+  worker: Raw | null;
+  state: { profiles: Raw[]; components: Raw[]; groups: Raw[] };
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [payGroupId, setPayGroupId] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(
+    () => new Date().toISOString().slice(0, 10),
+  );
+  const [values, setValues] = useState<Raw[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!worker) return null;
+  const workerId = String(worker.id ?? "");
+  const workerName = String(worker.fullName ?? `${worker.firstName ?? ""} ${worker.lastName ?? ""}`);
+  const openProfile = state.profiles.find((p) => String(p.workerId) === workerId);
+  const activeComponents = state.components.filter((c) => Boolean(c.isActive) && !c.isArchived);
+  const statutoryCodes = new Set(
+    state.components
+      .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
+      .map((c) => String(c.code ?? "")),
+  );
+
+  const resetToProfile = (p: Raw | undefined) => {
+    setPayGroupId(p ? String(p.payGroupId ?? "") : String(state.groups.find((g) => Boolean(g.isDefault))?.id ?? ""));
+    setEffectiveFrom(p ? String(p.effectiveFrom ?? new Date().toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
+    setValues(
+      activeComponents.map((comp) => {
+        const code = String(comp.code ?? "");
+        const existing = ((p?.values as Raw[] | undefined) ?? []).find(
+          (v) => String(v.componentId) === String(comp.id),
+        );
+        return {
+          componentId: String(comp.id ?? ""),
+          code,
+          name: String(comp.name ?? code),
+          isStatutory: statutoryCodes.has(code),
+          isOptional: Boolean(comp.componentType !== "earning"),
+          amount: existing ? String(existing.amount ?? "0") : "0",
+        };
+      }),
+    );
+  };
+
   return (
-    <span className="block">
-      <span className="block h-1.5 w-24 overflow-hidden rounded-full bg-muted" role="presentation">
-        <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(pct, 100)}%` }} />
-      </span>
-      <span className="mt-0.5 block text-[11px] text-muted-foreground">{pct}% through band</span>
-    </span>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (o) resetToProfile(openProfile);
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{workerName}</DialogTitle>
+          <DialogDescription>
+            {openProfile
+              ? `Updating the open profile effective from ${String(openProfile.effectiveFrom)}. A run calculates on the profile open at the period start.`
+              : "No pay profile exists yet — assigning one decides what the next run posts for this worker."}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setError(null);
+            if (!payGroupId) {
+              setError("Pick the pay group this worker runs on.");
+              return;
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+              setError("Effective from must be a date like 2026-09-01.");
+              return;
+            }
+            const payload = values
+              .filter((v) => !v.isStatutory || Number(v.amount) > 0)
+              .map((v) => ({
+                componentId: String(v.componentId),
+                amount: Number(v.amount) || 0,
+              }));
+            const basicId = values.find((v) => String(v.code).toLowerCase() === "basic")?.componentId;
+            const basic = basicId ? payload.find((v) => String(v.componentId) === String(basicId)) : undefined;
+            if (!basic || !Number(basic.amount)) {
+              setError("Basic pay is mandatory — every worker needs a starting basic.");
+              return;
+            }
+            setBusy(true);
+            try {
+              await realApi.createPayrollProfile(workerId, {
+                payGroupId,
+                effectiveFrom,
+                values: payload,
+              });
+              feedback.saved(`${workerName}'s pay structure saved for the ${effectiveFrom} start date.`);
+              onOpenChange(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Server rejected the change.");
+            } finally {
+              setBusy(false);
+          }
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <Label>Pay group</Label>
+            <Select value={payGroupId} onValueChange={setPayGroupId}>
+              <SelectTrigger className="mt-1.5 w-full">
+                <SelectValue placeholder="Pick the run this worker joins" />
+              </SelectTrigger>
+              <SelectContent>
+                {state.groups.map((g) => (
+                  <SelectItem key={String(g.id)} value={String(g.id)}>
+                    {String(g.name ?? g.code)}
+                    {Boolean(g.isDefault) ? " — default" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0">
+            <Label htmlFor="cp-effective">Effective from</Label>
+            <Input
+              id="cp-effective"
+              type="date"
+              value={effectiveFrom}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Component amounts — the opening figures a run posts to</Label>
+          <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-3">
+            {values.map((v) => (
+              <div key={String(v.componentId)} className="flex items-center gap-2">
+                <span className={`min-w-0 flex-1 truncate text-sm ${v.isStatutory ? "text-muted-foreground" : ""}`}>
+                  {String(v.name ?? v.code)}
+                  {v.isStatutory ? (
+                    <span className="ml-1.5 align-middle rounded-full border border-info/40 bg-info-soft px-1.5 py-0.5 text-[10px] text-info">
+                      statutory
+                    </span>
+                  ) : null}
+                </span>
+                {v.isStatutory ? (
+                  <span className="text-xs text-muted-foreground">
+                    Computed from basic at run time
+                  </span>
+                ) : (
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={String(v.amount)}
+                    onChange={(e) =>
+                      setValues((prev) =>
+                        prev.map((x) =>
+                          String(x.componentId) === String(v.componentId) ? { ...x, amount: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    className="w-28"
+                    aria-label={`Amount for ${String(v.name ?? v.code)}`}
+                  />
+                )}
+              </div>
+            ))}
+            {!values.length ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                No active components exist yet — configure Salary components first.
+              </p>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Statutory components (PAYE, NAPSA, NHIMA) compute themselves from basic pay — their
+            rates live on the payroll setup screens and are not re-typed per worker.
+          </p>
+        </div>
+        {error ? (
+          <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : openProfile ? "Update pay structure" : "Assign pay structure"}
+          </Button>
+        </div>
+      </form>
+    </DialogContent>
+  </Dialog>
   );
 }
 
+/* ------------------------------------------------------------------ */
+
 function CompensationPage() {
-  const records = useMock(() => compensationApi.records());
-  const bands = useMock(() => compensationApi.bands());
-  const enrolments = useMock(() => compensationApi.enrolments());
-  const cycles = useMock(() => compensationApi.cycles());
-  const payGap = useMock(() => compensationApi.payGap());
-  const claims = useMock(() => compensationApi.claims());
+  const state = useApi(loadCompensation);
+  const userRoles = new Set(useAuth().user?.roles ?? []);
+  const canAct = userRoles.has("hr_admin") || userRoles.has("hr_ops") || userRoles.has("payroll");
   const [tab, setTab] = useState<"pay" | "benefits" | "equity">("pay");
+  const [editingWorker, setEditingWorker] = useState<Raw | null>(null);
+  const [search, setSearch] = useState("");
+
+  const data = state.data ?? { workers: [], profiles: [], components: [], groups: [] };
+  const searchTerm = search.trim().toLowerCase();
+  const visibleWorkers = data.workers.filter((w) => {
+    const key = `${String(w.employeeNo ?? "")} ${String(w.fullName ?? "")} ${String(w.jobTitle ?? "")}`.toLowerCase();
+    return !searchTerm || key.includes(searchTerm);
+  });
+
+  const profileFor = (w: Raw) => data.profiles.find((p) => String(p.workerId) === String(w.id));
 
   return (
     <AppShell>
       <PageHeader
         eyebrow="Payroll"
         title="Compensation and benefits"
-        description="Pay is restricted data. This view shows position against band rather than putting one person's salary next to another's."
-        primaryAction={<Button
-            onClick={() =>
-              feedback.submitted(
-                "Compensation change request started.",
-                "It goes to the grade owner, then to payroll. A change lands in the run for the period it is effective from.",
-              )
-            }
-          >
-            Request a compensation change
-          </Button>}
+        description="Pay is restricted data. This view manages the per-worker salary structures the next run calculates from; benefits and review cycles are not yet administered here."
         meta={
           <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
             <ShieldAlert className="size-3.5" aria-hidden />
@@ -80,6 +315,14 @@ function CompensationPage() {
           </span>
         }
       />
+
+      {!USE_REAL ? (
+        <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
+          <Unplug className="mt-0.5 size-4 shrink-0" aria-hidden />
+          Live API is off for this build. The real surfaces exist on the backend — this page shows
+          the intended layout without connecting.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Compensation views">
         {([
@@ -105,251 +348,139 @@ function CompensationPage() {
 
       {tab === "pay" ? (
         <>
-          <Async state={records} rows={4}>
-            {(rows) => (
-              <ListPage<CompRecord>
-                rows={rows}
-                searchPlaceholder="Search employee or grade"
-                searchFields={(r) => `${r.employee} ${r.grade}`}
-                filters={[{ id: "grade", label: "Grade", options: ["G4", "G5", "G6", "G7", "G9"], match: (r, v) => r.grade === v }]}
-                columns={[
-                  { id: "employee", header: "Employee", cell: (r) => <span className="block max-w-56 truncate font-medium">{r.employee}</span> },
-                  { id: "grade", header: "Grade", cell: (r) => r.grade },
-                  { id: "fte", header: "FTE", cell: (r) => <span className="tabular">{r.fte}</span> },
-                  { id: "compa", header: "Compa-ratio", cell: (r) => <CompaRatio value={r.compaRatio} /> },
-                  { id: "range", header: "Position in band", cell: (r) => <RangeBar pct={r.rangePenetration} /> },
-                  { id: "lastChange", header: "Last change", cell: (r) => <span className="block max-w-48 truncate text-xs">{r.lastChange} · {r.lastChangeReason}</span> },
-                  { id: "next", header: "Next review", cell: (r) => <span className="text-xs">{r.nextReview}</span> },
-                  {
-                    id: "salary",
-                    header: "Salary",
-                    defaultVisible: false,
-                    cell: (r) => (
-                      <span className="inline-flex items-center gap-1.5">
-                        <EyeOff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                        <span className="tabular text-sm">{money(r.salary, r.currency)}</span>
-                      </span>
-                    ),
-                  },
-                ]}
-                emptyBody="No compensation records in scope."
+          <div className="mt-4 rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
+            <p className="flex items-start gap-2 font-medium">
+              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+              The salary structure is what a run posts to
+            </p>
+            <p className="mt-1.5 pl-6">
+              Every active worker should carry an open pay profile: a pay group, an effective date
+              and component amounts. Basic pay is mandatory; statutory components (PAYE, NAPSA,
+              NHIMA) compute themselves from basic at run time, so they never need re-typing here.
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="cp-search" className="sr-only">
+                Search workers
+              </Label>
+              <Input
+                id="cp-search"
+                placeholder="Search by employee number, name or job title"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="max-w-sm"
               />
+            </div>
+          </div>
+
+          <Async state={state} rows={5}>
+            {(d) => (
+              <div className="mt-4 overflow-x-auto rounded-lg border bg-surface">
+                <table className="w-full min-w-[48rem] text-left text-sm">
+                  <caption className="sr-only">Workers and their open pay profiles</caption>
+                  <thead className="border-b bg-surface-muted">
+                    <tr>
+                      {["Employee", "No.", "Job title", "Pay group", "Effective from", "Action"].map((h) => (
+                        <th
+                          key={h}
+                          scope="col"
+                          className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {visibleWorkers.map((w) => {
+                      const profile = profileFor(w);
+                      const group = data.groups.find(
+                        (g) => String(g.id) === (profile ? String(profile.payGroupId) : ""),
+                      );
+                      return (
+                        <tr key={String(w.id)} className="hover:bg-surface-muted">
+                          <td className="max-w-52 truncate px-3 py-3 font-medium">{String(w.fullName ?? "")}</td>
+                          <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{String(w.employeeNo ?? "")}</td>
+                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.jobTitle ?? "—")}</td>
+                          <td className="px-3 py-3">{profile ? String(group?.name ?? group?.code ?? "—") : <span className="text-warning">Not assigned</span>}</td>
+                          <td className="px-3 py-3 font-mono text-xs">{profile ? String(profile.effectiveFrom) : "—"}</td>
+                          <td className="px-3 py-3 text-right">
+                            {canAct ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8"
+                                onClick={() => setEditingWorker(w)}
+                              >
+                                <Pencil className="size-3.5" aria-hidden />
+                                Edit pay
+                                <span className="sr-only"> pay structure for {String(w.fullName ?? "")}</span>
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Read-only</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!visibleWorkers.length ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                          No workers match{search ? ` "${search}"` : ""}.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Async>
 
-          <p className="flex gap-2 text-xs text-muted-foreground">
+          <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            The salary column is hidden by default and available through the column picker. Opening it
-            is recorded, because seeing another person's exact pay is a deliberate act, not a
-            side-effect of browsing.
+            Exact amounts stay off the screen by default — opening the edit dialog shows them and
+            the change lands in the profile, never on a colleague's file they are not authorised to
+            see.
           </p>
-
-          <section aria-label="Salary bands" className="rounded-lg border bg-surface p-5">
-            <h2 className="text-sm font-semibold">Salary bands</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Bands are configuration. Compa-ratio and position in band are derived from them, so
-              changing a band changes every derived figure from its effective date.
-            </p>
-            <Async state={bands} rows={2}>
-              {(rows) => (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[30rem] text-left text-sm">
-                    <caption className="sr-only">Salary band minimum, midpoint and maximum by grade</caption>
-                    <thead className="border-b bg-surface-muted">
-                      <tr>
-                        <th scope="col" className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Grade</th>
-                        <th scope="col" className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Minimum</th>
-                        <th scope="col" className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Midpoint</th>
-                        <th scope="col" className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Maximum</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {rows.map((b) => (
-                        <tr key={b.grade}>
-                          <th scope="row" className="px-3 py-2 font-normal">{b.grade}</th>
-                          <td className="tabular px-3 py-2 text-right">{money(b.min, b.currency)}</td>
-                          <td className="tabular px-3 py-2 text-right font-medium">{money(b.mid, b.currency)}</td>
-                          <td className="tabular px-3 py-2 text-right">{money(b.max, b.currency)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Async>
-          </section>
         </>
       ) : null}
 
       {tab === "benefits" ? (
-        <>
-          <Async state={enrolments} rows={4}>
-            {(rows) => (
-              <ListPage<BenefitEnrolment>
-                rows={rows}
-                searchPlaceholder="Search employee or plan"
-                searchFields={(e) => `${e.employee} ${e.plan} ${e.kind}`}
-                filters={[
-                  { id: "kind", label: "Type", options: ["Pension", "Medical", "Life cover", "Income protection"], match: (e, v) => e.kind === v },
-                  { id: "status", label: "Status", options: ["Enrolled", "Pending evidence", "Waived", "Ended"], match: (e, v) => e.status === v },
-                ]}
-                columns={[
-                  { id: "employee", header: "Employee", cell: (e) => <span className="block max-w-48 truncate">{e.employee}</span> },
-                  { id: "plan", header: "Plan", cell: (e) => <span className="block max-w-56 truncate font-medium">{e.plan}</span> },
-                  { id: "coverage", header: "Coverage", cell: (e) => <span className="text-xs">{e.coverage}</span> },
-                  { id: "ee", header: "Employee pays", cell: (e) => <span className="text-xs">{e.employeeContribution}</span> },
-                  { id: "er", header: "Employer pays", cell: (e) => <span className="text-xs">{e.employerContribution}</span> },
-                  { id: "status", header: "Status", cell: (e) => <StatusBadge status={e.status} /> },
-                  { id: "from", header: "Effective from", cell: (e) => e.effectiveFrom },
-                  { id: "dependants", header: "Dependants", defaultVisible: false, cell: (e) => <span className="tabular">{e.dependants}</span> },
-                ]}
-                emptyBody="No benefit enrolments in scope."
-              />
-            )}
-          </Async>
-
-          <Async state={enrolments} rows={1}>
-            {(rows) => {
-              const windows = rows.filter((e) => e.changeWindow);
-              if (!windows.length) return null;
-              return (
-                <section aria-label="Open change windows" className="rounded-lg border border-warning/40 bg-warning-soft p-4">
-                  <h2 className="text-sm font-semibold text-warning">Open change windows</h2>
-                  <ul className="mt-2 space-y-1.5 text-sm">
-                    {windows.map((e) => (
-                      <li key={e.id}>
-                        <span className="font-medium">{e.employee}</span> — {e.plan}
-                        <span className="block text-xs text-foreground">{e.changeWindow}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    A life event opens a limited window to change cover. Outside it, changes wait for
-                    the next open enrolment.
-                  </p>
-                </section>
-              );
-            }}
-          </Async>
-
-          <section aria-label="Insurance claims" className="rounded-lg border bg-surface p-5">
-            <h2 className="text-sm font-semibold">Insurance claims</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              HR records the claim reference, the provider's status and any settlement. No medical
-              detail or diagnosis is held here or anywhere in HR.
+        <section aria-label="Benefits and insurance" className="mt-4">
+          <div className="rounded-lg border border-dashed p-10 text-center">
+            <p className="text-sm font-medium">Benefits and insurance — coming in a later milestone</p>
+            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+              The backend has no benefit-administration surface yet. When it exists this tab will
+              carry NAPSA/NHIMA enrolment, medical cover and insurance claims with the same
+              restricted visibility as pay.
             </p>
-            <Async state={claims} rows={2}>
-              {(rows) => (
-                <ul className="mt-3 divide-y">
-                  {rows.map((c) => (
-                    <li key={c.id} className="py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
-                        <span className="text-sm font-medium">{c.policy}</span>
-                        <StatusBadge status={c.status} />
-                        <span className="text-xs text-muted-foreground">{c.provider} · ref {c.reference}</span>
-                      </div>
-                      <p className="mt-1 text-sm">{c.outcome}</p>
-                      {c.settlement ? (
-                        <p className="tabular mt-1 text-xs font-medium">
-                          Settled: {money(c.settlement, c.currency)}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Async>
-          </section>
-        </>
+          </div>
+        </section>
       ) : null}
 
       {tab === "equity" ? (
-        <>
-          <section aria-label="Review cycles">
-            <h2 className="text-sm font-semibold">Compensation review cycles</h2>
-            <Async state={cycles} rows={2}>
-              {(rows) => (
-                <ul className="mt-3 space-y-3">
-                  {rows.map((c) => (
-                    <li key={c.id} className="rounded-lg border bg-surface p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{c.name}</span>
-                        <StatusBadge status={c.status} />
-                        <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{c.population}</p>
-                      <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                        <span>
-                          <span className="tabular font-semibold">{c.budgetPct}%</span>
-                          <span className="block text-xs text-muted-foreground">Budget</span>
-                        </span>
-                        <span>
-                          <span className="tabular font-semibold">{c.allocatedPct}%</span>
-                          <span className="block text-xs text-muted-foreground">Allocated</span>
-                        </span>
-                        <span>
-                          <span className="tabular font-semibold">{(c.budgetPct - c.allocatedPct).toFixed(1)}%</span>
-                          <span className="block text-xs text-muted-foreground">Remaining</span>
-                        </span>
-                        <span>
-                          <span className="block text-sm">{c.opens} to {c.closes}</span>
-                          <span className="block text-xs text-muted-foreground">Window</span>
-                        </span>
-                      </div>
-                      <p className="mt-3 flex gap-2 rounded-md border bg-surface-muted p-2 text-xs">
-                        <TrendingUp className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                        <span>{c.guidance}</span>
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Async>
-          </section>
-
-          <section aria-label="Pay gap reporting" className="rounded-lg border bg-surface p-5">
-            <h2 className="text-sm font-semibold">Pay gap reporting</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Reported by group, with suppression below the threshold. A gap is not by itself
-              evidence of unequal pay for equal work — it is the starting point for asking why.
+        <section aria-label="Review cycles and pay gap" className="mt-4">
+          <div className="rounded-lg border border-dashed p-10 text-center">
+            <p className="text-sm font-medium">Review cycles and pay-gap reporting — coming in a later milestone</p>
+            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+              Compensation review cycles, budgets and pay-gap analytics need grade bands and
+              review data the backend does not hold yet. They will appear here once that data
+              model ships.
             </p>
-            <Async state={payGap} rows={2}>
-              {(rows) => (
-                <ul className="mt-3 space-y-2">
-                  {rows.map((g) => (
-                    <li key={g.group} className="rounded-md border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{g.group}</span>
-                        <span className="text-xs text-muted-foreground">{g.headcount} employees</span>
-                      </div>
-                      {g.suppressed ? (
-                        <p className="mt-1.5 flex gap-2 text-xs text-warning">
-                          <EyeOff className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                          <span>
-                            <span className="font-medium">Suppressed. </span>
-                            {g.note}
-                          </span>
-                        </p>
-                      ) : (
-                        <p className="tabular mt-1.5 text-sm">
-                          Median gap {g.medianGapPct}% · mean gap {g.meanGapPct}%
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Async>
-            <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
-              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              Every group in this demonstration dataset falls below the reporting threshold, so
-              nothing is published. That is the correct behaviour for an eight-person organisation,
-              not a missing feature.
-            </p>
-          </section>
-        </>
+          </div>
+        </section>
       ) : null}
+
+      <WorkerPayDialog
+        worker={editingWorker}
+        state={state.data ?? { profiles: [], components: [], groups: [] }}
+        open={editingWorker !== null}
+        onOpenChange={(o) => {
+          if (!o) setEditingWorker(null);
+        }}
+      />
     </AppShell>
   );
 }

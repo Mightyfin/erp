@@ -17,7 +17,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { timeclockApi } from "@/mock/timeclock";
 import type { ClockState, DaySummary, PunchEvent, PunchKind, TodayRecord } from "@/mock/timeclock";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -46,6 +48,58 @@ export const Route = createFileRoute("/hrm/attendance/clock")({
 
 const ME = "Chanda Mwansa-Chileshe";
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
+
+/** Backend "HH:mm" → minutes past midnight. */
+function hhmmToMinutes(t: unknown): number | null {
+  const s = typeof t === "string" ? t : null;
+  if (!s) return null;
+  if (!/^\d{2}:\d{2}$/.test(s)) return null;
+  const [h, mm] = s.split(":").map(Number);
+  return h * 60 + mm;
+}
+
+/** Adapts the backend "today" attendance record into the mock TodayRecord shape. */
+function adaptToday(raw: unknown, fallback: TodayRecord): TodayRecord {
+  const r = raw as Record<string, unknown>;
+  const clockInMin = hhmmToMinutes(r.clockIn);
+  const clockOutMin = hhmmToMinutes(r.clockOut);
+  const state: ClockState = clockInMin === null ? "out" : clockOutMin === null ? "in" : "out";
+  const punches: PunchEvent[] = [];
+  if (clockInMin !== null) {
+    punches.push({
+      id: `real-in-${String(r.id ?? "")}`,
+      kind: "in",
+      at: `${String(r.workDate ?? "")}T${String(r.clockIn)}:00+02:00`,
+      localTime: String(r.clockIn),
+      actor: String(r.workerId ?? DEFAULT_WORKER),
+      event: "Clocked in",
+      after: `captured as ${String(r.source ?? "manual")}`,
+    });
+  }
+  if (clockOutMin !== null) {
+    punches.push({
+      id: `real-out-${String(r.id ?? "")}`,
+      kind: "out",
+      at: `${String(r.workDate ?? "")}T${String(r.clockOut)}:00+02:00`,
+      localTime: String(r.clockOut),
+      actor: String(r.workerId ?? DEFAULT_WORKER),
+      event: "Clocked out",
+      after: `captured as ${String(r.source ?? "manual")}`,
+    });
+  }
+  return {
+    ...fallback,
+    state,
+    punches,
+    workedMinutesAtLoad: Number(r.totalHours ?? 0) * 60,
+    nowMinutesAtLoad:
+      clockInMin === null ? 0 : Math.max(clockInMin, clockOutMin ?? clockInMin),
+    clockedInAt: clockInMin === null || clockOutMin !== null ? null : String(r.clockIn),
+  };
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Minutes past midnight rendered as a 24-hour clock time. */
@@ -72,11 +126,18 @@ const punchLabel: Record<PunchKind, string> = {
 
 /* --------------------------------------------------------------- today */
 
-function TodayPanel({ record }: { record: TodayRecord }) {
+function TodayPanel({
+  record,
+  reload,
+}: {
+  record: TodayRecord;
+  reload: () => void;
+}) {
   const [state, setState] = useState<ClockState>(record.state);
   const [punches, setPunches] = useState<PunchEvent[]>(record.punches);
   const [offline, setOffline] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   // Accumulated minutes outside the segment currently running.
   const [workedAccum, setWorkedAccum] = useState(0);
@@ -115,27 +176,52 @@ function TodayPanel({ record }: { record: TodayRecord }) {
     setPunches((p) => [...p, punch]);
   };
 
-  const toggleClock = () => {
-    if (state === "out") {
-      setSegmentStart(now);
-      setState("in");
-      addPunch("in", now);
-      setLastAction(`Clocked in at ${timeLabel(now)}.`);
-      return;
-    }
-    if (state === "break") {
-      // Clocking out while on a break closes the break at the same minute.
-      setBreakAccum((b) => b + (now - segmentStart));
-      addPunch("break-end", now);
-      addPunch("out", now);
+  const toggleClock = async () => {
+    try {
+      setBusy(true);
+      if (USE_REAL) {
+        if (state === "out") {
+          await realApi.clockIn(DEFAULT_WORKER);
+          setSegmentStart(now);
+          setState("in");
+          addPunch("in", now);
+          setLastAction(`Clocked in at ${timeLabel(now)}.`);
+          reload();
+          return;
+        }
+        await realApi.clockOut(DEFAULT_WORKER);
+        setWorkedAccum((w) => w + (now - segmentStart));
+        setState("out");
+        addPunch("out", now);
+        setLastAction(`Clocked out at ${timeLabel(now)}.`);
+        reload();
+        return;
+      }
+      if (state === "out") {
+        setSegmentStart(now);
+        setState("in");
+        addPunch("in", now);
+        setLastAction(`Clocked in at ${timeLabel(now)}.`);
+        return;
+      }
+      if (state === "break") {
+        // Clocking out while on a break closes the break at the same minute.
+        setBreakAccum((b) => b + (now - segmentStart));
+        addPunch("break-end", now);
+        addPunch("out", now);
+        setState("out");
+        setLastAction(`Break ended and clocked out at ${timeLabel(now)}.`);
+        return;
+      }
+      setWorkedAccum((w) => w + (now - segmentStart));
       setState("out");
-      setLastAction(`Break ended and clocked out at ${timeLabel(now)}.`);
-      return;
+      addPunch("out", now);
+      setLastAction(`Clocked out at ${timeLabel(now)}.`);
+    } catch (e) {
+      setLastAction(e instanceof Error ? e.message : "Failed to record punch.");
+    } finally {
+      setBusy(false);
     }
-    setWorkedAccum((w) => w + (now - segmentStart));
-    setState("out");
-    addPunch("out", now);
-    setLastAction(`Clocked out at ${timeLabel(now)}.`);
   };
 
   const toggleBreak = () => {
@@ -222,14 +308,14 @@ function TodayPanel({ record }: { record: TodayRecord }) {
           </div>
 
           <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
-            <Button size="lg" className="h-14 w-full text-base sm:w-56" onClick={toggleClock}>
+            <Button size="lg" className="h-14 w-full text-base sm:w-56" onClick={toggleClock} disabled={busy}>
               {state === "out" ? (
                 <>
-                  <LogIn className="size-5" aria-hidden /> Clock in
+                  <LogIn className="size-5" aria-hidden /> {busy ? "Recording…" : "Clock in"}
                 </>
               ) : (
                 <>
-                  <LogOut className="size-5" aria-hidden /> Clock out
+                  <LogOut className="size-5" aria-hidden /> {busy ? "Recording…" : "Clock out"}
                 </>
               )}
             </Button>
@@ -538,11 +624,19 @@ function RecentDays({ rows, cutoff }: { rows: DaySummary[]; cutoff: string }) {
 /* ------------------------------------------------------------------ page */
 
 function ClockPage() {
-  const today = useMock(() => timeclockApi.today());
+  const mockToday = useMemo(() => timeclockApi.today(), []);
+  const today = useApi(
+    async () =>
+      USE_REAL
+        ? adaptToday(await realApi.attendanceToday(DEFAULT_WORKER), await mockToday)
+        : await mockToday,
+    [],
+  );
   const recent = useMock(() => timeclockApi.recent());
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Attendance"
         title="Clock in and out"
@@ -564,12 +658,13 @@ function ClockPage() {
       />
 
       <Async state={today} rows={3}>
-        {(record) => <TodayPanel record={record} />}
+        {(record) => <TodayPanel record={record} reload={today.reload} />}
       </Async>
 
       <Async state={recent} rows={4}>
         {(rows) => <RecentDays rows={rows} cutoff="17:00 on 5 August 2026" />}
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }

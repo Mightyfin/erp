@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { extrasApi } from "@/mock/extras";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { useMock } from "@/platform/use-mock";
@@ -37,7 +38,8 @@ function BuilderPage() {
   const available = bases[base] ?? [];
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <PageHeader
         eyebrow="Reports"
         title="Report builder"
@@ -183,5 +185,6 @@ function BuilderPage() {
         </Async>
       </section>
     </AppShell>
+      </AuthGate>
   );
 }

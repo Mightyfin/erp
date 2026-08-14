@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { adaptWorkers, realApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
 import { employeeProfileApi } from "@/mock/employeeprofile";
 import { balanceFor } from "@/mock/leavebalance";
@@ -8,6 +9,7 @@ import { LeaveBalancePanel } from "@/platform/components/LeaveBalancePanel";
 import type { EmployeeProfile } from "@/mock/employeeprofile";
 import { api } from "@/mock/service";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
@@ -306,10 +308,26 @@ function ProfileTabs({
   );
 }
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
 function EmployeePage() {
   const { id } = Route.useParams();
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const state = useMock(() => api.employee(id), [id]);
+  // Real backend: the employee list keeps the real worker GUID as the row id,
+  // so detail/edit links resolve directly. Falls back to mock when off.
+  const state = useMock(async () => {
+    if (!USE_REAL) return api.employee(id);
+    try {
+      // Try the GUID directly first, then fall back to a list scan by employee
+      // number (hand-typed URLs like /hrm/employees/SMK001).
+      const direct = adaptWorkers([await realApi.worker(id)])[0];
+      if (direct) return direct;
+    } catch {
+      /* not a GUID — scan the list by employee number instead */
+    }
+    const workers = adaptWorkers(await realApi.employees());
+    return workers.find((w) => w.employeeNo === id) ?? workers[0] ?? null;
+  }, [id]);
   const profileState = useMock(() => employeeProfileApi.profile(id), [id]);
   const leaveSummary = balanceFor(id);
 
@@ -318,7 +336,8 @@ function EmployeePage() {
   if (childMatches.length > 0) return <Outlet />;
 
   return (
-    <AppShell>
+    <AuthGate>
+      <AppShell>
       <Async state={state} rows={3}>
         {(e) =>
           !e ? (
@@ -445,5 +464,6 @@ function EmployeePage() {
         }
       </Async>
     </AppShell>
+      </AuthGate>
   );
 }
