@@ -8,6 +8,8 @@ public interface IWorkerService
 {
     Task<Paged<WorkerDto>> ListAsync(WorkerListFilters filters, CancellationToken ct);
     Task<WorkerDto?> GetByIdAsync(Guid id, CancellationToken ct);
+    // M14 identity link: worker record bound to the caller's Keycloak subject.
+    Task<WorkerDto?> GetBySubjectAsync(string subjectId, CancellationToken ct);
     Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct);
     Task<WorkerDto> UpdateAsync(Guid id, WorkerUpdateRequest request, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
@@ -38,6 +40,14 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee");
         var w = await repo.GetByIdAsync(id, ct);
+        return w is null ? null : Map(w);
+    }
+
+    public async Task<WorkerDto?> GetBySubjectAsync(string subjectId, CancellationToken ct)
+    {
+        // M14 identity link: any authenticated role may resolve themselves.
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee", "investigator");
+        var w = await repo.FindBySubjectIdAsync(subjectId, ct);
         return w is null ? null : Map(w);
     }
 

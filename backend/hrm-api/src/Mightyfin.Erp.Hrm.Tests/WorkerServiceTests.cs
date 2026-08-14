@@ -104,5 +104,52 @@ public class WorkerServiceTests
         Assert.Equal("EMP-A1", (await ctx.Workers.FirstAsync()).EmployeeNo);
         Assert.Equal("EMP-B1", (await otherCtx.Workers.FirstAsync()).EmployeeNo);
     }
+
+    [Fact]
+    public async Task GetBySubject_ResolveLinkedWorker()
+    {
+        var (service, ctx) = Build();
+        ctx.Workers.Add(new Worker
+        {
+            EmployeeNo = "EMP-001",
+            FirstName = "Mutale",
+            LastName = "Test",
+            WorkerType = "employee",
+            Status = "pre-hire",
+            SubjectId = "60b649a4-74c5-43ba-8bf3-97521f496f41",
+        });
+        await ctx.SaveChangesAsync();
+
+        // Same-tenant subject resolves to the linked worker.
+        var linked = await service.GetBySubjectAsync("60b649a4-74c5-43ba-8bf3-97521f496f41", CancellationToken.None);
+        Assert.NotNull(linked);
+        Assert.Equal("EMP-001", linked!.EmployeeNo);
+        Assert.Equal("Mutale Test", linked.FullName);
+
+        // Unknown subject returns null (unlinked identity), never throws.
+        var unlinked = await service.GetBySubjectAsync("unknown-subject", CancellationToken.None);
+        Assert.Null(unlinked);
+
+        // Subject scoped to a different tenant resolves within that tenant only.
+        var otherCtx = TestDbContextFactory.Create("other-tenant");
+        otherCtx.Workers.Add(new Worker
+        {
+            EmployeeNo = "EMP-X1",
+            FirstName = "Other",
+            LastName = "Tenant",
+            WorkerType = "employee",
+            Status = "pre-hire",
+            SubjectId = "60b649a4-74c5-43ba-8bf3-97521f496f41",
+        });
+        await otherCtx.SaveChangesAsync();
+        var otherService = new WorkerServiceImpl(new WorkerRepository(otherCtx), new PermissiveAuthz(), new UlidIdProvider());
+        var other = await otherService.GetBySubjectAsync("60b649a4-74c5-43ba-8bf3-97521f496f41", CancellationToken.None);
+        Assert.NotNull(other);
+        Assert.Equal("EMP-X1", other!.EmployeeNo);
+
+        // The original tenant's view stays scoped to its own worker.
+        var original = await service.GetBySubjectAsync("60b649a4-74c5-43ba-8bf3-97521f496f41", CancellationToken.None);
+        Assert.Equal("EMP-001", original!.EmployeeNo);
+    }
 }
 

@@ -40,6 +40,7 @@ public static class Routes
         RegisterDocuments(app);
         RegisterDq(app);
         RegisterStatutory(app);
+        RegisterMe(app);
     }
 
 
@@ -61,6 +62,32 @@ public static class Routes
         var raw = http.User.FindFirst("worker_id")?.Value
             ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         return string.IsNullOrEmpty(raw) || !System.Guid.TryParse(raw, out var id) ? null : id;
+    }
+
+    // Helper: read the Keycloak subject id from the current principal.
+    // JwtSecurityTokenHandler maps the JWT "sub" claim to the
+    // NameIdentifier claim type, so check both the raw "sub" name and the
+    // mapped NameIdentifier type.
+    private static string? ResolveSubjectId(HttpContext http)
+        => http.User.FindFirst("sub")?.Value
+            ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+    // M14 identity link: resolve the worker record bound to the caller's
+    // Keycloak subject. Registered once (not per prefix) because the route is
+    // identical on both surfaces.
+    public static void RegisterMe(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/me").RequireAuthorization();
+        g.MapGet("/", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                return Results.Ok(new { linked = false, worker = (object?)null, reason = "no-subject-claim" });
+            var worker = await svc.GetBySubjectAsync(subject, ct);
+            return worker is null
+                ? Results.Ok(new { linked = false, worker = (object?)null, subject })
+                : Results.Ok(new { linked = true, worker, subject });
+        });
     }
 
     public static void RegisterWorkers(WebApplication app)

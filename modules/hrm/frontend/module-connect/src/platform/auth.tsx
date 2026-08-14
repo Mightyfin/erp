@@ -20,6 +20,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Role } from "@/mock/types";
+import { hrmApi, type LinkedWorker } from "@/platform/api-client";
 import {
   clearSession,
   decodeIdToken,
@@ -44,6 +45,15 @@ interface AuthState {
   resolveRole: () => Role;
   signInInteractive: () => void;
   signOut: () => void;
+  /**
+   * M14 identity link: the HRM worker record bound to the caller's Keycloak
+   * subject (resolved via `GET /hrm/me`). Null when signed in but not yet
+   * linked to a worker, or in demo mode. The shell shows this real identity
+   * (name, employee number, photo) wherever a user line appears.
+   */
+  worker: LinkedWorker | null;
+  /** True while the initial `/hrm/me` resolution is in flight. */
+  resolvingWorker: boolean;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -69,8 +79,11 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/speak-up"]);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<OidcSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [worker, setWorker] = useState<LinkedWorker | null>(null);
+  const [resolvingWorker, setResolvingWorker] = useState(false);
   const [origin, setOrigin] = useState<string>("/hrm");
 
+  // 1. Restore / refresh the Keycloak session on boot (hybrid mode only).
   useEffect(() => {
     if (!USE_REAL) {
       setLoading(false);
@@ -88,6 +101,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // 2. Resolve the signed-in identity to an HRM worker record (M14 link).
+  //    Runs after the session is up and never blocks the gate: a real user
+  //    who isn't linked yet simply sees their IdP name until HR links them.
+  useEffect(() => {
+    if (!USE_REAL || !isSessionValid(session)) return;
+    let cancelled = false;
+    setResolvingWorker(true);
+    (async () => {
+      try {
+        const profile = await hrmApi.myProfile();
+        if (!cancelled && profile.linked) setWorker(profile.worker);
+      } catch {
+        // Backend temporarily unreachable or session revoked mid-flight —
+        // stay signed in (the session is still valid) and retry later.
+      } finally {
+        if (!cancelled) setResolvingWorker(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   // Remember where the user was heading so a login round-trip can return them
   // to the same place (e.g. a deep link like /hrm/leave/abc).
@@ -123,8 +159,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const value = useMemo<AuthState>(
-    () => ({ session, user, loading, authenticated, resolveRole, signInInteractive, signOut }),
-    [session, user, loading, authenticated, resolveRole, signInInteractive, signOut],
+    () => ({ session, user, loading, authenticated, resolveRole, signInInteractive, signOut, worker, resolvingWorker }),
+    [session, user, loading, authenticated, resolveRole, signInInteractive, signOut, worker, resolvingWorker],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -287,16 +287,38 @@ const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "
 
 /** User display line: real identity when OIDC-signed-in, otherwise the demo name. */
 function RealUserLine() {
-  const { user } = useAuth();
+  const { user, worker, resolvingWorker } = useAuth();
+
   if (USE_REAL && user?.name) {
     return (
-      <span className="min-w-0">
-        <span className="block truncate">{user.name}</span>
-        {user.email ? (
-          <span className="block truncate text-xs font-normal text-muted-foreground">
-            {user.email}
+      <span className="flex min-w-0 items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
+          {worker?.photoUrl ? (
+            <img src={worker.photoUrl} alt="" className="size-8 object-cover" />
+          ) : (
+            <UserRound className="size-4 text-primary" aria-hidden />
+          )}
+        </span>
+        <span className="min-w-0">
+          {/* M14 identity link: linked worker name wins; falls back to the IdP name. */}
+          <span className="block truncate">
+            {worker?.fullName || user.name}
+            {worker ? (
+              <span className="ml-1.5 rounded border px-1 text-[10px] font-normal text-muted-foreground">
+                {worker.employeeNo}
+              </span>
+            ) : resolvingWorker ? (
+              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">…</span>
+            ) : null}
           </span>
-        ) : null}
+          {worker?.jobTitle ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">
+              {worker.jobTitle}
+            </span>
+          ) : user.email ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+          ) : null}
+        </span>
       </span>
     );
   }
@@ -322,6 +344,7 @@ function RealSignOut() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
+  const { worker: myWorker } = useAuth();
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const entity = entities.find((e) => e.id === entityId) ?? entities[0];
@@ -501,7 +524,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/hrm/employees/$id" params={{ id: "w-1001" }}>My profile</Link>
+                  {/* M14 identity link: jump to the signed-in user's own worker record when linked. */}
+                  <Link to="/hrm/employees/$id" params={{ id: myWorker?.id ?? "w-1001" }}>
+                    My profile{myWorker ? "" : USE_REAL ? " (not linked)" : ""}
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/hrm/setup">Setup guide</Link>

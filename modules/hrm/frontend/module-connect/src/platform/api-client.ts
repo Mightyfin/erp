@@ -31,6 +31,19 @@ const TENANT_ID =
   (import.meta.env.VITE_HRM_TENANT_ID as string | undefined)?.trim() ||
   "019ffa8b-0fb0-71e6-849a-f76e5a28e0b5";
 
+/** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
+export interface LinkedWorker {
+  id: string;
+  employeeNo: string;
+  fullName: string;
+  preferredName?: string | null;
+  jobTitle?: string | null;
+  grade?: string | null;
+  email?: string | null;
+  photoUrl?: string | null;
+  status: string;
+}
+
 /** Hybrid auth (M12): attach the bearer token when a Keycloak session exists. */
 const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
 
@@ -153,6 +166,16 @@ export const hrmApi = {
     const blob = await res.blob();
     return URL.createObjectURL(blob);
   },
+
+  /**
+   * M14 identity link: resolve the worker record bound to the caller's Keycloak
+   * subject. Returns `{ linked, worker, subject }` — worker is null when the
+   * signed-in identity is not linked to an HRM worker yet.
+   */
+  myProfile: () =>
+    hrmApi.get<{ linked: boolean; worker: LinkedWorker | null; subject: string }>(
+      "/hrm/me",
+    ),
 
   /** Data-quality check summary for the tenant. */
   dqChecks: () => hrmApi.get<unknown>("/hrm/dq/checks"),

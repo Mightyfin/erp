@@ -46,6 +46,14 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
             .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.Id == id, ct);
 
+    // M14 identity link: resolve the worker record bound to a Keycloak subject id.
+    // The global tenant query filter on the DbContext keeps the lookup
+    // tenant-scoped automatically.
+    public async Task<Worker?> FindBySubjectIdAsync(string subjectId, CancellationToken ct)
+        => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
+            .FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
+
     public async Task<Worker> CreateAsync(Worker worker, CancellationToken ct)
     {
         db.Workers.Add(worker);
