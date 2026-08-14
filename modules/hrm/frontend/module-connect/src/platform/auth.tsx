@@ -23,7 +23,7 @@ import type { Role } from "@/mock/types";
 import { hrmApi, type LinkedWorker } from "@/platform/api-client";
 import {
   clearSession,
-  decodeIdToken,
+  decodeSessionUser,
   ensureFreshSession,
   getSession,
   isSessionValid,
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loading, session]);
 
-  const user = useMemo(() => (session?.idToken ? decodeIdToken(session.idToken) : null), [session]);
+  const user = useMemo(() => (session ? decodeSessionUser(session) : null), [session]);
 
   const authenticated = !USE_REAL || isSessionValid(session);
 

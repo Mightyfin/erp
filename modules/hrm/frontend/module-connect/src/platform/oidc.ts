@@ -99,6 +99,24 @@ export function decodeIdToken(idToken: string): OidcUser | null {
   };
 }
 
+/**
+ * Keycloak only places `realm_access.roles` in the ACCESS token — the id token
+ * usually has none. Decode the identity from the id token and enrich roles
+ * from the access token so UI role gating (hr_admin/hr_ops) works.
+ */
+export function decodeSessionUser(session: {
+  idToken: string;
+  accessToken?: string;
+}): OidcUser | null {
+  const base = decodeIdToken(session.idToken);
+  if (!base) return null;
+  if (!session.accessToken) return base;
+  const extra = parseJwtPayload<{
+    realm_access?: { roles?: string[] };
+  }>(session.accessToken);
+  return { ...base, roles: extra?.realm_access?.roles ?? base.roles };
+}
+
 /* --------------------------------------------------------------- endpoints */
 
 function discovery(): {
