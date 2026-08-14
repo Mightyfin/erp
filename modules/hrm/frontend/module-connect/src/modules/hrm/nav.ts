@@ -113,6 +113,7 @@ export const hrmModule: ModuleDefinition = {
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
         { label: "Pay runs", to: "/hrm/payroll/runs", roles: ["payroll", "hr_admin"] },
         { label: "Payroll exceptions", to: "/hrm/payroll/exceptions", roles: ["payroll", "hr_admin"] },
+        { label: "Payroll setup", to: "/hrm/configuration/payroll", roles: ["hr_ops", "hr_admin"] },
       ],
     },
     {
@@ -200,7 +201,8 @@ export const configurationGroups: {
       { label: "Calendars and public holidays", detail: "3 calendars", to: "/hrm/configuration/business" },
       { label: "Country packs", detail: "NL, KE, DE · effective-dated", to: "/hrm/configuration/business" },
       { label: "Language and localisation", detail: "1 language active", to: "/hrm/configuration/business" },
-      { label: "Payroll configuration", detail: "Pay groups, components, tax rules", to: "/hrm/configuration/business" },
+      { label: "Payroll setup", detail: "Pay groups · ZRA PAYE · NAPSA · NHIMA · components", to: "/hrm/configuration/payroll" },
+      { label: "Payroll configuration", detail: "Legacy page — replaced by Payroll setup", to: "/hrm/configuration/business" },
     ],
   },
   {

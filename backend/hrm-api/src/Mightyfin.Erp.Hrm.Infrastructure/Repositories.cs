@@ -610,8 +610,48 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct)
         => await db.TaxSlabs.Where(s => s.TaxYear == taxYear && s.IsActive).OrderBy(s => s.Sequence).ToListAsync(ct);
 
+    public async Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct)
+        => await db.TaxSlabs.FirstOrDefaultAsync(s => s.Id == id, ct);
+
+    public async Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct)
+    {
+        if (db.Entry(slab).State == EntityState.Detached)
+            db.TaxSlabs.Update(slab);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<List<ContributionRule>> ListContributionRulesAsync(CancellationToken ct)
         => await db.ContributionRules.Where(r => r.IsActive).ToListAsync(ct);
+
+    public async Task<ContributionRule?> GetContributionRuleAsync(Guid id, CancellationToken ct)
+        => await db.ContributionRules.FirstOrDefaultAsync(r => r.Id == id, ct);
+
+    public async Task UpdateContributionRuleAsync(ContributionRule rule, CancellationToken ct)
+    {
+        if (db.Entry(rule).State == EntityState.Detached)
+            db.ContributionRules.Update(rule);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdatePayGroupAsync(PayGroup group, CancellationToken ct)
+    {
+        if (db.Entry(group).State == EntityState.Detached)
+            db.PayGroups.Update(group);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UnsetDefaultPayGroupsAsync(CancellationToken ct, Guid keepId)
+    {
+        await db.PayGroups.Where(g => g.IsDefault && g.Id != keepId).ForEachAsync(g => g.IsDefault = false, ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct)
+    {
+        if (db.Entry(component).State == EntityState.Detached)
+            db.SalaryComponents.Update(component);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct)
         => await db.PayrollRuns.Include(r => r.PayPeriod).FirstOrDefaultAsync(r => r.Id == id, ct);

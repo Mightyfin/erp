@@ -309,6 +309,27 @@ export const realApi = {
   createLegalEntity: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/admin/legal-entities", body),
 
+  /* ------------------------------------------------------------------ */
+  /* M20 payroll setup configuration (pay groups, ZRA PAYE slabs,        */
+  /* NAPSA/NHIMA contribution rules, salary components)                  */
+  /* ------------------------------------------------------------------ */
+
+  /** Full pay-group list with statuses — GET /payroll/pay-groups/full. */
+  payGroupsFull: () =>
+    hrmApi.get<unknown[]>("/hrm/payroll/pay-groups/full"),
+  /** Patch-update a pay group (frequency, currency, payday calendar, defaults). */
+  updatePayGroup: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/pay-groups/${id}`, body),
+  /** Patch-update a ZRA PAYE tax slab (rate, band ceiling). */
+  updateTaxSlab: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/tax-slabs/${id}`, body),
+  /** Patch-update a statutory contribution rule (NAPSA/NHIMA rate/ceiling/floor). */
+  updateContributionRule: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/contribution-rules/${id}`, body),
+  /** Patch-update a salary component (rate, fixed amount, taxable flag, archive). */
+  updateSalaryComponent: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/components/${id}`, body),
+
   /** Worker lifecycle: onboarding snapshot, offboarding, bank details. */
   workerOnboarding: (workerId: string) =>
     hrmApi.get<unknown>(`/hrm/workers/${workerId}/onboarding`),

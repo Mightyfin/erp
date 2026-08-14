@@ -18,6 +18,13 @@ public interface IPayrollService
     Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct);
 
+    // M20: payroll setup admin (write surface)
+    Task<List<PayGroupFullDto>> ListPayGroupsFullAsync(CancellationToken ct);
+    Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct);
+    Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct);
+    Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct);
+    Task<SalaryComponentDto> UpdateSalaryComponentAsync(Guid id, SalaryComponentUpdateRequest request, CancellationToken ct);
+
     // M5 setup: worker payroll profiles (basic salary + allowances per worker)
     Task<List<WorkerPayrollProfileDto>> ListProfilesAsync(Guid? workerId, CancellationToken ct);
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
@@ -49,6 +56,20 @@ public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate,
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
 
+// ---------- M20: payroll setup admin (write surface) ----------
+public sealed record PayGroupUpdateRequest(string? Code = null, string? Name = null,
+    string? Frequency = null, string? Currency = null, int? CalendarDayOfMonth = null,
+    int? InputCutoffDaysBeforePayday = null, bool? IsDefault = null);
+public sealed record TaxSlabUpdateRequest(decimal? Rate = null, decimal? MaxAmount = null);
+public sealed record ContributionRuleUpdateRequest(decimal? Rate = null, decimal? Ceiling = null, decimal? Floor = null);
+public sealed record SalaryComponentUpdateRequest(string? Name = null, string? CalculationBasis = null,
+    string? BasisComponentCode = null, decimal? Rate = null, decimal? FixedAmount = null,
+    decimal? Ceiling = null, bool? IsTaxable = null, bool? IsArchived = null);
+
+// ---------- M20 DTO extras ----------
+public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string Frequency, string Currency,
+    int CalendarDayOfMonth, int InputCutoffDaysBeforePayday, bool IsDefault, string Status);
+
 public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService authz,
     IPayslipDocumentService payslipDocument) : IPayrollService
 {
@@ -78,6 +99,103 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var items = await repo.ListTaxSlabsAsync(taxYear, ct);
         return items.Select(s => new TaxSlabDto(s.Id, s.TaxYear, s.MinAmount, s.MaxAmount, s.Rate, s.Sequence)).ToList();
+    }
+
+    // ---------- M20: payroll setup admin ----------
+    public async Task<List<PayGroupFullDto>> ListPayGroupsFullAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var items = await repo.ListPayGroupsAllAsync(ct);
+        return items.Select(g => new PayGroupFullDto(g.Id, g.Code, g.Name, g.Frequency, g.Currency,
+            g.CalendarDayOfMonth, g.InputCutoffDaysBeforePayday, g.IsDefault,
+            g.IsArchived ? "archived" : "active")).ToList();
+    }
+
+    public async Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var group = await repo.GetPayGroupAsync(id, ct)
+            ?? throw new DomainException("pay-group-not-found", $"Pay group {id} does not exist.");
+        if (request.Code is not null) group.Code = request.Code.Trim();
+        if (request.Name is not null) group.Name = request.Name.Trim();
+        if (request.Frequency is not null) group.Frequency = request.Frequency;
+        if (request.Currency is not null) group.Currency = request.Currency;
+        if (request.CalendarDayOfMonth is not null) group.CalendarDayOfMonth = request.CalendarDayOfMonth.Value;
+        if (request.InputCutoffDaysBeforePayday is not null) group.InputCutoffDaysBeforePayday = request.InputCutoffDaysBeforePayday.Value;
+        if (request.IsDefault is not null && request.IsDefault == true) await repo.UnsetDefaultPayGroupsAsync(ct, id);
+        if (request.IsDefault is not null) group.IsDefault = request.IsDefault.Value;
+        if (group.IsArchived)
+            throw new DomainException("pay-group-archived", "An archived pay group cannot be changed. Create a new group instead.");
+        await repo.UpdatePayGroupAsync(group, ct);
+        return new PayGroupFullDto(group.Id, group.Code, group.Name, group.Frequency, group.Currency,
+            group.CalendarDayOfMonth, group.InputCutoffDaysBeforePayday, group.IsDefault,
+            group.IsArchived ? "archived" : "active");
+    }
+
+    public async Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var slab = await repo.GetTaxSlabAsync(id, ct)
+            ?? throw new DomainException("tax-slab-not-found", $"Tax slab {id} does not exist.");
+        if (slab.IsArchived)
+            throw new DomainException("tax-slab-archived", "An archived slab cannot be changed. Create a new slab version instead.");
+        if (request.Rate is not null)
+        {
+            if (request.Rate.Value < 0 || request.Rate.Value > 100)
+                throw new DomainException("tax-slab-rate-out-of-range", "Slab rate must be between 0 and 100 percent.");
+            slab.Rate = request.Rate.Value;
+        }
+        if (request.MaxAmount is not null) slab.MaxAmount = request.MaxAmount;
+        await repo.UpdateTaxSlabAsync(slab, ct);
+        return new TaxSlabDto(slab.Id, slab.TaxYear, slab.MinAmount, slab.MaxAmount, slab.Rate, slab.Sequence);
+    }
+
+    public async Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var rule = await repo.GetContributionRuleAsync(id, ct)
+            ?? throw new DomainException("contribution-rule-not-found", $"Contribution rule {id} does not exist.");
+        if (rule.IsArchived)
+            throw new DomainException("contribution-rule-archived", "An archived rule cannot be changed. Create a new rule version instead.");
+        if (request.Rate is not null)
+        {
+            if (request.Rate.Value < 0 || request.Rate.Value > 100)
+                throw new DomainException("contribution-rate-out-of-range", "Contribution rate must be between 0 and 100 percent.");
+            rule.Rate = request.Rate.Value;
+        }
+        if (request.Ceiling is not null) rule.Ceiling = request.Ceiling;
+        if (request.Floor is not null) rule.Floor = request.Floor;
+        await repo.UpdateContributionRuleAsync(rule, ct);
+        return new ContributionRuleDto(rule.Id, rule.Code, rule.Name, rule.Payer, rule.Rate, rule.Ceiling, rule.Floor);
+    }
+
+    public async Task<SalaryComponentDto> UpdateSalaryComponentAsync(Guid id, SalaryComponentUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var comp = await repo.GetComponentByIdAsync(id, ct)
+            ?? throw new DomainException("salary-component-not-found", $"Salary component {id} does not exist.");
+        if (comp.IsStatutory)
+            throw new DomainException("statutory-component-protected",
+                "Statutory components (PAYE/NAPSA/NHIMA) are managed through tax slabs and contribution rules — update those instead.");
+        if (request.IsArchived == true)
+        {
+            comp.IsArchived = true;
+            comp.IsActive = false;
+            await repo.UpdateComponentAsync(comp, ct);
+        }
+        else
+        {
+            if (request.Name is not null) comp.Name = request.Name.Trim();
+            if (request.CalculationBasis is not null) comp.CalculationBasis = request.CalculationBasis;
+            if (request.BasisComponentCode is not null) comp.BasisComponentCode = request.BasisComponentCode;
+            if (request.Rate is not null) comp.Rate = request.Rate;
+            if (request.FixedAmount is not null) comp.FixedAmount = request.FixedAmount;
+            if (request.Ceiling is not null) comp.Ceiling = request.Ceiling;
+            if (request.IsTaxable is not null) comp.IsTaxable = request.IsTaxable.Value;
+            await repo.UpdateComponentAsync(comp, ct);
+        }
+        return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
+            comp.Rate, comp.FixedAmount, comp.Ceiling, comp.IsTaxable, comp.IsStatutory, comp.Version, comp.IsActive);
     }
 
     public async Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct)
@@ -517,7 +635,14 @@ public interface IPayrollRepository
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
     Task<PayPeriod?> GetPeriodAsync(Guid id, CancellationToken ct);
     Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
+    Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct);
+    Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct);
     Task<List<ContributionRule>> ListContributionRulesAsync(CancellationToken ct);
+    Task<ContributionRule?> GetContributionRuleAsync(Guid id, CancellationToken ct);
+    Task UpdateContributionRuleAsync(ContributionRule rule, CancellationToken ct);
+    Task UnsetDefaultPayGroupsAsync(CancellationToken ct, Guid keepId);
+    Task UpdatePayGroupAsync(PayGroup group, CancellationToken ct);
+    Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct);
     Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct);
     Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct);
     Task<PayrollRun> CreateRunAsync(PayrollRun run, CancellationToken ct);

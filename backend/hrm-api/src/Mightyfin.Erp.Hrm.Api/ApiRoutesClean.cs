@@ -389,6 +389,28 @@ public static class Routes
             => await svc.ListComponentsAsync(type, ct));
         g.MapGet("/pay-groups", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListPayGroupsAsync(ct));
+        g.MapGet("/pay-groups/full", async (IPayrollService svc, CancellationToken ct)
+            => await svc.ListPayGroupsFullAsync(ct));
+        g.MapPatch("/pay-groups/{groupId:guid}", async (Guid groupId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayGroupUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdatePayGroupAsync(groupId, request, ct));
+        });
+        g.MapPatch("/tax-slabs/{slabId:guid}", async (Guid slabId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<TaxSlabUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateTaxSlabAsync(slabId, request, ct));
+        });
+        g.MapPatch("/contribution-rules/{ruleId:guid}", async (Guid ruleId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ContributionRuleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateContributionRuleAsync(ruleId, request, ct));
+        });
+        g.MapPatch("/components/{componentId:guid}", async (Guid componentId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryComponentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
+        });
         g.MapGet("/pay-groups/{groupId:guid}/periods", async (Guid groupId, IPayrollService svc, CancellationToken ct)
             => await svc.ListPeriodsAsync(groupId, ct));
         g.MapGet("/tax-slabs", async ([FromQuery] string taxYear, IPayrollService svc, CancellationToken ct)
