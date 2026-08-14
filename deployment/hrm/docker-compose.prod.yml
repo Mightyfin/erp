@@ -26,7 +26,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/live >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf \"GET /health/live HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && read -r -t 3 STATUS <&3 && echo \"$STATUS\" | grep -q \" 2\" && exit 0 || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 20
