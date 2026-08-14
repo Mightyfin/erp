@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { api } from "@/mock/service";
+import { realApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
+import { feedback } from "@/platform/feedback";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -34,6 +35,14 @@ const categories = [
   "Something else",
 ] as const;
 
+const categoryCode: Record<string, string> = {
+  "Employment letter": "employment-letter",
+  "Personal data change": "data-change",
+  "Payroll query": "payroll",
+  "Contract query": "contract",
+  "Something else": "other",
+};
+
 const suggestedAnswers: Record<string, string> = {
   "Employment letter": "Most employment/salary confirmation letters are issued within 2 working days — you may not need to wait for a case.",
   "Personal data change": "Bank and address changes need one piece of supporting evidence (e.g. a bank letter) and take effect from the next pay run.",
@@ -50,6 +59,7 @@ function NewRequest() {
   const [detail, setDetail] = useState("");
   const [confidentiality, setConfidentiality] = useState("standard");
   const [contact, setContact] = useState("app");
+  const [submitting, setSubmitting] = useState(false);
 
   const suggestion = useMemo(() => suggestedAnswers[category], [category]);
 
@@ -91,7 +101,7 @@ function NewRequest() {
           <Label htmlFor="detail">Details</Label>
           <Textarea id="detail" className="mt-1" rows={5} value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="What do you need, and by when?" />
           <div className="mt-4 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
-            Attach supporting evidence if you have it (mock upload — nothing is stored).
+            Attach supporting evidence if you have it — for now describe the evidence in the details; file upload is on the roadmap.
           </div>
         </div>
       ),
@@ -145,8 +155,30 @@ function NewRequest() {
         steps={steps}
         submitLabel="Submit request"
         onSubmit={async () => {
-          const r = await api.submit("request", { category, subject, detail, confidentiality, contact });
-          setRef(r.id);
+          if (!subject.trim()) {
+            feedback.blocked("Subject is missing", "Add a subject so HR knows what this is about.");
+            return;
+          }
+          setSubmitting(true);
+          try {
+            const created = (await realApi.createExperienceRequest({
+              category: categoryCode[category] ?? "other",
+              subject: subject.trim(),
+              body: detail.trim() || subject.trim(),
+              confidentiality: confidentiality === "restricted" ? "confidential" : "normal",
+            })) as { id?: unknown };
+            const id = typeof created?.id === "string" ? created.id : null;
+            setRef(id ?? "thread");
+            feedback.submitted(
+              "Your HR request has been submitted",
+              "HR operations will respond in the case thread; you can check status from HR requests.",
+            );
+          } catch (e) {
+            feedback.blocked("Failed to submit the request", e instanceof Error ? e.message : "Please try again in a moment.");
+            setRef(null);
+          } finally {
+            setSubmitting(false);
+          }
         }}
         submitted={
           ref ? (

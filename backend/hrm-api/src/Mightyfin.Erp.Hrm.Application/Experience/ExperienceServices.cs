@@ -28,7 +28,7 @@ public interface IExperienceService
     Task<ProtectedDisclosureStatusResponse?> GetDisclosureStatusAsync(string caseReference, string accessCode, CancellationToken ct);
 }
 
-public sealed record HrRequestDto(Guid Id, Guid WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages);
+public sealed record HrRequestDto(Guid Id, Guid? WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages);
 public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool IsInternalNote, DateTimeOffset CreatedAt);
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
@@ -66,16 +66,17 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         var req = await repo.GetRequestAsync(requestId, ct) ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
         // internal notes are always HR-side; conversational messages record who wrote them
         var from = message.IsInternalNote ? "hr" : actorRole == "hr_ops" || actorRole == "hr_admin" ? "hr" : "employee";
-        req.Messages.Add(new HrRequestMessage
+        if (from == "employee" && req.Status == "awaiting-employee") req.Status = "in-progress";
+        if (from == "hr" && req.Status == "open") req.Status = "in-progress";
+        // M22: insert the message top-level (immune to EF Core 10's Modified-parent
+        // demotion of navigation-added children) rather than through req.Messages.
+        var updated = await repo.AddMessageAsync(req, new HrRequestMessage
         {
             WorkerId = from == "employee" ? actorWorkerId : null,
             From = from,
             Body = message.Body,
             IsInternalNote = message.IsInternalNote,
-        });
-        if (from == "employee" && req.Status == "awaiting-employee") req.Status = "in-progress";
-        if (from == "hr" && req.Status == "open") req.Status = "in-progress";
-        var updated = await repo.UpdateRequestAsync(req, ct);
+        }, ct);
         return Map(updated);
     }
 

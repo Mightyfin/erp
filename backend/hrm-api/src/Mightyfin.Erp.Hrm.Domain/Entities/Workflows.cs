@@ -42,7 +42,9 @@ public class ApprovalDelegation : Entity
 /// <summary>UI-XPR-001: HR service-desk request with threaded conversation.</summary>
 public class HrRequest : Entity
 {
-    public Guid WorkerId { get; set; }
+    // M22: nullable so HR can raise internal requests (payroll policy, headcount,
+    // vendor access) that are not tied to a specific worker record.
+    public Guid? WorkerId { get; set; }
     public Worker? Worker { get; set; }
     public string Category { get; set; } = null!; // payroll | benefits | contract | data-change | employment-letter | other
     public string Subject { get; set; } = null!;

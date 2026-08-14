@@ -1,48 +1,34 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle2, CircleDashed, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { employees } from "@/mock/data";
-import {
-  blockedTasks,
-  displayName,
-  lifecycleApi,
-  overdueTasks,
-  ownerLabel,
-  taskOwners,
-  taskProgress,
-  TODAY,
-} from "@/mock/lifecycle";
-import type { LifecycleTask, TaskState } from "@/mock/lifecycle";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
-import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { useMock } from "@/platform/use-mock";
-import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/lifecycle/onboarding/$id")({
   head: () => ({
     meta: [
       { title: "Onboarding case — Mightyfin ERP HRM" },
-      { name: "description", content: "Onboarding checklist grouped by owner, with blockers and overdue tasks surfaced first." },
+      { name: "description", content: "One joiner's statutory pack: what is complete, what is missing and what blocks a clean start." },
       { property: "og:title", content: "Onboarding case — Mightyfin ERP HRM" },
-      { property: "og:description", content: "Onboarding checklist grouped by owner, with blockers and overdue tasks surfaced first." },
+      { property: "og:description", content: "One joiner's statutory pack: what is complete, what is missing and what blocks a clean start." },
     ],
   }),
   component: OnboardingDetail,
 });
 
-const stateMeta: Record<TaskState, { icon: typeof Clock; cls: string }> = {
+type ItemState = "Done" | "Not started";
+
+const stateMeta: Record<ItemState, { icon: typeof Clock; cls: string }> = {
   Done: { icon: CheckCircle2, cls: "border-success/30 bg-success-soft text-success" },
-  "In progress": { icon: Clock, cls: "border-info/30 bg-info-soft text-info" },
   "Not started": { icon: CircleDashed, cls: "border-border bg-muted text-muted-foreground" },
-  Blocked: { icon: AlertTriangle, cls: "border-danger/30 bg-danger-soft text-danger" },
 };
 
-/** Task state carries an icon and a word — never colour on its own. */
-function TaskStatePill({ state }: { state: TaskState }) {
+/** State carries an icon and a word — never colour on its own. */
+function StatePill({ state }: { state: ItemState }) {
   const m = stateMeta[state];
   const Icon = m.icon;
   return (
@@ -53,174 +39,150 @@ function TaskStatePill({ state }: { state: TaskState }) {
   );
 }
 
-function TaskRow({ task }: { task: LifecycleTask }) {
-  const overdue = task.state !== "Done" && task.dueDate < TODAY;
+interface PackItem {
+  label: string;
+  detail: string;
+  state: ItemState;
+}
+
+function ItemRow({ item }: { item: PackItem }) {
   return (
     <li className="rounded-md border bg-surface-muted p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-medium">{task.label}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{task.detail}</p>
+          <p className="text-sm font-medium">{item.label}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{item.detail}</p>
         </div>
-        <TaskStatePill state={task.state} />
+        <StatePill state={item.state} />
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        {task.ownerName} · due {task.dueDate}
-        {overdue ? <span className="ml-1 font-medium text-danger">· overdue</span> : null}
-      </p>
-      {task.blocker ? (
-        <p className="mt-2 rounded border border-danger/30 bg-danger-soft px-2 py-1 text-xs text-danger">
-          Blocked: {task.blocker}
-        </p>
-      ) : null}
     </li>
   );
 }
 
-/** Blocked first, then overdue, then everything else in due-date order. */
-function rank(t: LifecycleTask) {
-  if (t.state === "Blocked") return 0;
-  if (t.state !== "Done" && t.dueDate < TODAY) return 1;
-  if (t.state === "Done") return 3;
-  return 2;
-}
-
-const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
-
+/**
+ * M22: the detail case is now the worker record itself. The backend's
+ * onboarding plan is a five-item statutory/banking readiness checklist, so
+ * this screen renders the real pack with the live worker facts.
+ */
 function OnboardingDetail() {
   const { id } = Route.useParams();
-  const state = useMock(() => lifecycleApi.onboarding(id), [id]);
-  // Real backend only exposes a triage-level onboarding snapshot (joined counts,
-  // no per-task detail), so the checklist keeps its mock structure while the
-  // progress strip below reads the live numbers whenever possible.
-  const progressState = useApi(async () => {
-    if (!USE_REAL) return null;
-    try {
-      const workerId = id; // case id doubles as the worker id in this screen
-      const snap = await realApi.workerOnboarding(workerId);
-      return snap as { tasksCompleted?: number; tasksTotal?: number; isOnboarded?: boolean };
-    } catch {
-      return null;
-    }
-  }, [id]);
+  const state = useApi(
+    async () => {
+      const [worker, plan] = await Promise.all([realApi.worker(id), realApi.onboardingPlan(id)]);
+      return {
+        worker: worker as Record<string, unknown>,
+        isOnboarded: Boolean(plan?.isOnboarded),
+        done: plan?.tasksCompleted ?? 0,
+        total: plan?.tasksTotal ?? 0,
+      };
+    },
+    [id],
+  );
 
   return (
     <AuthGate>
       <AppShell>
       <Async state={state} rows={3}>
-        {(c) => {
-          if (!c) return <RestrictedState />;
-          const person = displayName(c);
-          const progress = taskProgress(c.tasks);
-          const blocked = blockedTasks(c.tasks);
-          const overdue = overdueTasks(c.tasks).filter((t) => t.state !== "Blocked");
-          const directoryRecord = employees.find((e) => e.id === c.employeeId);
+        {(s) => {
+          if (!s || !s.worker) return <RestrictedState />;
+          const w = s.worker;
+          const personName = String(w.fullName ?? "");
+          const employeeNo = String(w.employeeNo ?? "");
+          const jobTitle = String(w.jobTitle ?? "");
+          const department = String(w.orgUnitName ?? "");
+          const startDate = String(w.startDate ?? "");
+          const nrc = String(w.nrc ?? "");
+          const tpin = String(w.tpin ?? "");
+          const napsa = String(w.napsaNumber ?? "");
+          const hasBank = Array.isArray(w.bankDetails) && w.bankDetails.length > 0;
+          const bankName = hasBank ? String((w.bankDetails as Array<{ bankName?: unknown }>)[0]?.bankName ?? "") : "";
+
+          const items: PackItem[] = [
+            {
+              label: "National Registration (NRC)",
+              detail: nrc || "No NRC recorded — collect the NRC number from the joiner.",
+              state: nrc ? "Done" : "Not started",
+            },
+            {
+              label: "Tax Identification (TPIN)",
+              detail: tpin || "No TPIN recorded — needed before the first pay run.",
+              state: tpin ? "Done" : "Not started",
+            },
+            {
+              label: "NAPSA number",
+              detail: napsa || "No NAPSA number recorded — required for statutory deductions.",
+              state: napsa ? "Done" : "Not started",
+            },
+            {
+              label: "Bank account for payroll",
+              detail: hasBank ? `Registered with ${bankName || "the bank"} — payout ready` : "No bank account registered — the worker cannot be paid until one is added.",
+              state: hasBank ? "Done" : "Not started",
+            },
+          ];
+
+          const remaining = items.filter((i) => i.state !== "Done");
 
           return (
             <RecordDetail
-              reference={c.id}
-              title={`Onboarding — ${person}`}
-              subtitle={`${c.jobTitle} · ${c.branch} · starts ${c.startDate}`}
-              status={c.status}
-              owner={c.owner}
-              nextAction={c.nextAction}
-              dueDate={c.dueDate}
+              reference={employeeNo}
+              title={`Onboarding — ${personName}`}
+              subtitle={`${jobTitle} · ${department}${startDate ? ` · starts ${startDate}` : ""}`}
+              status={s.isOnboarded ? "Ready" : "In progress"}
+              owner={department || "HR operations"}
+              nextAction={s.isOnboarded ? "Onboarding complete" : "Complete the statutory pack"}
               primaryAction={
-                <Button onClick={() => undefined}>
-                  {blocked.length ? "Resolve blockers" : "Update checklist"}
+                <Button asChild variant="outline">
+                  <Link to="/hrm/employees/$id" params={{ id: String(s.worker?.id ?? "") }}>
+                    Open employee record
+                  </Link>
                 </Button>
               }
-              secondaryActions={
-                directoryRecord ? (
-                  <Button variant="outline" asChild>
-                    <Link to="/hrm/employees/$id" params={{ id: directoryRecord.id }}>
-                      Open employee record
-                    </Link>
-                  </Button>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    Not in the directory yet — the employee record is created when the contract is returned.
-                  </span>
-                )
-              }
               summary={[
-                ...(progressState.data && progressState.data.tasksTotal
-                  ? [
-                      {
-                        label: "Live checklist progress",
-                        value: `${progressState.data.tasksCompleted ?? 0}/${progressState.data.tasksTotal}${progressState.data.isOnboarded ? " · onboarded" : ""}`,
-                      },
-                    ]
-                  : []),
-                { label: "Joiner", value: person },
-                { label: "Role", value: c.jobTitle },
-                { label: "Organisation", value: `${c.entity} · ${c.branch}` },
-                { label: "Employment type", value: c.employmentType },
-                { label: "Start date", value: c.startDate },
-                { label: "Probation", value: `${c.probationStart} → ${c.probationEnd}` },
-                { label: "Hiring manager", value: c.hiringManager },
-                { label: "Checklist progress", value: `${progress.label} · ${blocked.length} blocked · ${overdue.length} overdue` },
+                {
+                  label: "Live checklist progress",
+                  value: `${s.done}/${s.total}${s.isOnboarded ? " · onboarded" : ""}`,
+                },
+                { label: "Joiner", value: personName },
+                { label: "Role", value: jobTitle },
+                { label: "Department", value: department },
+                { label: "Start date", value: startDate || "Not set" },
+                { label: "Worker type", value: String(w.workerType ?? "employee") },
               ]}
-              timeline={<StatusTimeline title="Case history" events={c.timeline} />}
-              related={
-                <>
-                  <p>
-                    <Link to="/hrm/lifecycle/onboarding" className="text-primary underline underline-offset-2">
-                      All onboarding cases
-                    </Link>
-                  </p>
-                  <p>
-                    <Link to="/hrm/lifecycle/movements" className="text-primary underline underline-offset-2">
-                      Movements for this organisation
-                    </Link>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Probation starts on {c.probationStart}. The review must be booked before the checklist can close.
-                  </p>
-                </>
-              }
             >
               <DetailSection
-                title="Blockers and overdue tasks"
-                description="Everything standing between this joiner and a clean start, in one place."
+                title="Statutory pack"
+                description="The five readiness items the pay run depends on: assignment, NRC, TPIN, NAPSA number and a bank account. The backend counts the active assignment as the fifth item."
               >
-                {blocked.length === 0 && overdue.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Nothing is blocked and nothing is overdue. {progress.label}.
+                {remaining.length === 0 ? (
+                  <p className="flex items-center gap-2 text-sm text-success">
+                    <CheckCircle2 className="size-4" aria-hidden />
+                    Every pack item is complete — this joiner is ready to be paid.
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {[...blocked, ...overdue].map((t) => (
-                      <TaskRow key={`blocker-${t.id}`} task={t} />
+                    {items.map((t) => (
+                      <ItemRow key={t.label} item={t} />
                     ))}
                   </ul>
                 )}
+                {remaining.length > 0 ? (
+                  <p className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    {remaining.length} item{remaining.length === 1 ? "" : "s"} outstanding — {remaining[0].label}
+                  </p>
+                ) : null}
               </DetailSection>
 
-              <DetailSection
-                title="Checklist by owner"
-                description="Grouped so each owner sees only what they must do. Blocked and overdue tasks sit at the top of every group."
-              >
-                <div className="space-y-6">
-                  {taskOwners.map((owner) => {
-                    const tasks = c.tasks.filter((t) => t.owner === owner).sort((a, b) => rank(a) - rank(b) || a.dueDate.localeCompare(b.dueDate));
-                    if (tasks.length === 0) return null;
-                    const p = taskProgress(tasks);
-                    return (
-                      <div key={owner}>
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h3 className="text-sm font-semibold">{ownerLabel[owner]}</h3>
-                          <p className="text-xs text-muted-foreground">{p.label}</p>
-                        </div>
-                        <ul className="mt-2 space-y-2">
-                          {tasks.map((t) => (
-                            <TaskRow key={t.id} task={t} />
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
+              <DetailSection title="Related records" description="Where to continue from here.">
+                <p>
+                  <Link to="/hrm/lifecycle/onboarding" className="text-primary underline underline-offset-2">
+                    All onboarding cases
+                  </Link>
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Bank details and statutory numbers are edited on the employee record. The pack re-checks
+                  automatically each time this screen loads.
+                </p>
               </DetailSection>
             </RecordDetail>
           );

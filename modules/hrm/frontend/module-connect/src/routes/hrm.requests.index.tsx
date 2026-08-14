@@ -1,8 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { employees } from "@/mock/data";
-import type { HrCase } from "@/mock/types";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
@@ -23,42 +21,61 @@ export const Route = createFileRoute("/hrm/requests/")({
   component: RequestsList,
 });
 
-const name = (id: string) => employees.find((w) => w.id === id)?.fullName ?? "Unknown employee";
-
-const workflowStatus: Record<string, string> = {
-  submitted: "In review",
-  "in-review": "In review",
-  approved: "Approved",
-  rejected: "Rejected",
-  returned: "Returned",
-  escalated: "Escalated",
+/** Backend statuses open | in-progress | awaiting-employee | resolved | closed. */
+const statusLabel: Record<string, string> = {
+  open: "Open",
+  "in-progress": "In progress",
+  "awaiting-employee": "Awaiting employee",
+  resolved: "Resolved",
+  closed: "Closed",
 };
 
-function adaptWorkflow(rows: unknown[]): HrCase[] {
+const categoryLabel: Record<string, string> = {
+  payroll: "Payroll",
+  benefits: "Benefits",
+  contract: "Contract",
+  "data-change": "Data change",
+  "employment-letter": "Employment letter",
+  other: "Other",
+};
+
+export interface HrCase {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  category: string;
+  subject: string;
+  status: string;
+  confidentiality: string;
+  opened: string;
+  nextAction: string;
+}
+
+function adapt(rows: unknown[]): HrCase[] {
   return rows.map((raw) => {
     const r = raw as Record<string, unknown>;
     const status = String(r.status ?? "");
     return {
-      id: String(r.requestId ?? r.id ?? ""),
-      employeeId: String(r.subjectWorkerId ?? ""),
-      category: String(r.workflowType ?? "General"),
-      subject: String(r.subjectName ?? "Workflow request"),
-      detail: "",
-      priority: "Normal",
-      status: (workflowStatus[status] ?? "In review") as HrCase["status"],
-      owner: String(r.currentApproverName ?? ""),
-      nextAction: status === "submitted" || status === "in-review" ? "Awaiting decision" : "Closed",
-      dueDate: typeof r.dueAt === "string" ? String(r.dueAt).slice(0, 10) : "—",
-      timeline: [],
+      id: String(r.id ?? ""),
+      employeeId: String(r.workerId ?? ""),
+      employeeName: String(r.workerName ?? "Unknown"),
+      category: categoryLabel[String(r.category ?? "")] ?? String(r.category ?? "Other"),
+      subject: String(r.subject ?? ""),
+      status: statusLabel[status] ?? status,
+      confidentiality: String(r.confidentiality ?? "normal"),
+      opened: typeof r.createdAt === "string" ? String(r.createdAt).slice(0, 10) : "—",
+      nextAction:
+        status === "open" || status === "in-progress" || status === "awaiting-employee"
+          ? status === "awaiting-employee"
+            ? "Awaiting employee reply"
+            : "Awaiting HR action"
+          : "Closed",
     } satisfies HrCase;
   });
 }
 
 function RequestsList() {
-  const state = useApi(
-    async () => adaptWorkflow((await realApi.workflowQueue()).items),
-    [],
-  );
+  const state = useApi(async () => adapt((await realApi.experienceRequests()).items), []);
   const [view, setView] = useState("all");
 
   return (
@@ -77,28 +94,85 @@ function RequestsList() {
       <Async state={state}>
         {(rows) => (
           <ListPage<HrCase>
-            rows={rows.filter((r) => (view === "open" ? !["Approved", "Rejected", "Cancelled"].includes(r.status) : true))}
+            rows={rows.filter((r) =>
+              view === "open"
+                ? ["Open", "In progress", "Awaiting employee"].includes(r.status)
+                : view === "resolved"
+                  ? ["Resolved"].includes(r.status)
+                  : true,
+            )}
             savedViews={[
               { id: "all", label: "All requests" },
               { id: "open", label: "Awaiting action" },
+              { id: "resolved", label: "Resolved" },
             ]}
             activeView={view}
             onViewChange={setView}
-            searchPlaceholder="Search reference, employee or subject"
-            searchFields={(r) => `${r.id} ${r.owner} ${r.category} ${r.subject}`}
+            searchPlaceholder="Search reference, employee, category or subject"
+            searchFields={(r) => `${r.id} ${r.employeeName} ${r.category} ${r.subject}`}
             filters={[
-              { id: "category", label: "Category", options: ["leave", "letter", "General"] as string[], match: (r, v) => r.category === v },
-              { id: "priority", label: "Priority", options: ["Low", "Normal", "High"] as string[], match: (r, v) => r.priority === v },
+              {
+                id: "category",
+                label: "Category",
+                options: Object.values(categoryLabel) as string[],
+                match: (r, v) => r.category === v,
+              },
+              {
+                id: "confidentiality",
+                label: "Confidentiality",
+                options: ["Normal", "Confidential"],
+                match: (r, v) => (v === "Confidential" ? r.confidentiality === "confidential" : r.confidentiality !== "confidential"),
+              },
             ]}
             columns={[
-              { id: "ref", header: "Reference", cell: (r) => <Link to="/hrm/requests/$id" params={{ id: r.id }} className="font-mono text-xs text-primary underline underline-offset-2">{r.id}</Link> },
-              { id: "employee", header: "Employee", cell: (r) => <span className="block max-w-56 truncate">{r.owner || name(r.employeeId)}</span> },
+              {
+                id: "ref",
+                header: "Reference",
+                cell: (r) => (
+                  <Link
+                    to="/hrm/requests/$id"
+                    params={{ id: r.id }}
+                    className="font-mono text-xs text-primary underline underline-offset-2"
+                  >
+                    {r.id.slice(0, 13)}…
+                  </Link>
+                ),
+              },
+              {
+                id: "employee",
+                header: "Employee",
+                cell: (r) => (
+                  <span className="block max-w-56 truncate">
+                    {r.employeeName}
+                    <span className="block truncate text-xs text-muted-foreground">{r.employeeId}</span>
+                  </span>
+                ),
+              },
               { id: "category", header: "Category", cell: (r) => r.category },
-              { id: "subject", header: "Subject", cell: (r) => <span className="block max-w-64 truncate">{r.subject}</span> },
-              { id: "priority", header: "Priority", cell: (r) => r.priority },
+              {
+                id: "subject",
+                header: "Subject",
+                cell: (r) => (
+                  <span className="block max-w-64 truncate">
+                    {r.subject}
+                    {r.confidentiality === "confidential" ? (
+                      <span className="ml-1 rounded-full border border-warning/40 bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning">
+                        Confidential
+                      </span>
+                    ) : null}
+                  </span>
+                ),
+              },
               { id: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-              { id: "next", header: "Next action", cell: (r) => <span className="block max-w-56 truncate text-xs">{r.nextAction} · due {r.dueDate}</span> },
-              { id: "owner", header: "Owner", defaultVisible: false, cell: (r) => r.owner },
+              {
+                id: "next",
+                header: "Next action",
+                cell: (r) => (
+                  <span className="block max-w-56 truncate text-xs">
+                    {r.nextAction} · opened {r.opened}
+                  </span>
+                ),
+              },
             ]}
             emptyBody="No HR requests match the current view."
           />

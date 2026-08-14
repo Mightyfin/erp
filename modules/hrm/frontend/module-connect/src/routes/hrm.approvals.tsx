@@ -1,13 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { employees } from "@/mock/data";
-import { api } from "@/mock/service";
+import { useState } from "react";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/approvals")({
   head: () => ({
@@ -21,55 +20,100 @@ export const Route = createFileRoute("/hrm/approvals")({
   component: Approvals,
 });
 
-const name = (id: string) => employees.find((w) => w.id === id)?.fullName ?? "Unknown employee";
-const open = new Set(["Submitted", "In review", "Returned"]);
-
 interface Row {
   id: string;
-  kind: "Leave" | "Attendance" | "HR request";
+  kind: "Leave" | "Attendance" | "HR request" | "Workflow";
   title: string;
   employeeName: string;
   status: string;
-  dueDate: string;
+  opened: string;
   to: string;
 }
 
+const workflowStatus: Record<string, string> = {
+  submitted: "Submitted",
+  "in-review": "In review",
+  approved: "Approved",
+  rejected: "Rejected",
+  returned: "Returned",
+  cancelled: "Cancelled",
+};
+
+const hrStatus: Record<string, string> = {
+  open: "Open",
+  "in-progress": "In progress",
+  "awaiting-employee": "Awaiting employee",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+function isDecidable(status: string): boolean {
+  return status === "Submitted" || status === "In review" || status === "Returned" || status === "Open" || status === "In progress" || status === "Awaiting employee";
+}
+
 async function loadQueue(): Promise<Row[]> {
-  const [leave, attendance, cases] = await Promise.all([api.leaveRequests(), api.attendance(), api.cases()]);
+  const [leave, corrections, exp, workflow] = await Promise.all([
+    realApi.leaveRequests({ page: 1, pageSize: 50 }),
+    realApi.timeCorrections({ page: 1, pageSize: 50 }),
+    realApi.experienceRequests({ page: 1, pageSize: 50 }),
+    realApi.workflowQueue(),
+  ]);
   const rows: Row[] = [
-    ...leave.filter((r) => open.has(r.status)).map((r) => ({
-      id: r.id,
-      kind: "Leave" as const,
-      title: `${r.type} leave · ${r.days} days`,
-      employeeName: name(r.employeeId),
-      status: r.status,
-      dueDate: r.dueDate,
-      to: "/hrm/leave/$id",
-    })),
-    ...attendance.filter((r) => open.has(r.status)).map((r) => ({
-      id: r.id,
-      kind: "Attendance" as const,
-      title: `Correction · ${r.date}`,
-      employeeName: name(r.employeeId),
-      status: r.status,
-      dueDate: r.dueDate,
-      to: "/hrm/attendance/$id",
-    })),
-    ...cases.filter((r) => open.has(r.status)).map((r) => ({
-      id: r.id,
-      kind: "HR request" as const,
-      title: r.subject,
-      employeeName: name(r.employeeId),
-      status: r.status,
-      dueDate: r.dueDate,
-      to: "/hrm/requests/$id",
-    })),
+    ...(Array.isArray(leave.items) ? leave.items : []).map((r) => {
+      const x = r as Record<string, unknown>;
+      return {
+        id: String(x.id ?? ""),
+        kind: "Leave" as const,
+        title: `${String(x.leaveTypeCode ?? "leave")} · ${Number(x.requestedDays ?? 0)} days`,
+        employeeName: String(x.workerName ?? "Unknown"),
+        status: String(x.status ?? ""),
+        opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
+        to: "/hrm/leave/$id",
+      };
+    }),
+    ...(Array.isArray(corrections.items) ? corrections.items : []).map((r) => {
+      const x = r as Record<string, unknown>;
+      return {
+        id: String(x.id ?? ""),
+        kind: "Attendance" as const,
+        title: `Correction · ${String(x.date ?? String(x.claimDate ?? "—"))}`,
+        employeeName: String(x.workerName ?? "Unknown"),
+        status: String(x.status ?? ""),
+        opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
+        to: "/hrm/attendance/$id",
+      };
+    }),
+    ...(Array.isArray(exp.items) ? exp.items : []).map((r) => {
+      const x = r as Record<string, unknown>;
+      return {
+        id: String(x.id ?? ""),
+        kind: "HR request" as const,
+        title: String(x.subject ?? "HR request"),
+        employeeName: String(x.workerName ?? "Unknown"),
+        status: hrStatus[String(x.status ?? "")] ?? String(x.status ?? ""),
+        opened: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 10) : "—",
+        to: "/hrm/requests/$id",
+      };
+    }),
+    ...(Array.isArray(workflow.items) ? workflow.items : []).map((r) => {
+      const x = r as Record<string, unknown>;
+      return {
+        id: String(x.requestId ?? ""),
+        kind: "Workflow" as const,
+        title: `${String(x.workflowType ?? "request")} · ${String(x.subjectName ?? "Workflow item")}`,
+        employeeName: String(x.currentApproverName ?? "Workflow queue"),
+        status: workflowStatus[String(x.status ?? "")] ?? String(x.status ?? ""),
+        opened: typeof x.dueAt === "string" ? String(x.dueAt).slice(0, 10) : "—",
+        to: "/hrm/approvals/$id",
+      };
+    }),
   ];
-  return rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  return rows.filter((r) => isDecidable(r.status));
 }
 
 function Approvals() {
-  const state = useMock(loadQueue);
+  const state = useApi(loadQueue, []);
+  const [view, setView] = useState("all");
 
   return (
     <AuthGate>
@@ -77,25 +121,45 @@ function Approvals() {
       <PageHeader
         eyebrow="Approvals"
         title="Approvals"
-        description="Everything waiting on your decision across leave, attendance and HR requests, oldest due date first."
+        description="Everything waiting on your decision across leave, attendance, HR requests and workflow items, oldest first."
       />
       <Async state={state}>
         {(rows) => (
           <ListPage<Row>
-            rows={rows}
+            rows={rows.filter((r) => (view === "open" ? true : r.kind === view))}
+            savedViews={[
+              { id: "all", label: "All types" },
+              { id: "Leave", label: "Leave" },
+              { id: "Attendance", label: "Attendance" },
+              { id: "HR request", label: "HR requests" },
+              { id: "Workflow", label: "Workflow" },
+            ]}
+            activeView={view}
+            onViewChange={setView}
             searchPlaceholder="Search reference, employee or title"
             searchFields={(r) => `${r.id} ${r.employeeName} ${r.title}`}
             filters={[
-              { id: "kind", label: "Type", options: ["Leave", "Attendance", "HR request"], match: (r, v) => r.kind === v },
-              { id: "status", label: "Status", options: ["Submitted", "In review", "Returned"], match: (r, v) => r.status === v },
+              { id: "kind", label: "Type", options: ["Leave", "Attendance", "HR request", "Workflow"], match: (r, v) => r.kind === v },
             ]}
             columns={[
-              { id: "ref", header: "Reference", cell: (r) => <Link to={r.to} params={{ id: r.id }} className="font-mono text-xs text-primary underline underline-offset-2">{r.id}</Link> },
+              {
+                id: "ref",
+                header: "Reference",
+                cell: (r) => (
+                  <Link to={r.to} params={{ id: r.id }} className="font-mono text-xs text-primary underline underline-offset-2">
+                    {r.id.slice(0, 13)}…
+                  </Link>
+                ),
+              },
               { id: "kind", header: "Type", cell: (r) => r.kind },
               { id: "title", header: "Item", cell: (r) => <span className="block max-w-64 truncate">{r.title}</span> },
-              { id: "employee", header: "Employee", cell: (r) => <span className="block max-w-56 truncate">{r.employeeName}</span> },
+              {
+                id: "employee",
+                header: "Employee",
+                cell: (r) => <span className="block max-w-56 truncate">{r.employeeName}</span>,
+              },
               { id: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-              { id: "due", header: "Due", cell: (r) => r.dueDate },
+              { id: "opened", header: "Opened", cell: (r) => r.opened },
             ]}
             emptyBody="Nothing is waiting on a decision right now."
           />

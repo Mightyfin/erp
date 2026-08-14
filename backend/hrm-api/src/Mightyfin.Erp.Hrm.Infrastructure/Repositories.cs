@@ -476,16 +476,36 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
         // when the parent is Modified (state-propagation behavior change). Re-attach
         // brand-new (detached) messages directly to the context as Added with the FK
         // set, which keeps them as INSERTs alongside the parent UPDATE.
-        foreach (var msg in request.Messages)
+        // M22: EF Core 10 also demotes EXISTING tracked children to Modified when
+        // the parent is Modified, producing 0-row UPDATEs (DbUpdateConcurrencyException).
+        // Pin every existing (non-detached) message to Unchanged so the tracker skips it.
+        foreach (var msg in request.Messages.ToList())
         {
-            if (db.Entry(msg).State == EntityState.Detached)
+            var entry = db.Entry(msg);
+            if (entry.State == EntityState.Detached)
             {
                 msg.RequestId = request.Id;
                 db.HrRequestMessages.Add(msg);
             }
+            else if (entry.State != EntityState.Unchanged && entry.State != EntityState.Added)
+            {
+                entry.State = EntityState.Unchanged;
+            }
         }
         if (db.Entry(request).State == EntityState.Detached)
             db.HrRequests.Update(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+
+    // M22: explicit top-level insert so EF Core 10's Modified-parent demotion can
+    // never turn the new message into a 0-row UPDATE. Same explicit-Add pattern
+    // used for emergency contacts / bank details.
+    public async Task<HrRequest> AddMessageAsync(HrRequest request, HrRequestMessage message, CancellationToken ct)
+    {
+        message.RequestId = request.Id;
+        db.Set<HrRequestMessage>().Add(message);
+        // status transition decided by the caller is already on the tracked parent
         await db.SaveChangesAsync(ct);
         return request;
     }

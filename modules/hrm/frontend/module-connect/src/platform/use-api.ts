@@ -209,6 +209,19 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/workflow/requests/${id}/escalate`, body),
 
   /** Experience: letters, service requests, speak-up. */
+  experienceRequests: (params?: Record<string, unknown>) =>
+    hrmApi.get<{ items: unknown[]; totalCount: number }>('/hrm/experience/requests', params ?? {}),
+  createExperienceRequest: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>('/hrm/experience/requests', body),
+  addRequestMessage: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<unknown>(`/hrm/experience/requests/${id}/messages`, body),
+  resolveRequest: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/experience/requests/${id}/resolve`, null),
+  /** Onboarding readiness for one worker — 5-item statutory/banking checklist. */
+  onboardingPlan: (workerId: string) =>
+    hrmApi.get<{ workerId?: string; isOnboarded?: boolean; tasksCompleted?: number; tasksTotal?: number }>(
+      `/hrm/workers/${workerId}/onboarding`,
+    ),
   experienceLetters: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: unknown[] }>('/hrm/experience/letters', params ?? {}),
   createLetter: (body: Record<string, unknown>) =>
