@@ -144,6 +144,15 @@ export const hrmApi = {
     return handleResponse<T>(res);
   },
 
+  async patch<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, {
+      method: "PATCH",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(res);
+  },
+
   async delete<T>(path: string): Promise<T> {
     const res = await fetch(`${BASE}${path}`, {
       method: "DELETE",

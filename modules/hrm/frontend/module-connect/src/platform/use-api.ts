@@ -286,6 +286,29 @@ export const realApi = {
   calendars: () => hrmApi.get<unknown[]>("/hrm/admin/calendars"),
   capabilities: () => hrmApi.get<unknown[]>("/hrm/admin/capabilities"),
 
+  /* ------------------------------------------------------------------ */
+  /* M19 organisation configuration CRUD (write surfaces)                */
+  /* ------------------------------------------------------------------ */
+
+  /** Create an org unit (department / cost centre). */
+  createOrgUnit: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/admin/org-units", body),
+  /** Patch-update an org unit (fields sent as-is, backend accepts partial). */
+  updateOrgUnit: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/admin/org-units/${id}`, body),
+  /** Effectively-date a unit closure (EffectiveDate must be today or later). */
+  closeOrgUnit: (id: string, effectiveDate: string, reason?: string) =>
+    hrmApi.post<unknown>(`/hrm/admin/org-units/${id}/close`, { effectiveDate, reason }), // OrgUnitCloseRequest.EffectiveDate
+  /** Create a work location. */
+  createLocation: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/admin/locations", body),
+  /** Patch-update a work location. */
+  updateLocation: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/admin/locations/${id}`, body),
+  /** Create a legal entity. */
+  createLegalEntity: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/admin/legal-entities", body),
+
   /** Worker lifecycle: onboarding snapshot, offboarding, bank details. */
   workerOnboarding: (workerId: string) =>
     hrmApi.get<unknown>(`/hrm/workers/${workerId}/onboarding`),

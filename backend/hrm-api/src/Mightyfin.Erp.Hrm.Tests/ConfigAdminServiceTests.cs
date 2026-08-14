@@ -83,6 +83,55 @@ public class ConfigAdminServiceTests
     }
 
     [Fact]
+    public async Task Location_Create_Update_List()
+    {
+        var (svc, ctx) = Build();
+        var entity = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "LOC1", RegisteredName: "Location Entity One"), default);
+
+        var location = await svc.CreateLocationAsync(new WorkLocationCreateRequest(
+            Code: "KITWE", Name: "Kitwe Branch", LegalEntityId: entity.Id, Type: "branch", City: "Kitwe"), default);
+        Assert.NotEqual(Guid.Empty, location.Id);
+        Assert.Equal("branch", location.Type);
+
+        var repo2 = new ConfigRepository(ctx);
+        var svc2 = new ConfigAdminServiceImpl(repo2, new PermissiveAuthz());
+        var list = await svc2.ListLocationsAsync(default);
+        Assert.Contains(list.Items, l => l.Id == location.Id && l.Name == "Kitwe Branch");
+
+        var updated = await svc2.UpdateLocationAsync(location.Id,
+            new WorkLocationUpdateRequest(Name: "Kitwe Main Branch"), default);
+        Assert.Equal("Kitwe Main Branch", updated.Name);
+    }
+
+    [Fact]
+    public async Task OrgUnit_DuplicateCode_Rejected()
+    {
+        var (svc, _) = Build();
+        var entity = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "DU1", RegisteredName: "Duplicate Code Entity"), default);
+        await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "DUP1", Name: "Dup One", LegalEntityId: entity.Id), default);
+        await Assert.ThrowsAsync<DomainException>(() =>
+            svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+                Code: "dup1", Name: "Dup Two", LegalEntityId: entity.Id), default));
+    }
+
+    [Fact]
+    public async Task OrgUnit_Update_WithNewName_Persists()
+    {
+        var (svc, _) = Build();
+        var entity = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "U1", RegisteredName: "Update Entity One"), default);
+        var unit = await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "SLS", Name: "Sales", LegalEntityId: entity.Id), default);
+        var updated = await svc.UpdateOrgUnitAsync(unit.Id,
+            new OrgUnitUpdateRequest(Name: "Sales and Marketing", UnitType: "department"), default);
+        Assert.Equal("Sales and Marketing", updated.Name);
+        Assert.Equal("department", updated.UnitType);
+    }
+
+    [Fact]
     public async Task WorkCalendar_HolidayLifecycle()
     {
         var (svc, ctx) = Build();
