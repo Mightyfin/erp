@@ -17,6 +17,8 @@ export const ENABLED_SECTIONS = new Set([
   "time", // hours, absence, timesheets and claims — all payroll inputs
   "payroll",
   "approvals", // an unapproved correction silently drops out of the run
+  "lifecycle", // M22 onboarding — statutory readiness feeds the payroll record
+  "experience", // M22 HR requests — the admin inbox lands on approvals
   "configuration",
 ]);
 
@@ -31,6 +33,8 @@ const ENABLED_PREFIXES = [
   "/hrm/pay",
   "/hrm/payroll",
   "/hrm/approvals",
+  "/hrm/requests",
+  "/hrm/lifecycle/onboarding",
   "/hrm/configuration",
   "/hrm/setup",
   "/hrm/help",
