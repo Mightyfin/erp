@@ -11,7 +11,8 @@ import { toast } from "sonner";
  *  - Nothing here persists, so every message says so once, quietly.
  */
 
-const MOCK_NOTE = "Demonstration build — nothing is saved.";
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+const MOCK_NOTE = USE_REAL ? undefined : "Demonstration build — nothing is saved.";
 
 /**
  * A blocked message stays until it is dealt with, so it needs a stable id:
@@ -26,7 +27,7 @@ export const feedback = {
   saved(what: string, onUndo?: () => void) {
     toast.dismiss(BLOCKED);
     toast.success(what, {
-      description: MOCK_NOTE,
+      ...(MOCK_NOTE ? { description: MOCK_NOTE } : {}),
       action: onUndo ? { label: "Undo", onClick: onUndo } : undefined,
     });
   },
@@ -40,7 +41,7 @@ export const feedback = {
   /** A deliberate, irreversible removal. */
   removed(what: string, onUndo?: () => void) {
     toast(what, {
-      description: MOCK_NOTE,
+      ...(MOCK_NOTE ? { description: MOCK_NOTE } : {}),
       action: onUndo ? { label: "Undo", onClick: onUndo } : undefined,
     });
   },
