@@ -55,6 +55,7 @@ const n = (v: unknown) => {
 
 const sections = [
   { id: "groups", label: "Pay groups" },
+  { id: "structures", label: "Structures" },
   { id: "slabs", label: "ZRA PAYE slabs" },
   { id: "rules", label: "Contribution rules" },
   { id: "components", label: "Salary components" },
@@ -64,16 +65,18 @@ type SectionId = (typeof sections)[number]["id"];
 /* ---------- loading helpers ---------- */
 
 async function loadPayrollSetup() {
-  if (!USE_REAL) return { groups: [], slabs: [], rules: [], components: [] };
+  if (!USE_REAL) return { groups: [], structures: [], slabs: [], rules: [], components: [] };
   const taxYear = String(new Date().getFullYear());
-  const [groups, slabs, rules, components] = await Promise.all([
+  const [groups, structures, slabs, rules, components] = await Promise.all([
     realApi.payGroupsFull(),
+    realApi.payrollStructures(),
     realApi.payrollTaxSlabs(taxYear),
     realApi.payrollContributionRules(),
     realApi.payrollComponents(),
   ]);
   return {
     groups: Array.isArray(groups) ? (groups as Raw[]) : [],
+    structures: Array.isArray(structures) ? (structures as Raw[]) : [],
     slabs: Array.isArray(slabs) ? (slabs as Raw[]) : [],
     rules: Array.isArray(rules) ? (rules as Raw[]) : [],
     components: Array.isArray(components) ? (components as Raw[]) : [],
@@ -664,7 +667,258 @@ function ComponentDialog({
   );
 }
 
+function StructureDialog({
+  structure,
+  components,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  structure: Raw | null;
+  components: Raw[];
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [items, setItems] = useState<Raw[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!structure) return null;
+  const id = String(structure.id ?? "");
+  const isDefault = String(structure.code ?? "").toUpperCase() === "ZMW-STANDARD";
+  const activeComponents = components.filter((c) => Boolean(c.isActive) && !c.isArchived);
+
+  const upsertItem = (componentId: string) => {
+    setItems((prev) => {
+      if (prev.find((i) => String(i.componentId) === componentId)) return prev;
+      return [
+        ...prev,
+        { componentId, defaultAmount: "0", isOptional: false },
+      ];
+    });
+  };
+  const removeItem = (componentId: string) =>
+    setItems((prev) => prev.filter((i) => String(i.componentId) !== componentId));
+  const setItemAmount = (componentId: string, value: string) =>
+    setItems((prev) =>
+      prev.map((i) => (String(i.componentId) === componentId ? { ...i, defaultAmount: value } : i)),
+    );
+  const setItemOptional = (componentId: string, value: boolean) =>
+    setItems((prev) =>
+      prev.map((i) => (String(i.componentId) === componentId ? { ...i, isOptional: value } : i)),
+    );
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (o) {
+          setName(String(structure.name ?? ""));
+          setItems(((structure.items as Raw[] | undefined) ?? []).map((i) => ({
+            componentId: String(i.componentId ?? ""),
+            defaultAmount: String(i.defaultAmount ?? "0"),
+            isOptional: Boolean(i.isOptional),
+          })));
+        }
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{isDefault ? "ZMW-STANDARD — mandatory structure" : "Edit structure"}</DialogTitle>
+          <DialogDescription>
+            A structure decides which components a worker carries and their starting amounts. A run
+            posts to every component on the worker's structure; components are the ones from the
+            Salary components screen, minus the archived ones.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setError(null);
+            if (!name.trim()) {
+              setError("Give the structure a name.");
+              return;
+            }
+            const payload = items.map((i) => ({
+              componentId: String(i.componentId),
+              defaultAmount: Number(i.defaultAmount) || 0,
+              isOptional: Boolean(i.isOptional),
+            }));
+            if (payload.length !== new Set(items.map((i) => String(i.componentId))).size) {
+              setError("The same component cannot appear twice.");
+              return;
+            }
+            setBusy(true);
+            try {
+              await realApi.updateStructure(id, { name: name.trim(), items: payload });
+              feedback.saved(`${name.trim()} saved with ${payload.length} component${payload.length === 1 ? "" : "s"}.`);
+              onSaved();
+              onOpenChange(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Server rejected the change.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="min-w-0">
+            <Label htmlFor="st-name">Structure name</Label>
+            <Input
+              id="st-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1.5"
+              required
+              disabled={isDefault}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Components on this structure</Label>
+            <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
+              {activeComponents.map((comp) => {
+                const item = items.find((i) => String(i.componentId) === String(comp.id));
+                return (
+                  <div key={String(comp.id)} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!item}
+                      onChange={(e) => (e.target.checked ? upsertItem(String(comp.id)) : removeItem(String(comp.id)))}
+                      aria-label={`Include ${String(comp.name ?? comp.code)}`}
+                      className="size-4"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm">{String(comp.name ?? comp.code)}</span>
+                    {item ? (
+                      <>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={String(item.defaultAmount)}
+                          onChange={(e) => setItemAmount(String(comp.id), e.target.value)}
+                          className="w-28"
+                          aria-label={`Default amount for ${String(comp.name ?? comp.code)}`}
+                        />
+                        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(item.isOptional)}
+                            onChange={(e) => setItemOptional(String(comp.id), e.target.checked)}
+                            aria-label={`Optional — ${String(comp.name ?? comp.code)}`}
+                            className="size-3.5"
+                          />
+                          optional
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!activeComponents.length ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">No active components available.</p>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Checked components are posted to the worker with their default amount; unchecking
+              removes the component from this structure entirely.
+            </p>
+          </div>
+          {error ? (
+            <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex items-center justify-between gap-2 pt-2">
+            <span className="rounded-full border bg-surface-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+              {String(structure.code ?? "")}{isDefault ? " · this structure cannot be deactivated" : ""}
+            </span>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save structure"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ---------- tables ---------- */
+
+function StructureTable({
+  rows,
+  canAct,
+  onEdit,
+}: {
+  rows: Raw[];
+  canAct: boolean;
+  onEdit: (g: Raw) => void;
+}) {
+  if (!rows.length) {
+    return (
+      <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        No salary structures yet — HR picks components here that every worker assigned to the
+        structure will carry into a run.
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border bg-surface">
+      <table className="w-full min-w-[44rem] text-left text-sm">
+        <caption className="sr-only">Salary structures defining which components workers carry</caption>
+        <thead className="border-b bg-surface-muted">
+          <tr>
+            {["Code", "Name", "Components", "Status", "Action"].map((h) => (
+              <th
+                key={h}
+                scope="col"
+                className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map((st) => (
+            <tr key={String(st.id)} className="hover:bg-surface-muted">
+              <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{String(st.code ?? "")}</td>
+              <td className="px-3 py-3">{String(st.name ?? "")}</td>
+              <td className="px-3 py-3">
+                {Number(((st.items as unknown[]) ?? []).length)}{
+                  (st.items as Raw[] | undefined)?.some((i) => Boolean(i.isOptional))
+                    ? " · some optional"
+                    : ""
+                }
+              </td>
+              <td className="px-3 py-3">
+                <StatusBadge status={Boolean(st.isActive) ? "active" : "inactive"} />
+                <span className="ml-1.5 text-xs text-muted-foreground">{Boolean(st.isActive) ? "In use" : "Retired"}</span>
+              </td>
+              <td className="px-3 py-3 text-right">
+                {canAct ? (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={() => onEdit(st)}>
+                    <Pencil className="size-3.5" aria-hidden />
+                    Edit
+                    <span className="sr-only"> structure {String(st.code ?? "")}</span>
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Read-only</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function PayGroupTable({
   rows,
@@ -972,6 +1226,7 @@ function PayrollSetup() {
   const canAct = userRoles.has("hr_admin") || userRoles.has("hr_ops");
   const [section, setSection] = useState<SectionId>("groups");
   const [editingGroup, setEditingGroup] = useState<Raw | null>(null);
+  const [editingStructure, setEditingStructure] = useState<Raw | null>(null);
   const [editingSlab, setEditingSlab] = useState<Raw | null>(null);
   const [editingRule, setEditingRule] = useState<Raw | null>(null);
   const [editingComp, setEditingComp] = useState<Raw | null>(null);
@@ -1020,6 +1275,28 @@ function PayrollSetup() {
         <Async state={state} rows={5}>
           {(data) => (
             <>
+              {section === "structures" ? (
+                <section aria-label="Salary structures" className="space-y-4">
+                  <div className="rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
+                    <p className="flex items-start gap-2 font-medium">
+                      <BadgeDollarSign className="mt-0.5 size-4 shrink-0" aria-hidden />
+                      Which components a worker carries into a run
+                    </p>
+                    <p className="mt-1.5 pl-6">
+                      Every worker is assigned a structure, and a run posts to every component on
+                      it. The ZMW-STANDARD structure is the company-wide default and can never be
+                      switched off; other structures can be retired once nobody is assigned to
+                      them. Archived components never appear as candidates.
+                    </p>
+                  </div>
+                  <StructureTable
+                    rows={data.structures}
+                    canAct={canAct}
+                    onEdit={(st) => setEditingStructure(st)}
+                  />
+                </section>
+              ) : null}
+
               {section === "groups" ? (
                 <section aria-label="Pay groups" className="space-y-4">
                   <div className="rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
@@ -1102,6 +1379,13 @@ function PayrollSetup() {
         taxYear={taxYear}
         open={editingGroup !== null}
         onOpenChange={(o) => !o && setEditingGroup(null)}
+        onSaved={state.reload}
+      />
+      <StructureDialog
+        structure={editingStructure}
+        components={state.data ? state.data.components : []}
+        open={editingStructure !== null}
+        onOpenChange={(o) => !o && setEditingStructure(null)}
         onSaved={state.reload}
       />
       <TaxSlabDialog

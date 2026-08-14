@@ -118,6 +118,16 @@ public sealed record ProtectedDisclosureStatusResponse(string CaseReference, str
 
 // ===================== Payroll =====================
 
+// ---------- M21: salary structure administration ----------
+public sealed record SalaryStructureItemUpsert(Guid ComponentId, decimal? DefaultAmount = null, bool? IsOptional = null, int? Order = null);
+public sealed record SalaryStructureDto(Guid Id, string Code, string Name, int Version, bool IsActive,
+    List<SalaryStructureItemDto> Items);
+public sealed record SalaryStructureItemDto(Guid Id, Guid ComponentId, string ComponentCode, string ComponentName,
+    decimal? DefaultAmount, bool IsOptional, int Order);
+public sealed record SalaryStructureCreateRequest(string Code, string Name, List<SalaryStructureItemUpsert> Items);
+public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsActive = null,
+    List<SalaryStructureItemUpsert>? Items = null);
+
 public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
     List<WorkerComponentValueCreate> Values);

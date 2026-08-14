@@ -544,6 +544,47 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<SalaryStructure?> FindStructureAsync(string code, CancellationToken ct) =>
         await db.SalaryStructures.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Code == code && s.IsActive, ct);
+    public async Task<SalaryStructure?> FindStructureByCodeAsync(string code, CancellationToken ct) =>
+        await db.SalaryStructures.FirstOrDefaultAsync(s => s.Code == code && !s.IsArchived, ct);
+    public async Task<List<SalaryStructure>> ListStructuresAsync(CancellationToken ct) =>
+        await db.SalaryStructures.Where(s => !s.IsArchived && s.IsActive).OrderBy(s => s.Code).ToListAsync(ct);
+    public async Task<SalaryStructure?> GetStructureAsync(Guid id, CancellationToken ct) =>
+        await db.SalaryStructures
+            .Include(s => s.Items).ThenInclude(i => i.Component)
+            .FirstOrDefaultAsync(s => s.Id == id && !s.IsArchived, ct);
+    public async Task<SalaryStructure> CreateStructureAsync(SalaryStructure structure, CancellationToken ct)
+    {
+        db.SalaryStructures.Add(structure);
+        await db.SaveChangesAsync(ct);
+        return structure;
+    }
+    public async Task UpdateStructureAsync(SalaryStructure structure, CancellationToken ct)
+    {
+        if (db.Entry(structure).State == EntityState.Detached)
+            db.SalaryStructures.Update(structure);
+        await db.SaveChangesAsync(ct);
+    }
+    /// <summary>EF Core 10 + SQLite Guid-V7 bug: adding child entities via the
+    /// navigation after the parent was saved throws a spurious
+    /// DbUpdateConcurrencyException, so items are attached explicitly and saved
+    /// in a separate phase with no Update() call.</summary>
+    public async Task SetStructureItemsExplicitlyAsync(SalaryStructure structure,
+        List<SalaryStructureItem> items, CancellationToken ct)
+    {
+        foreach (var i in items)
+        {
+            i.StructureId = structure.Id;
+            i.TenantId = structure.TenantId;
+        }
+        db.Set<SalaryStructureItem>().AddRange(items);
+        await db.SaveChangesAsync(ct);
+    }
+    public async Task ClearStructureItemsAsync(Guid structureId, CancellationToken ct)
+    {
+        var items = await db.SalaryStructureItems.Where(i => i.StructureId == structureId).ToListAsync(ct);
+        db.SalaryStructureItems.RemoveRange(items);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct)
         => await db.Workers.FirstOrDefaultAsync(w => w.Id == id, ct);

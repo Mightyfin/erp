@@ -230,6 +230,9 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/tax-slabs", { taxYear }),
   payrollContributionRules: () =>
     hrmApi.get<unknown[]>("/hrm/payroll/contribution-rules"),
+  payrollStructures: () => hrmApi.get<unknown[]>("/hrm/payroll/structures"),
+  updateStructure: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/payroll/structures/${id}`, body),
   payrollProfiles: (params?: Record<string, unknown>) =>
     hrmApi.get<unknown[]>("/hrm/payroll/profiles", params ?? {}),
   createPayrollProfile: (workerId: string, body: Record<string, unknown>) =>

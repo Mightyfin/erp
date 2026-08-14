@@ -24,7 +24,11 @@ public interface IPayrollService
     Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct);
     Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct);
     Task<SalaryComponentDto> UpdateSalaryComponentAsync(Guid id, SalaryComponentUpdateRequest request, CancellationToken ct);
-
+    // M21: salary structures admin (which components + default amounts ship with a structure)
+    Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct);
+    Task<SalaryStructureDto> GetStructureAsync(Guid id, CancellationToken ct);
+    Task<SalaryStructureDto> CreateStructureAsync(SalaryStructureCreateRequest request, CancellationToken ct);
+    Task<SalaryStructureDto> UpdateStructureAsync(Guid id, SalaryStructureUpdateRequest request, CancellationToken ct);
     // M5 setup: worker payroll profiles (basic salary + allowances per worker)
     Task<List<WorkerPayrollProfileDto>> ListProfilesAsync(Guid? workerId, CancellationToken ct);
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
@@ -65,7 +69,6 @@ public sealed record ContributionRuleUpdateRequest(decimal? Rate = null, decimal
 public sealed record SalaryComponentUpdateRequest(string? Name = null, string? CalculationBasis = null,
     string? BasisComponentCode = null, decimal? Rate = null, decimal? FixedAmount = null,
     decimal? Ceiling = null, bool? IsTaxable = null, bool? IsArchived = null);
-
 // ---------- M20 DTO extras ----------
 public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string Frequency, string Currency,
     int CalendarDayOfMonth, int InputCutoffDaysBeforePayday, bool IsDefault, string Status);
@@ -197,6 +200,97 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
             comp.Rate, comp.FixedAmount, comp.Ceiling, comp.IsTaxable, comp.IsStatutory, comp.Version, comp.IsActive);
     }
+
+    // ---------- M21: salary structure administration ----------
+    public async Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var items = await repo.ListStructuresAsync(ct);
+        return items.Select(MapStructure).ToList();
+    }
+
+    public async Task<SalaryStructureDto> GetStructureAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var structure = await repo.GetStructureAsync(id, ct)
+            ?? throw new DomainException("salary-structure-not-found", $"Salary structure {id} does not exist.");
+        return MapStructure(structure);
+    }
+
+    public async Task<SalaryStructureDto> CreateStructureAsync(SalaryStructureCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var code = (request.Code ?? "").Trim();
+        if (code.Length is < 2 or > 24)
+            throw new DomainException("structure-code-invalid", "Structure code must be 2-24 characters.");
+        if (!string.Equals(code, code.ToUpperInvariant(), StringComparison.Ordinal))
+            throw new DomainException("structure-code-invalid", "Structure code must be uppercase.");
+        var existing = await repo.FindStructureByCodeAsync(code, ct);
+        if (existing is not null)
+            throw new DomainException("structure-code-duplicate", $"A structure with code {code} already exists.");
+        var structure = new SalaryStructure { Code = code, Name = (request.Name ?? "").Trim(), Version = 1, IsActive = true };
+        await repo.CreateStructureAsync(structure, ct);
+        await SetStructureItemsAsync(structure, request.Items, ct);
+        return MapStructure(await repo.GetStructureAsync(structure.Id, ct) ?? structure);
+    }
+
+    public async Task<SalaryStructureDto> UpdateStructureAsync(Guid id, SalaryStructureUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var structure = await repo.GetStructureAsync(id, ct)
+            ?? throw new DomainException("salary-structure-not-found", $"Salary structure {id} does not exist.");
+        if (structure.Code == "ZMW-STANDARD" && request.IsActive == false)
+            throw new DomainException("default-structure-protected",
+                "The ZMW-STANDARD structure is the payroll default and cannot be deactivated.");
+        if (request.Name is not null) structure.Name = request.Name.Trim();
+        if (request.IsActive is not null) structure.IsActive = request.IsActive.Value;
+        await repo.UpdateStructureAsync(structure, ct);
+        if (request.Items is not null) await SetStructureItemsAsync(structure, request.Items, ct);
+        return MapStructure(await repo.GetStructureAsync(structure.Id, ct) ?? structure);
+    }
+
+    private async Task SetStructureItemsAsync(SalaryStructure structure,
+        List<SalaryStructureItemUpsert> items, CancellationToken ct)
+    {
+        var seen = new HashSet<Guid>();
+        foreach (var item in items)
+        {
+            if (!seen.Add(item.ComponentId))
+                throw new DomainException("structure-item-duplicate",
+                    $"Component {item.ComponentId} is listed twice in the structure.");
+            var comp = await repo.GetComponentByIdAsync(item.ComponentId, ct)
+                ?? throw new DomainException("component-not-found",
+                    $"Component {item.ComponentId} does not exist and cannot be added to the structure.");
+            if (comp.IsArchived)
+                throw new DomainException("structure-item-archived",
+                    $"Component {comp.Code} is archived and cannot be part of a structure.");
+        }
+        await repo.ClearStructureItemsAsync(structure.Id, ct);
+        int order = 0;
+        var newItems = new List<SalaryStructureItem>();
+        foreach (var item in items)
+        {
+            var comp = await repo.GetComponentByIdAsync(item.ComponentId, ct);
+            newItems.Add(new SalaryStructureItem
+            {
+                StructureId = structure.Id,
+                ComponentId = item.ComponentId,
+                DefaultAmount = item.DefaultAmount,
+                IsOptional = item.IsOptional ?? comp!.ComponentType != "earning",
+                Order = item.Order ?? order++,
+            });
+        }
+        // EF Core 10 + SQLite Guid-V7: insert children via explicit AddRange in
+        // a separate SaveChanges phase — navigation-based insert after the
+        // parent was saved throws a spurious concurrency exception.
+        await repo.SetStructureItemsExplicitlyAsync(structure, newItems, ct);
+    }
+
+    private static SalaryStructureDto MapStructure(SalaryStructure s) => new(
+        s.Id, s.Code, s.Name, s.Version, s.IsActive,
+        s.Items.Select(i => new SalaryStructureItemDto(i.Id, i.ComponentId,
+            i.Component?.Code ?? "", i.Component?.Name ?? "",
+            i.DefaultAmount, i.IsOptional, i.Order)).OrderBy(i => i.Order).ToList());
 
     public async Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct)
     {
@@ -629,6 +723,13 @@ public interface IPayrollRepository
     Task<WorkerPayrollProfile> UpdateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct);
     Task DeleteProfileValuesAsync(Guid profileId, CancellationToken ct);
     Task<SalaryStructure?> FindStructureAsync(string code, CancellationToken ct);
+    Task<SalaryStructure?> FindStructureByCodeAsync(string code, CancellationToken ct);
+    Task<List<SalaryStructure>> ListStructuresAsync(CancellationToken ct);
+    Task<SalaryStructure?> GetStructureAsync(Guid id, CancellationToken ct);
+    Task<SalaryStructure> CreateStructureAsync(SalaryStructure structure, CancellationToken ct);
+    Task UpdateStructureAsync(SalaryStructure structure, CancellationToken ct);
+    Task ClearStructureItemsAsync(Guid structureId, CancellationToken ct);
+    Task SetStructureItemsExplicitlyAsync(SalaryStructure structure, List<SalaryStructureItem> items, CancellationToken ct);
     Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct);
     Task<List<SalaryComponent>> ListComponentsAsync(string? type, CancellationToken ct);
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);

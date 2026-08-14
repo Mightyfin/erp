@@ -411,6 +411,21 @@ public static class Routes
             var request = await ReadBodyAsync<SalaryComponentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
         });
+        // M21: salary structure administration
+        g.MapGet("/structures", async (IPayrollService svc, CancellationToken ct)
+            => await svc.ListStructuresAsync(ct));
+        g.MapGet("/structures/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetStructureAsync(id, ct)));
+        g.MapPost("/structures", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryStructureCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateStructureAsync(request, ct));
+        });
+        g.MapPatch("/structures/{id:guid}", async (Guid id, IPayrollService svc, HttpContext http, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryStructureUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateStructureAsync(id, request, ct));
+        });
         g.MapGet("/pay-groups/{groupId:guid}/periods", async (Guid groupId, IPayrollService svc, CancellationToken ct)
             => await svc.ListPeriodsAsync(groupId, ct));
         g.MapGet("/tax-slabs", async ([FromQuery] string taxYear, IPayrollService svc, CancellationToken ct)
