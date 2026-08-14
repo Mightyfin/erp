@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,18 +99,46 @@ function WorkerPayDialog({
   const [values, setValues] = useState<Raw[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedComponents, setResolvedComponents] = useState<Raw[]>([]);
+
+  // Self-healing loader: the dialog re-fetches its own data whenever it opens,
+  // so it can never render against a stale or half-loaded parent snapshot.
+  useEffect(() => {
+    if (!open || !worker) return;
+    let live = true;
+    Promise.all([realApi.payrollComponents(), realApi.payrollProfiles()])
+      .then(([components, profiles]) => {
+        if (!live) return;
+        setResolvedComponents(Array.isArray(components) ? (components as Raw[]) : []);
+        resetToProfileFrom(
+          workerId,
+          Array.isArray(profiles) ? (profiles as Raw[]) : [],
+          openProfile ?? undefined,
+        );
+      })
+      .catch(() => {
+        // Leave the dialog usable with the parent snapshot already passed.
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, worker?.id]);
+
   if (!worker) return null;
   const workerId = String(worker.id ?? "");
   const workerName = String(worker.fullName ?? `${worker.firstName ?? ""} ${worker.lastName ?? ""}`);
   const openProfile = state.profiles.find((p) => String(p.workerId) === workerId);
-  const activeComponents = state.components.filter((c) => Boolean(c.isActive) && !c.isArchived);
+  const activeComponents = (resolvedComponents.length ? resolvedComponents : state.components).filter(
+    (c) => Boolean(c.isActive) && !c.isArchived,
+  );
   const statutoryCodes = new Set(
     state.components
       .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
       .map((c) => String(c.code ?? "")),
   );
 
-  const resetToProfile = (p: Raw | undefined) => {
+  const resetToProfileFrom = (id: string, profiles: Raw[], p: Raw | undefined) => {
     setPayGroupId(p ? String(p.payGroupId ?? "") : String(state.groups.find((g) => Boolean(g.isDefault))?.id ?? ""));
     setEffectiveFrom(p ? String(p.effectiveFrom ?? new Date().toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
     setValues(
@@ -130,6 +158,8 @@ function WorkerPayDialog({
       }),
     );
   };
+
+  const resetToProfile = (p: Raw | undefined) => resetToProfileFrom(workerId, state.profiles, p);
 
   return (
     <Dialog
@@ -194,7 +224,7 @@ function WorkerPayDialog({
             <Label>Pay group</Label>
             <Select value={payGroupId} onValueChange={setPayGroupId}>
               <SelectTrigger className="mt-1.5 w-full">
-                <SelectValue placeholder="Pick the run this worker joins" />
+                <SelectValue placeholder="Pick the pay group this worker runs on" />
               </SelectTrigger>
               <SelectContent>
                 {state.groups.map((g) => (
