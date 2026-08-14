@@ -207,4 +207,60 @@ export const hrmApi = {
   /** Statutory export CSV (NAPSA / NHIMA / ZRA / napsa-bankfile). */
   statutoryExport: (exportType: string, periodId: string) =>
     hrmApi.get<Blob>(`/hrm/statutory-exports`, { exportType, periodId }),
+
+  // ---- M16: self-service leave (always keyed on the caller's token subject)
+
+  /**
+   * The signed-in worker's own leave inbox: identity, balances across every
+   * leave type, and their own leave requests. GET /hrm/me/leave.
+   */
+  myLeave: () => hrmApi.get<MyLeave>("/hrm/me/leave"),
+
+  /**
+   * Cancel an open leave request owned by the caller. POST
+   * /hrm/me/leave/{id}/cancel — only submitted/in-review/returned requests can
+   * be cancelled and the balance reservation is released.
+   */
+  cancelLeave: (leaveId: string) =>
+    hrmApi.post<LeaveRequestLine>(`/hrm/me/leave/${leaveId}/cancel`, {}),
 };
+
+/** One balance row returned by the self-service leave inbox. */
+export interface MyLeaveBalance {
+  leaveTypeCode: string;
+  leaveTypeName: string;
+  accrued: number;
+  taken: number;
+  reserved: number;
+  available: number;
+}
+
+/** One leave request row inside the caller's own inbox. */
+export interface SelfLeaveRequest {
+  id: string;
+  leaveTypeCode: string;
+  startDate: string;
+  endDate: string;
+  requestedDays: number;
+  status: string;
+  rejectionReason?: string | null;
+  crossesCutoff: boolean;
+  createdAt: string;
+}
+
+/** Full self-service leave envelope: identity, balances and own requests. */
+export interface MyLeave {
+  workerId: string;
+  workerName: string;
+  employeeNo?: string | null;
+  linked: boolean;
+  balances: MyLeaveBalance[];
+  requests: SelfLeaveRequest[];
+}
+
+/** Cancel endpoint returns the updated admin-style leave row. */
+export interface LeaveRequestLine {
+  id: string;
+  status: string;
+  requestedDays: number;
+}

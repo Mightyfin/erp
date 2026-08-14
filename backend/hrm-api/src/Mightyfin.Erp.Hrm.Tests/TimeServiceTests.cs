@@ -32,12 +32,13 @@ public class TimeServiceTests
         var wfRepo = new WorkflowRepository(ctx);
         var wf = new WorkflowServiceImpl(wfRepo, new PermissiveAuthz(), new NoOpLeaveEffectApplier());
         var repo = new TimeRepository(ctx);
-        var service = new TimeServiceImpl(repo, new PermissiveAuthz(), wf);
+        var workerRepo = new WorkerRepository(ctx);
+        var service = new TimeServiceImpl(repo, new PermissiveAuthz(), wf, workerRepo);
         var worker = new Worker
         {
             EmployeeNo = "EMP-TM-001", FirstName = "Time", LastName = "Worker",
             WorkerType = "employee", Status = "active", Nationality = "ZM",
-            TenantId = "test-tenant",
+            TenantId = "test-tenant", SubjectId = "subject-001",
         };
         ctx.Workers.Add(worker);
         // seed calendar: weekend days sat/sun, default
@@ -246,5 +247,106 @@ public class TimeServiceTests
         var annual = balances.Single(b => b.LeaveTypeCode == "annual");
         Assert.Equal(0m, annual.Reserved);
         Assert.Equal(12m, annual.Available);
+    }
+
+    // ===================== M16: self-service leave =====================
+
+    private static async Task<LeaveRequestDto> SubmitLeaveAsync(HrmDbContext ctx, TimeServiceImpl service, Worker worker,
+        int daysFromNow = 1, int duration = 1)
+    {
+        // accrue enough balance so the request goes through
+        ctx.LeaveBalanceLedgers.Add(new LeaveBalanceLedger
+        {
+            WorkerId = worker.Id, LeaveTypeCode = "annual", Days = 20m,
+            Reason = "accrual", ReferenceType = "", ForDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            TenantId = "test-tenant",
+        });
+        ctx.SaveChanges();
+        return await service.CreateLeaveAsync(new LeaveRequestCreate(
+            worker.Id, "annual",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysFromNow)).ToString("yyyy-MM-dd"),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysFromNow + duration - 1)).ToString("yyyy-MM-dd")),
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task MyLeave_ScopesToLinkedWorker_WithBalancesAndOwnRequests()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var created = await SubmitLeaveAsync(ctx, service, worker);
+
+        // the subject bound to this worker
+        var inbox = await service.MyLeaveAsync("subject-001", CancellationToken.None);
+        Assert.True(inbox.Linked);
+        Assert.Equal("EMP-TM-001", inbox.EmployeeNo);
+        Assert.Single(inbox.Requests);
+        Assert.Equal(created.Id, inbox.Requests[0].Id);
+        Assert.Equal("submitted", inbox.Requests[0].Status);
+        Assert.Contains(inbox.Balances, b => b.LeaveTypeCode == "annual" && b.Reserved == 1m);
+
+        // an unlinked (or other) subject sees an empty inbox, never anyone else's rows
+        var empty = await service.MyLeaveAsync("subject-unknown", CancellationToken.None);
+        Assert.False(empty.Linked);
+        Assert.Empty(empty.Requests);
+    }
+
+    [Fact]
+    public async Task CancelLeave_SetsCancelledAndReleasesReservation()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var repo = new TimeRepository(ctx);
+        var created = await SubmitLeaveAsync(ctx, service, worker);
+
+        var cancelled = await service.CancelLeaveAsync(created.Id, "subject-001", CancellationToken.None);
+        Assert.Equal("cancelled", cancelled.Status);
+
+        var ledger = await repo.GetLedgerAsync(worker.Id, CancellationToken.None);
+        Assert.DoesNotContain(ledger, l => l.Days < 0);
+        var balances = await service.GetBalancesAsync(worker.Id, CancellationToken.None);
+        var annual = balances.Single(b => b.LeaveTypeCode == "annual");
+        Assert.Equal(0m, annual.Reserved);
+        Assert.Equal(20m, annual.Available);
+
+        // workflow request was closed via the cancel transition
+        var wfReq = await ctx.WorkflowRequests.FirstAsync(w => w.SubjectWorkerId == worker.Id);
+        Assert.Equal("cancelled", wfReq.Status);
+    }
+
+    [Fact]
+    public async Task CancelLeave_FinalStatus_Throws()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var created = await SubmitLeaveAsync(ctx, service, worker);
+        await service.DecideLeaveAsync(created.Id, new TimeDecisionRequest("approve", null), CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CancelLeaveAsync(created.Id, "subject-001", CancellationToken.None));
+        Assert.Equal("leave-not-cancellable", ex.Code);
+    }
+
+    [Fact]
+    public async Task CancelLeave_NotOwned_Throws()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var created = await SubmitLeaveAsync(ctx, service, worker);
+
+        // an unlinked subject cannot touch the request at all
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CancelLeaveAsync(created.Id, "subject-other", CancellationToken.None));
+        Assert.Equal("no-worker-linked", ex.Code);
+
+        // a DIFFERENT linked worker also cannot cancel it
+        var other = new Worker
+        {
+            EmployeeNo = "EMP-TM-002", FirstName = "Other", LastName = "Colleague",
+            WorkerType = "employee", Status = "active", Nationality = "ZM",
+            TenantId = "test-tenant", SubjectId = "subject-other",
+        };
+        ctx.Workers.Add(other);
+        ctx.SaveChanges();
+
+        var ex2 = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CancelLeaveAsync(created.Id, "subject-other", CancellationToken.None));
+        Assert.Equal("leave-not-owned", ex2.Code);
     }
 }

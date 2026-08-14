@@ -382,6 +382,13 @@ public sealed class WorkflowRepository(HrmDbContext db) : IWorkflowRepository
     public async Task<WorkflowRequest?> GetRequestAsync(Guid id, CancellationToken ct)
         => await db.WorkflowRequests.Include(w => w.Decisions).FirstOrDefaultAsync(w => w.Id == id, ct);
 
+    // M16: the leave request id is the workflow subject id for type "leave".
+    public async Task<WorkflowRequest?> GetOpenBySubjectAsync(string workflowType, Guid subjectWorkerId, CancellationToken ct)
+        => await db.WorkflowRequests.Include(w => w.Decisions)
+            .FirstOrDefaultAsync(w => w.WorkflowType == workflowType
+                && w.SubjectWorkerId == subjectWorkerId
+                && (w.Status == "submitted" || w.Status == "in-review" || w.Status == "returned"), ct);
+
     public async Task<WorkflowRequest> UpdateRequestAsync(WorkflowRequest request, CancellationToken ct)
     {
         // EF Core 10 demotes children added via the parent's collection to Modified

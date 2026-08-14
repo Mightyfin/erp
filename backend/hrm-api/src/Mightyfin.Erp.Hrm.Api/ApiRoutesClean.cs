@@ -101,6 +101,21 @@ public static class Routes
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.UpdateOwnProfileAsync(raw with { SubjectId = subject }, ct));
         });
+
+        // M16 self-service: the signed-in worker's own leave inbox (balances +
+        // own requests + cancel) — always keyed on the token subject.
+        g.MapGet("/leave", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            return Results.Ok(await svc.MyLeaveAsync(subject ?? "", ct));
+        });
+        g.MapPost("/leave/{id:guid}/cancel", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+        });
     }
 
     public static void RegisterWorkers(WebApplication app)

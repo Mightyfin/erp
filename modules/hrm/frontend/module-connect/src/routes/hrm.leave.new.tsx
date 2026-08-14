@@ -14,6 +14,7 @@ import { PageHeader } from "@/platform/components/PageHeader";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 import { api } from "@/mock/service";
+import { hrmApi, type MyLeave } from "@/platform/api-client";
 
 export const Route = createFileRoute("/hrm/leave/new")({
   head: () => ({
@@ -41,7 +42,15 @@ function NewLeave() {
   const [from, setFrom] = useState("2026-08-10");
   const [to, setTo] = useState("2026-08-21");
   const [reason, setReason] = useState("");
-  const [workerId, setWorkerId] = useState("019ffc92-6ccb-7bc8-8675-d0ef71c24ea2");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // M16: in real mode the request is always submitted for the caller's own
+  // linked worker (self-service). The inbox supplies the worker id and the
+  // current balances so the review step can show what's available.
+  const inbox = useApi(
+    () => (USE_REAL ? hrmApi.myLeave() : Promise.resolve({ linked: false, workerId: "", workerName: "", balances: [], requests: [] } as MyLeave)),
+    [],
+  );
 
   const leaveTypes = useApi(
     () => (USE_REAL ? realApi.leaveTypes() : Promise.resolve([] as unknown[])),
@@ -60,6 +69,7 @@ function NewLeave() {
     : [];
 
   const employeeRows = workers.data ? adaptWorkers(workers.data) : [];
+  const workerId = USE_REAL ? inbox.data?.linked === true ? inbox.data.workerId : undefined : "019ffc92-6ccb-7bc8-8675-d0ef71c24ea2";
 
   const steps: FlowStep[] = [
     {
@@ -77,16 +87,20 @@ function NewLeave() {
                 {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            {USE_REAL && (
-              <div className="mt-4">
-                <Label htmlFor="worker">Employee</Label>
-                <Select value={workerId} onValueChange={setWorkerId}>
-                  <SelectTrigger id="worker" className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {employeeRows.map((w) => <SelectItem key={w.id} value={w.id}>{w.fullName} ({w.employeeNo})</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+            {USE_REAL && inbox.loading && (
+              <p className="mt-3 text-sm text-muted-foreground">Loading your leave inbox…</p>
+            )}
+            {USE_REAL && inbox.data?.linked === false && (
+              <p className="mt-3 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm text-warning">
+                No worker record is linked to your account yet — leave requests cannot be filed
+                until HR links your account to an employee record.
+              </p>
+            )}
+            {USE_REAL && inbox.data?.linked === true && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Requesting for yourself — {inbox.data.workerName}
+                {inbox.data.employeeNo ? ` (${inbox.data.employeeNo})` : ""}.
+              </p>
             )}
           </div>
         );
@@ -109,15 +123,34 @@ function NewLeave() {
     },
     {
       id: "policy",
-      title: "Policy check",
+      title: "Balance and policy",
       purpose: "What the rules say about this request, before anyone spends time on it.",
-      render: () => (
-        <ul className="space-y-2 text-sm">
-          <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 text-success" aria-hidden /><span><span className="font-medium">Balance checked — Pass.</span> Balance is consulted at submission.</span></li>
-          <li className="flex gap-2"><AlertTriangle className="mt-0.5 size-4 text-warning" aria-hidden /><span><span className="font-medium">Notice period — Check.</span> Your manager can still approve a short-notice request.</span></li>
-          <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 text-success" aria-hidden /><span><span className="font-medium">Blackout window — Pass.</span> No plant shutdown in this range.</span></li>
-        </ul>
-      ),
+      render: () => {
+        const code = toCode(type, codes);
+        const balance = (inbox.data?.balances ?? []).find((b) => b.leaveTypeCode === code);
+        return (
+          <ul className="space-y-2 text-sm">
+            {balance ? (
+              <li className="flex gap-2">
+                <CheckCircle2 className="mt-0.5 size-4 text-success" aria-hidden />
+                <span>
+                  <span className="font-medium">Available balance: {balance.available} days.</span>{" "}
+                  {balance.available < 1
+                    ? "This request needs more balance than you have — your approver may still accept it as unpaid, or extend the dates."
+                    : "Balance is reserved at submission and released if the request is cancelled or rejected."}
+                </span>
+              </li>
+            ) : (
+              <li className="flex gap-2">
+                <AlertTriangle className="mt-0.5 size-4 text-warning" aria-hidden />
+                <span><span className="font-medium">Balance — Check.</span> Balance is consulted at submission, but no balance row exists yet for this leave type.</span>
+              </li>
+            )}
+            <li className="flex gap-2"><AlertTriangle className="mt-0.5 size-4 text-warning" aria-hidden /><span><span className="font-medium">Notice period — Check.</span> Your manager can still approve a short-notice request.</span></li>
+            <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 text-success" aria-hidden /><span><span className="font-medium">Blackout window — Pass.</span> No plant shutdown in this range.</span></li>
+          </ul>
+        );
+      },
     },
     {
       id: "evidence",
@@ -136,9 +169,12 @@ function NewLeave() {
       purpose: "Check the facts. Submitting sends this to the employee's manager for a decision.",
       render: () => {
         const who = employeeRows.find((w) => w.id === workerId);
+        const code = toCode(type, codes);
+        const balance = (inbox.data?.balances ?? []).find((b) => b.leaveTypeCode === code);
+        const name = USE_REAL && inbox.data?.linked === true ? `${inbox.data.workerName}${inbox.data.employeeNo ? ` (${inbox.data.employeeNo})` : ""}` : who ? `${who.fullName} (${who.employeeNo})` : "—";
         return (
           <dl className="grid max-w-lg gap-3 sm:grid-cols-2">
-            {[["Employee", who ? `${who.fullName} (${who.employeeNo})` : "—"], ["Type", type], ["From", from], ["To", to], ["Reason", reason || "Not given"]].map(([k, v]) => (
+            {[ ["Requesting for", name], ["Type", type], ["From", from], ["To", to], ["Available balance", balance ? `${balance.available} day${balance.available === 1 ? "" : "s"}` : "—"], ["Reason", reason || "Not given"]].map(([k, v]) => (
               <div key={k} className="rounded-md border bg-surface-muted px-3 py-2">
                 <dt className="text-xs text-muted-foreground">{k}</dt>
                 <dd className="text-sm font-medium">{v}</dd>
@@ -154,23 +190,34 @@ function NewLeave() {
     <AuthGate>
       <AppShell>
       <PageHeader eyebrow="Leave" title="Request leave" description="Five short steps. Your draft saves as you go." />
+      {submitError && (
+        <p className="mx-6 -mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {submitError}
+        </p>
+      )}
       <GuidedFlow
         flowId="leave-new"
         steps={steps}
         submitLabel="Submit request"
         onSubmit={async () => {
-          if (USE_REAL) {
-            const created = await realApi.createLeaveRequest({
-              workerId,
-              leaveTypeCode: toCode(type, codes),
-              startDate: from,
-              endDate: to,
-              reason: reason || null,
-            });
-            setRef(String((created as { id?: unknown }).id ?? "submitted"));
-          } else {
-            const r = await api.submit("leave", { type, from, to, reason });
-            setRef(r.id);
+          setSubmitError(null);
+          try {
+            if (USE_REAL) {
+              const created = await realApi.createLeaveRequest({
+                workerId: workerId ?? "",
+                leaveTypeCode: toCode(type, codes),
+                startDate: from,
+                endDate: to,
+                reason: reason || null,
+              });
+              setRef(String((created as { id?: unknown }).id ?? "submitted"));
+            } else {
+              const r = await api.submit("leave", { type, from, to, reason });
+              setRef(r.id);
+            }
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : "Submission failed");
+            throw e; // keep the flow on this step so the error is visible
           }
         }}
         submitted={
