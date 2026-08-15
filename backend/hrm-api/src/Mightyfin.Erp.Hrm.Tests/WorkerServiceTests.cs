@@ -13,7 +13,12 @@ namespace Mightyfin.Erp.Hrm.Tests;
 /// <summary>Permissive double for <see cref="IAuthzService"/> used by the service layer.</summary>
 internal sealed class PermissiveAuthz : IAuthzService
 {
+    // M25: configurable role set so tests can impersonate an employee-only
+    // caller; defaults to all roles (permissive).
+    private string[] _roles = ["hr_ops", "hr_admin", "payroll", "employee"];
+    public string[] Roles { get => _roles; init => _roles = value; }
         public void RequireAnyRole(params string[] roles) { }
+    public bool IsRole(params string[] roles) => roles.Any(r => _roles.Contains(r));
     public bool CanAccessSensitive(string category) => true;
 }
 

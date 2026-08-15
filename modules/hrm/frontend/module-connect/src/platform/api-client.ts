@@ -249,7 +249,84 @@ export const hrmApi = {
    */
   cancelLeave: (leaveId: string) =>
     hrmApi.post<LeaveRequestLine>(`/hrm/me/leave/${leaveId}/cancel`, {}),
+
+  /* ------------------------------------------------------------------ */
+  /* M25: employee self-service payslips + requests inbox. All keyed on    */
+  /* the caller's OIDC subject — the client can never misdirect them.      */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The signed-in worker's own payslips. GET /hrm/me/payslips — released and
+   * final slips for the worker linked to the caller's token. An unlinked
+   * identity gets an empty list, never another worker's data.
+   */
+  myPayslips: () => hrmApi.get<MyPayslips>("/hrm/me/payslips"),
+
+  /** Full snapshot of one own payslip. GET /hrm/me/payslips/{id}. */
+  myPayslipById: (id: string) => hrmApi.get<MyPayslip>(`/hrm/me/payslips/${id}`),
+
+  /**
+   * The signed-in worker's own HR-request inbox (optionally filtered by
+   * status). GET /hrm/me/requests — an empty subject or unlinked identity
+   * always returns an empty list.
+   */
+  myRequests: (status?: string) =>
+    hrmApi.get<MyRequests>("/hrm/me/requests", status ? { status } : {}),
 };
+
+/** M25: the signed-in worker's own payslips — Paged envelope of MyPayslip. */
+export interface MyPayslips {
+  items: MyPayslip[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * M25: one own payslip row. Matches `PayslipDto` (M21 fields plus the M24
+ * statutory snapshot: workerNrc / workerTpin / workerNapsaNumber /
+ * workerNhimaNumber).
+ */
+export interface MyPayslip {
+  id: string;
+  payslipNo: string;
+  version: number;
+  grossPay: number;
+  totalDeductions: number;
+  netPay: number;
+  ytdGross?: string | null;
+  ytdTax?: string | null;
+  ytdNet?: string | null;
+  status: string;
+  documentUrl?: string | null;
+  releasedAt?: string | null;
+  supersedesId?: string | null;
+  workerNrc?: string | null;
+  workerTpin?: string | null;
+  workerNapsaNumber?: string | null;
+  workerNhimaNumber?: string | null;
+}
+
+/** M25: the signed-in worker's own HR requests — Paged envelope of MyHrRequest. */
+export interface MyRequests {
+  items: MyHrRequest[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+/** M25: one own HR-request row. Matches `HrRequestDto`. */
+export interface MyHrRequest {
+  id: string;
+  workerId?: string | null;
+  workerName: string;
+  category: string;
+  subject: string;
+  status: string;
+  confidentiality: string;
+  createdAt: string;
+  messages: Array<{ body: string; createdAt: string }>;
+}
 
 /** One balance row returned by the self-service leave inbox. */
 export interface MyLeaveBalance {

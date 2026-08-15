@@ -610,6 +610,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct)
         => await db.Workers.FirstOrDefaultAsync(w => w.Id == id, ct);
+    // M25: resolve the worker linked to a Keycloak subject (self-service).
+    public async Task<Worker?> GetWorkerBySubjectAsync(string subjectId, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
 
     public async Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct)
         => await db.PayGroups.ToListAsync(ct);

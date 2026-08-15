@@ -150,8 +150,8 @@ public class PayslipStatutoryTests
         await ctx.Entry(slip).ReloadAsync();
         Assert.Equal("TPIN-AT-RELEASE", slip.WorkerTpin);
 
-        // The DTO exposes the snapshot too.
-        var dto = await service.GetPayslipByIdAsync(slip.Id, CancellationToken.None);
+        // The DTO exposes the snapshot too (no subject → broad HR-style read).
+        var dto = await service.GetPayslipByIdAsync(slip.Id, null, CancellationToken.None);
         Assert.NotNull(dto);
         Assert.Equal("TPIN-AT-RELEASE", dto!.WorkerTpin);
         Assert.Equal("NHIMA-1", dto.WorkerNhimaNumber);

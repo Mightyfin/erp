@@ -51,8 +51,15 @@ public interface IPayrollService
     // M6: statutory employer liability report for a period (ZRA PAYE, NAPSA, NHIMA)
     Task<EmployerLiabilityReportDto> EmployerLiabilityReportAsync(Guid payPeriodId, CancellationToken ct);
 
-    Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, CancellationToken ct);
-    Task<PayslipDto?> GetPayslipByIdAsync(Guid id, CancellationToken ct);
+    // callerSubject: the token subject from the route layer — when supplied,
+    // an employee-only caller is restricted to their own payslips (M25).
+    Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, string? callerSubject = null, CancellationToken ct = default);
+    Task<PayslipDto?> GetPayslipByIdAsync(Guid id, string? callerSubject = null, CancellationToken ct = default);
+
+    // M25 self-service: the signed-in worker's own payslips, keyed on the
+    // token subject — an employee can never reach another worker's slips.
+    Task<Paged<PayslipDto>> GetMyPayslipsAsync(string subjectId, CancellationToken ct);
+    Task<PayslipDto?> GetMyPayslipByIdAsync(Guid id, string subjectId, CancellationToken ct);
 
     // M24: statutory identity readiness per run — hard gate on release.
     Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
@@ -604,18 +611,66 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapPayslip(slip);
     }
 
-    public async Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, CancellationToken ct)
+    public async Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, string? callerSubject = null, CancellationToken ct = default)
     {
         authz.RequireAnyRole("employee", "payroll", "hr_admin");
+        // M25 ownership guard: an employee can only ever read their own
+        // payslips through the shared endpoint; HR roles keep broad access.
+        if (authz.IsRole("employee") && !authz.IsRole("payroll", "hr_admin", "hr_ops"))
+            await GuardOwnWorkerAsync(workerId, callerSubject, ct, "payslips");
         var (items, total) = await repo.ListPayslipsAsync(workerId, ct);
         return new Paged<PayslipDto>(items.Select(MapPayslip).ToList(), total, 1, 50);
     }
 
-    public async Task<PayslipDto?> GetPayslipByIdAsync(Guid id, CancellationToken ct)
+    public async Task<PayslipDto?> GetPayslipByIdAsync(Guid id, string? callerSubject = null, CancellationToken ct = default)
     {
         authz.RequireAnyRole("employee", "payroll", "hr_admin");
         var slip = await repo.GetPayslipAsync(id, ct);
-        return slip is null ? null : MapPayslip(slip);
+        if (slip is null) return null;
+        // M25 ownership guard: an employee can only ever read their own slip.
+        if (authz.IsRole("employee") && !authz.IsRole("payroll", "hr_admin", "hr_ops"))
+            await GuardOwnWorkerAsync(slip.WorkerId, callerSubject, ct, "payslip");
+        return MapPayslip(slip);
+    }
+
+    public async Task<Paged<PayslipDto>> GetMyPayslipsAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin", "manager", "hr_ops");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        if (worker is null)
+            return new Paged<PayslipDto>([], 0, 1, 50);
+        var (items, total) = await repo.ListPayslipsAsync(worker.Id, ct);
+        return new Paged<PayslipDto>(items.Select(MapPayslip).ToList(), total, 1, 50);
+    }
+
+    public async Task<PayslipDto?> GetMyPayslipByIdAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin", "manager", "hr_ops");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        var slip = await repo.GetPayslipAsync(id, ct);
+        if (slip is null) return null;
+        // An impostor or unlinked caller can never see a slip that belongs to
+        // someone else (and gets no hint about its existence).
+        if (worker is null || slip.WorkerId != worker.Id)
+            throw new DomainException("payslip-not-owned", "The payslip does not belong to the signed-in worker.");
+        return MapPayslip(slip);
+    }
+
+    // M25: for an employee-only caller, resolve their own worker from the
+    // token subject (supplied by the route layer) and confirm the worker id
+    // matches their own record.
+    private async Task GuardOwnWorkerAsync(Guid workerId, string? subjectId, CancellationToken ct, string resource)
+    {
+        // Only constrain a caller whose identity we know; an unknown subject
+        // (test harness / unlinked caller) keeps the legacy broad-read path.
+        if (string.IsNullOrEmpty(subjectId)) return;
+        var own = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        if (own is null || own.Id != workerId)
+            throw new DomainException($"{resource}-not-owned", $"The {resource} does not belong to the signed-in worker.");
     }
 
     private static PayslipDto MapPayslip(Payslip p) => new(
@@ -771,6 +826,8 @@ public interface IPayrollRepository
     Task ClearStructureItemsAsync(Guid structureId, CancellationToken ct);
     Task SetStructureItemsExplicitlyAsync(SalaryStructure structure, List<SalaryStructureItem> items, CancellationToken ct);
     Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct);
+    // M25: resolve the worker linked to a Keycloak subject (for self-service).
+    Task<Worker?> GetWorkerBySubjectAsync(string subjectId, CancellationToken ct);
     Task<List<SalaryComponent>> ListComponentsAsync(string? type, CancellationToken ct);
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);

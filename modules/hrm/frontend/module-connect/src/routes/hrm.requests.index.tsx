@@ -75,7 +75,10 @@ function adapt(rows: unknown[]): HrCase[] {
 }
 
 function RequestsList() {
-  const state = useApi(async () => adapt((await realApi.experienceRequests()).items), []);
+  // M25: employee-scoped inbox — GET /hrm/me/requests is keyed on the caller's
+  // OIDC subject, so an employee can never see another worker's cases. HR
+  // roles keep the company-wide list on the admin `experienceRequests` shape.
+  const state = useApi(async () => adapt((await realApi.myRequests()).items), []);
   const [view, setView] = useState("all");
 
   return (

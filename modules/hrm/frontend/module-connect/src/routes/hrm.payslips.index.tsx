@@ -1,13 +1,45 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Info } from "lucide-react";
-import { payrollRunApi } from "@/mock/payrollrun";
-import type { DerivedPayslip } from "@/mock/payrollrun";
+import { derivePayslips, type DerivedPayslip } from "@/mock/payrollrun";
+import type { MockState } from "@/platform/use-mock";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { useApi, realApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
+
+/**
+ * M25: the employee sees only their own payslips, keyed on the OIDC subject.
+ * Backend: GET /hrm/me/payslips. The admin list (`/hrm/payslips/{workerId}`)
+ * stays on the mock shape for now — this page is the self-service surface.
+ */
+function adaptPayslip(raw: unknown): DerivedPayslip | null {
+  const p = raw as Record<string, unknown>;
+  const id = typeof p.id === "string" ? p.id : null;
+  if (!id) return null;
+  const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+  // The backend DTO is the authoritative record — the detail page
+  // (`/hrm/payslips/$id`) re-fetches the same slip, so this row only needs the
+  // fields the list columns and the click-through URL consume.
+  return {
+    id,
+    runId: typeof p.runId === "string" ? p.runId : "",
+    employeeId: "",
+    employee: typeof p.payslipNo === "string" ? p.payslipNo : id,
+    period: typeof p.payslipNo === "string" ? p.payslipNo : "",
+    entityName: "",
+    currency: "ZMW",
+    payDate: typeof p.releasedAt === "string" ? String(p.releasedAt).slice(0, 10) : "",
+    gross: num(p.grossPay),
+    deductions: num(p.totalDeductions),
+    net: num(p.netPay),
+    employerCost: 0,
+    components: [],
+    paid: String(p.status ?? "") === "released",
+  } satisfies DerivedPayslip;
+}
 
 export const Route = createFileRoute("/hrm/payslips/")({
   head: () => ({
@@ -24,7 +56,21 @@ export const Route = createFileRoute("/hrm/payslips/")({
 const money = (v: number, c: string) => new Intl.NumberFormat(undefined, { style: "currency", currency: c }).format(v);
 
 function PayslipsList() {
-  const state = useMock(() => payrollRunApi.payslips());
+  // M25: real backend first — the signed-in worker's own payslips. Falls back
+  // to the mock envelope when the real backend is off (`VITE_USE_REAL_API`).
+  const realState = useApi<DerivedPayslip[]>(
+    async () =>
+      ((await realApi.myPayslips()) as { items: unknown[] }).items
+        .map(adaptPayslip)
+        .filter((p: DerivedPayslip | null): p is DerivedPayslip => p !== null),
+    [],
+  );
+  const mockState = useMock<DerivedPayslip[]>(() => Promise.resolve(derivePayslips()));
+  // M25: Async expects the mock-shaped envelope; both states share
+  // `{ data: T | null, loading, degraded, error, reload }` so the cast is safe.
+  const state = realState.data !== null
+    ? (realState as unknown as MockState<DerivedPayslip[]>)
+    : (mockState as unknown as MockState<DerivedPayslip[]>);
 
   return (
     <AuthGate>
@@ -32,7 +78,7 @@ function PayslipsList() {
       <PageHeader
         eyebrow="Pay"
         title="Payslips"
-        description="Released payslips stay retrievable exactly as issued — a correction creates a new linked version, never a silent overwrite."
+        description="Your own payslips — released payslips stay retrievable exactly as issued, and a correction creates a new linked version, never a silent overwrite."
       />
 
       <p className="flex gap-2 rounded-md border border-info/30 bg-info-soft p-3 text-xs text-info">
@@ -44,9 +90,9 @@ function PayslipsList() {
       <Async state={state}>
         {(rows) => (
           <ListPage<DerivedPayslip>
-            rows={rows}
-            searchPlaceholder="Search period, employee or run"
-            searchFields={(p) => `${p.id} ${p.employee} ${p.period} ${p.runId}`}
+            rows={rows as unknown as DerivedPayslip[]}
+            searchPlaceholder="Search period, reference or pay date"
+            searchFields={(p) => `${p.id} ${p.employee} ${p.period} ${p.payDate}`}
             columns={[
               {
                 id: "ref",
@@ -61,9 +107,7 @@ function PayslipsList() {
                   </Link>
                 ),
               },
-              { id: "employee", header: "Employee", cell: (p) => <span className="block max-w-56 truncate">{p.employee}</span> },
-              { id: "period", header: "Period", cell: (p) => p.period },
-              { id: "payDate", header: "Pay date", cell: (p) => p.payDate },
+              { id: "period", header: "Period", cell: (p) => p.period || "—" },
               { id: "gross", header: "Gross", cell: (p) => <span className="tabular">{money(p.gross, p.currency)}</span> },
               { id: "net", header: "Net", cell: (p) => <span className="tabular font-medium">{money(p.net, p.currency)}</span> },
               {

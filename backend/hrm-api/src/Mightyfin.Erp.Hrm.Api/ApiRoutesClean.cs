@@ -116,8 +116,31 @@ public static class Routes
             if (string.IsNullOrEmpty(subject))
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+
+        // M25 self-service: the signed-in worker's own HR requests — keyed on
+        // the token subject so an employee can never list another's inbox.
+        g.MapGet("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyRequestsAsync(ResolveSubjectId(http), null, ct)));
+
+
+        // M25 self-service: the signed-in worker's own payslips — keyed on
+        // the token subject so an employee can never reach another slip.
+        g.MapGet("/payslips", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyPayslipsAsync(ResolveSubjectId(http) ?? "", ct)));
+        g.MapGet("/payslips/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var slip = await svc.GetMyPayslipByIdAsync(id, subject, ct);
+            return slip is null ? Results.NotFound() : Results.Ok(slip);
         });
-    }
+
+
+        
+
+        });
+            }
 
     public static void RegisterWorkers(WebApplication app)
     {
@@ -473,10 +496,13 @@ public static class Routes
         // release gate above enforces; inspectable before attempting release.
         g.MapGet("/runs/{id:guid}/statutory-readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             await svc.GetRunStatutoryReadinessAsync(id, ct));
-        g.MapGet("/payslips/{workerId:guid}", async (Guid workerId, IPayrollService svc, CancellationToken ct)
-            => await svc.GetPayslipsAsync(workerId, ct));
-        g.MapGet("/payslips/id/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
-            => await svc.GetPayslipByIdAsync(id, ct));
+        // M25: shared reads — HR keeps broad access; an employee-only caller
+        // is restricted to their own payslips (ownership resolved from the
+        // token subject).
+        g.MapGet("/payslips/{workerId:guid}", async (Guid workerId, HttpContext http, IPayrollService svc, CancellationToken ct)
+            => await svc.GetPayslipsAsync(workerId, ResolveSubjectId(http), ct));
+        g.MapGet("/payslips/id/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct)
+            => await svc.GetPayslipByIdAsync(id, ResolveSubjectId(http), ct));
 
         // ---------- M6: reversal, liability reports, payslip documents ----------
         g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>

@@ -311,6 +311,19 @@ export const realApi = {
     }>(`/hrm/payroll/runs/${id}/statutory-readiness`),
   /** M24: payslip by id — the snapshot includes statutory references. */
   payslipById: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/payslips/id/${id}`),
+
+  /* ------------------------------------------------------------------ */
+  /* M25: employee self-service — own payslips and requests inbox,        */
+  /* always keyed on the caller's OIDC subject.                           */
+  /* ------------------------------------------------------------------ */
+
+  /** Own payslips — empty list when the identity is not linked to a worker. */
+  myPayslips: () => hrmApi.get<unknown>("/hrm/me/payslips"),
+  /** Full snapshot of one own payslip. */
+  myPayslipById: (id: string) => hrmApi.get<unknown>(`/hrm/me/payslips/${id}`),
+  /** Own HR-request inbox, optionally filtered by status. */
+  myRequests: (status?: string) =>
+    hrmApi.get<{ items: unknown[] }>("/hrm/me/requests", status ? { status } : {}),
   /** Trigger payslip document (PDF) generation, returns the updated payslip. */
   payslipGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/payslips/${id}/generate`, null),

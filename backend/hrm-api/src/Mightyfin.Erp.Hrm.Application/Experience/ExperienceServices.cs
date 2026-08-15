@@ -15,6 +15,9 @@ public interface IExperienceService
     // HR requests
     Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct);
+    // M25: subject-keyed mirror of ListRequestsAsync — an employee sees only
+    // their own requests; HR roles keep the broad query.
+    Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct);
     Task<HrRequestDto> AddMessageAsync(Guid requestId, Guid? actorWorkerId, string actorRole, HrRequestMessageCreate message, CancellationToken ct);
     Task<HrRequestDto> ResolveRequestAsync(Guid requestId, CancellationToken ct);
 
@@ -33,13 +36,33 @@ public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
 
-public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge) : IExperienceService
+public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge, Workers.IWorkerService? workers = null) : IExperienceService
 {
     public async Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
         var (items, total) = await repo.ListRequestsAsync(workerId, status, ct);
         return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
+    }
+
+    // M25: subject-keyed inbox — resolves the worker bound to the caller's
+    // identity and lists only their own requests. Not-linked → empty list.
+    public async Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        // A caller with a subject claim who is not linked to a worker must
+        // never see anyone else's requests — unknown identity → empty inbox.
+        if (!string.IsNullOrEmpty(subjectId))
+        {
+            var own = await workers.GetBySubjectAsync(subjectId, ct);
+            if (own is null)
+                return new Paged<HrRequestDto>([], 0, 1, 50);
+            var (items, total) = await repo.ListRequestsAsync(own.Id, status, ct);
+            return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
+        }
+        // No identity claim on the caller: they have no inbox (an unlinked
+        // principal must never be able to enumerate anyone's requests).
+        return new Paged<HrRequestDto>([], 0, 1, 50);
     }
 
     public async Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct)
