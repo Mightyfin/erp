@@ -1,7 +1,7 @@
 # M25 — Employee self-service: own payslips, leave, and HR requests
 
 **Author:** Manus AI · **Date:** 15 August 2026 · **Status:** Complete, deployed, mirrored to Mightyfin/erp
-**Fork commit:** `abe8981` · **Fix commit:** `6c9e1e2` (fork) / `9f9ebc2` (upstream) · **Upstream mirror:** `9f9ebc2`
+**Fork commits:** `abe8981` (fix), `1909ad5` (docs) · **Upstream mirrors:** `9f9ebc2` (fix), `ede626f` (docs)
 **Production:** erp.mightyfinance.co.zm (hrm-api :28911, hrm-web :3000)
 
 ## Objective
