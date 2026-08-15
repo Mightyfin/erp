@@ -194,6 +194,10 @@ public sealed class StatutoryExportTests
     {
         var payGroup = new PayGroup { Code = "M", Name = "Monthly", Frequency = "monthly", Currency = "ZMW", CalendarDayOfMonth = 28, IsDefault = true };
         db.PayGroups.Add(payGroup);
+        // M23: the employer's statutory registration references are read from
+        // the default legal entity and carried on every filing.
+        var entity = new LegalEntity { Code = "MFZ", RegisteredName = "Mighty Finance Zambia Ltd", TradingName = "MightyFin", Currency = "ZMW", CountryCode = "ZM", Tpin = "1000123456", NapsaEmployerRef = "NAPSA-100012", NhimaEmployerRef = "NHIMA-90001", IsDefault = true };
+        db.LegalEntities.Add(entity);
         var period = new PayPeriod { Id = _periodId == Guid.Empty ? Guid.NewGuid() : _periodId, PayGroupId = payGroup.Id, PeriodLabel = "2026-08", StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-3)), EndDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-3).AddDays(30)), CutoffDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-3)), PayDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-3)), Status = "locked" };
         _periodId = period.Id;
         db.PayPeriods.Add(period);
@@ -241,7 +245,7 @@ public sealed class StatutoryExportTests
             db.Set<PayrollLineComponent>().Add(comp);
         db.SaveChanges();
 
-        return new StatutoryExportServiceImpl(new PayrollRepository(db), new PermissiveAuthz());
+        return new StatutoryExportServiceImpl(new PayrollRepository(db), new ConfigRepository(db), new PermissiveAuthz());
     }
 
     [Fact]
@@ -284,6 +288,43 @@ public sealed class StatutoryExportTests
         Assert.Contains("100", csv);
     }
 
+    // M23: employer header block on the ZRA monthly PAYE return file.
+    [Fact]
+    public async Task PayeReturn_ContainsEmployerHeaderAndTotals()
+    {
+        using var db = TestDbContextFactory.Create();
+        var svc = await CreateService(db);
+        var file = await svc.GenerateAsync("paye-return", PeriodId, CancellationToken.None);
+        var csv = await File.ReadAllTextAsync(file);
+        File.Delete(file);
+        Assert.Contains("ZRA PAYE MONTHLY RETURN", csv);
+        Assert.Contains("MightyFin", csv);
+        Assert.Contains("1000123456", csv);
+        Assert.Contains("NAPSA-100012", csv);
+        Assert.Contains("NHIMA-90001", csv);
+        Assert.Contains("TOTALS", csv);
+    }
+
+    // M23: aggregate statutory liability totals for the reports UI.
+    [Fact]
+    public async Task Summary_AggregatesStatutoryTotals()
+    {
+        using var db = TestDbContextFactory.Create();
+        var svc = await CreateService(db);
+        var summary = await svc.SummaryAsync(PeriodId, CancellationToken.None);
+        Assert.Equal("2026-08", summary.PeriodLabel);
+        Assert.Equal(1, summary.WorkerCount);
+        Assert.Equal(10000m, summary.TotalGross);
+        Assert.Equal(670m, summary.TotalPaye);
+        Assert.Equal(330.5m, summary.TotalNapsaEe);
+        Assert.Equal(330.5m, summary.TotalNapsaEr);
+        Assert.Equal(100m, summary.TotalNhimaEe);
+        Assert.Equal(100m, summary.TotalNhimaEr);
+        Assert.Equal(8800m, summary.TotalNet);
+        Assert.Equal("MightyFin", summary.EmployerName);
+        Assert.Equal("1000123456", summary.EmployerTpin);
+    }
+
     [Fact]
     public async Task UnsupportedExportType_Throws()
     {
@@ -297,7 +338,7 @@ public sealed class StatutoryExportTests
     public async Task EmptyPeriod_Throws()
     {
         using var db = TestDbContextFactory.Create();
-        var svc = new StatutoryExportServiceImpl(new PayrollRepository(db), new PermissiveAuthz());
+        var svc = new StatutoryExportServiceImpl(new PayrollRepository(db), new ConfigRepository(db), new PermissiveAuthz());
         var ex = await Assert.ThrowsAsync<DomainException>(() => svc.GenerateAsync("zra", Guid.NewGuid(), CancellationToken.None));
         Assert.Equal("export-no-data", ex.Code);
     }

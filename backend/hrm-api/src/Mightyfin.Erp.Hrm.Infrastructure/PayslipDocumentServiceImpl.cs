@@ -28,7 +28,8 @@ public sealed class PayslipDocumentServiceImpl(HrmDbContext db) : IPayslipDocume
 
         var html = RenderPayslipHtml(worker.FullName, worker.EmployeeNo ?? "", periodLabel,
             slip.PayslipNo, components, slip.GrossPay, slip.TotalDeductions, slip.NetPay,
-            slip.YtdGross, slip.YtdTax, slip.YtdNet);
+            slip.YtdGross, slip.YtdTax, slip.YtdNet,
+            slip.WorkerNrc, slip.WorkerTpin, slip.WorkerNapsaNumber, slip.WorkerNhimaNumber);
 
         var pdfPath = Path.Combine(Path.GetTempPath(), $"payslip-{slip.Id:D}.pdf");
         try
@@ -80,7 +81,9 @@ public sealed class PayslipDocumentServiceImpl(HrmDbContext db) : IPayslipDocume
 
     private static string RenderPayslipHtml(string workerName, string employeeNo, string periodLabel,
         string payslipNo, List<PayrollLineComponent> components, decimal gross, decimal deductions,
-        decimal net, string? ytdGross, string? ytdTax, string? ytdNet)
+        decimal net, string? ytdGross, string? ytdTax, string? ytdNet,
+        string? workerNrc = null, string? workerTpin = null,
+        string? workerNapsaNumber = null, string? workerNhimaNumber = null)
     {
         var sb = new StringBuilder();
         sb.Append("<html><head><meta charset='utf-8'><style>")
@@ -94,6 +97,11 @@ public sealed class PayslipDocumentServiceImpl(HrmDbContext db) : IPayslipDocume
           .Append($"<div class='muted'>{Escape(payslipNo)} &middot; Period {Escape(periodLabel)}</div>")
           .Append("<h2>Employee</h2><table>")
           .Append($"<tr><td>Name</td><td>{Escape(workerName)}</td><td>Employee No</td><td>{Escape(employeeNo)}</td></tr>")
+          .Append("</table>")
+          // M24: statutory identity pack snapshotted at payment time
+          .Append("<h2>Statutory references</h2><table>")
+          .Append($"<tr><td>NRC</td><td>{Escape(workerNrc)}</td><td>TPIN</td><td>{Escape(workerTpin)}</td></tr>")
+          .Append($"<tr><td>NAPSA no.</td><td>{Escape(workerNapsaNumber)}</td><td>NHIMA no.</td><td>{Escape(workerNhimaNumber)}</td></tr>")
           .Append("</table>")
           .Append("<h2>Earnings &amp; Deductions</h2><table>")
           .Append("<tr><th>Component</th><th>Type</th><th class='right'>Amount</th><th>Explanation</th></tr>");

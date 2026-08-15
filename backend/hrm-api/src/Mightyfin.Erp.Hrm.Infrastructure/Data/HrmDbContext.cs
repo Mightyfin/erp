@@ -313,6 +313,13 @@ public sealed class AuthzServiceImpl(Microsoft.AspNetCore.Http.IHttpContextAcces
             throw new DomainException("forbidden", $"Requires one of roles: {string.Join(", ", roles)}");
     }
 
+    public bool IsRole(params string[] roles)
+    {
+        var principal = GetCurrent();
+        if (principal.IsDeveloperFallback) return true; // dev mode: open
+        return principal.IsRole(roles);
+    }
+
     public bool CanAccessSensitive(string category) =>
         GetCurrent().IsDeveloperFallback || GetCurrent().CanPayroll || GetCurrent().CanHr;
 

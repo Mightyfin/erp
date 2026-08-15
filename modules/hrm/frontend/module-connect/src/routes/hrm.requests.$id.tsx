@@ -1,12 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { Lock, Loader2, SendHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { realApi, useApi } from "@/platform/use-api";
+import { useAuth } from "@/platform/auth";
+import { useRoleGate } from "@/platform/app-context";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
-import { ApprovalPanel } from "@/platform/components/ApprovalPanel";
 import { RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
-import { StatusTimeline } from "@/platform/components/StatusTimeline";
-import { realApi, useApi } from "@/platform/use-api";
+import { feedback } from "@/platform/feedback";
 
 export const Route = createFileRoute("/hrm/requests/$id")({
   head: () => ({
@@ -20,21 +25,59 @@ export const Route = createFileRoute("/hrm/requests/$id")({
   component: RequestDetail,
 });
 
-const workflowStatus: Record<string, string> = {
-  submitted: "In review",
-  "in-review": "In review",
-  approved: "Approved",
-  rejected: "Rejected",
-  returned: "Returned",
-  escalated: "Escalated",
+const statusLabel: Record<string, string> = {
+  open: "Open",
+  "in-progress": "In progress",
+  "awaiting-employee": "Awaiting employee",
+  resolved: "Resolved",
+  closed: "Closed",
 };
+
+const categoryLabel: Record<string, string> = {
+  payroll: "Payroll",
+  benefits: "Benefits",
+  contract: "Contract",
+  "data-change": "Data change",
+  "employment-letter": "Employment letter",
+  other: "Other",
+};
+
+interface ThreadMessage {
+  id: string;
+  from: string;
+  body: string;
+  isInternalNote: boolean;
+  at: string;
+}
+
+function toMessages(raw: unknown): ThreadMessage[] {
+  const msgs = Array.isArray(raw) ? raw : [];
+  return msgs.map((m, i) => {
+    const x = m as Record<string, unknown>;
+    return {
+      id: String(x.id ?? `msg-${i}`),
+      from: String(x.from ?? "system"),
+      body: String(x.body ?? ""),
+      isInternalNote: Boolean(x.isInternalNote),
+      at: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 16).replace("T", " ") : "",
+    };
+  });
+}
 
 function RequestDetail() {
   const { id } = Route.useParams();
-  const state = useApi(
-    () => realApi.workflowRequest(id).then((raw) => raw as unknown as Record<string, unknown>),
+  const state = useApi<Record<string, unknown> | null>(
+    async () => {
+      const page = await realApi.experienceRequests();
+      const found = (Array.isArray(page.items) ? page.items : []).find((r) => String((r as Record<string, unknown>).id) === id);
+      return (found ?? null) as Record<string, unknown> | null;
+    },
     [id],
   );
+  const canAct = useRoleGate()(["hr_ops", "hr_admin"]);
+  const [reply, setReply] = useState("");
+  const [noteMode, setNoteMode] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   return (
     <AuthGate>
@@ -42,55 +85,138 @@ function RequestDetail() {
       <Async state={state} rows={3}>
         {(raw) => {
           if (!raw) return <RestrictedState />;
-          const requestId = String(raw.requestId ?? raw.id ?? "");
-          const subjectName = String(raw.subjectName ?? "HR request");
-          const workflowType = String(raw.workflowType ?? "General");
-          const status = workflowStatus[String(raw.status ?? "")] ?? String(raw.status ?? "");
-          const decisions = Array.isArray(raw.decisions)
-            ? (raw.decisions as unknown[]).map((d, i) => {
-                const x = d as Record<string, unknown>;
-                return {
-                  id: String(x.id ?? `dec-${i}`),
-                  at: typeof x.createdAt === "string" ? String(x.createdAt).slice(0, 16).replace("T", " ") : "",
-                  actor: String(x.actorName ?? "System"),
-                  event: `${String(x.action ?? "decision")}${x.reason ? ` — ${String(x.reason)}` : ""}`,
-                  detail: String(x.delegatedToName ?? ""),
-                };
-              })
-            : [];
-          const payload = (() => {
+          const requestId = String(raw.id ?? "");
+          const workerName = String(raw.workerName ?? "Unknown");
+          const category = categoryLabel[String(raw.category ?? "")] ?? String(raw.category ?? "");
+          const status = statusLabel[String(raw.status ?? "")] ?? String(raw.status ?? "");
+          const confidential = String(raw.confidentiality ?? "normal") === "confidential";
+          const messages = toMessages(raw.messages);
+          const isClosed = ["Resolved", "Closed"].includes(status);
+
+          const send = async (internal: boolean) => {
+            if (!reply.trim()) return;
+            setBusy(true);
             try {
-              return typeof raw.payloadJson === "string" ? JSON.parse(raw.payloadJson) : null;
-            } catch {
-              return null;
+              await realApi.addRequestMessage(requestId, { body: reply.trim(), isInternalNote: internal });
+              feedback.saved(internal ? "Internal note posted" : "Reply posted to the case thread");
+              setReply("");
+              state.reload();
+            } catch (e) {
+              feedback.blocked("Failed to post the message", e instanceof Error ? e.message : "Please try again.");
+            } finally {
+              setBusy(false);
             }
-          })();
+          };
+
+          const resolve = async () => {
+            setBusy(true);
+            try {
+              await realApi.resolveRequest(requestId);
+              feedback.saved("Request resolved", () => state.reload());
+              state.reload();
+            } catch (e) {
+              feedback.blocked("Failed to resolve the request", e instanceof Error ? e.message : "Please try again.");
+            } finally {
+              setBusy(false);
+            }
+          };
 
           return (
             <RecordDetail
               reference={requestId}
-              title={subjectName}
-              subtitle={`${workflowType} · status ${status}`}
+              title={String(raw.subject ?? "HR request")}
+              subtitle={`${category} · raised by ${workerName}`}
               status={status}
-              owner={String(raw.currentApproverName ?? "")}
-              nextAction={`${String(raw.status ?? "") === "in-review" ? "Awaiting decision" : "Closed"}${raw.dueAt ? ` · due ${String(raw.dueAt).slice(0, 10)}` : ""}`}
+              owner={workerName}
+              nextAction={
+                isClosed
+                  ? "Case closed"
+                  : String(raw.status ?? "") === "awaiting-employee"
+                    ? "Waiting for the employee to reply"
+                    : "Awaiting HR action"
+              }
               summary={[
-                { label: "Subject", value: subjectName },
-                { label: "Category", value: workflowType },
-                { label: "Priority", value: "Normal" },
-                { label: "Detail", value: payload ? JSON.stringify(payload, null, 1) : "Not provided" },
+                { label: "Subject", value: String(raw.subject ?? "") },
+                { label: "Category", value: category },
+                { label: "Employee", value: workerName },
+                { label: "Confidentiality", value: confidential ? "Confidential" : "Normal" },
+                {
+                  label: "Raised",
+                  value: typeof raw.createdAt === "string" ? String(raw.createdAt).slice(0, 16).replace("T", " ") : "—",
+                },
               ]}
-              timeline={<StatusTimeline title="Conversation and status" events={decisions} />}
+              primaryAction={
+                canAct && !isClosed ? (
+                  <Button variant="secondary" onClick={resolve} disabled={busy}>
+                    {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                    {String(raw.status ?? "") === "resolved" ? "Close request" : "Resolve request"}
+                  </Button>
+                ) : null
+              }
             >
-              <ApprovalPanel
-                decisionSummary={`Resolve "${subjectName}" for ${subjectName}.`}
-                policy={[]}
-                conflicts={[]}
-                onDecision={async (d, reason) => {
-                  await realApi.workflowDecide(requestId, d, reason || undefined);
-                  state.reload();
-                }}
-              />
+              <section aria-label="Case thread" className="rounded-lg border bg-surface p-5">
+                <h2 className="text-sm font-semibold">Thread</h2>
+                <ul className="mt-4 space-y-3">
+                  <li className="rounded-md border bg-surface-muted p-3 text-sm">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Original request · employee</p>
+                    <p className="mt-1 whitespace-pre-wrap">{String(raw.body ?? "") || String(raw.subject ?? "")}</p>
+                  </li>
+                  {messages.map((m) => (
+                    <li
+                      key={m.id}
+                      className={`rounded-md border p-3 text-sm ${
+                        m.isInternalNote ? "border-warning/40 bg-warning-soft" : "border-border bg-surface-muted"
+                      }`}
+                    >
+                      <p className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                        {m.from === "hr" ? (
+                          <span className={m.isInternalNote ? "text-warning" : "text-foreground"}>
+                            HR {m.isInternalNote ? "· internal note" : ""}
+                          </span>
+                        ) : (
+                          <span>Employee</span>
+                        )}
+                        {m.isInternalNote ? <Lock className="size-3" aria-hidden /> : null}
+                        <span className="ml-auto">{m.at}</span>
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap">{m.body}</p>
+                    </li>
+                  ))}
+                  {messages.length === 0 ? (
+                    <li className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      No replies yet — the thread starts here.
+                    </li>
+                  ) : null}
+                </ul>
+
+                {!isClosed && canAct ? (
+                  <div className="mt-5 space-y-3 border-t pt-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={noteMode}
+                        onChange={(e) => setNoteMode(e.target.checked)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      Internal note — only HR can see this
+                    </label>
+                    <Textarea
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      rows={3}
+                      placeholder={noteMode ? "Write an internal note for HR colleagues" : "Reply in the case thread"}
+                      disabled={busy}
+                    />
+                    <div className="flex justify-end">
+                      <Button onClick={() => send(noteMode)} disabled={busy || !reply.trim()}>
+                        {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                        Post {noteMode ? "note" : "reply"}
+                        <SendHorizontal className="size-4" aria-hidden />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
             </RecordDetail>
           );
         }}

@@ -79,6 +79,15 @@ public class Payslip : Entity
     public string Status { get; set; } = "final";       // final | corrected | voided | superseded
     public string? DocumentUrl { get; set; }
     public DateTimeOffset? ReleasedAt { get; set; }
+
+    // M24: statutory identity pack captured at payment time. The payslip is a
+    // historical record, so the worker's NRC/TPIN/NAPSA/NHIMA values at the
+    // moment of release are snapshotted here rather than re-read later.
+    public string? WorkerNrc { get; set; }
+    public string? WorkerTpin { get; set; }
+    public string? WorkerNapsaNumber { get; set; }
+    public string? WorkerNhimaNumber { get; set; }
+
     public ICollection<PayslipAccessLog> AccessLogs { get; set; } = new List<PayslipAccessLog>();
 }
 

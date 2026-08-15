@@ -55,6 +55,10 @@ public interface IWorkerRepository
 public interface IAuthzService
 {
     void RequireAnyRole(params string[] roles);
+    // M25: true when the current principal holds any of the given roles — used
+    // by self-service ownership guards (an HR role can read broadly; an
+    // employee can only ever read their own records).
+    bool IsRole(params string[] roles);
     bool CanAccessSensitive(string category); // payroll, medical, restricted
 }
 

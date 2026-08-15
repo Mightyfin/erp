@@ -14,7 +14,10 @@ public interface IExperienceService
 {
     // HR requests
     Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct);
-    Task<HrRequestDto> CreateRequestAsync(Guid workerId, HrRequestCreate request, CancellationToken ct);
+    Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct);
+    // M25: subject-keyed mirror of ListRequestsAsync — an employee sees only
+    // their own requests; HR roles keep the broad query.
+    Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct);
     Task<HrRequestDto> AddMessageAsync(Guid requestId, Guid? actorWorkerId, string actorRole, HrRequestMessageCreate message, CancellationToken ct);
     Task<HrRequestDto> ResolveRequestAsync(Guid requestId, CancellationToken ct);
 
@@ -28,12 +31,12 @@ public interface IExperienceService
     Task<ProtectedDisclosureStatusResponse?> GetDisclosureStatusAsync(string caseReference, string accessCode, CancellationToken ct);
 }
 
-public sealed record HrRequestDto(Guid Id, Guid WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages);
+public sealed record HrRequestDto(Guid Id, Guid? WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages);
 public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool IsInternalNote, DateTimeOffset CreatedAt);
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
 
-public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge) : IExperienceService
+public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge, Workers.IWorkerService? workers = null) : IExperienceService
 {
     public async Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct)
     {
@@ -42,7 +45,27 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
     }
 
-    public async Task<HrRequestDto> CreateRequestAsync(Guid workerId, HrRequestCreate request, CancellationToken ct)
+    // M25: subject-keyed inbox — resolves the worker bound to the caller's
+    // identity and lists only their own requests. Not-linked → empty list.
+    public async Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        // A caller with a subject claim who is not linked to a worker must
+        // never see anyone else's requests — unknown identity → empty inbox.
+        if (!string.IsNullOrEmpty(subjectId))
+        {
+            var own = await workers.GetBySubjectAsync(subjectId, ct);
+            if (own is null)
+                return new Paged<HrRequestDto>([], 0, 1, 50);
+            var (items, total) = await repo.ListRequestsAsync(own.Id, status, ct);
+            return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
+        }
+        // No identity claim on the caller: they have no inbox (an unlinked
+        // principal must never be able to enumerate anyone's requests).
+        return new Paged<HrRequestDto>([], 0, 1, 50);
+    }
+
+    public async Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
         var req = new HrRequest
@@ -66,16 +89,17 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         var req = await repo.GetRequestAsync(requestId, ct) ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
         // internal notes are always HR-side; conversational messages record who wrote them
         var from = message.IsInternalNote ? "hr" : actorRole == "hr_ops" || actorRole == "hr_admin" ? "hr" : "employee";
-        req.Messages.Add(new HrRequestMessage
+        if (from == "employee" && req.Status == "awaiting-employee") req.Status = "in-progress";
+        if (from == "hr" && req.Status == "open") req.Status = "in-progress";
+        // M22: insert the message top-level (immune to EF Core 10's Modified-parent
+        // demotion of navigation-added children) rather than through req.Messages.
+        var updated = await repo.AddMessageAsync(req, new HrRequestMessage
         {
             WorkerId = from == "employee" ? actorWorkerId : null,
             From = from,
             Body = message.Body,
             IsInternalNote = message.IsInternalNote,
-        });
-        if (from == "employee" && req.Status == "awaiting-employee") req.Status = "in-progress";
-        if (from == "hr" && req.Status == "open") req.Status = "in-progress";
-        var updated = await repo.UpdateRequestAsync(req, ct);
+        }, ct);
         return Map(updated);
     }
 

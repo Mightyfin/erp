@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,44 +99,93 @@ function WorkerPayDialog({
   const [values, setValues] = useState<Raw[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedComponents, setResolvedComponents] = useState<Raw[]>([]);
+  const [resolvedGroups, setResolvedGroups] = useState<Raw[]>([]);
+
+  // Self-healing loader: the dialog fetches its own data when it opens, and
+  // uses it to initialize values exactly once per open. It must NEVER re-run
+  // the initialization after the user has started editing — so the reset is
+  // guarded by a ref that flips when the profile is first applied.
+  const initializedRef = useRef(false);
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
+  useEffect(() => {
+    if (!open || !worker) {
+      initializedRef.current = false;
+      return;
+    }
+    let live = true;
+    Promise.all([realApi.payrollComponents(), realApi.payrollProfiles(), realApi.payrollPayGroups()])
+      .then(([components, profiles, groups]) => {
+        if (!live) return;
+        setResolvedComponents(Array.isArray(components) ? (components as Raw[]) : []);
+        setResolvedGroups(Array.isArray(groups) ? (groups as Raw[]) : []);
+        if (initializedRef.current) return; // user already editing — never overwrite
+        initializedRef.current = true;
+        const snap = latestStateRef.current;
+        const wid = String(worker.id ?? "");
+        const profilesArr = Array.isArray(profiles) ? (profiles as Raw[]) : [];
+        const existing = profilesArr.find((p) => String(p.workerId) === wid);
+        const groupList = resolvedGroups.length ? resolvedGroups : snap.groups;
+        const defaults = groupList.find((g) => Boolean(g.isDefault))?.id ?? groupList[0]?.id ?? "";
+        setPayGroupId(existing ? String(existing.payGroupId ?? "") : String(defaults));
+        setEffectiveFrom(
+          existing
+            ? String(existing.effectiveFrom ?? new Date().toISOString().slice(0, 10))
+            : new Date().toISOString().slice(0, 10),
+        );
+        const comps = Array.isArray(components) ? (components as Raw[]) : snap.components;
+        const statutoryCodes = new Set(
+          snap.components
+            .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
+            .map((c) => String(c.code ?? "")),
+        );
+        setValues(
+          comps
+            .filter((c) => Boolean(c.isActive) && !c.isArchived)
+            .map((comp) => {
+              const code = String(comp.code ?? "");
+              const existingValue = ((existing?.values as Raw[] | undefined) ?? []).find(
+                (v) => String(v.componentId) === String(comp.id),
+              );
+              return {
+                componentId: String(comp.id ?? ""),
+                code,
+                name: String(comp.name ?? code),
+                isStatutory: statutoryCodes.has(code),
+                isOptional: Boolean(comp.componentType !== "earning"),
+                amount: existingValue ? String(existingValue.amount ?? "0") : "0",
+              };
+            }),
+        );
+      })
+      .catch(() => {
+        // Leave the dialog usable with the parent snapshot already passed.
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, worker?.id]);
+
   if (!worker) return null;
   const workerId = String(worker.id ?? "");
   const workerName = String(worker.fullName ?? `${worker.firstName ?? ""} ${worker.lastName ?? ""}`);
   const openProfile = state.profiles.find((p) => String(p.workerId) === workerId);
-  const activeComponents = state.components.filter((c) => Boolean(c.isActive) && !c.isArchived);
   const statutoryCodes = new Set(
     state.components
       .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
       .map((c) => String(c.code ?? "")),
   );
 
-  const resetToProfile = (p: Raw | undefined) => {
-    setPayGroupId(p ? String(p.payGroupId ?? "") : String(state.groups.find((g) => Boolean(g.isDefault))?.id ?? ""));
-    setEffectiveFrom(p ? String(p.effectiveFrom ?? new Date().toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10));
-    setValues(
-      activeComponents.map((comp) => {
-        const code = String(comp.code ?? "");
-        const existing = ((p?.values as Raw[] | undefined) ?? []).find(
-          (v) => String(v.componentId) === String(comp.id),
-        );
-        return {
-          componentId: String(comp.id ?? ""),
-          code,
-          name: String(comp.name ?? code),
-          isStatutory: statutoryCodes.has(code),
-          isOptional: Boolean(comp.componentType !== "earning"),
-          amount: existing ? String(existing.amount ?? "0") : "0",
-        };
-      }),
-    );
-  };
-
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
         onOpenChange(o);
-        if (o) resetToProfile(openProfile);
+        // The async effect initializes the form exactly once per open, so the
+        // synchronous handler never clobbers a user's in-flight selection.
+        if (o && !initializedRef.current) initializedRef.current = true;
       }}
     >
       <DialogContent className="max-w-xl">
@@ -181,6 +230,15 @@ function WorkerPayDialog({
                 values: payload,
               });
               feedback.saved(`${workerName}'s pay structure saved for the ${effectiveFrom} start date.`);
+              // Refresh the parent snapshot so the workers table reflects the new profile immediately.
+              try {
+                const refreshed = await realApi.payrollProfiles();
+                const arr = Array.isArray(refreshed) ? (refreshed as Raw[]) : [];
+                state.profiles.length = 0;
+                state.profiles.push(...arr);
+              } catch {
+                // Table keeps the older snapshot — harmless.
+              }
               onOpenChange(false);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Server rejected the change.");
@@ -194,10 +252,10 @@ function WorkerPayDialog({
             <Label>Pay group</Label>
             <Select value={payGroupId} onValueChange={setPayGroupId}>
               <SelectTrigger className="mt-1.5 w-full">
-                <SelectValue placeholder="Pick the run this worker joins" />
+                <SelectValue placeholder="Pick the pay group this worker runs on" />
               </SelectTrigger>
               <SelectContent>
-                {state.groups.map((g) => (
+                {(resolvedGroups.length ? resolvedGroups : state.groups).map((g) => (
                   <SelectItem key={String(g.id)} value={String(g.id)}>
                     {String(g.name ?? g.code)}
                     {Boolean(g.isDefault) ? " — default" : ""}

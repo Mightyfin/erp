@@ -55,12 +55,13 @@ public static class Routes
     }
 
     // Helper: resolve the calling worker from the authenticated principal.
-    // Prefers the Keycloak `worker_id` claim; falls back to the subject id when
-    // it is a valid worker GUID (matches the dev-auth fallback worker mapping).
+    // Only the explicit `worker_id` claim is trusted; the raw subject id is
+    // deliberately NOT used (a Keycloak subject uuid parses as a Guid but is
+    // never a worker record — the subject→worker mapping lives in M14 and is
+    // resolved via IWorkerService.GetBySubjectAsync where needed).
     private static Guid? ResolveWorkerId(HttpContext http)
     {
-        var raw = http.User.FindFirst("worker_id")?.Value
-            ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var raw = http.User.FindFirst("worker_id")?.Value;
         return string.IsNullOrEmpty(raw) || !System.Guid.TryParse(raw, out var id) ? null : id;
     }
 
@@ -115,8 +116,31 @@ public static class Routes
             if (string.IsNullOrEmpty(subject))
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+
+        // M25 self-service: the signed-in worker's own HR requests — keyed on
+        // the token subject so an employee can never list another's inbox.
+        g.MapGet("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyRequestsAsync(ResolveSubjectId(http), null, ct)));
+
+
+        // M25 self-service: the signed-in worker's own payslips — keyed on
+        // the token subject so an employee can never reach another slip.
+        g.MapGet("/payslips", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyPayslipsAsync(ResolveSubjectId(http) ?? "", ct)));
+        g.MapGet("/payslips/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var slip = await svc.GetMyPayslipByIdAsync(id, subject, ct);
+            return slip is null ? Results.NotFound() : Results.Ok(slip);
         });
-    }
+
+
+        
+
+        });
+            }
 
     public static void RegisterWorkers(WebApplication app)
     {
@@ -339,13 +363,21 @@ public static class Routes
         var g = app.MapGroup($"{HrmPrefix}/experience").RequireAuthorization();
         g.MapGet("/requests", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IExperienceService svc, CancellationToken ct)
             => await svc.ListRequestsAsync(workerId, status, ct));
-        g.MapPost("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        g.MapPost("/requests", async (HttpContext http, IExperienceService svc, IWorkerService ws, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
-            if (workerId is null)
-                return Results.UnprocessableEntity(new ApiError("missing-worker", "WorkerId is required; either include worker_id in the body or authenticate as the worker.", []));
-            return Results.Created("", await svc.CreateRequestAsync(workerId.Value, request, ct));
+            // M22: without a worker_id claim, resolve the caller via the M14
+            // subject identity link instead of the raw sub Guid (a Keycloak
+            // subject uuid parses as a Guid but is never a worker record).
+            if (workerId is null && http.User.FindFirst("worker_id")?.Value is null)
+            {
+                var subject = ResolveSubjectId(http);
+                if (!string.IsNullOrEmpty(subject))
+                    workerId = (await ws.GetBySubjectAsync(subject, ct))?.Id;
+            }
+            // workerId null = HR-initiated internal request (no worker record).
+            return Results.Created("", await svc.CreateRequestAsync(workerId, request, ct));
         });
         g.MapPost("/requests/{id:guid}/messages", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
@@ -460,10 +492,17 @@ public static class Routes
         });
         g.MapPost("/runs/{id:guid}/release", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             await svc.ReleaseRunAsync(id, ct));
-        g.MapGet("/payslips/{workerId:guid}", async (Guid workerId, IPayrollService svc, CancellationToken ct)
-            => await svc.GetPayslipsAsync(workerId, ct));
-        g.MapGet("/payslips/id/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
-            => await svc.GetPayslipByIdAsync(id, ct));
+        // M24: per-worker statutory identity readiness — the checklist the
+        // release gate above enforces; inspectable before attempting release.
+        g.MapGet("/runs/{id:guid}/statutory-readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            await svc.GetRunStatutoryReadinessAsync(id, ct));
+        // M25: shared reads — HR keeps broad access; an employee-only caller
+        // is restricted to their own payslips (ownership resolved from the
+        // token subject).
+        g.MapGet("/payslips/{workerId:guid}", async (Guid workerId, HttpContext http, IPayrollService svc, CancellationToken ct)
+            => await svc.GetPayslipsAsync(workerId, ResolveSubjectId(http), ct));
+        g.MapGet("/payslips/id/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct)
+            => await svc.GetPayslipByIdAsync(id, ResolveSubjectId(http), ct));
 
         // ---------- M6: reversal, liability reports, payslip documents ----------
         g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
@@ -686,6 +725,10 @@ public static class Routes
             File.Delete(file);
             return Results.File(bytes, "text/csv", $"{q.ExportType}-{q.PeriodId:N}.csv");
         });
+        // M23: aggregate statutory liability summary (PAYE/NAPSA/NHIMA totals)
+        // for the reports UI — totals visible without downloading a file.
+        g.MapGet("/summary", async (Guid periodId, IStatutoryExportService svc, CancellationToken ct) =>
+            Results.Ok(await svc.SummaryAsync(periodId, ct)));
     }
 }
 

@@ -34,7 +34,13 @@ export const hrmModule: ModuleDefinition = {
       icon: Users,
       items: [
         { label: "Employees", to: "/hrm/employees" },
-        { label: "My profile", to: "/hrm/employees/$id", params: { id: "w-1001" } },
+        // M25: self-service profile — /hrm/my-profile resolves the own worker
+        // via GET /hrm/me (M14 link) in real mode, so it can never be
+        // misdirected at another worker. Mock mode has no worker identity
+        // concept and falls back to the static `w-1001` detail page only
+        // where code paths force it; the rail link now prefers the
+        // self-service route.
+        { label: "My profile", to: "/hrm/my-profile" },
         { label: "Positions", to: "/hrm/people/positions", roles: ["hr_ops", "hr_admin", "manager"] },
         { label: "Organisation structure", to: "/hrm/people/org", roles: ["hr_ops", "hr_admin", "manager"] },
         { label: "Documents", to: "/hrm/people/documents" },
@@ -167,7 +173,7 @@ export const hrmModule: ModuleDefinition = {
       icon: BarChart3,
       roles: ["manager", "hr_ops", "hr_admin", "payroll"],
       items: [
-        { label: "Reports and analytics", to: "/hrm/reports" },
+        { label: "Statutory filings", to: "/hrm/reports" },
         { label: "Report builder", to: "/hrm/reports/builder" },
       ],
     },

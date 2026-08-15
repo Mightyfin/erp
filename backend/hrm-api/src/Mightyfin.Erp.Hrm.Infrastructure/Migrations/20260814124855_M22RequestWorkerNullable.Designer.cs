@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
 {
     [DbContext(typeof(HrmDbContext))]
-    partial class HrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814124855_M22RequestWorkerNullable")]
+    partial class M22RequestWorkerNullable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2169,22 +2172,6 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.Property<Guid>("WorkerId")
                         .HasColumnType("uuid")
                         .HasColumnName("worker_id");
-
-                    b.Property<string>("WorkerNapsaNumber")
-                        .HasColumnType("text")
-                        .HasColumnName("worker_napsa_number");
-
-                    b.Property<string>("WorkerNhimaNumber")
-                        .HasColumnType("text")
-                        .HasColumnName("worker_nhima_number");
-
-                    b.Property<string>("WorkerNrc")
-                        .HasColumnType("text")
-                        .HasColumnName("worker_nrc");
-
-                    b.Property<string>("WorkerTpin")
-                        .HasColumnType("text")
-                        .HasColumnName("worker_tpin");
 
                     b.Property<string>("YtdGross")
                         .HasColumnType("text")

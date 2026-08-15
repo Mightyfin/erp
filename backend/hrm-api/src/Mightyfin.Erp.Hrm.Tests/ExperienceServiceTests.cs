@@ -132,6 +132,82 @@ public class ExperienceServiceTests
         Assert.Contains("12,500.00", approved.TemplateBody ?? "");
     }
 
+    // ---- M22: HR requests inbox round-trip ----
+
+    [Fact]
+    public async Task ListRequestsAsync_IncludesMessagesAndHonoursStatusFilter()
+    {
+        var ctx = Ctx();
+        var svc = NewService(ctx);
+        var worker = SeedWorker(ctx);
+        var open = await svc.CreateRequestAsync(worker.Id,
+            new HrRequestCreate("payroll", "Payslip query", "Body"), CancellationToken.None);
+        var resolved = await svc.CreateRequestAsync(worker.Id,
+            new HrRequestCreate("payroll", "Old query", "Body"), CancellationToken.None);
+        await svc.ResolveRequestAsync(resolved.Id, CancellationToken.None);
+        await svc.AddMessageAsync(open.Id, null, "hr_ops",
+            new HrRequestMessageCreate("We're on it.", false), CancellationToken.None);
+
+        // An HR reply transitions the open case to in-progress, so the inbox
+        // filter by status must match the transitioned value.
+        var openPage = await svc.ListRequestsAsync(null, "open", CancellationToken.None);
+        var progressPage = await svc.ListRequestsAsync(null, "in-progress", CancellationToken.None);
+        var resolvedPage = await svc.ListRequestsAsync(null, "resolved", CancellationToken.None);
+
+        Assert.Empty(openPage.Items);
+        Assert.Single(progressPage.Items);
+        Assert.Equal(open.Id, progressPage.Items[0].Id);
+        Assert.Single(progressPage.Items[0].Messages);
+        Assert.Single(resolvedPage.Items);
+        Assert.Equal(resolved.Id, resolvedPage.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task AddMessageAsync_FromEmployeeOnAwaitingEmployee_MovesToInProgress()
+    {
+        var ctx = Ctx();
+        var svc = NewService(ctx);
+        var worker = SeedWorker(ctx);
+        var request = await svc.CreateRequestAsync(worker.Id,
+            new HrRequestCreate("benefits", "Coverage", "Body"), CancellationToken.None);
+        // HR replies, opening the case toward the employee.
+        await svc.AddMessageAsync(request.Id, null, "hr_ops",
+            new HrRequestMessageCreate("Please confirm your plan tier.", false), CancellationToken.None);
+        // Flip the status from a fresh context so the service's next call (which
+        // tracks its own query results) is not fighting a stale tracked instance.
+        // Re-use the same tracked instance: after the HR reply the request's
+        // tracked state is Unchanged, so a single SaveChanges here updates only
+        // the status column (no EF Core 10 state-propagation conflict with the
+        // first message's child row).
+        var tracked = await ctx.HrRequests.Include(r => r.Messages)
+            .FirstAsync(r => r.Id == request.Id);
+        tracked.Status = "awaiting-employee";
+        await ctx.SaveChangesAsync();
+
+        var updated = await svc.AddMessageAsync(request.Id, worker.Id, "employee",
+            new HrRequestMessageCreate("Here is the code: 4421.", false), CancellationToken.None);
+
+        Assert.Equal("in-progress", updated.Status);
+        // Verify through the shared tracked context: each Ctx() call builds a
+        // fresh isolated in-memory database, so only this ctx sees the rows.
+        Assert.Equal(2, ctx.HrRequestMessages.Count(m => m.RequestId == request.Id));
+    }
+
+    [Fact]
+    public async Task HrRequestDto_CarriesWorkerNameForKnownWorkers()
+    {
+        var ctx = Ctx();
+        var svc = NewService(ctx);
+        var worker = SeedWorker(ctx);
+
+        var result = await svc.CreateRequestAsync(worker.Id,
+            new HrRequestCreate("benefits", "Coverage question", "Body"), CancellationToken.None);
+
+        Assert.Equal("open", result.Status);
+        Assert.Equal(worker.Id, result.WorkerId);
+        Assert.Equal("Test Worker", result.WorkerName);
+    }
+
     [Fact]
     public async Task CreateLetterAsync_DraftTypeStoresPurposeAsBody()
     {

@@ -17,6 +17,9 @@ export const ENABLED_SECTIONS = new Set([
   "time", // hours, absence, timesheets and claims — all payroll inputs
   "payroll",
   "approvals", // an unapproved correction silently drops out of the run
+  "lifecycle", // M22 onboarding — statutory readiness feeds the payroll record
+  "experience", // M22 HR requests — the admin inbox lands on approvals
+  "reports", // M23 statutory filings — PAYE returns and remittances
   "configuration",
 ]);
 
@@ -31,6 +34,9 @@ const ENABLED_PREFIXES = [
   "/hrm/pay",
   "/hrm/payroll",
   "/hrm/approvals",
+  "/hrm/requests",
+  "/hrm/lifecycle/onboarding",
+  "/hrm/reports", // M23 statutory filings
   "/hrm/configuration",
   "/hrm/setup",
   "/hrm/help",
@@ -56,5 +62,4 @@ export const COMING_SOON_AREAS = [
   "Talent — goals, reviews, learning, succession",
   "Employee experience — requests, letters, knowledge, engagement",
   "Relations and safety — cases, discipline, health and safety, ethics",
-  "Reporting and analytics",
 ];

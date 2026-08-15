@@ -145,10 +145,29 @@ public sealed record PayrollLineComponentDto(string ComponentCode, string Compon
     string ComponentType, decimal Amount, string Explanation, bool IsStatutory);
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,
     decimal TotalDeductions, decimal NetPay, string? YtdGross, string? YtdTax, string? YtdNet,
-    string Status, string? DocumentUrl, DateTimeOffset? ReleasedAt, Guid? SupersedesId);
+    string Status, string? DocumentUrl, DateTimeOffset? ReleasedAt, Guid? SupersedesId,
+    // M24: statutory identity pack snapshotted at payment time (appended so existing callers stay binary-compatible)
+    string? WorkerNrc = null, string? WorkerTpin = null,
+    string? WorkerNapsaNumber = null, string? WorkerNhimaNumber = null);
 public sealed record PayrollRunReverseCreate(string? Reason = null);
+
+/// <summary>Aggregated statutory liability for one released payroll period
+/// (M23): PAYE, NAPSA and NHIMA split by employee/employer share, plus the
+/// employer's registration references carried on every statutory filing.</summary>
+public sealed record StatutorySummaryDto(string PeriodLabel, int WorkerCount,
+    decimal TotalGross, decimal TotalPaye, decimal TotalNapsaEe, decimal TotalNapsaEr,
+    decimal TotalNhimaEe, decimal TotalNhimaEr, decimal TotalNet,
+    string EmployerName, string EmployerTpin, string NapsaEmployerRef,
+    string NhimaEmployerRef, string Currency);
 public sealed record EmployerLiabilityRow(string ComponentCode, string ComponentName, string Payer,
     decimal TotalAmount, int WorkerCount);
+
+/// <summary>M24: per-worker statutory identity readiness for every line in a
+/// payroll run. The run cannot be released while any worker has a missing ref.</summary>
+public sealed record StatutoryReadinessDto(Guid RunId, string? PeriodLabel, bool IsReady,
+    int WorkerCount, List<WorkerStatutoryItemDto> Workers);
+public sealed record WorkerStatutoryItemDto(Guid WorkerId, string EmployeeNo, string FullName,
+    bool HasNrc, bool HasTpin, bool HasNapsaNumber, bool HasNhimaNumber, bool Ready);
 public sealed record EmployerLiabilityReportDto(string PeriodLabel, string TaxYear,
     List<EmployerLiabilityRow> Rows, decimal TotalStatutory, DateTimeOffset GeneratedAt);
 public sealed record PayslipGenerateRequest(Guid PayslipId);

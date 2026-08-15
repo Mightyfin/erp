@@ -1,15 +1,13 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { blockedTasks, displayName, lifecycleApi, overdueTasks, taskProgress, TODAY } from "@/mock/lifecycle";
-import type { OnboardingCase } from "@/mock/lifecycle";
+import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
-import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/lifecycle/onboarding")({
   head: () => ({
@@ -22,8 +20,6 @@ export const Route = createFileRoute("/hrm/lifecycle/onboarding")({
   }),
   component: OnboardingRoute,
 });
-
-const closed = ["Completed", "Cancelled"];
 
 /** The detail route nests under this one; show the case when one is open, the list otherwise. */
 function OnboardingRoute() {
@@ -53,9 +49,57 @@ function Progress({ done, total }: { done: number; total: number }) {
   );
 }
 
+interface OnboardingRow {
+  id: string;
+  employeeNo: string;
+  personName: string;
+  jobTitle: string;
+  department: string;
+  startDate: string;
+  status: string;
+  done: number;
+  total: number;
+  ready: boolean;
+}
+
+/**
+ * M22: live onboarding inbox. The backend has a per-worker readiness plan
+ * (assignment + NRC + TPIN + NAPSA number + bank detail), so the list is
+ * derived from the worker directory with one plan fetch per active worker.
+ */
 function OnboardingList() {
-  const state = useMock(() => lifecycleApi.onboardings());
+  const state = useApi(
+    async () => {
+      const page = await realApi.employees({ status: "active", page: 1, pageSize: 200 });
+      const workers = (page.items ?? []) as Record<string, unknown>[];
+      // Pull every plan in parallel; a plan failure degrades to a plain row.
+      const plans = await Promise.allSettled(
+        workers.map((w) => realApi.onboardingPlan(String(w.id))),
+      );
+      return workers.map((w, i) => {
+        const plan = plans[i].status === "fulfilled" ? plans[i].value : null;
+        const ready = Boolean(plan?.isOnboarded);
+        const done = plan?.tasksCompleted ?? 0;
+        const total = plan?.tasksTotal ?? 5;
+        return {
+          id: String(w.id ?? ""),
+          employeeNo: String(w.employeeNo ?? ""),
+          personName: String(w.fullName ?? ""),
+          jobTitle: String(w.jobTitle ?? ""),
+          department: String(w.orgUnitName ?? ""),
+          startDate: String(w.startDate ?? ""),
+          status: ready ? "Ready" : "Active",
+          done,
+          total,
+          ready,
+        } satisfies OnboardingRow;
+      });
+    },
+    [],
+  );
   const [view, setView] = useState("all");
+
+  const attention = useMemo(() => new Set(state.data?.filter((r) => !r.ready).map((r) => r.id) ?? []), [state.data]);
 
   return (
     <AuthGate>
@@ -63,128 +107,84 @@ function OnboardingList() {
       <PageHeader
         eyebrow="Lifecycle"
         title="Onboarding"
-        description="One case per joiner, from accepted offer to the end of probation. Every row shows who owns the case, what happens next and when it's due."
+        description="One case per joiner, from accepted offer to the end of probation. Every row shows what happens next and how much of the statutory pack is complete."
       />
       <Async state={state}>
-        {(rows) => {
-          const attention = (c: OnboardingCase) =>
-            !closed.includes(c.status) && (blockedTasks(c.tasks).length > 0 || overdueTasks(c.tasks).length > 0);
-
-          return (
-            <ListPage<OnboardingCase>
-              rows={rows.filter((c) =>
-                view === "attention"
-                  ? attention(c)
-                  : view === "open"
-                    ? !closed.includes(c.status)
-                    : view === "closed"
-                      ? closed.includes(c.status)
-                      : true,
-              )}
-              savedViews={[
-                { id: "all", label: "All cases" },
-                { id: "open", label: "In progress" },
-                { id: "attention", label: "Blocked or overdue" },
-                { id: "closed", label: "Closed" },
-              ]}
-              activeView={view}
-              onViewChange={setView}
-              searchPlaceholder="Search reference, joiner or role"
-              searchFields={(c) => `${c.id} ${displayName(c)} ${c.jobTitle} ${c.branch}`}
-              filters={[
-                {
-                  id: "status",
-                  label: "Status",
-                  options: ["Draft", "Ready", "Active", "Blocked", "Completed", "Cancelled"],
-                  match: (c, v) => c.status === v,
-                },
-                {
-                  id: "branch",
-                  label: "Branch",
-                  options: ["Lusaka HQ", "Ndola Plant", "Kitwe Depot", "Livingstone Works", "Chingola Office", "Solwezi Yard"],
-                  match: (c, v) => c.branch === v,
-                },
-                {
-                  id: "owner",
-                  label: "Owned by",
-                  options: ["HR operations", "Hiring manager"],
-                  match: (c, v) => (v === "Hiring manager" ? c.owner.includes("Hiring manager") : c.owner.includes("HR operations")),
-                },
-              ]}
-              bulkActions={[{ label: "Export selection", onSelect: () => undefined }]}
-              columns={[
-                {
-                  id: "ref",
-                  header: "Reference",
-                  cell: (c) => (
-                    <Link
-                      to="/hrm/lifecycle/onboarding/$id"
-                      params={{ id: c.id }}
-                      className="font-mono text-xs text-primary underline underline-offset-2"
-                    >
-                      {c.id}
-                    </Link>
-                  ),
-                },
-                {
-                  id: "joiner",
-                  header: "Joiner",
-                  cell: (c) => (
-                    <span className="block max-w-56 truncate">
-                      {displayName(c)}
-                      <span className="block truncate text-xs text-muted-foreground">{c.jobTitle}</span>
+        {(rows) => (
+          <ListPage<OnboardingRow>
+            rows={rows.filter((r) =>
+              view === "attention" ? attention.has(r.id) : view === "open" ? !r.ready : view === "closed" ? r.ready : true,
+            )}
+            savedViews={[
+              { id: "all", label: "All cases" },
+              { id: "open", label: "In progress" },
+              { id: "attention", label: "Needs attention" },
+              { id: "closed", label: "Ready" },
+            ]}
+            activeView={view}
+            onViewChange={setView}
+            searchPlaceholder="Search reference, joiner or role"
+            searchFields={(r) => `${r.employeeNo} ${r.personName} ${r.jobTitle} ${r.department}`}
+            filters={[
+              {
+                id: "department",
+                label: "Department",
+                options: Array.from(new Set(rows.map((r) => r.department).filter(Boolean))) as string[],
+                match: (r, v) => r.department === v,
+              },
+            ]}
+            columns={[
+              {
+                id: "ref",
+                header: "Employee",
+                cell: (r) => (
+                  <Link
+                    to="/hrm/lifecycle/onboarding/$id"
+                    params={{ id: r.id }}
+                    className="block max-w-56 truncate font-mono text-xs text-primary underline underline-offset-2"
+                  >
+                    {r.employeeNo}
+                    <span className="block truncate text-foreground">{r.personName}</span>
+                  </Link>
+                ),
+              },
+              { id: "role", header: "Role", cell: (r) => <span className="block max-w-56 truncate">{r.jobTitle}</span> },
+              { id: "start", header: "Start date", cell: (r) => <span className="tabular text-xs">{r.startDate}</span> },
+              {
+                id: "progress",
+                header: "Checklist",
+                cell: (r) => <Progress done={r.done} total={r.total} />,
+              },
+              {
+                id: "blockers",
+                header: "Blocked / overdue",
+                cell: (r) =>
+                  r.ready ? (
+                    <span className="text-xs text-muted-foreground">None</span>
+                  ) : (
+                    <span className="inline-flex items-start gap-1.5 text-xs">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+                      <span>{r.total - r.done} remaining</span>
                     </span>
                   ),
-                },
-                { id: "start", header: "Start date", cell: (c) => <span className="tabular text-xs">{c.startDate}</span> },
-                {
-                  id: "progress",
-                  header: "Checklist",
-                  cell: (c) => {
-                    const p = taskProgress(c.tasks);
-                    return <Progress done={p.done} total={p.total} />;
-                  },
-                },
-                {
-                  id: "blockers",
-                  header: "Blocked / overdue",
-                  cell: (c) => {
-                    const b = blockedTasks(c.tasks).length;
-                    const o = overdueTasks(c.tasks).length;
-                    if (b === 0 && o === 0) return <span className="text-xs text-muted-foreground">None</span>;
-                    return (
-                      <span className="inline-flex items-start gap-1.5 text-xs">
-                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-                        <span>
-                          {b} blocked · {o} overdue
-                        </span>
-                      </span>
-                    );
-                  },
-                },
-                { id: "status", header: "Status", cell: (c) => <StatusBadge status={c.status} /> },
-                {
-                  id: "next",
-                  header: "Next action",
-                  cell: (c) => (
-                    <span className="block max-w-64 truncate text-xs" title={c.nextAction}>
-                      {c.nextAction}
-                      <span className="block truncate text-muted-foreground">
-                        {c.owner} · due {c.dueDate}
-                      </span>
+              },
+              { id: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+              {
+                id: "next",
+                header: "Next action",
+                cell: (r) => (
+                  <span className="block max-w-64 truncate text-xs">
+                    {r.ready ? "Onboarding complete" : "Complete the statutory pack"}
+                    <span className="block truncate text-muted-foreground">
+                      {r.department} · due by start date
                     </span>
-                  ),
-                },
-                { id: "owner", header: "Owner", defaultVisible: false, cell: (c) => <span className="text-xs">{c.owner}</span> },
-                { id: "branch", header: "Branch", defaultVisible: false, cell: (c) => <span className="text-xs">{c.branch}</span> },
-                { id: "type", header: "Employment type", defaultVisible: false, cell: (c) => <span className="text-xs">{c.employmentType}</span> },
-                { id: "probation", header: "Probation start", defaultVisible: false, cell: (c) => <span className="tabular text-xs">{c.probationStart}</span> },
-                { id: "manager", header: "Hiring manager", defaultVisible: false, cell: (c) => <span className="text-xs">{c.hiringManager}</span> },
-              ]}
-              emptyBody={`No onboarding cases match the current view. Today is ${TODAY}.`}
-            />
-          );
-        }}
+                  </span>
+                ),
+              },
+            ]}
+            emptyBody="No onboarding cases match the current view."
+          />
+        )}
       </Async>
     </AppShell>
       </AuthGate>

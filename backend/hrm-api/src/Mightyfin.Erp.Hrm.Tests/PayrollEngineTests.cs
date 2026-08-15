@@ -38,6 +38,9 @@ public class PayrollEngineTests
     private static Worker TestWorker(string empNo = "T001") => new()
     {
         EmployeeNo = empNo, FirstName = "Test", LastName = "Worker", WorkerType = "employee", Status = "active",
+        // M24: the lifecycle harness tests release — every test worker must carry
+        // the full statutory identity pack or the release gate blocks them.
+        Nrc = "123456/10/1", Tpin = "1000000001", NapsaNumber = "NAPSA-1", NhimaNumber = "NHIMA-1",
     };
 
     /// Seeds a complete payroll stack: worker, pay group, two monthly periods in 2026,

@@ -476,16 +476,36 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
         // when the parent is Modified (state-propagation behavior change). Re-attach
         // brand-new (detached) messages directly to the context as Added with the FK
         // set, which keeps them as INSERTs alongside the parent UPDATE.
-        foreach (var msg in request.Messages)
+        // M22: EF Core 10 also demotes EXISTING tracked children to Modified when
+        // the parent is Modified, producing 0-row UPDATEs (DbUpdateConcurrencyException).
+        // Pin every existing (non-detached) message to Unchanged so the tracker skips it.
+        foreach (var msg in request.Messages.ToList())
         {
-            if (db.Entry(msg).State == EntityState.Detached)
+            var entry = db.Entry(msg);
+            if (entry.State == EntityState.Detached)
             {
                 msg.RequestId = request.Id;
                 db.HrRequestMessages.Add(msg);
             }
+            else if (entry.State != EntityState.Unchanged && entry.State != EntityState.Added)
+            {
+                entry.State = EntityState.Unchanged;
+            }
         }
         if (db.Entry(request).State == EntityState.Detached)
             db.HrRequests.Update(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+
+    // M22: explicit top-level insert so EF Core 10's Modified-parent demotion can
+    // never turn the new message into a 0-row UPDATE. Same explicit-Add pattern
+    // used for emergency contacts / bank details.
+    public async Task<HrRequest> AddMessageAsync(HrRequest request, HrRequestMessage message, CancellationToken ct)
+    {
+        message.RequestId = request.Id;
+        db.Set<HrRequestMessage>().Add(message);
+        // status transition decided by the caller is already on the tracked parent
         await db.SaveChangesAsync(ct);
         return request;
     }
@@ -590,6 +610,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<Worker?> GetWorkerAsync(Guid id, CancellationToken ct)
         => await db.Workers.FirstOrDefaultAsync(w => w.Id == id, ct);
+    // M25: resolve the worker linked to a Keycloak subject (self-service).
+    public async Task<Worker?> GetWorkerBySubjectAsync(string subjectId, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
 
     public async Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct)
         => await db.PayGroups.ToListAsync(ct);
@@ -829,6 +852,13 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 YtdNet = ytdNet.ToString("F2"),
                 Status = "final",
                 ReleasedAt = DateTimeOffset.UtcNow,
+                // M24: snapshot the worker's statutory identity pack at payment
+                // time — the payslip keeps these values even if the worker
+                // record is updated later.
+                WorkerNrc = line.Worker?.Nrc,
+                WorkerTpin = line.Worker?.Tpin,
+                WorkerNapsaNumber = line.Worker?.NapsaNumber,
+                WorkerNhimaNumber = line.Worker?.NhimaNumber,
             });
         }
         await db.SaveChangesAsync(ct);
@@ -873,7 +903,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
             .Select(r => r.Id).ToListAsync(ct);
         if (runIds.Count == 0) return [];
-        return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker).Include(l => l.Run)
+        return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker)
+            .Include(l => l.Run).ThenInclude(r => r!.PayPeriod)
             .Where(l => runIds.Contains(l.RunId)).ToListAsync(ct);
     }
 
