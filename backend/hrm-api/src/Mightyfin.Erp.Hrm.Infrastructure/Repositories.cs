@@ -849,6 +849,13 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 YtdNet = ytdNet.ToString("F2"),
                 Status = "final",
                 ReleasedAt = DateTimeOffset.UtcNow,
+                // M24: snapshot the worker's statutory identity pack at payment
+                // time — the payslip keeps these values even if the worker
+                // record is updated later.
+                WorkerNrc = line.Worker?.Nrc,
+                WorkerTpin = line.Worker?.Tpin,
+                WorkerNapsaNumber = line.Worker?.NapsaNumber,
+                WorkerNhimaNumber = line.Worker?.NhimaNumber,
             });
         }
         await db.SaveChangesAsync(ct);

@@ -53,6 +53,9 @@ public interface IPayrollService
 
     Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<PayslipDto?> GetPayslipByIdAsync(Guid id, CancellationToken ct);
+
+    // M24: statutory identity readiness per run — hard gate on release.
+    Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
 }
 
 public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType, string CalculationBasis, decimal? Rate, decimal? FixedAmount, decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Version, bool IsActive);
@@ -470,6 +473,21 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        // M24: every worker in the run must carry the statutory identity pack
+        // (NRC, TPIN, NAPSA number, NHIMA number) before payslips can be released.
+        var readiness = await GetRunStatutoryReadinessAsync(id, ct);
+        if (!readiness.IsReady)
+        {
+            var blockers = readiness.Workers.Where(w => !w.Ready).ToList();
+            var detail = string.Join("; ", blockers.Select(b =>
+                $"{b.EmployeeNo} {b.FullName}" +
+                (b.HasNrc ? "" : " NRC") +
+                (b.HasTpin ? "" : " TPIN") +
+                (b.HasNapsaNumber ? "" : " NAPSA") +
+                (b.HasNhimaNumber ? "" : " NHIMA")));
+            throw new DomainException("run-statutory-readiness",
+                $"Run cannot be released: {blockers.Count} worker(s) are missing statutory identity references ({detail}). Collect the references on each worker record, then release again.");
+        }
         if (run.Status != "approved")
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
         run.Status = "released";
@@ -602,7 +620,29 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
 
     private static PayslipDto MapPayslip(Payslip p) => new(
         p.Id, p.PayslipNo, p.Version, p.GrossPay, p.TotalDeductions, p.NetPay,
-        p.YtdGross, p.YtdTax, p.YtdNet, p.Status, p.DocumentUrl, p.ReleasedAt, p.SupersedesId);
+        p.YtdGross, p.YtdTax, p.YtdNet, p.Status, p.DocumentUrl, p.ReleasedAt, p.SupersedesId,
+        // M24: statutory identity pack snapshotted at payment time
+        p.WorkerNrc, p.WorkerTpin, p.WorkerNapsaNumber, p.WorkerNhimaNumber);
+
+    /// <summary>M24: per-worker statutory identity readiness for the run. The
+    /// four Zambian identity references (NRC, TPIN, NAPSA, NHIMA) must all be
+    /// present on every worker line before the run can be released.</summary>
+    public async Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var (items, _) = await repo.ListRunLinesAsync(id, ct);
+        var workers = items.Select(l => l.Worker).Where(w => w is not null).Cast<Worker>().ToList();
+        var item = workers.Select(w =>
+        {
+            var hasNrc = !string.IsNullOrWhiteSpace(w.Nrc);
+            var hasTpin = !string.IsNullOrWhiteSpace(w.Tpin);
+            var hasNapsa = !string.IsNullOrWhiteSpace(w.NapsaNumber);
+            var hasNhima = !string.IsNullOrWhiteSpace(w.NhimaNumber);
+            return new WorkerStatutoryItemDto(w!.Id, w.EmployeeNo, w.FullName, hasNrc, hasTpin, hasNapsa, hasNhima, hasNrc && hasTpin && hasNapsa && hasNhima);
+        }).ToList();
+        return new StatutoryReadinessDto(run.Id, run.PayPeriod?.PeriodLabel, item.All(x => x.Ready), item.Count, item);
+    }
 
     private static PayrollRunDto MapRun(PayrollRun r) => new(
         r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,

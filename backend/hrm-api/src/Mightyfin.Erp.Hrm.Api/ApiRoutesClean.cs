@@ -469,6 +469,10 @@ public static class Routes
         });
         g.MapPost("/runs/{id:guid}/release", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             await svc.ReleaseRunAsync(id, ct));
+        // M24: per-worker statutory identity readiness — the checklist the
+        // release gate above enforces; inspectable before attempting release.
+        g.MapGet("/runs/{id:guid}/statutory-readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            await svc.GetRunStatutoryReadinessAsync(id, ct));
         g.MapGet("/payslips/{workerId:guid}", async (Guid workerId, IPayrollService svc, CancellationToken ct)
             => await svc.GetPayslipsAsync(workerId, ct));
         g.MapGet("/payslips/id/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)

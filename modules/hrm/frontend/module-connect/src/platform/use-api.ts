@@ -21,10 +21,7 @@ export interface ApiState<T> {
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
-export function useApi<T>(
-  fn: () => Promise<T>,
-  deps: unknown[] = [],
-): ApiState<T> {
+export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [degraded, setDegraded] = useState<string | null>(null);
@@ -89,8 +86,7 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
       : [];
   return rows.map((raw) => {
     const w = raw as Record<string, unknown>;
-    const toText = (v: unknown) =>
-      v === undefined || v === null ? "" : String(v);
+    const toText = (v: unknown) => (v === undefined || v === null ? "" : String(v));
     return {
       id: toText(w.id),
       employeeNo: toText(w.employeeNo),
@@ -110,7 +106,8 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
       grade: toText(w.grade),
       nationalId: toText(w.nrc),
       bankAccount: Array.isArray(w.bankDetails)
-        ? ((w.bankDetails as Array<{ accountNumber?: unknown }>)[0]?.accountNumber ?? "") as string
+        ? (((w.bankDetails as Array<{ accountNumber?: unknown }>)[0]?.accountNumber ??
+            "") as string)
         : "",
     };
   });
@@ -127,10 +124,8 @@ export const realApi = {
     }),
   worker: (id: string) => hrmApi.get<unknown>(`/hrm/workers/${id}`),
   dqChecks: () => hrmApi.get<unknown>("/hrm/dq/checks"),
-  workerDocuments: (workerId: string) =>
-    hrmApi.get<unknown>(`/hrm/documents/worker/${workerId}`),
-  reports: (params: Record<string, unknown>) =>
-    hrmApi.get<unknown>("/hrm/reports", params),
+  workerDocuments: (workerId: string) => hrmApi.get<unknown>(`/hrm/documents/worker/${workerId}`),
+  reports: (params: Record<string, unknown>) => hrmApi.get<unknown>("/hrm/reports", params),
   /** Create a worker and return the created WorkerDto. */
   createWorker: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/workers", body),
@@ -147,7 +142,7 @@ export const realApi = {
   /** Work locations (config) — used for location placement selects. */
   locations: async () => {
     // Config endpoints return a paginated envelope { items, totalCount, ... }
-    const page = await hrmApi.get<{ items?: unknown[] }>('/hrm/admin/locations');
+    const page = await hrmApi.get<{ items?: unknown[] }>("/hrm/admin/locations");
     return page.items ?? page;
   },
   /** Download a document and return { url, fileName }. Caller revokes url. */
@@ -166,15 +161,27 @@ export const realApi = {
    */
   leaveRequests: (params?: Record<string, unknown>) =>
     hrmApi.get<{
-      items: { id: string; workerId: string; workerName: string; leaveTypeCode: string; startDate: string; endDate: string; requestedDays: number; status: string; balanceReserved: boolean; crossesCutoff: boolean; createdAt: string }[];
+      items: {
+        id: string;
+        workerId: string;
+        workerName: string;
+        leaveTypeCode: string;
+        startDate: string;
+        endDate: string;
+        requestedDays: number;
+        status: string;
+        balanceReserved: boolean;
+        crossesCutoff: boolean;
+        createdAt: string;
+      }[];
       totalCount: number;
       page: number;
       pageSize: number;
-    }>('/hrm/time/leave', params ?? {}),
+    }>("/hrm/time/leave", params ?? {}),
   leaveBalances: (workerId: string) =>
     hrmApi.get<unknown[]>(`/hrm/time/leave/balances/${workerId}`),
   createLeaveRequest: (body: Record<string, unknown>) =>
-    hrmApi.post<Record<string, unknown>>('/hrm/time/leave', body),
+    hrmApi.post<Record<string, unknown>>("/hrm/time/leave", body),
   /** Backend expects { action: 'approve'|'reject'|'return', reason? } */
   decideLeaveRequest: (id: string, action: string, reason?: string) =>
     hrmApi.post<unknown>(`/hrm/time/leave/${id}/decide`, { action, reason }),
@@ -184,16 +191,19 @@ export const realApi = {
       ...(params ?? {}),
     }),
   timeCorrections: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>('/hrm/time/corrections', params ?? {}),
+    hrmApi.get<{ items: unknown[] }>("/hrm/time/corrections", params ?? {}),
   createCorrection: (body: Record<string, unknown>) =>
-    hrmApi.post<Record<string, unknown>>('/hrm/time/corrections', body),
+    hrmApi.post<Record<string, unknown>>("/hrm/time/corrections", body),
   decideCorrection: (id: string, action: string, reason?: string) =>
     hrmApi.post<unknown>(`/hrm/time/corrections/${id}/decide`, { action, reason }),
 
   /** Time: attendance (clocking). */
-  clockIn: (workerId: string) => hrmApi.post<unknown>(`/hrm/time/attendance/${workerId}/clock-in`, null),
-  clockOut: (workerId: string) => hrmApi.post<unknown>(`/hrm/time/attendance/${workerId}/clock-out`, null),
-  attendanceToday: (workerId: string) => hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}/today`),
+  clockIn: (workerId: string) =>
+    hrmApi.post<unknown>(`/hrm/time/attendance/${workerId}/clock-in`, null),
+  clockOut: (workerId: string) =>
+    hrmApi.post<unknown>(`/hrm/time/attendance/${workerId}/clock-out`, null),
+  attendanceToday: (workerId: string) =>
+    hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}/today`),
   attendanceHistory: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}`, params ?? {}),
   roster: (workerId: string, params?: Record<string, unknown>) =>
@@ -210,28 +220,31 @@ export const realApi = {
 
   /** Experience: letters, service requests, speak-up. */
   experienceRequests: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[]; totalCount: number }>('/hrm/experience/requests', params ?? {}),
+    hrmApi.get<{ items: unknown[]; totalCount: number }>("/hrm/experience/requests", params ?? {}),
   createExperienceRequest: (body: Record<string, unknown>) =>
-    hrmApi.post<unknown>('/hrm/experience/requests', body),
+    hrmApi.post<unknown>("/hrm/experience/requests", body),
   addRequestMessage: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/experience/requests/${id}/messages`, body),
   resolveRequest: (id: string) =>
     hrmApi.post<unknown>(`/hrm/experience/requests/${id}/resolve`, null),
   /** Onboarding readiness for one worker — 5-item statutory/banking checklist. */
   onboardingPlan: (workerId: string) =>
-    hrmApi.get<{ workerId?: string; isOnboarded?: boolean; tasksCompleted?: number; tasksTotal?: number }>(
-      `/hrm/workers/${workerId}/onboarding`,
-    ),
+    hrmApi.get<{
+      workerId?: string;
+      isOnboarded?: boolean;
+      tasksCompleted?: number;
+      tasksTotal?: number;
+    }>(`/hrm/workers/${workerId}/onboarding`),
   experienceLetters: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>('/hrm/experience/letters', params ?? {}),
+    hrmApi.get<{ items: unknown[] }>("/hrm/experience/letters", params ?? {}),
   createLetter: (body: Record<string, unknown>) =>
     hrmApi.post<unknown>("/hrm/experience/letters", body),
   approveLetter: (id: string) =>
     hrmApi.post<unknown>(`/hrm/experience/letters/${id}/approve`, null),
   speakUp: (body: Record<string, unknown>) =>
-    hrmApi.post<{ caseReference?: string; accessCode?: string }>('/hrm/experience/speak-up', body),
+    hrmApi.post<{ caseReference?: string; accessCode?: string }>("/hrm/experience/speak-up", body),
   speakUpStatus: (caseReference: string, accessCode: string) =>
-    hrmApi.get<unknown>('/hrm/experience/speak-up/status', { caseReference, accessCode }),
+    hrmApi.get<unknown>("/hrm/experience/speak-up/status", { caseReference, accessCode }),
 
   /** Payroll: configuration + runs. */
   payrollComponents: (params?: Record<string, unknown>) =>
@@ -241,8 +254,7 @@ export const realApi = {
     hrmApi.get<unknown[]>(`/hrm/payroll/pay-groups/${groupId}/periods`),
   payrollTaxSlabs: (taxYear: string) =>
     hrmApi.get<unknown[]>("/hrm/payroll/tax-slabs", { taxYear }),
-  payrollContributionRules: () =>
-    hrmApi.get<unknown[]>("/hrm/payroll/contribution-rules"),
+  payrollContributionRules: () => hrmApi.get<unknown[]>("/hrm/payroll/contribution-rules"),
 
   /* ------------------------------------------------------------------ */
   /* M23 statutory compliance: PAYE return + NAPSA/NHIMA remittance files */
@@ -257,9 +269,7 @@ export const realApi = {
   },
   /** Aggregate statutory liability summary for one period (no download). */
   statutorySummary: (periodId: string) =>
-    hrmApi.get<Record<string, unknown>>(
-      `/hrm/statutory-exports/summary?periodId=${periodId}`,
-    ),
+    hrmApi.get<Record<string, unknown>>(`/hrm/statutory-exports/summary?periodId=${periodId}`),
   payrollStructures: () => hrmApi.get<unknown[]>("/hrm/payroll/structures"),
   updateStructure: (id: string, body: Record<string, unknown>) =>
     hrmApi.patch<unknown>(`/hrm/payroll/structures/${id}`, body),
@@ -269,25 +279,45 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/payroll/profiles/${workerId}`, body),
   /** The backend has no list endpoint for runs; pages select a period via
    *  payrollPayGroupPeriods(groupId) and then read payrollRun(id). */
-  payrollRuns: () => Promise.resolve<{ items: never[]; totalCount: number }>({ items: [], totalCount: 0 }),
+  payrollRuns: () =>
+    Promise.resolve<{ items: never[]; totalCount: number }>({ items: [], totalCount: 0 }),
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),
   calculatePayrollRun: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/calculate`, null),
   lockPayrollRun: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lock`, null),
-  payrollRunApprove: (id: string) =>
-    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, null),
-  payrollRunRelease: (id: string) =>
-    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
-  payrollRunReverse: (id: string) =>
-    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
-  payrollRunLines: (id: string) =>
-    hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
+  payrollRunApprove: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, null),
+  payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
+  payrollRunReverse: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
+  payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
+  /** M24: per-run statutory identity readiness — who blocks the release gate. */
+  payrollRunStatutoryReadiness: (id: string) =>
+    hrmApi.get<{
+      runId?: string;
+      periodLabel?: string;
+      isReady?: boolean;
+      workerCount?: number;
+      workers?: Array<{
+        workerId?: string;
+        employeeNo?: string;
+        fullName?: string;
+        hasNrc?: boolean;
+        hasTpin?: boolean;
+        hasNapsaNumber?: boolean;
+        hasNhimaNumber?: boolean;
+        ready?: boolean;
+      }>;
+    }>(`/hrm/payroll/runs/${id}/statutory-readiness`),
+  /** M24: payslip by id — the snapshot includes statutory references. */
+  payslipById: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/payslips/id/${id}`),
+  /** Trigger payslip document (PDF) generation, returns the updated payslip. */
+  payslipGenerate: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/payslips/${id}/generate`, null),
 
   /** Recruitment: vacancies, candidates, offers. */
   recruitmentVacancies: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>('/hrm/recruitment/vacancies', params ?? {}),
+    hrmApi.get<{ items: unknown[] }>("/hrm/recruitment/vacancies", params ?? {}),
   createVacancy: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/vacancies", body),
   publishVacancy: (id: string) =>
@@ -295,21 +325,23 @@ export const realApi = {
   closeVacancy: (id: string) =>
     hrmApi.post<unknown>(`/hrm/recruitment/vacancies/${id}/close`, null),
   vacancyCandidates: (vacancyId: string, params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>(`/hrm/recruitment/vacancies/${vacancyId}/candidates`, params ?? {}),
+    hrmApi.get<{ items: unknown[] }>(
+      `/hrm/recruitment/vacancies/${vacancyId}/candidates`,
+      params ?? {},
+    ),
   createCandidate: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/candidates", body),
   advanceCandidate: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/recruitment/candidates/${id}/advance`, body),
   createOffer: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/offers", body),
-  issueOffer: (id: string) =>
-    hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/issue`, null),
+  issueOffer: (id: string) => hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/issue`, null),
   acceptOffer: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/accept`, body),
 
   /** Relations: cases. */
   relationsCases: (params?: Record<string, unknown>) =>
-    hrmApi.get<{ items: unknown[] }>('/hrm/relations/cases', params ?? {}),
+    hrmApi.get<{ items: unknown[] }>("/hrm/relations/cases", params ?? {}),
   createCase: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/relations/cases", body),
 
@@ -348,8 +380,7 @@ export const realApi = {
   /* ------------------------------------------------------------------ */
 
   /** Full pay-group list with statuses — GET /payroll/pay-groups/full. */
-  payGroupsFull: () =>
-    hrmApi.get<unknown[]>("/hrm/payroll/pay-groups/full"),
+  payGroupsFull: () => hrmApi.get<unknown[]>("/hrm/payroll/pay-groups/full"),
   /** Patch-update a pay group (frequency, currency, payday calendar, defaults). */
   updatePayGroup: (id: string, body: Record<string, unknown>) =>
     hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/pay-groups/${id}`, body),
