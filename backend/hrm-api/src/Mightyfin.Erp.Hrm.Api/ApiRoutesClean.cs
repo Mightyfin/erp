@@ -116,6 +116,8 @@ public static class Routes
             if (string.IsNullOrEmpty(subject))
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+        });
+
 
         // M25 self-service: the signed-in worker's own HR requests — keyed on
         // the token subject so an employee can never list another's inbox.
@@ -135,12 +137,7 @@ public static class Routes
             var slip = await svc.GetMyPayslipByIdAsync(id, subject, ct);
             return slip is null ? Results.NotFound() : Results.Ok(slip);
         });
-
-
-        
-
-        });
-            }
+    }
 
     public static void RegisterWorkers(WebApplication app)
     {
