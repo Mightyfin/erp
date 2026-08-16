@@ -607,6 +607,91 @@ export const realApi = {
     const url = URL.createObjectURL(blob);
     downloadUrl(url, fileName);
   },
+  /** M34 tenant-scoped security posture, role matrix, audit and retention evidence. */
+  securityDashboard: () =>
+    hrmApi.get<{
+      tenantId: string;
+      controls: Array<{
+        key: string;
+        name: string;
+        status: string;
+        detail: string;
+        lastVerifiedAt?: string | null;
+        expiresAt?: string | null;
+        evidenceReference?: string | null;
+      }>;
+      roleMatrix: Array<{
+        capability: string;
+        description: string;
+        roles: string[];
+        dataScope: string;
+        sensitive: boolean;
+        control: string;
+      }>;
+      privilegedActions: Array<{
+        id: string;
+        actorSubjectId: string;
+        actorRoles: string[];
+        method: string;
+        path: string;
+        outcome: string;
+        statusCode: number;
+        requestId: string;
+        createdAt: string;
+      }>;
+      entityAudit: Array<{
+        id: string;
+        entityType: string;
+        entityId: string;
+        action: string;
+        actorSubjectId: string;
+        correlationId?: string | null;
+        beforeJson?: string | null;
+        afterJson?: string | null;
+        createdAt: string;
+      }>;
+      retentionRules: Array<{
+        recordType: string;
+        retentionMonths: number;
+        legalBasis: string;
+        disposition: string;
+        legalHoldOverrides: boolean;
+      }>;
+      evidence: Array<{
+        id: string;
+        controlKey: string;
+        status: string;
+        evidenceReference: string;
+        notes?: string | null;
+        executedAt: string;
+        expiresAt?: string | null;
+        executedBySubjectId: string;
+      }>;
+      legalHolds: Array<{
+        id: string;
+        reference: string;
+        scope: string;
+        reason: string;
+        status: string;
+        placedAt: string;
+        placedBySubjectId: string;
+        releasedAt?: string | null;
+        releasedBySubjectId?: string | null;
+        releaseReason?: string | null;
+      }>;
+      openFindings: number;
+      activeLegalHolds: number;
+    }>("/hrm/security"),
+  recordComplianceEvidence: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/security/evidence", body),
+  placeLegalHold: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/security/legal-holds", body),
+  releaseLegalHold: (id: string, reason: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/security/legal-holds/${id}/release`, { reason }),
+  exportSecurityAudit: async () => {
+    const blob = await hrmApi.getBlob("/hrm/security/audit/export");
+    downloadUrl(URL.createObjectURL(blob), "hrm-privileged-audit.csv");
+  },
 
   /* ------------------------------------------------------------------ */
   /* M19 organisation configuration CRUD (write surfaces)                */

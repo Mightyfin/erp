@@ -1,143 +1,339 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Download, LockKeyhole, RefreshCw, ShieldCheck, ShieldAlert } from "lucide-react";
 import { useState } from "react";
-import { Lock, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { configurationApi } from "@/mock/configuration";
+import { Input } from "@/components/ui/input";
 import { Async } from "@/platform/components/Async";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { ConfigPage, ConfigTable } from "@/platform/components/ConfigPage";
-import { useMock } from "@/platform/use-mock";
+import { feedback } from "@/platform/feedback";
+import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/configuration/compliance")({
   head: () => ({
     meta: [
       { title: "Security and compliance — Mightyfin ERP HRM" },
-      { name: "description", content: "Protected-disclosure handling, privacy and consent administration, retention and audit." },
-      { property: "og:title", content: "Security and compliance — Mightyfin ERP HRM" },
-      { property: "og:description", content: "Protected-disclosure handling, privacy and consent administration, retention and audit." },
+      {
+        name: "description",
+        content:
+          "Tenant isolation, least privilege, audit, retention, legal holds and control evidence.",
+      },
     ],
   }),
   component: ComplianceConfig,
 });
 
-const SECTIONS = [
-  { id: "disclosure", label: "Protected disclosures" },
-  { id: "privacy", label: "Privacy and consent" },
-  { id: "retention", label: "Retention and audit" },
+const sections = [
+  { id: "posture", label: "Security posture" },
+  { id: "roles", label: "Enforced role matrix" },
+  { id: "audit", label: "Privileged audit" },
+  { id: "retention", label: "Retention and holds" },
+  { id: "evidence", label: "Control evidence" },
 ];
 
 function ComplianceConfig() {
-  const [tab, setTab] = useState("disclosure");
-  const handlers = useMock(() => configurationApi.disclosureHandlers());
-  const retention = useMock(() => configurationApi.retentionRules());
+  const [tab, setTab] = useState("posture");
+  const dashboard = useApi(() => realApi.securityDashboard());
+  const [busy, setBusy] = useState(false);
+  const [controlKey, setControlKey] = useState("backup-restore");
+  const [evidenceReference, setEvidenceReference] = useState("");
+  const [holdReference, setHoldReference] = useState("");
+  const [holdScope, setHoldScope] = useState("");
+  const [holdReason, setHoldReason] = useState("");
+
+  async function perform(action: () => Promise<unknown>, success: string) {
+    setBusy(true);
+    try {
+      await action();
+      feedback.submitted(
+        success,
+        "The action and its actor are retained in the privileged audit trail.",
+      );
+      dashboard.reload();
+    } catch (error) {
+      feedback.blocked(
+        "The compliance action was not saved.",
+        error instanceof Error ? error.message : "Try again later.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <ConfigPage
-      title="Security and compliance"
-      description="Who can see the most sensitive things, and how long anything is kept."
-      sections={SECTIONS}
-      active={tab}
-      onSelect={setTab}
-    >
-      {tab === "disclosure" ? (
-        <Async state={handlers} rows={2}>
-          {(rows) => (
-            <>
-              <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
-                <p className="flex items-start gap-2 text-sm font-medium text-danger">
-                  <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  This cannot be granted to an HR administrator role
-                </p>
-                <p className="mt-1.5 text-sm text-foreground">
-                  Protected disclosures are handled by named people only. The point of the channel is
-                  that someone can report a concern about HR itself, so it is never a permission that
-                  comes with the HR admin job.
-                </p>
+    <AuthGate>
+      <ConfigPage
+        title="Security and compliance"
+        description="Review the controls enforced for this HRM tenant and retain evidence for privileged operations."
+        sections={sections}
+        active={tab}
+        onSelect={setTab}
+        notice="This is a live, tenant-scoped control surface. Changes, failures and denied privileged attempts are retained as append-only evidence."
+      >
+        <Async state={dashboard} rows={6}>
+          {(data) => (
+            <div className="space-y-6" data-testid="security-compliance">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Metric label="Tenant" value={data.tenantId} />
+                <Metric label="Open control findings" value={String(data.openFindings)} />
+                <Metric label="Active legal holds" value={String(data.activeLegalHolds)} />
               </div>
 
-              <ul className="space-y-2">
-                {rows.map((h) => (
-                  <li key={h.name} className="flex flex-wrap items-center gap-3 rounded-lg border bg-surface p-4">
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{h.name}</span>
-                      <span className="block text-xs text-muted-foreground">{h.role}</span>
-                    </span>
-                    {h.independent ? (
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-success/30 bg-success-soft px-2.5 py-0.5 text-[11px] font-medium text-success">
-                        <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
-                        Independent of the HR line
+              {tab === "posture" ? (
+                <div className="space-y-3">
+                  {data.controls.map((control) => (
+                    <div
+                      key={control.key}
+                      className="flex flex-wrap items-start gap-3 rounded-lg border bg-surface p-4"
+                    >
+                      {control.status === "passed" ? (
+                        <ShieldCheck className="mt-0.5 size-5 text-success" />
+                      ) : (
+                        <ShieldAlert className="mt-0.5 size-5 text-warning" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{control.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{control.detail}</p>
+                        {control.evidenceReference ? (
+                          <p className="mt-2 text-xs">Evidence: {control.evidenceReference}</p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${control.status === "passed" ? "border-success/30 bg-success-soft text-success" : "border-warning/40 bg-warning-soft text-warning"}`}
+                      >
+                        {control.status}
                       </span>
-                    ) : (
-                      <span className="shrink-0 text-[11px] text-muted-foreground">Internal handler</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
-              <p className="text-xs text-muted-foreground">
-                At least one handler must sit outside the HR reporting line. Removing the independent
-                handler is blocked until a replacement is named.
-              </p>
+              {tab === "roles" ? (
+                <ConfigTable
+                  caption="Backend-enforced least-privilege role matrix"
+                  minWidth="56rem"
+                  headers={["Capability", "Roles", "Data scope", "Sensitive", "Control"]}
+                  rows={data.roleMatrix.map((row) => [
+                    <span>
+                      <span className="block font-medium">{row.capability}</span>
+                      <span className="block text-xs text-muted-foreground">{row.description}</span>
+                    </span>,
+                    row.roles.join(", "),
+                    row.dataScope,
+                    row.sensitive ? "Yes" : "No",
+                    row.control,
+                  ])}
+                />
+              ) : null}
 
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/speak-up">View the reporting channel as an employee sees it</Link>
-              </Button>
-            </>
+              {tab === "audit" ? (
+                <div className="space-y-4">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" className="gap-2" onClick={dashboard.reload}>
+                      <RefreshCw className="size-4" />
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => realApi.exportSecurityAudit()}
+                    >
+                      <Download className="size-4" />
+                      Export CSV
+                    </Button>
+                  </div>
+                  <ConfigTable
+                    caption="Privileged API actions"
+                    minWidth="58rem"
+                    headers={["When", "Actor", "Action", "Outcome", "Request"]}
+                    rows={data.privilegedActions.map((row) => [
+                      new Date(row.createdAt).toLocaleString(),
+                      <span>
+                        <span className="block font-medium">{row.actorSubjectId}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {row.actorRoles.join(", ")}
+                        </span>
+                      </span>,
+                      `${row.method} ${row.path}`,
+                      `${row.outcome} · ${row.statusCode}`,
+                      row.requestId,
+                    ])}
+                  />
+                  <ConfigTable
+                    caption="Entity before and after audit"
+                    minWidth="54rem"
+                    headers={["When", "Entity", "Action", "Actor", "Correlation"]}
+                    rows={data.entityAudit.map((row) => [
+                      new Date(row.createdAt).toLocaleString(),
+                      `${row.entityType} · ${row.entityId}`,
+                      row.action,
+                      row.actorSubjectId,
+                      row.correlationId ?? "—",
+                    ])}
+                  />
+                </div>
+              ) : null}
+
+              {tab === "retention" ? (
+                <div className="space-y-5">
+                  <ConfigTable
+                    caption="Retention rules"
+                    minWidth="52rem"
+                    headers={["Record", "Kept", "Legal basis", "Disposition", "Hold"]}
+                    rows={data.retentionRules.map((row) => [
+                      row.recordType,
+                      `${row.retentionMonths} months`,
+                      row.legalBasis,
+                      row.disposition,
+                      row.legalHoldOverrides ? "Overrides disposal" : "No override",
+                    ])}
+                  />
+                  <section className="rounded-lg border bg-surface p-4">
+                    <h2 className="flex items-center gap-2 text-sm font-semibold">
+                      <LockKeyhole className="size-4" />
+                      Place a legal hold
+                    </h2>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <Input
+                        aria-label="Legal hold reference"
+                        placeholder="Reference"
+                        value={holdReference}
+                        onChange={(e) => setHoldReference(e.target.value)}
+                      />
+                      <Input
+                        aria-label="Legal hold scope"
+                        placeholder="Scope, for example worker:ID"
+                        value={holdScope}
+                        onChange={(e) => setHoldScope(e.target.value)}
+                      />
+                      <Input
+                        aria-label="Legal hold reason"
+                        placeholder="Reason"
+                        value={holdReason}
+                        onChange={(e) => setHoldReason(e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      className="mt-3"
+                      disabled={busy || !holdReference || !holdScope || !holdReason}
+                      onClick={() =>
+                        perform(
+                          () =>
+                            realApi.placeLegalHold({
+                              reference: holdReference,
+                              scope: holdScope,
+                              reason: holdReason,
+                            }),
+                          "Legal hold placed.",
+                        )
+                      }
+                    >
+                      Place hold
+                    </Button>
+                  </section>
+                  <ConfigTable
+                    caption="Legal holds"
+                    minWidth="52rem"
+                    headers={["Reference", "Scope", "Reason", "Status", "Action"]}
+                    rows={data.legalHolds.map((row) => [
+                      row.reference,
+                      row.scope,
+                      row.reason,
+                      row.status,
+                      row.status === "active" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            perform(
+                              () =>
+                                realApi.releaseLegalHold(
+                                  row.id,
+                                  "Authorised retention review completed.",
+                                ),
+                              "Legal hold released.",
+                            )
+                          }
+                        >
+                          Release
+                        </Button>
+                      ) : (
+                        "Released"
+                      ),
+                    ])}
+                  />
+                </div>
+              ) : null}
+
+              {tab === "evidence" ? (
+                <div className="space-y-5">
+                  <section className="rounded-lg border bg-surface p-4">
+                    <h2 className="text-sm font-semibold">Record completed control evidence</h2>
+                    <div className="mt-3 grid gap-3 md:grid-cols-[14rem_1fr_auto]">
+                      <select
+                        aria-label="Compliance control"
+                        className="h-10 rounded-md border bg-background px-3 text-sm"
+                        value={controlKey}
+                        onChange={(e) => setControlKey(e.target.value)}
+                      >
+                        <option value="backup-restore">Backup and restore</option>
+                        <option value="tenant-isolation">Tenant isolation</option>
+                        <option value="security-test">Security test</option>
+                      </select>
+                      <Input
+                        aria-label="Evidence reference"
+                        placeholder="Report, ticket or rehearsal reference"
+                        value={evidenceReference}
+                        onChange={(e) => setEvidenceReference(e.target.value)}
+                      />
+                      <Button
+                        disabled={busy || !evidenceReference}
+                        onClick={() =>
+                          perform(
+                            () =>
+                              realApi.recordComplianceEvidence({
+                                controlKey,
+                                status: "passed",
+                                evidenceReference,
+                                executedAt: new Date().toISOString(),
+                                expiresAt: new Date(Date.now() + 90 * 86400000).toISOString(),
+                              }),
+                            "Control evidence recorded.",
+                          )
+                        }
+                      >
+                        Record passed control
+                      </Button>
+                    </div>
+                  </section>
+                  <ConfigTable
+                    caption="Control evidence history"
+                    minWidth="48rem"
+                    headers={["Control", "Status", "Reference", "Executed", "Actor"]}
+                    rows={data.evidence.map((row) => [
+                      row.controlKey,
+                      row.status,
+                      row.evidenceReference,
+                      new Date(row.executedAt).toLocaleString(),
+                      row.executedBySubjectId,
+                    ])}
+                  />
+                </div>
+              ) : null}
+            </div>
           )}
         </Async>
-      ) : null}
+      </ConfigPage>
+    </AuthGate>
+  );
+}
 
-      {tab === "privacy" ? (
-        <>
-          <ConfigTable
-            caption="Processing purposes and their lawful basis"
-            minWidth="36rem"
-            headers={["Purpose", "Lawful basis", "Consent needed", "Withdrawable"]}
-            rows={[
-              ["Paying you", "Contract and legal obligation", <span className="text-xs text-muted-foreground">No</span>, <span className="text-xs text-muted-foreground">No</span>],
-              ["Recording working time", "Contract", <span className="text-xs text-muted-foreground">No</span>, <span className="text-xs text-muted-foreground">No</span>],
-              ["Biometric clocking", "Explicit consent", <span className="text-xs">Yes</span>, <span className="text-xs">Yes</span>],
-              ["Occupational health", "Explicit consent", <span className="text-xs">Yes</span>, <span className="text-xs">Yes</span>],
-              ["Background checks", "Explicit consent", <span className="text-xs">Yes</span>, <span className="text-xs text-muted-foreground">Not retrospectively</span>],
-              ["Workforce analytics", "Legitimate interests", <span className="text-xs text-muted-foreground">No</span>, <span className="text-xs">Objection allowed</span>],
-            ].map((r) => [<span className="font-medium">{r[0]}</span>, r[1], r[2], r[3]])}
-          />
-          <p className="mt-3 flex gap-2 rounded-md border border-info/30 bg-info-soft p-3 text-xs text-info">
-            <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <span>
-              Subject-rights requests have a statutory response deadline. Configure the deadline and
-              the responsible owner here; employees raise and track requests from their own privacy
-              page.
-            </span>
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" asChild>
-            <Link to="/hrm/people/privacy">View the employee privacy page</Link>
-          </Button>
-        </>
-      ) : null}
-
-      {tab === "retention" ? (
-        <Async state={retention} rows={4}>
-          {(rows) => (
-            <>
-              <ConfigTable
-                caption="How long each record type is kept, and why"
-                minWidth="40rem"
-                headers={["Record", "Kept for", "Basis", "Then"]}
-                rows={rows.map((r) => [
-                  <span className="font-medium">{r.record}</span>,
-                  <span className="text-sm">{r.keepFor}</span>,
-                  <span className="text-xs text-muted-foreground">{r.basis}</span>,
-                  <span className="text-xs">{r.thenWhat}</span>,
-                ])}
-              />
-              <p className="mt-3 text-xs text-muted-foreground">
-                A legal hold overrides every rule above. Nothing under hold is disposed of, even once
-                its retention period has passed.
-              </p>
-            </>
-          )}
-        </Async>
-      ) : null}
-    </ConfigPage>
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-surface p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-xl font-semibold">{value}</p>
+    </div>
   );
 }

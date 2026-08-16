@@ -57,6 +57,8 @@ test("HRM reverse proxy exposes a healthy API", async ({ request }) => {
 
   expect(response.status()).toBe(200);
   expect(await response.json()).toMatchObject({ status: "healthy" });
+  expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(response.headers()["x-frame-options"]).toBe("DENY");
 });
 
 test("a shared IdP identity without an HRM workforce role is denied ERP entry", async ({
@@ -1015,4 +1017,173 @@ test("payroll administrator can prepare and reconcile an M33 finance hand-off", 
   await page.getByRole("button", { name: "Save outcome" }).click();
   await expect(workspace).toContainText("reconciled");
   await expect(workspace).toContainText("FIN-JV-2026-08-001");
+});
+
+test("HR administrator can review and evidence the M34 security controls", async ({ page }) => {
+  const holdId = "019d0000-0000-7000-8000-000000000341";
+  let holdPlaced = false;
+  let evidenceRecorded = false;
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-security-admin",
+        tenant: "mightyfin-erp",
+        preferred_username: "playwright.security.admin",
+        realm_access: { roles: ["hr_admin"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  const dashboard = () => ({
+    tenantId: "mightyfin-erp",
+    controls: [
+      {
+        key: "tenant-query-filter",
+        name: "Tenant data isolation",
+        status: "passed",
+        detail: "Every entity is tenant-filtered.",
+        evidenceReference: "automated:M34TenantIsolationTests",
+      },
+      {
+        key: "append-only-audit",
+        name: "Privileged and entity audit",
+        status: "passed",
+        detail: "Audit evidence is immutable.",
+      },
+      {
+        key: "backup-restore",
+        name: "Backup and restore rehearsal",
+        status: evidenceRecorded ? "passed" : "action-required",
+        detail: "Restore into an isolated database.",
+        evidenceReference: evidenceRecorded ? "RESTORE-2026-08" : null,
+      },
+    ],
+    roleMatrix: [
+      {
+        capability: "security-admin",
+        description: "Review audit and compliance",
+        roles: ["hr_admin"],
+        dataScope: "tenant",
+        sensitive: true,
+        control: "Append-only evidence",
+      },
+    ],
+    privilegedActions: [
+      {
+        id: "evt-1",
+        actorSubjectId: "payroll-admin",
+        actorRoles: ["payroll"],
+        method: "POST",
+        path: "/api/hrm/payroll/runs/1/release",
+        outcome: "succeeded",
+        statusCode: 200,
+        requestId: "req-m34",
+        createdAt: "2026-08-16T13:30:00Z",
+      },
+    ],
+    entityAudit: [
+      {
+        id: "audit-1",
+        entityType: "PayrollRun",
+        entityId: "run-1",
+        action: "update",
+        actorSubjectId: "payroll-admin",
+        correlationId: "req-m34",
+        createdAt: "2026-08-16T13:30:00Z",
+      },
+    ],
+    retentionRules: [
+      {
+        recordType: "Payroll and statutory snapshots",
+        retentionMonths: 120,
+        legalBasis: "Tax and employment evidence",
+        disposition: "Archive then dispose",
+        legalHoldOverrides: true,
+      },
+    ],
+    evidence: evidenceRecorded
+      ? [
+          {
+            id: "evidence-1",
+            controlKey: "backup-restore",
+            status: "passed",
+            evidenceReference: "RESTORE-2026-08",
+            executedAt: "2026-08-16T13:35:00Z",
+            executedBySubjectId: "playwright-security-admin",
+          },
+        ]
+      : [],
+    legalHolds: holdPlaced
+      ? [
+          {
+            id: holdId,
+            reference: "CASE-2026-034",
+            scope: "worker:EMP-0034",
+            reason: "Active investigation",
+            status: "active",
+            placedAt: "2026-08-16T13:34:00Z",
+            placedBySubjectId: "playwright-security-admin",
+          },
+        ]
+      : [],
+    openFindings: evidenceRecorded ? 0 : 1,
+    activeLegalHolds: holdPlaced ? 1 : 0,
+  });
+  await page.route("**/api/hrm/security**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "POST" && url.pathname.endsWith("/legal-holds")) {
+      const body = route.request().postDataJSON() as {
+        reference: string;
+        scope: string;
+        reason: string;
+      };
+      expect(body).toEqual({
+        reference: "CASE-2026-034",
+        scope: "worker:EMP-0034",
+        reason: "Active investigation",
+      });
+      holdPlaced = true;
+    }
+    if (route.request().method() === "POST" && url.pathname.endsWith("/evidence")) {
+      const body = route.request().postDataJSON() as {
+        controlKey: string;
+        evidenceReference: string;
+      };
+      expect(body.controlKey).toBe("backup-restore");
+      expect(body.evidenceReference).toBe("RESTORE-2026-08");
+      evidenceRecorded = true;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(url.pathname.endsWith("/security") ? dashboard() : {}),
+    });
+  });
+
+  await page.goto("/hrm/configuration/compliance");
+  const workspace = page.getByTestId("security-compliance");
+  await expect(workspace).toContainText("Tenant data isolation");
+  await expect(workspace).toContainText("action-required");
+  await page.getByRole("tab", { name: "Enforced role matrix" }).click();
+  await expect(workspace).toContainText("security-admin");
+  await expect(workspace).toContainText("hr_admin");
+  await page.getByRole("tab", { name: "Privileged audit" }).click();
+  await expect(workspace).toContainText("POST /api/hrm/payroll/runs/1/release");
+  await expect(workspace).toContainText("req-m34");
+  await page.getByRole("tab", { name: "Retention and holds" }).click();
+  await page.getByLabel("Legal hold reference").fill("CASE-2026-034");
+  await page.getByLabel("Legal hold scope").fill("worker:EMP-0034");
+  await page.getByLabel("Legal hold reason").fill("Active investigation");
+  await page.getByRole("button", { name: "Place hold" }).click();
+  await expect(workspace).toContainText("CASE-2026-034");
+  await page.getByRole("tab", { name: "Control evidence" }).click();
+  await page.getByLabel("Evidence reference").fill("RESTORE-2026-08");
+  await page.getByRole("button", { name: "Record passed control" }).click();
+  await expect(workspace).toContainText("RESTORE-2026-08");
+  expect(holdPlaced).toBe(true);
+  expect(evidenceRecorded).toBe(true);
 });

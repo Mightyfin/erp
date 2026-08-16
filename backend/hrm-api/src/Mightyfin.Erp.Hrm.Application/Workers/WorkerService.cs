@@ -37,14 +37,15 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager");
         var (items, total) = await repo.ListAsync(filters, ct);
-        return new Paged<WorkerDto>(items.Select(Map).ToList(), total, filters.Page, filters.PageSize);
+        var includeSensitive = authz.CanAccessSensitive("worker-identifiers");
+        return new Paged<WorkerDto>(items.Select(x => Map(x, includeSensitive)).ToList(), total, filters.Page, filters.PageSize);
     }
 
     public async Task<WorkerDto?> GetByIdAsync(Guid id, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager");
         var w = await repo.GetByIdAsync(id, ct);
-        return w is null ? null : Map(w);
+        return w is null ? null : Map(w, authz.CanAccessSensitive("worker-identifiers"));
     }
 
     public async Task<WorkerDto?> GetBySubjectAsync(string subjectId, CancellationToken ct)
@@ -52,7 +53,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         // M14 identity link: any authenticated role may resolve themselves.
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "manager", "employee", "investigator");
         var w = await repo.FindBySubjectIdAsync(subjectId, ct);
-        return w is null ? null : Map(w);
+        return w is null ? null : Map(w, true);
     }
 
     public async Task<WorkerDto> CreateAsync(WorkerCreateRequest request, CancellationToken ct)
@@ -92,7 +93,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         foreach (var bd in request.BankDetails ?? [])
             worker.BankDetails.Add(new WorkerBankDetail { BankName = bd.BankName, BranchCode = bd.BranchCode, AccountNumber = bd.AccountNumber, AccountName = bd.AccountName, PaymentMethod = bd.PaymentMethod, MobileMoneyNumber = bd.MobileMoneyNumber, IsPrimary = bd.IsPrimary });
         var created = await repo.CreateAsync(worker, ct);
-        return Map(created);
+        return Map(created, true);
     }
 
     public async Task<WorkerDto> UpdateAsync(Guid id, WorkerUpdateRequest request, CancellationToken ct)
@@ -137,7 +138,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
                 worker.BankDetails.Add(new WorkerBankDetail { BankName = bd.BankName, BranchCode = bd.BranchCode, AccountNumber = bd.AccountNumber, AccountName = bd.AccountName, PaymentMethod = bd.PaymentMethod, MobileMoneyNumber = bd.MobileMoneyNumber, IsPrimary = bd.IsPrimary });
         }
         var updated = await repo.UpdateAsync(worker, ct);
-        return Map(updated);
+        return Map(updated, true);
     }
 
     public async Task ArchiveAsync(Guid id, CancellationToken ct)
@@ -190,7 +191,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
             await repo.AddBankDetailsAsync(pendingBank, ct);
         if (pendingEmergency.Count > 0)
             await repo.AddEmergencyContactsAsync(pendingEmergency, ct);
-        return Map(worker);
+        return Map(worker, true);
     }
 
     public async Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
@@ -297,18 +298,26 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         return $"EMP-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
     }
 
-    private static WorkerDto Map(Worker w) => new(
+    private static WorkerDto Map(Worker w, bool includeSensitive) => new(
         w.Id, w.EmployeeNo, w.FirstName, w.MiddleName, w.LastName, w.FullName, w.PreferredName,
-        w.Email, w.Phone, w.PhotoUrl, w.Nrc, w.PassportNo, w.Tpin, w.NapsaNumber, w.NhimaNumber,
-        w.Nationality, w.DateOfBirth, w.SubjectId, w.WorkerType, w.Status,
+        w.Email, w.Phone, w.PhotoUrl, Mask(w.Nrc, includeSensitive), Mask(w.PassportNo, includeSensitive),
+        Mask(w.Tpin, includeSensitive), Mask(w.NapsaNumber, includeSensitive), Mask(w.NhimaNumber, includeSensitive),
+        w.Nationality, includeSensitive ? w.DateOfBirth : null, includeSensitive ? w.SubjectId : null, w.WorkerType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
         w.Manager?.FullName, w.Grade, w.JobTitle,
         w.StartDate?.ToString(), w.EndDate?.ToString(),
-        w.EmergencyContacts.Count > 0
+        includeSensitive && w.EmergencyContacts.Count > 0
             ? w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList()
             : null,
-        w.BankDetails.Count > 0
+        includeSensitive && w.BankDetails.Count > 0
             ? w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList()
             : null,
         w.CreatedAt, w.UpdatedAt);
+
+    private static string? Mask(string? value, bool includeSensitive)
+    {
+        if (includeSensitive || string.IsNullOrWhiteSpace(value)) return value;
+        var tail = value.Length <= 4 ? value : value[^4..];
+        return $"••••{tail}";
+    }
 }

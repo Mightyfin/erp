@@ -89,6 +89,7 @@ builder.Services.AddScoped<IDocumentsService, DocumentsServiceImpl>();
 builder.Services.AddScoped<IDqService, DqServiceImpl>();
 builder.Services.AddScoped<IMasterDataService, MasterDataService>();
 builder.Services.AddScoped<IIntegrationOperationsService, IntegrationOperationsService>();
+builder.Services.AddScoped<ISecurityComplianceService, SecurityComplianceService>();
 builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddScoped<IOutboxWriter, EfOutboxWriter>();
@@ -132,6 +133,8 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .RequireAssertion(context => HrmStaffAccess.IsStaff(context.User.Claims))
         .Build();
+    options.AddPolicy("hrm-admin", policy => policy.RequireAuthenticatedUser()
+        .RequireAssertion(context => WorkerPrincipal.FromClaims(context.User.Claims).IsRole("hr_admin")));
 });
 
 // ---------- Health: readiness probes the database ----------
@@ -257,6 +260,59 @@ app.Use(async (ctx, next) =>
 });
 
 app.UseAuthentication();
+
+// M34: append-only request evidence for every authenticated privileged
+// mutation. Entity-level before/after evidence is written independently by
+// AuditInterceptor; this row also retains denied and failed attempts.
+app.Use(async (ctx, next) =>
+{
+    var mutating = ctx.Request.Method is "POST" or "PUT" or "PATCH" or "DELETE";
+    var hrmApi = ctx.Request.Path.StartsWithSegments("/api/hrm")
+        || ctx.Request.Path.StartsWithSegments("/api/v1/hrm");
+    if (!mutating || !hrmApi || ctx.User.Identity?.IsAuthenticated != true)
+    {
+        await next(ctx);
+        return;
+    }
+
+    Exception? failure = null;
+    try { await next(ctx); }
+    catch (Exception ex) { failure = ex; throw; }
+    finally
+    {
+        try
+        {
+            var principal = WorkerPrincipal.FromClaims(ctx.User.Claims);
+            var actor = !string.IsNullOrWhiteSpace(principal.SubjectId)
+                ? principal.SubjectId
+                : ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown";
+            var requestId = ctx.Response.Headers["X-Request-Id"].FirstOrDefault() ?? ctx.TraceIdentifier;
+            var status = failure is null ? ctx.Response.StatusCode : StatusCodes.Status500InternalServerError;
+            await using var auditScope = ctx.RequestServices.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+            var db = auditScope.ServiceProvider.GetRequiredService<HrmDbContext>();
+            db.PrivilegedActionEvents.Add(new Mightyfin.Erp.Hrm.Domain.Entities.PrivilegedActionEvent
+            {
+                ActorSubjectId = string.IsNullOrWhiteSpace(actor) ? "unknown" : actor,
+                ActorRoles = string.Join(',', principal.Roles.OrderBy(x => x)),
+                Method = ctx.Request.Method,
+                Path = ctx.Request.Path.Value ?? "",
+                Outcome = status is >= 200 and < 300 ? "succeeded" : status is 401 or 403 ? "denied" : "failed",
+                StatusCode = status,
+                RequestId = requestId,
+                // Network addresses are deliberately not persisted. The
+                // authenticated subject and request id provide traceability
+                // without retaining additional personal data.
+                SourceAddressHash = null,
+            });
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception auditError)
+        {
+            ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("PrivilegedAudit")
+                .LogError(auditError, "Unable to persist privileged action evidence for {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+        }
+    }
+});
 app.UseAuthorization();
 
 // ---------- Route registrations ----------

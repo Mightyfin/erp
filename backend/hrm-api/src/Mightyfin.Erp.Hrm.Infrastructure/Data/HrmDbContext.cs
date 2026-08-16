@@ -35,12 +35,23 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     private void FillTenantIds()
     {
         var tenantId = tenant.GetTenantId();
-        foreach (var entry in ChangeTracker.Entries<Entity>().Where(e => e.State == EntityState.Added))
+        foreach (var entry in ChangeTracker.Entries<Entity>())
         {
-            if (string.IsNullOrEmpty(entry.Entity.TenantId))
+            if (entry.State == EntityState.Added)
+            {
+                // Never trust a tenant id supplied by a client or service. The
+                // authenticated request context is the only write authority.
                 entry.Entity.TenantId = tenantId;
-            if (entry.Entity.CreatedAt == DateTimeOffset.MinValue)
-                entry.Entity.CreatedAt = DateTimeOffset.UtcNow;
+                if (entry.Entity.CreatedAt == DateTimeOffset.MinValue)
+                    entry.Entity.CreatedAt = DateTimeOffset.UtcNow;
+            }
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                if (!string.Equals(entry.Entity.TenantId, tenantId, StringComparison.Ordinal))
+                    throw new DomainException("cross-tenant-write", "A record from another tenant cannot be changed.");
+                if (entry.Entity is AuditEntry or PrivilegedActionEvent or Mightyfin.Erp.Hrm.Domain.Entities.ComplianceEvidence)
+                    throw new DomainException("audit-immutable", "Compliance and audit evidence is append-only.");
+            }
         }
     }
 
@@ -99,6 +110,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PayslipAccessLog> PayslipAccessLogs => Set<PayslipAccessLog>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<IntegrationOperation> IntegrationOperations => Set<IntegrationOperation>();
+    public DbSet<PrivilegedActionEvent> PrivilegedActionEvents => Set<PrivilegedActionEvent>();
+    public DbSet<ComplianceEvidence> ComplianceEvidenceRecords => Set<ComplianceEvidence>();
+    public DbSet<LegalHold> LegalHolds => Set<LegalHold>();
 
     // Config & extras
     public DbSet<CapabilityConfig> CapabilityConfigs => Set<CapabilityConfig>();
@@ -206,8 +220,21 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e.Property(x => x.PayloadJson).HasColumnType("text");
             e.Property(x => x.LastError).HasMaxLength(2000);
         });
+        ConfigureEntity<PrivilegedActionEvent>(modelBuilder, "privileged_action_events", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            e.HasIndex(x => new { x.TenantId, x.ActorSubjectId, x.CreatedAt });
+        });
+        ConfigureEntity<ComplianceEvidence>(modelBuilder, "compliance_evidence", e =>
+            e.HasIndex(x => new { x.TenantId, x.ControlKey, x.ExecutedAt }));
+        ConfigureEntity<LegalHold>(modelBuilder, "legal_holds", e =>
+            e.HasIndex(x => new { x.TenantId, x.Reference }).IsUnique().HasFilter("status = 'active'"));
         ConfigureEntity<CapabilityConfig>(modelBuilder, "capability_configs");
-        ConfigureEntity<AuditEntry>(modelBuilder, "audit_entries");
+        ConfigureEntity<AuditEntry>(modelBuilder, "audit_entries", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+            e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId });
+        });
         ConfigureEntity<Vacancy>(modelBuilder, "vacancies");
         ConfigureEntity<Candidate>(modelBuilder, "candidates");
         ConfigureEntity<Offer>(modelBuilder, "offers");
@@ -362,26 +389,64 @@ public sealed class PrincipalTenantAccessor(Microsoft.AspNetCore.Http.IHttpConte
 
 /// <summary>EF Core interceptor writing append-only audit entries for every
 /// save: captures before/after JSON for modified and deleted entities.</summary>
-public sealed class AuditInterceptor(IServiceProvider services) : SaveChangesInterceptor
+public sealed class AuditInterceptor(IHttpContextAccessor http, ITenantAccessor tenant) : SaveChangesInterceptor
 {
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
-        var ctx = eventData.Context;
-        if (ctx is null) return base.SavingChanges(eventData, result);
-        var entries = ctx.ChangeTracker.Entries<Entity>().Where(e => e.State is EntityState.Modified or EntityState.Deleted).ToList();
+        AddAuditEntries(eventData.Context);
+        return base.SavingChanges(eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+        InterceptionResult<int> result, CancellationToken cancellationToken = default)
+    {
+        AddAuditEntries(eventData.Context);
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+
+    private void AddAuditEntries(DbContext? ctx)
+    {
+        if (ctx is null) return;
+        var entries = ctx.ChangeTracker.Entries<Entity>()
+            .Where(e => e.Entity is not AuditEntry and not PrivilegedActionEvent
+                && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToList();
+        var principal = http.HttpContext?.User;
+        var actor = principal?.FindFirst("sub")?.Value
+            ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? "system";
+        var correlation = http.HttpContext?.Request.Headers["X-Request-Id"].FirstOrDefault()
+            ?? http.HttpContext?.TraceIdentifier;
+        var tenantId = tenant.GetTenantId();
         foreach (var entry in entries)
         {
             var audit = new AuditEntry
             {
                 EntityType = entry.Entity.GetType().Name,
                 EntityId = entry.Entity.Id.ToString(),
-                Action = entry.State == EntityState.Deleted ? "delete" : "update",
-                BeforeJson = System.Text.Json.JsonSerializer.Serialize(entry.OriginalValues.ToObject()),
-                AfterJson = entry.State == EntityState.Deleted ? null : System.Text.Json.JsonSerializer.Serialize(entry.CurrentValues.ToObject()),
+                Action = entry.State switch { EntityState.Added => "create", EntityState.Deleted => "delete", _ => "update" },
+                BeforeJson = entry.State == EntityState.Added ? null : SerializeRedacted(entry.OriginalValues),
+                AfterJson = entry.State == EntityState.Deleted ? null : SerializeRedacted(entry.CurrentValues),
+                ActorSubjectId = actor,
+                CorrelationId = correlation,
+                TenantId = tenantId,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedBy = actor,
             };
             ctx.Set<AuditEntry>().Add(audit);
         }
-        return base.SavingChanges(eventData, result);
+    }
+
+    private static string SerializeRedacted(Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues values)
+    {
+        string[] sensitive = ["nrc", "tpin", "passport", "napsa", "nhima", "accountnumber",
+            "mobilemoneynumber", "payloadjson", "token", "secret", "password", "beforejson", "afterjson"];
+        var snapshot = values.Properties.ToDictionary(p => p.Name, p =>
+        {
+            var normalized = p.Name.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
+            return sensitive.Any(normalized.Contains) ? (object?)"[REDACTED]" : values[p];
+        });
+        return System.Text.Json.JsonSerializer.Serialize(snapshot);
     }
 }
 

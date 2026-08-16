@@ -316,11 +316,15 @@ export const configurationGroups: {
     label: "Security and compliance",
     description: "Access, sensitive data handling and audit obligations.",
     items: [
-      { label: "Roles and permissions", detail: "5 roles", to: "/hrm/configuration/roles" },
+      {
+        label: "Roles and permissions",
+        detail: "Backend-enforced matrix",
+        to: "/hrm/configuration/compliance",
+      },
       {
         label: "Sensitive field masking",
         detail: "6 masked fields",
-        to: "/hrm/configuration/roles",
+        to: "/hrm/configuration/compliance",
       },
       {
         label: "Protected disclosure handling",
@@ -334,7 +338,7 @@ export const configurationGroups: {
       },
       {
         label: "Retention and audit",
-        detail: "Audit log enabled",
+        detail: "Tenant isolation · audit · legal holds · control evidence",
         to: "/hrm/configuration/compliance",
       },
     ],

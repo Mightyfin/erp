@@ -42,6 +42,7 @@ public static class Routes
         RegisterDq(app);
         RegisterMasterData(app);
         RegisterIntegrations(app);
+        RegisterSecurityCompliance(app);
         RegisterStatutory(app);
         RegisterNotifications(app);
         RegisterMe(app);
@@ -1044,6 +1045,35 @@ public static class Routes
         {
             var file = await svc.DownloadAsync(id, ct);
             return Results.File(Encoding.UTF8.GetBytes(file.Payload), file.ContentType, file.FileName);
+        });
+    }
+
+    public static void RegisterSecurityCompliance(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/security").RequireAuthorization("hrm-admin");
+        g.MapGet("/", async ([FromQuery] string? actor, [FromQuery] string? outcome,
+            ISecurityComplianceService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetDashboardAsync(actor, outcome, ct)));
+        g.MapGet("/audit/export", async (ISecurityComplianceService svc, CancellationToken ct) =>
+            Results.File(Encoding.UTF8.GetBytes(await svc.ExportAuditAsync(ct)), "text/csv", "hrm-privileged-audit.csv"));
+        g.MapPost("/evidence", async (HttpContext http, ISecurityComplianceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ComplianceEvidenceRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.RecordEvidenceAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/legal-holds", async (HttpContext http, ISecurityComplianceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LegalHoldRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.PlaceLegalHoldAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/legal-holds/{id:guid}/release", async (Guid id, HttpContext http,
+            ISecurityComplianceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LegalHoldReleaseRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ReleaseLegalHoldAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
         });
     }
 }
