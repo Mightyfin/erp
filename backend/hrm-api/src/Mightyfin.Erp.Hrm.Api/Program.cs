@@ -121,7 +121,17 @@ else
             };
         });
 }
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Authentication proves the shared platform identity. Admission to HRM
+    // is a separate product decision: only explicit workforce roles pass.
+    // Roles belonging to another platform/tenant (such as tenant_owner) must
+    // never open ERP endpoints merely because they share the same IdP realm.
+    options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => HrmStaffAccess.IsStaff(context.User.Claims))
+        .Build();
+});
 
 // ---------- Health: readiness probes the database ----------
 builder.Services.AddHealthChecks()

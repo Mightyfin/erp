@@ -16,20 +16,20 @@ const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "
  *   session fails, the user is sent to the ERP-hosted `/sign-in` page
  *   rather than an error screen.
  *
- * The identity is also mirrored into the shell's demo role so every existing
- * page that gates on `useApp().role` keeps working: realm roles map to the
- * closest demo workspace (see auth.tsx), defaulting to "employee".
+ * Admitted workforce identities are also mirrored into the shell's workspace
+ * role so every existing page gate keeps working. Authenticated identities
+ * without an HRM workforce role receive an explicit access-denied screen.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const { loading, authenticated, user, signOut, resolveRole } = useAuth();
+  const { loading, authenticated, authorized, user, signOut, resolveRole } = useAuth();
   const { role, setRole } = useApp();
 
   useEffect(() => {
-    if (!USE_REAL || loading || !authenticated || !user) return;
+    if (!USE_REAL || loading || !authenticated || !authorized || !user) return;
     const next = resolveRole();
     if (next !== role) setRole(next);
-  }, [loading, authenticated, user, resolveRole, role, setRole]);
+  }, [loading, authenticated, authorized, user, resolveRole, role, setRole]);
 
   useEffect(() => {
     if (!USE_REAL || loading) return;
@@ -55,6 +55,25 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="max-w-sm text-center">
           <ShieldAlert className="mx-auto size-8 text-muted-foreground" aria-hidden />
           <p className="mt-4 text-sm text-muted-foreground">Taking you to sign in…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authorized) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-md text-center" data-testid="hrm-access-denied">
+          <ShieldAlert className="mx-auto size-9 text-danger" aria-hidden />
+          <h1 className="mt-4 text-xl font-semibold text-foreground">HRM access not assigned</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your organisation account is valid, but it has no ERP workforce role. Ask an identity
+            administrator to assign the appropriate employee, manager, HR, payroll, or investigator
+            role.
+          </p>
+          <Button className="mt-6" variant="outline" onClick={() => signOut()}>
+            Sign out
+          </Button>
         </div>
       </div>
     );

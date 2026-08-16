@@ -59,6 +59,38 @@ test("HRM reverse proxy exposes a healthy API", async ({ request }) => {
   expect(await response.json()).toMatchObject({ status: "healthy" });
 });
 
+test("a shared IdP identity without an HRM workforce role is denied ERP entry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-efaas-tenant-owner",
+        preferred_username: "tenant.owner@example.test",
+        realm_access: { roles: ["tenant_owner"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/me", async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "forbidden", message: "HRM access not assigned", details: [] }),
+    });
+  });
+
+  await page.goto("/hrm");
+
+  await expect(page.getByTestId("hrm-access-denied")).toContainText("HRM access not assigned");
+  await expect(page.getByTestId("hrm-access-denied")).toContainText("no ERP workforce role");
+  await expect(page.getByText("Human Resources", { exact: true })).toHaveCount(0);
+});
+
 test("HR admin can inspect and retry a failed notification handoff without seeing payload data", async ({
   page,
 }) => {

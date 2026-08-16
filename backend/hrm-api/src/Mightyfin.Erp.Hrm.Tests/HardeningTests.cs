@@ -13,9 +13,43 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Security.Claims;
+using Mightyfin.Erp.Hrm.Application;
 using Xunit;
 
 namespace Mightyfin.Erp.Hrm.Tests;
+
+public sealed class HrmStaffAdmissionTests
+{
+    [Theory]
+    [InlineData("employee")]
+    [InlineData("manager")]
+    [InlineData("hr_ops")]
+    [InlineData("payroll")]
+    [InlineData("hr_admin")]
+    [InlineData("investigator")]
+    public void ExplicitWorkforceRoleGrantsHrmAdmission(string role)
+    {
+        Assert.True(HrmStaffAccess.IsStaff([new Claim("realm_access.roles", role)]));
+    }
+
+    [Theory]
+    [InlineData("tenant_owner")]
+    [InlineData("efaas_reviewer")]
+    [InlineData("offline_access")]
+    [InlineData("")]
+    public void NonWorkforcePlatformRoleDoesNotGrantHrmAdmission(string role)
+    {
+        Assert.False(HrmStaffAccess.IsStaff([new Claim("realm_access.roles", role)]));
+    }
+
+    [Fact]
+    public void NestedKeycloakRealmRolesAreEvaluated()
+    {
+        var claim = new Claim("realm_access", "{\"roles\":[\"tenant_owner\",\"hr_ops\"]}");
+        Assert.True(HrmStaffAccess.IsStaff([claim]));
+    }
+}
 
 public sealed class VersioningTests
 {

@@ -16,6 +16,24 @@ The implementation strategy is the standard **Authorization Code flow with PKCE*
 
 The legacy Resource Owner Password Credentials grant is deliberately **not** enabled (`directAccessGrantsEnabled: false`): Keycloak 26+ disables it by default because it bypasses MFA, and the hosted-login form above provides an equivalent UX without that cost.
 
+## Product admission and worker references
+
+Keycloak authentication proves one shared platform identity; it does not grant
+automatic access to every MightyFin product. ERP HRM admits only identities
+carrying at least one workforce realm role:
+
+`employee`, `manager`, `hr_ops`, `payroll`, `hr_admin`, or `investigator`.
+
+Roles owned by other platforms, including EFaaS `tenant_owner` and operations
+roles, do not grant ERP entry. This rule is enforced by the API default policy
+and mirrored by the web shell for a clear access-denied experience.
+
+Employee self-service is a second boundary. The Keycloak subject must reference
+an HRM worker inside the active HRM tenant. A filtered unique database index on
+`(tenant_id, subject_id)` prevents the same identity from being attached to two
+workers in one tenant. The same global identity may still have independent,
+tenant-scoped records in other departments and products.
+
 ## Keycloak client
 
 The ERP web client (`erp-web`) is a **public** client (no client secret — secrets cannot be stored in a browser) with PKCE enforced. It is registered in the `mightyfin-sandbox` realm by the supplied script:

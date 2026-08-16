@@ -41,6 +41,8 @@ interface AuthState {
   loading: boolean;
   /** True when the user is allowed past the sign-in gate. */
   authenticated: boolean;
+  /** True only when the identity has an explicit HRM workforce role. */
+  authorized: boolean;
   /** Map Keycloak realm roles to the shell's demo workspace role. */
   resolveRole: () => Role;
   signInInteractive: () => void;
@@ -59,15 +61,27 @@ interface AuthState {
 const Ctx = createContext<AuthState | null>(null);
 
 /**
- * Realm roles the ERP understands. Anything else (including no roles) lands
- * in the broadest demo workspace so a new IdP user is never locked out of
- * the first screen; fine-grained authorization is enforced by the backend
- * scopes and the tenant model, not by this mapping.
+ * Realm roles the ERP understands. A shared IdP identity carrying only roles
+ * for another product is authenticated but is not admitted to HRM.
  */
+export const HRM_STAFF_ROLES = [
+  "employee",
+  "manager",
+  "hr_ops",
+  "payroll",
+  "hr_admin",
+  "investigator",
+] as const;
+
+export function hasHrmStaffRole(roles: string[]): boolean {
+  const set = new Set(roles);
+  return HRM_STAFF_ROLES.some((role) => set.has(role));
+}
+
 function mapRolesToDemoRole(roles: string[]): Role {
   const set = new Set(roles);
   if (set.has("payroll")) return "payroll";
-  if (set.has("hr_admin") || set.has("admin") || set.has("investigator")) return "hr_admin";
+  if (set.has("hr_admin") || set.has("investigator")) return "hr_admin";
   if (set.has("hr_ops")) return "hr_ops";
   if (set.has("manager")) return "manager";
   return "employee";
@@ -137,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => (session ? decodeSessionUser(session) : null), [session]);
 
   const authenticated = !USE_REAL || isSessionValid(session);
+  const authorized = !USE_REAL || (authenticated && hasHrmStaffRole(user?.roles ?? []));
 
   const signInInteractive = useCallback(() => {
     const path = PUBLIC_PATHS.has(window.location.pathname) ? "/hrm" : window.location.pathname;
@@ -164,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       authenticated,
+      authorized,
       resolveRole,
       signInInteractive,
       signOut,
@@ -175,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       authenticated,
+      authorized,
       resolveRole,
       signInInteractive,
       signOut,

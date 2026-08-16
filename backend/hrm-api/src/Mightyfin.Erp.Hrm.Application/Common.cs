@@ -76,6 +76,21 @@ public sealed class WorkerPrincipal
     }
 }
 
+/// <summary>
+/// Product admission boundary for HRM. A valid platform identity is not, by
+/// itself, an HRM user: the identity must also carry a workforce role issued
+/// for this ERP module. Tenant/customer roles from other products (for
+/// example EFaaS tenant_owner) deliberately do not grant entry.
+/// </summary>
+public static class HrmStaffAccess
+{
+    public static readonly string[] Roles =
+        ["employee", "manager", "hr_ops", "payroll", "hr_admin", "investigator"];
+
+    public static bool IsStaff(IEnumerable<Claim> claims) =>
+        WorkerPrincipal.FromClaims(claims).IsRole(Roles);
+}
+
 /// <summary>Standard error payload shape matching the ERP API conventions
 /// ({code, message, details[]}).</summary>
 public sealed record ApiError(string Code, string Message, string[] Details);

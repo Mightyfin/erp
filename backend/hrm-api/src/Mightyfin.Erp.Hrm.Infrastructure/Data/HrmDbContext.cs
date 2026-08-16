@@ -134,7 +134,15 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<OrgUnit>(modelBuilder, "org_units");
         ConfigureEntity<WorkCalendar>(modelBuilder, "work_calendars");
         ConfigureEntity<PublicHoliday>(modelBuilder, "public_holidays");
-        ConfigureEntity<Worker>(modelBuilder, "workers", e => e.HasIndex(x => x.EmployeeNo).IsUnique());
+        ConfigureEntity<Worker>(modelBuilder, "workers", e =>
+        {
+            e.HasIndex(x => x.EmployeeNo).IsUnique();
+            // One shared IdP identity may have records in several products,
+            // but it may reference at most one worker inside an HRM tenant.
+            e.HasIndex(x => new { x.TenantId, x.SubjectId })
+                .IsUnique()
+                .HasFilter("subject_id IS NOT NULL");
+        });
         modelBuilder.Entity<Worker>().Ignore(x => x.FullName);
         ConfigureEntity<Assignment>(modelBuilder, "assignments");
         ConfigureEntity<Movement>(modelBuilder, "movements");
