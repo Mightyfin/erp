@@ -172,6 +172,26 @@ public sealed class WorkflowServiceImpl(
 
     public Task ApplyDecisionEffectsAsync(WorkflowRequest request, CancellationToken ct) => effects.ApplyAsync(request, "approve", ct);
 
+    public async Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var now = DateTimeOffset.UtcNow;
+        var (items, _) = await repo.ListOpenRequestsAsync(ct);
+        var operational = items.Where(r => r.WorkflowType is "leave" or "attendance-correction").ToList();
+        var overdue = operational.Where(r => r.DueAt < now).ToList();
+        foreach (var req in overdue)
+        {
+            var current = req.CurrentApproverId;
+            var next = current.HasValue ? await repo.FindManagerOfAsync(current.Value, ct) : null;
+            req.CurrentApproverId = next != current ? next : null;
+            req.Status = req.CurrentApproverId.HasValue ? "in-review" : "submitted";
+            req.EscalatedAt = now;
+            req.DueAt = now.AddDays(3);
+            await repo.UpdateRequestAsync(req, ct);
+        }
+        return new EscalationRunDto(operational.Count, overdue.Count, now);
+    }
+
     /// <summary>Resolves the first approver for a new request: the subject's
     /// active delegate's delegator is skipped — if a delegate currently covers
     /// the manager, the delegate receives the item.</summary>

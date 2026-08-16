@@ -67,6 +67,12 @@ public class AttendanceRecord : Entity
     public string Source { get; set; } = "self-service"; // self-service | device | roster | corrected
     public string DerivedStatus { get; set; } = "unknown"; // present | absent | late | early-departure | half-day | unknown
     public decimal TotalHours { get; set; }
+    public decimal ScheduledHours { get; set; }
+    public decimal RegularHours { get; set; }
+    public decimal OvertimeHours { get; set; }
+    public decimal OvertimeMultiplier { get; set; }
+    public Guid? ShiftId { get; set; }
+    public Guid? ImportBatchId { get; set; }
 }
 
 /// <summary>HRM-029: Employee-submitted attendance correction with manager review.

@@ -343,6 +343,38 @@ public static class Routes
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.GetRosterAsync(workerId, from, to, ct));
+
+        // M28 attendance and leave operations
+        g.MapGet("/shifts", async (ITimeService svc, CancellationToken ct) => await svc.ListShiftsAsync(ct));
+        g.MapPost("/shifts", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ShiftCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateShiftAsync(request, ct));
+        });
+        g.MapPost("/shifts/assign/{workerId:guid}", async (Guid workerId, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ShiftAssignmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.AssignShiftAsync(workerId, request, ct));
+        });
+        g.MapPost("/attendance/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ImportAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/leave/accruals/run", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveAccrualRunRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.RunLeaveAccrualAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/leave/balances/adjust", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveBalanceAdjustmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.AdjustLeaveBalanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/escalations/run", async (ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.EscalateOverdueAsync(ct)));
+        g.MapGet("/operations/history", async (ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetOperationsHistoryAsync(ct)));
     }
 
     public static void RegisterWorkflow(WebApplication app)

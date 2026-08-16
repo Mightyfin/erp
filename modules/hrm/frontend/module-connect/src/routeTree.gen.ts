@@ -80,6 +80,7 @@ import { Route as HrmTalentGoalsRouteImport } from './routes/hrm.talent.goals'
 import { Route as HrmTalentLearningRouteImport } from './routes/hrm.talent.learning'
 import { Route as HrmTalentReviewsRouteImport } from './routes/hrm.talent.reviews'
 import { Route as HrmTalentSuccessionRouteImport } from './routes/hrm.talent.succession'
+import { Route as HrmTimeOperationsRouteImport } from './routes/hrm.time.operations'
 import { Route as HrmTimeSchedulesRouteImport } from './routes/hrm.time.schedules'
 import { Route as HrmTimeTimesheetsRouteImport } from './routes/hrm.time.timesheets'
 import { Route as HrmTimeToilRouteImport } from './routes/hrm.time.toil'
@@ -462,6 +463,11 @@ const HrmTalentSuccessionRoute = HrmTalentSuccessionRouteImport.update({
   path: '/hrm/talent/succession',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmTimeOperationsRoute = HrmTimeOperationsRouteImport.update({
+  id: '/hrm/time/operations',
+  path: '/hrm/time/operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmTimeSchedulesRoute = HrmTimeSchedulesRouteImport.update({
   id: '/hrm/time/schedules',
   path: '/hrm/time/schedules',
@@ -623,6 +629,7 @@ export interface FileRoutesByFullPath {
   '/hrm/talent/learning': typeof HrmTalentLearningRoute
   '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
   '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/operations': typeof HrmTimeOperationsRoute
   '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
   '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
   '/hrm/time/toil': typeof HrmTimeToilRoute
@@ -715,6 +722,7 @@ export interface FileRoutesByTo {
   '/hrm/talent/learning': typeof HrmTalentLearningRoute
   '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
   '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/operations': typeof HrmTimeOperationsRoute
   '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
   '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
   '/hrm/time/toil': typeof HrmTimeToilRoute
@@ -808,6 +816,7 @@ export interface FileRoutesById {
   '/hrm/talent/learning': typeof HrmTalentLearningRoute
   '/hrm/talent/reviews': typeof HrmTalentReviewsRouteWithChildren
   '/hrm/talent/succession': typeof HrmTalentSuccessionRoute
+  '/hrm/time/operations': typeof HrmTimeOperationsRoute
   '/hrm/time/schedules': typeof HrmTimeSchedulesRoute
   '/hrm/time/timesheets': typeof HrmTimeTimesheetsRoute
   '/hrm/time/toil': typeof HrmTimeToilRoute
@@ -902,6 +911,7 @@ export interface FileRouteTypes {
     | '/hrm/talent/learning'
     | '/hrm/talent/reviews'
     | '/hrm/talent/succession'
+    | '/hrm/time/operations'
     | '/hrm/time/schedules'
     | '/hrm/time/timesheets'
     | '/hrm/time/toil'
@@ -994,6 +1004,7 @@ export interface FileRouteTypes {
     | '/hrm/talent/learning'
     | '/hrm/talent/reviews'
     | '/hrm/talent/succession'
+    | '/hrm/time/operations'
     | '/hrm/time/schedules'
     | '/hrm/time/timesheets'
     | '/hrm/time/toil'
@@ -1086,6 +1097,7 @@ export interface FileRouteTypes {
     | '/hrm/talent/learning'
     | '/hrm/talent/reviews'
     | '/hrm/talent/succession'
+    | '/hrm/time/operations'
     | '/hrm/time/schedules'
     | '/hrm/time/timesheets'
     | '/hrm/time/toil'
@@ -1179,6 +1191,7 @@ export interface RootRouteChildren {
   HrmTalentLearningRoute: typeof HrmTalentLearningRoute
   HrmTalentReviewsRoute: typeof HrmTalentReviewsRouteWithChildren
   HrmTalentSuccessionRoute: typeof HrmTalentSuccessionRoute
+  HrmTimeOperationsRoute: typeof HrmTimeOperationsRoute
   HrmTimeSchedulesRoute: typeof HrmTimeSchedulesRoute
   HrmTimeTimesheetsRoute: typeof HrmTimeTimesheetsRoute
   HrmTimeToilRoute: typeof HrmTimeToilRoute
@@ -1699,6 +1712,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmTalentSuccessionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/time/operations': {
+      id: '/hrm/time/operations'
+      path: '/hrm/time/operations'
+      fullPath: '/hrm/time/operations'
+      preLoaderRoute: typeof HrmTimeOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/time/schedules': {
       id: '/hrm/time/schedules'
       path: '/hrm/time/schedules'
@@ -2034,6 +2054,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmTalentLearningRoute: HrmTalentLearningRoute,
   HrmTalentReviewsRoute: HrmTalentReviewsRouteWithChildren,
   HrmTalentSuccessionRoute: HrmTalentSuccessionRoute,
+  HrmTimeOperationsRoute: HrmTimeOperationsRoute,
   HrmTimeSchedulesRoute: HrmTimeSchedulesRoute,
   HrmTimeTimesheetsRoute: HrmTimeTimesheetsRoute,
   HrmTimeToilRoute: HrmTimeToilRoute,

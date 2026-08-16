@@ -370,6 +370,101 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
 
     public async Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct)
         => await db.WorkCalendars.Include(c => c.Holidays).ToListAsync(ct);
+
+    public async Task<List<ShiftDefinition>> ListShiftsAsync(CancellationToken ct)
+        => await db.ShiftDefinitions.Where(s => s.IsActive).OrderBy(s => s.Code).ToListAsync(ct);
+
+    public async Task<ShiftDefinition> CreateShiftAsync(ShiftDefinition shift, CancellationToken ct)
+    {
+        db.ShiftDefinitions.Add(shift);
+        await db.SaveChangesAsync(ct);
+        return shift;
+    }
+
+    public async Task<WorkerShiftAssignment?> GetShiftAssignmentAsync(Guid workerId, DateOnly date, CancellationToken ct)
+        => await db.WorkerShiftAssignments.Include(a => a.Shift)
+            .Include(a => a.Calendar).ThenInclude(c => c!.Holidays)
+            .Where(a => a.WorkerId == workerId && a.EffectiveFrom <= date &&
+                (!a.EffectiveTo.HasValue || a.EffectiveTo.Value >= date))
+            .OrderByDescending(a => a.EffectiveFrom).FirstOrDefaultAsync(ct);
+
+    public async Task<WorkerShiftAssignment> CreateShiftAssignmentAsync(WorkerShiftAssignment assignment, CancellationToken ct)
+    {
+        db.WorkerShiftAssignments.Add(assignment);
+        await db.SaveChangesAsync(ct);
+        await db.Entry(assignment).Reference(a => a.Calendar).LoadAsync(ct);
+        return assignment;
+    }
+
+    public async Task CloseOpenShiftAssignmentsAsync(Guid workerId, DateOnly effectiveTo, CancellationToken ct)
+    {
+        var rows = await db.WorkerShiftAssignments
+            .Where(a => a.WorkerId == workerId && !a.EffectiveTo.HasValue && a.EffectiveFrom <= effectiveTo)
+            .ToListAsync(ct);
+        foreach (var row in rows) row.EffectiveTo = effectiveTo;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<Worker?> FindWorkerByEmployeeNoAsync(string employeeNo, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.EmployeeNo == employeeNo && w.Status == "active", ct);
+
+    public async Task<AttendanceImportBatch> CreateImportBatchAsync(AttendanceImportBatch batch, CancellationToken ct)
+    {
+        db.AttendanceImportBatches.Add(batch);
+        await db.SaveChangesAsync(ct);
+        return batch;
+    }
+
+    public async Task UpdateImportBatchAsync(AttendanceImportBatch batch, CancellationToken ct)
+    {
+        if (db.Entry(batch).State == EntityState.Detached) db.AttendanceImportBatches.Update(batch);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<AttendanceImportBatch>> ListImportBatchesAsync(CancellationToken ct)
+        => (await db.AttendanceImportBatches.Take(50).ToListAsync(ct))
+            .OrderByDescending(batch => batch.CreatedAt).ToList();
+
+    public async Task<LeaveAccrualRun?> GetAccrualRunAsync(string period, CancellationToken ct)
+        => await db.LeaveAccrualRuns.FirstOrDefaultAsync(r => r.Period == period, ct);
+
+    public async Task<LeaveAccrualRun> CreateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct)
+    {
+        db.LeaveAccrualRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+        return run;
+    }
+
+    public async Task UpdateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct)
+    {
+        if (db.Entry(run).State == EntityState.Detached) db.LeaveAccrualRuns.Update(run);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<LeaveAccrualRun>> ListAccrualRunsAsync(CancellationToken ct)
+        => (await db.LeaveAccrualRuns.Take(50).ToListAsync(ct))
+            .OrderByDescending(run => run.CreatedAt).ToList();
+
+    public async Task<List<Worker>> ListAccrualWorkersAsync(CancellationToken ct)
+        => await db.Workers.Where(w => w.Status == "active").ToListAsync(ct);
+
+    public async Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct)
+    {
+        db.LeaveBalanceLedgers.Add(entry);
+        await db.SaveChangesAsync(ct);
+        return entry;
+    }
+
+    public async Task<LeaveBalanceAdjustment> CreateAdjustmentAsync(LeaveBalanceAdjustment adjustment, CancellationToken ct)
+    {
+        db.LeaveBalanceAdjustments.Add(adjustment);
+        await db.SaveChangesAsync(ct);
+        return adjustment;
+    }
+
+    public async Task<List<LeaveBalanceAdjustment>> ListAdjustmentsAsync(CancellationToken ct)
+        => (await db.LeaveBalanceAdjustments.Include(adjustment => adjustment.Worker).Take(50).ToListAsync(ct))
+            .OrderByDescending(adjustment => adjustment.CreatedAt).ToList();
 }
 
 // ===================== Workflow =====================

@@ -393,4 +393,99 @@ public class TimeServiceTests
             service.CancelLeaveAsync(created.Id, "subject-other", CancellationToken.None));
         Assert.Equal("leave-not-owned", ex2.Code);
     }
+
+    // ===================== M28: operational time and leave =====================
+
+    [Fact]
+    public async Task AttendanceImport_UsesAssignedShift_AndCalculatesOvertime()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var shift = await service.CreateShiftAsync(new ShiftCreateRequest(
+            "DAY", "Day shift", "08:00", "17:00", 30, 8, 8, 1.5m, 2, 2), CancellationToken.None);
+        var calendarId = await ctx.WorkCalendars.Select(c => c.Id).SingleAsync();
+        await service.AssignShiftAsync(worker.Id,
+            new ShiftAssignmentRequest(shift.Id, calendarId, "2026-08-01"), CancellationToken.None);
+
+        var result = await service.ImportAttendanceAsync(new AttendanceImportRequest("clock.csv",
+            [new AttendanceImportRow(worker.EmployeeNo, "2026-08-17", "08:00", "18:00")]),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed", result.Status);
+        Assert.Equal(1, result.ImportedCount);
+        var record = await ctx.AttendanceRecords.SingleAsync();
+        Assert.Equal(9.5m, record.TotalHours);
+        Assert.Equal(8m, record.RegularHours);
+        Assert.Equal(1.5m, record.OvertimeHours);
+        Assert.Equal(1.5m, record.OvertimeMultiplier);
+        Assert.Equal(shift.Id, record.ShiftId);
+        Assert.Equal(result.BatchId, record.ImportBatchId);
+        var history = await service.GetOperationsHistoryAsync(CancellationToken.None);
+        Assert.Contains(history.Imports, batch => batch.BatchId == result.BatchId && batch.ImportedCount == 1);
+    }
+
+    [Fact]
+    public async Task AttendanceImport_ReconcilesDuplicateAndUnknownEmployees()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var result = await service.ImportAttendanceAsync(new AttendanceImportRequest("errors.csv",
+            [
+                new AttendanceImportRow(worker.EmployeeNo, "2026-08-17", "08:00", "17:00"),
+                new AttendanceImportRow(worker.EmployeeNo, "2026-08-17", "08:05", "17:05"),
+                new AttendanceImportRow("MISSING", "2026-08-17", "08:00", "17:00"),
+            ]), "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed-with-errors", result.Status);
+        Assert.Equal(1, result.ImportedCount);
+        Assert.Equal(2, result.RejectedCount);
+        Assert.Contains(result.Errors, error => error.Contains("duplicate row"));
+        Assert.Contains(result.Errors, error => error.Contains("employee not found"));
+        Assert.NotNull((await ctx.AttendanceImportBatches.SingleAsync()).ErrorsJson);
+    }
+
+    [Fact]
+    public async Task AccrualRun_IsIdempotent_AndAdjustmentChangesAvailableBalance()
+    {
+        var (service, _, worker, _, _) = Build();
+        var run = await service.RunLeaveAccrualAsync(new LeaveAccrualRunRequest("2026-08"),
+            "hr-admin", CancellationToken.None);
+        Assert.Equal(1, run.WorkerCount);
+        Assert.Equal(1, run.LedgerEntryCount);
+        Assert.Equal(1m, run.TotalDaysAccrued);
+
+        var duplicate = await Assert.ThrowsAsync<DomainException>(() =>
+            service.RunLeaveAccrualAsync(new LeaveAccrualRunRequest("2026-08"), "hr-admin", CancellationToken.None));
+        Assert.Equal("accrual-period-exists", duplicate.Code);
+
+        await service.AdjustLeaveBalanceAsync(new LeaveBalanceAdjustmentRequest(
+            worker.Id, "annual", 2.5m, "Opening balance correction"), "hr-admin", CancellationToken.None);
+        var annual = (await service.GetBalancesAsync(worker.Id, CancellationToken.None)).Single();
+        Assert.Equal(3.5m, annual.Accrued);
+        Assert.Equal(3.5m, annual.Available);
+    }
+
+    [Fact]
+    public async Task EscalationRun_OnlyMovesOverdueTimeRequests()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        ctx.WorkflowRequests.AddRange(
+            new WorkflowRequest
+            {
+                WorkflowType = "leave", SubjectWorkerId = worker.Id,
+                Status = "submitted", DueAt = DateTimeOffset.UtcNow.AddDays(-1), TenantId = "test-tenant",
+            },
+            new WorkflowRequest
+            {
+                WorkflowType = "payroll", Status = "submitted",
+                DueAt = DateTimeOffset.UtcNow.AddDays(-1), TenantId = "test-tenant",
+            });
+        await ctx.SaveChangesAsync();
+
+        var result = await service.EscalateOverdueAsync(CancellationToken.None);
+        Assert.Equal(1, result.Reviewed);
+        Assert.Equal(1, result.Escalated);
+        var leave = await ctx.WorkflowRequests.SingleAsync(r => r.WorkflowType == "leave");
+        Assert.NotNull(leave.EscalatedAt);
+        Assert.True(leave.DueAt > DateTimeOffset.UtcNow.AddDays(2));
+        Assert.Null((await ctx.WorkflowRequests.SingleAsync(r => r.WorkflowType == "payroll")).EscalatedAt);
+    }
 }

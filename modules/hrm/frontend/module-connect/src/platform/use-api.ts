@@ -208,6 +208,24 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}`, params ?? {}),
   roster: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/roster/${workerId}`, params ?? {}),
+  shifts: () => hrmApi.get<unknown[]>("/hrm/time/shifts"),
+  createShift: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/time/shifts", body),
+  assignShift: (workerId: string, body: Record<string, unknown>) =>
+    hrmApi.post<unknown>(`/hrm/time/shifts/assign/${workerId}`, body),
+  importAttendance: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/attendance/import", body),
+  runLeaveAccrual: (period: string) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/leave/accruals/run", { period }),
+  adjustLeaveBalance: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/leave/balances/adjust", body),
+  escalateTimeApprovals: () =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/escalations/run", null),
+  timeOperationsHistory: () =>
+    hrmApi.get<{
+      imports: Record<string, unknown>[];
+      accruals: Record<string, unknown>[];
+      adjustments: Record<string, unknown>[];
+    }>("/hrm/time/operations/history"),
 
   /** Workflow: shared approval queue + request detail/decisions. */
   workflowQueue: () => hrmApi.get<{ items: unknown[] }>("/hrm/workflow/queue"),

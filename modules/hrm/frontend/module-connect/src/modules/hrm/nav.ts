@@ -41,8 +41,16 @@ export const hrmModule: ModuleDefinition = {
         // where code paths force it; the rail link now prefers the
         // self-service route.
         { label: "My profile", to: "/hrm/my-profile" },
-        { label: "Positions", to: "/hrm/people/positions", roles: ["hr_ops", "hr_admin", "manager"] },
-        { label: "Organisation structure", to: "/hrm/people/org", roles: ["hr_ops", "hr_admin", "manager"] },
+        {
+          label: "Positions",
+          to: "/hrm/people/positions",
+          roles: ["hr_ops", "hr_admin", "manager"],
+        },
+        {
+          label: "Organisation structure",
+          to: "/hrm/people/org",
+          roles: ["hr_ops", "hr_admin", "manager"],
+        },
         { label: "Documents", to: "/hrm/people/documents" },
         { label: "Privacy and consent", to: "/hrm/people/privacy" },
         { label: "Data quality", to: "/hrm/people/data-quality", roles: ["hr_ops", "hr_admin"] },
@@ -85,7 +93,11 @@ export const hrmModule: ModuleDefinition = {
           items: [
             { label: "My leave", to: "/hrm/leave" },
             { label: "Request leave", to: "/hrm/leave/new" },
-            { label: "Leave approvals", to: "/hrm/leave/approvals", roles: ["hr_ops", "hr_admin", "manager"] },
+            {
+              label: "Leave approvals",
+              to: "/hrm/leave/approvals",
+              roles: ["hr_ops", "hr_admin", "manager"],
+            },
           ],
         },
         {
@@ -99,6 +111,7 @@ export const hrmModule: ModuleDefinition = {
         {
           label: "Scheduling and claims",
           items: [
+            { label: "Time operations", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin"] },
             { label: "Schedules and rosters", to: "/hrm/time/schedules" },
             { label: "Timesheets", to: "/hrm/time/timesheets" },
             { label: "Time off in lieu", to: "/hrm/time/toil" },
@@ -118,7 +131,11 @@ export const hrmModule: ModuleDefinition = {
         { label: "Compensation and benefits", to: "/hrm/pay/compensation" },
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
         { label: "Pay runs", to: "/hrm/payroll/runs", roles: ["payroll", "hr_admin"] },
-        { label: "Payroll exceptions", to: "/hrm/payroll/exceptions", roles: ["payroll", "hr_admin"] },
+        {
+          label: "Payroll exceptions",
+          to: "/hrm/payroll/exceptions",
+          roles: ["payroll", "hr_admin"],
+        },
         { label: "Payroll setup", to: "/hrm/configuration/payroll", roles: ["hr_ops", "hr_admin"] },
       ],
     },
@@ -201,28 +218,84 @@ export const configurationGroups: {
     label: "Business setup",
     description: "Who you are as an employer and how the organisation is shaped.",
     items: [
-      { label: "Legal entities and branches", detail: "3 entities · 6 branches", to: "/hrm/configuration/organisation" },
-      { label: "Departments and cost centres", detail: "12 departments", to: "/hrm/configuration/organisation" },
-      { label: "Jobs, grades and pay ranges", detail: "9 grades", to: "/hrm/configuration/business" },
-      { label: "Calendars and public holidays", detail: "3 calendars", to: "/hrm/configuration/business" },
-      { label: "Country packs", detail: "NL, KE, DE · effective-dated", to: "/hrm/configuration/business" },
-      { label: "Language and localisation", detail: "1 language active", to: "/hrm/configuration/business" },
-      { label: "Payroll setup", detail: "Pay groups · ZRA PAYE · NAPSA · NHIMA · components", to: "/hrm/configuration/payroll" },
-      { label: "Payroll configuration", detail: "Legacy page — replaced by Payroll setup", to: "/hrm/configuration/business" },
+      {
+        label: "Legal entities and branches",
+        detail: "3 entities · 6 branches",
+        to: "/hrm/configuration/organisation",
+      },
+      {
+        label: "Departments and cost centres",
+        detail: "12 departments",
+        to: "/hrm/configuration/organisation",
+      },
+      {
+        label: "Jobs, grades and pay ranges",
+        detail: "9 grades",
+        to: "/hrm/configuration/business",
+      },
+      {
+        label: "Calendars and public holidays",
+        detail: "3 calendars",
+        to: "/hrm/configuration/business",
+      },
+      {
+        label: "Country packs",
+        detail: "NL, KE, DE · effective-dated",
+        to: "/hrm/configuration/business",
+      },
+      {
+        label: "Language and localisation",
+        detail: "1 language active",
+        to: "/hrm/configuration/business",
+      },
+      {
+        label: "Payroll setup",
+        detail: "Pay groups · ZRA PAYE · NAPSA · NHIMA · components",
+        to: "/hrm/configuration/payroll",
+      },
+      {
+        label: "Payroll configuration",
+        detail: "Legacy page — replaced by Payroll setup",
+        to: "/hrm/configuration/business",
+      },
     ],
   },
   {
     label: "Process design",
     description: "How work moves: policies, approval routes and forms.",
     items: [
-      { label: "Leave policies and accruals", detail: "5 policies · 1 draft", to: "/hrm/configuration/process" },
-      { label: "Attendance and shift rules", detail: "4 rule sets", to: "/hrm/configuration/process" },
+      {
+        label: "Leave policies and accruals",
+        detail: "5 policies · 1 draft",
+        to: "/hrm/configuration/process",
+      },
+      {
+        label: "Attendance and shift rules",
+        detail: "4 rule sets",
+        to: "/hrm/configuration/process",
+      },
       { label: "Approval routing", detail: "7 routes", to: "/hrm/configuration/process" },
-      { label: "Request categories and SLAs", detail: "11 categories", to: "/hrm/configuration/process" },
-      { label: "Forms and fields", detail: "Custom fields and validation", to: "/hrm/configuration/process" },
-      { label: "Automation", detail: "Trigger, condition and action rules", to: "/hrm/configuration/process" },
+      {
+        label: "Request categories and SLAs",
+        detail: "11 categories",
+        to: "/hrm/configuration/process",
+      },
+      {
+        label: "Forms and fields",
+        detail: "Custom fields and validation",
+        to: "/hrm/configuration/process",
+      },
+      {
+        label: "Automation",
+        detail: "Trigger, condition and action rules",
+        to: "/hrm/configuration/process",
+      },
       { label: "Templates", detail: "Letters and notifications", to: "/hrm/configuration/process" },
-      { label: "Self-service experience", detail: "What employees can see and do", to: "/hrm/configuration/process" },
+      {
+        label: "Self-service experience",
+        detail: "What employees can see and do",
+        to: "/hrm/configuration/process",
+      },
     ],
   },
   {
@@ -230,10 +303,26 @@ export const configurationGroups: {
     description: "Access, sensitive data handling and audit obligations.",
     items: [
       { label: "Roles and permissions", detail: "5 roles", to: "/hrm/configuration/roles" },
-      { label: "Sensitive field masking", detail: "6 masked fields", to: "/hrm/configuration/roles" },
-      { label: "Protected disclosure handling", detail: "Restricted to 2 handlers", to: "/hrm/configuration/compliance" },
-      { label: "Privacy and consent administration", detail: "Purposes and retention", to: "/hrm/configuration/compliance" },
-      { label: "Retention and audit", detail: "Audit log enabled", to: "/hrm/configuration/compliance" },
+      {
+        label: "Sensitive field masking",
+        detail: "6 masked fields",
+        to: "/hrm/configuration/roles",
+      },
+      {
+        label: "Protected disclosure handling",
+        detail: "Restricted to 2 handlers",
+        to: "/hrm/configuration/compliance",
+      },
+      {
+        label: "Privacy and consent administration",
+        detail: "Purposes and retention",
+        to: "/hrm/configuration/compliance",
+      },
+      {
+        label: "Retention and audit",
+        detail: "Audit log enabled",
+        to: "/hrm/configuration/compliance",
+      },
     ],
   },
   {
@@ -243,8 +332,16 @@ export const configurationGroups: {
       { label: "Import and export", detail: "CSV templates", to: "/hrm/configuration/technical" },
       { label: "Payroll interface", detail: "Mock connector", to: "/hrm/configuration/technical" },
       { label: "Identity provider", detail: "Not configured", to: "/hrm/configuration/technical" },
-      { label: "Vendor and contract management", detail: "No vendors recorded", to: "/hrm/configuration/technical" },
-      { label: "Numbering and references", detail: "Prefix: HR-", to: "/hrm/configuration/technical" },
+      {
+        label: "Vendor and contract management",
+        detail: "No vendors recorded",
+        to: "/hrm/configuration/technical",
+      },
+      {
+        label: "Numbering and references",
+        detail: "Prefix: HR-",
+        to: "/hrm/configuration/technical",
+      },
     ],
   },
 ];

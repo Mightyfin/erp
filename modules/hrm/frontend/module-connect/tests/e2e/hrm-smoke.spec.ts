@@ -165,3 +165,64 @@ test("payroll officer can progress the M27 payment workflow through reconciliati
   await workflow.getByRole("button", { name: "Reconcile and close" }).click();
   await expect(workflow).toContainText("Reconciled and closed · BANK-ACK-M27");
 });
+
+test("HR administrator can import attendance and reconcile the M28 batch", async ({ page }) => {
+  let submittedRows: unknown[] = [];
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-hr-admin",
+        preferred_username: "playwright.hr",
+        realm_access: { roles: ["hr_admin", "hr_ops"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({
+        accessToken: token,
+        idToken: token,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+  });
+  await page.route("**/api/hrm/time/attendance/import", async (route) => {
+    const body = route.request().postDataJSON() as { rows: unknown[] };
+    submittedRows = body.rows;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        batchId: "019d0000-0000-7000-8000-000000000028",
+        fileName: "manual-import.csv",
+        status: "completed-with-errors",
+        rowCount: 2,
+        importedCount: 1,
+        updatedCount: 0,
+        rejectedCount: 1,
+        errors: ["UNKNOWN:2026-08-15: employee not found"],
+      }),
+    });
+  });
+  await page.route("**/api/hrm/time/operations/history", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ imports: [], accruals: [], adjustments: [] }),
+    });
+  });
+
+  await page.goto("/hrm/time/operations");
+  const operations = page.getByTestId("time-operations");
+  await expect(operations).toContainText("Attendance import");
+  await operations
+    .getByLabel("Attendance rows")
+    .fill("EMP-0001,2026-08-15,08:00,17:30\nUNKNOWN,2026-08-15,08:00,17:00");
+  await operations.getByRole("button", { name: "Import and reconcile" }).click();
+
+  const result = page.getByTestId("operation-result");
+  await expect(result).toContainText("completed-with-errors");
+  await expect(result).toContainText('"importedCount": 1');
+  await expect(result).toContainText('"rejectedCount": 1');
+  expect(submittedRows).toHaveLength(2);
+});

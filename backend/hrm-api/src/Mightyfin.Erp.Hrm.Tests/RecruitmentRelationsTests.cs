@@ -283,6 +283,8 @@ internal sealed class StubWorkflowService : IWorkflowService
         => Task.FromResult<WorkflowRequestDto?>(null);
     public Task ApplyDecisionEffectsAsync(WorkflowRequest request, CancellationToken ct)
         => Task.CompletedTask;
+    public Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct)
+        => Task.FromResult(new EscalationRunDto(0, 0, DateTimeOffset.UtcNow));
 }
 
 internal sealed class StubLetterTemplates : ILetterTemplates

@@ -345,7 +345,37 @@ public sealed record PunchResultDto(Guid Id, Guid WorkerId, string WorkDate, str
     string Source, string DerivedStatus, decimal TotalHours, string State);
 
 public sealed record AttendanceRecordDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
-    string? ClockIn, string? ClockOut, string Source, string DerivedStatus, decimal TotalHours);
+    string? ClockIn, string? ClockOut, string Source, string DerivedStatus, decimal TotalHours,
+    decimal ScheduledHours = 0, decimal RegularHours = 0, decimal OvertimeHours = 0,
+    decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null);
+
+public sealed record ShiftCreateRequest(string Code, string Name, string StartTime, string EndTime,
+    int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
+    decimal WeekdayOvertimeMultiplier = 1.5m, decimal RestDayOvertimeMultiplier = 2,
+    decimal HolidayOvertimeMultiplier = 2);
+public sealed record ShiftDto(Guid Id, string Code, string Name, string StartTime, string EndTime,
+    int UnpaidBreakMinutes, decimal StandardHours, decimal DailyOvertimeThresholdHours,
+    decimal WeekdayOvertimeMultiplier, decimal RestDayOvertimeMultiplier,
+    decimal HolidayOvertimeMultiplier, bool IsActive);
+public sealed record ShiftAssignmentRequest(Guid ShiftId, Guid? CalendarId, string EffectiveFrom, string? EffectiveTo = null);
+public sealed record ShiftAssignmentDto(Guid Id, Guid WorkerId, Guid ShiftId, string ShiftName,
+    Guid? CalendarId, string? CalendarName, string EffectiveFrom, string? EffectiveTo);
+public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, string? ClockIn, string? ClockOut);
+public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
+public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
+    int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount, List<string> Errors);
+public sealed record AttendanceImportHistoryDto(Guid BatchId, string FileName, string Status,
+    int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount,
+    string ImportedBySubjectId, DateTimeOffset CreatedAt);
+public sealed record LeaveAccrualRunRequest(string Period);
+public sealed record LeaveAccrualRunDto(Guid Id, string Period, string Status, int WorkerCount,
+    int LedgerEntryCount, decimal TotalDaysAccrued, string RunBySubjectId, DateTimeOffset CreatedAt);
+public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string Reason);
+public sealed record LeaveBalanceAdjustmentDto(Guid Id, Guid WorkerId, string WorkerName,
+    string LeaveTypeCode, decimal Days, string Reason, string AdjustedBySubjectId, DateTimeOffset CreatedAt);
+public sealed record EscalationRunDto(int Reviewed, int Escalated, DateTimeOffset RunAt);
+public sealed record TimeOperationsHistoryDto(List<AttendanceImportHistoryDto> Imports,
+    List<LeaveAccrualRunDto> Accruals, List<LeaveBalanceAdjustmentDto> Adjustments);
 
 /// <summary>Roster day for the worker: expected shift, attendance, exceptions, cutoff.</summary>
 public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDay, string? ClockIn, string? ClockOut,

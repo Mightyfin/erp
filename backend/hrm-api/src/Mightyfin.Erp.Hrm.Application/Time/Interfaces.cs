@@ -26,6 +26,23 @@ public interface ITimeRepository
     Task ReleaseReservationAsync(Guid leaveRequestId, CancellationToken ct);
     Task ConvertReservationAsync(Guid leaveRequestId, CancellationToken ct);
     Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct);
+    Task<List<ShiftDefinition>> ListShiftsAsync(CancellationToken ct);
+    Task<ShiftDefinition> CreateShiftAsync(ShiftDefinition shift, CancellationToken ct);
+    Task<WorkerShiftAssignment?> GetShiftAssignmentAsync(Guid workerId, DateOnly date, CancellationToken ct);
+    Task<WorkerShiftAssignment> CreateShiftAssignmentAsync(WorkerShiftAssignment assignment, CancellationToken ct);
+    Task CloseOpenShiftAssignmentsAsync(Guid workerId, DateOnly effectiveTo, CancellationToken ct);
+    Task<Worker?> FindWorkerByEmployeeNoAsync(string employeeNo, CancellationToken ct);
+    Task<AttendanceImportBatch> CreateImportBatchAsync(AttendanceImportBatch batch, CancellationToken ct);
+    Task UpdateImportBatchAsync(AttendanceImportBatch batch, CancellationToken ct);
+    Task<List<AttendanceImportBatch>> ListImportBatchesAsync(CancellationToken ct);
+    Task<LeaveAccrualRun?> GetAccrualRunAsync(string period, CancellationToken ct);
+    Task<LeaveAccrualRun> CreateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct);
+    Task UpdateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct);
+    Task<List<LeaveAccrualRun>> ListAccrualRunsAsync(CancellationToken ct);
+    Task<List<Worker>> ListAccrualWorkersAsync(CancellationToken ct);
+    Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct);
+    Task<LeaveBalanceAdjustment> CreateAdjustmentAsync(LeaveBalanceAdjustment adjustment, CancellationToken ct);
+    Task<List<LeaveBalanceAdjustment>> ListAdjustmentsAsync(CancellationToken ct);
 }
 
 /// <summary>Workflow/approval engine interface: every approvable action opens a
@@ -43,4 +60,5 @@ public interface IWorkflowService
     Task<Paged<WorkQueueItemDto>> GetWorkQueueAsync(CancellationToken ct);
     Task<WorkflowRequestDto?> GetByIdAsync(Guid id, CancellationToken ct);
     Task ApplyDecisionEffectsAsync(WorkflowRequest request, CancellationToken ct);
+    Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
 }

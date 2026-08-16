@@ -28,6 +28,15 @@ public interface ITimeService
     Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct);
     Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
     Task<LeaveRequestDto> DecideLeaveAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
+    // M28 operational administration
+    Task<List<ShiftDto>> ListShiftsAsync(CancellationToken ct);
+    Task<ShiftDto> CreateShiftAsync(ShiftCreateRequest request, CancellationToken ct);
+    Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct);
+    Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request, string actorSubjectId, CancellationToken ct);
+    Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request, string actorSubjectId, CancellationToken ct);
+    Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request, string actorSubjectId, CancellationToken ct);
+    Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
+    Task<TimeOperationsHistoryDto> GetOperationsHistoryAsync(CancellationToken ct);
 }
 
 public sealed record LeaveRequestDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
@@ -208,11 +217,6 @@ public sealed class TimeServiceImpl(
 
         var calendars = await repo.ListCalendarsAsync(ct);
         var calendar = calendars.FirstOrDefault(c => c.IsDefault) ?? calendars.FirstOrDefault();
-        var holidays = calendar?.Holidays?.ToList() ?? new List<PublicHoliday>();
-
-        // holiday dates observed on the day (ignoring IsRecurring year matching for simplicity of current year)
-        var holidayByDate = holidays.GroupBy(h => h.ObservedOn is not null && DateOnly.TryParse(h.ObservedOn, out _) ? DateOnly.Parse(h.ObservedOn) : h.HolidayDate)
-            .ToDictionary(g => g.Key, g => g.First());
 
         var attendance = (await repo.ListAttendanceAsync(workerId, start, end, ct)).ToDictionary(a => a.WorkDate, a => a);
         var corrections = (await repo.ListCorrectionsAsync(workerId, null, ct)).Items
@@ -224,10 +228,13 @@ public sealed class TimeServiceImpl(
         var days = new List<RosterDayDto>();
         for (var d = start; d <= end; d = d.AddDays(1))
         {
-            var isWeekend = calendar is not null && calendar.WeekendDays
+            var assignment = await repo.GetShiftAssignmentAsync(workerId, d, ct);
+            var dayCalendar = assignment?.Calendar ?? calendar;
+            var shift = assignment?.Shift;
+            var isWeekend = dayCalendar is not null && dayCalendar.WeekendDays
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Any(w => string.Equals(w, d.DayOfWeek.ToString().ToLowerInvariant().Substring(0, 3), StringComparison.OrdinalIgnoreCase));
-            holidayByDate.TryGetValue(d, out var hol);
+            var hol = dayCalendar?.Holidays.FirstOrDefault(h => HolidayDate(h) == d);
             var isHoliday = hol is not null;
             var att = attendance.GetValueOrDefault(d);
             var cor = corrections.GetValueOrDefault(d);
@@ -238,10 +245,194 @@ public sealed class TimeServiceImpl(
 
             days.Add(new RosterDayDto(d.ToString(), d.DayOfWeek.ToString("d"), !isWeekend && !isHoliday,
                 att?.ClockIn?.ToString(), att?.ClockOut?.ToString(), status,
-                null, null, null, calendar?.Name, isHoliday, hol?.Name,
+                shift?.Name, shift?.StartTime.ToString(), shift?.EndTime.ToString(), dayCalendar?.Name, isHoliday, hol?.Name,
                 cutoff?.ToString(), cor?.Status));
         }
         return days;
+    }
+
+    // ===================== M28: operational time administration =====================
+
+    public async Task<List<ShiftDto>> ListShiftsAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        return (await repo.ListShiftsAsync(ct)).Select(MapShift).ToList();
+    }
+
+    public async Task<ShiftDto> CreateShiftAsync(ShiftCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name))
+            throw new DomainException("shift-required-fields", "Shift code and name are required.");
+        if (!TimeOnly.TryParse(request.StartTime, out var start) || !TimeOnly.TryParse(request.EndTime, out var end))
+            throw new DomainException("shift-invalid-time", "Shift start and end must be valid times.");
+        if (request.DailyOvertimeThresholdHours <= 0 || request.StandardHours <= 0)
+            throw new DomainException("shift-invalid-hours", "Standard and overtime-threshold hours must be positive.");
+        var shift = await repo.CreateShiftAsync(new ShiftDefinition
+        {
+            Code = request.Code.Trim().ToUpperInvariant(), Name = request.Name.Trim(), StartTime = start, EndTime = end,
+            UnpaidBreakMinutes = request.UnpaidBreakMinutes, StandardHours = request.StandardHours,
+            DailyOvertimeThresholdHours = request.DailyOvertimeThresholdHours,
+            WeekdayOvertimeMultiplier = request.WeekdayOvertimeMultiplier,
+            RestDayOvertimeMultiplier = request.RestDayOvertimeMultiplier,
+            HolidayOvertimeMultiplier = request.HolidayOvertimeMultiplier,
+        }, ct);
+        return MapShift(shift);
+    }
+
+    public async Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        _ = await workers.GetByIdAsync(workerId, ct) ?? throw new DomainException("worker-not-found", $"Worker {workerId} does not exist.");
+        var shift = (await repo.ListShiftsAsync(ct)).FirstOrDefault(s => s.Id == request.ShiftId)
+            ?? throw new DomainException("shift-not-found", $"Shift {request.ShiftId} does not exist.");
+        if (!DateOnly.TryParse(request.EffectiveFrom, out var from) ||
+            (request.EffectiveTo is not null && !DateOnly.TryParse(request.EffectiveTo, out _)))
+            throw new DomainException("shift-assignment-invalid-date", "Effective dates must use yyyy-MM-dd.");
+        DateOnly? to = request.EffectiveTo is null ? null : DateOnly.Parse(request.EffectiveTo);
+        if (to.HasValue && to.Value < from) throw new DomainException("shift-assignment-invalid-range", "EffectiveTo cannot be before EffectiveFrom.");
+        await repo.CloseOpenShiftAssignmentsAsync(workerId, from.AddDays(-1), ct);
+        var created = await repo.CreateShiftAssignmentAsync(new WorkerShiftAssignment
+        {
+            WorkerId = workerId, ShiftId = shift.Id, CalendarId = request.CalendarId,
+            EffectiveFrom = from, EffectiveTo = to,
+        }, ct);
+        return new ShiftAssignmentDto(created.Id, workerId, shift.Id, shift.Name, created.CalendarId,
+            created.Calendar?.Name, from.ToString(), to?.ToString());
+    }
+
+    public async Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (string.IsNullOrWhiteSpace(request.FileName) || request.Rows.Count == 0)
+            throw new DomainException("attendance-import-empty", "A file name and at least one attendance row are required.");
+        if (request.Rows.Count > 10_000)
+            throw new DomainException("attendance-import-too-large", "An attendance batch cannot exceed 10,000 rows.");
+        var batch = await repo.CreateImportBatchAsync(new AttendanceImportBatch
+        {
+            FileName = request.FileName.Trim(), Status = "processing", RowCount = request.Rows.Count,
+            ImportedBySubjectId = actorSubjectId,
+        }, ct);
+        var errors = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in request.Rows)
+        {
+            var key = $"{row.EmployeeNo}:{row.WorkDate}";
+            if (!seen.Add(key)) { errors.Add($"{key}: duplicate row in batch"); continue; }
+            var worker = await repo.FindWorkerByEmployeeNoAsync(row.EmployeeNo.Trim(), ct);
+            if (worker is null) { errors.Add($"{key}: employee not found"); continue; }
+            if (!DateOnly.TryParse(row.WorkDate, out var date) ||
+                (row.ClockIn is not null && !TimeOnly.TryParse(row.ClockIn, out _)) ||
+                (row.ClockOut is not null && !TimeOnly.TryParse(row.ClockOut, out _)))
+            { errors.Add($"{key}: invalid date or time"); continue; }
+            var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            var record = existing ?? new AttendanceRecord { WorkerId = worker.Id, WorkDate = date };
+            record.ClockIn = row.ClockIn is null ? null : TimeOnly.Parse(row.ClockIn);
+            record.ClockOut = row.ClockOut is null ? null : TimeOnly.Parse(row.ClockOut);
+            record.Source = "device-import";
+            record.ImportBatchId = batch.Id;
+            await ApplyHoursAsync(record, ct);
+            if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
+            else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+        }
+        batch.RejectedCount = errors.Count;
+        batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
+        batch.Status = errors.Count == 0 ? "completed" : "completed-with-errors";
+        await repo.UpdateImportBatchAsync(batch, ct);
+        return new AttendanceImportResultDto(batch.Id, batch.FileName, batch.Status, batch.RowCount,
+            batch.ImportedCount, batch.UpdatedCount, batch.RejectedCount, errors);
+    }
+
+    public async Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (!DateOnly.TryParse($"{request.Period}-01", out var periodDate) || request.Period.Length != 7)
+            throw new DomainException("accrual-period-invalid", "Accrual period must use yyyy-MM.");
+        if (await repo.GetAccrualRunAsync(request.Period, ct) is not null)
+            throw new DomainException("accrual-period-exists", $"Leave accrual has already run for {request.Period}.");
+        var workersToAccrue = await repo.ListAccrualWorkersAsync(ct);
+        var leaveTypes = await repo.GetLeaveTypesAsync(ct);
+        var run = new LeaveAccrualRun
+        {
+            Period = request.Period, Status = "processing", WorkerCount = workersToAccrue.Count,
+            RunBySubjectId = actorSubjectId,
+        };
+        async Task Accrue(CancellationToken transactionCt)
+        {
+            run = await repo.CreateAccrualRunAsync(run, transactionCt);
+            foreach (var worker in workersToAccrue)
+            foreach (var type in leaveTypes)
+            {
+                var days = Math.Round(type.DefaultDaysPerYear / 12m, 4);
+                if (days == 0) continue;
+                await repo.AddLedgerEntryAsync(new LeaveBalanceLedger
+                {
+                    WorkerId = worker.Id, LeaveTypeCode = type.Code, Days = days, Reason = "monthly-accrual",
+                    ReferenceId = run.Id, ReferenceType = "accrual-run", ForDate = periodDate,
+                }, transactionCt);
+                run.LedgerEntryCount++;
+                run.TotalDaysAccrued += days;
+            }
+            run.Status = "completed";
+            await repo.UpdateAccrualRunAsync(run, transactionCt);
+        }
+        if (unitOfWork is null) await Accrue(ct);
+        else await unitOfWork.ExecuteAsync(Accrue, ct);
+        return MapAccrual(run);
+    }
+
+    public async Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (request.Days == 0 || string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("leave-adjustment-invalid", "A non-zero day adjustment and reason are required.");
+        var worker = await workers.GetByIdAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {request.WorkerId} does not exist.");
+        _ = await repo.GetLeaveTypeAsync(request.LeaveTypeCode, ct)
+            ?? throw new DomainException("leave-type-not-found", $"Leave type {request.LeaveTypeCode} does not exist.");
+        var adjustment = new LeaveBalanceAdjustment
+        {
+            WorkerId = worker.Id, LeaveTypeCode = request.LeaveTypeCode, Days = request.Days,
+            Reason = request.Reason.Trim(), AdjustedBySubjectId = actorSubjectId,
+        };
+        async Task PostAdjustment(CancellationToken transactionCt)
+        {
+            var ledger = await repo.AddLedgerEntryAsync(new LeaveBalanceLedger
+            {
+                WorkerId = worker.Id, LeaveTypeCode = request.LeaveTypeCode, Days = request.Days,
+                Reason = "manual-adjustment", ReferenceId = adjustment.Id, ReferenceType = "adjustment",
+                ForDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            }, transactionCt);
+            adjustment.LedgerEntryId = ledger.Id;
+            adjustment = await repo.CreateAdjustmentAsync(adjustment, transactionCt);
+        }
+        if (unitOfWork is null) await PostAdjustment(ct);
+        else await unitOfWork.ExecuteAsync(PostAdjustment, ct);
+        return new LeaveBalanceAdjustmentDto(adjustment.Id, worker.Id, worker.FullName,
+            adjustment.LeaveTypeCode, adjustment.Days, adjustment.Reason, adjustment.AdjustedBySubjectId, adjustment.CreatedAt);
+    }
+
+    public async Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        return await workflow.EscalateOverdueAsync(ct);
+    }
+
+    public async Task<TimeOperationsHistoryDto> GetOperationsHistoryAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var imports = (await repo.ListImportBatchesAsync(ct)).Select(batch => new AttendanceImportHistoryDto(
+            batch.Id, batch.FileName, batch.Status, batch.RowCount, batch.ImportedCount,
+            batch.UpdatedCount, batch.RejectedCount, batch.ImportedBySubjectId, batch.CreatedAt)).ToList();
+        var accruals = (await repo.ListAccrualRunsAsync(ct)).Select(MapAccrual).ToList();
+        var adjustments = (await repo.ListAdjustmentsAsync(ct)).Select(adjustment => new LeaveBalanceAdjustmentDto(
+            adjustment.Id, adjustment.WorkerId, adjustment.Worker?.FullName ?? "",
+            adjustment.LeaveTypeCode, adjustment.Days, adjustment.Reason,
+            adjustment.AdjustedBySubjectId, adjustment.CreatedAt)).ToList();
+        return new TimeOperationsHistoryDto(imports, accruals, adjustments);
     }
 
     public async Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct)
@@ -259,17 +450,14 @@ public sealed class TimeServiceImpl(
                 var existing = await repo.GetAttendanceAsync(c.WorkerId, c.WorkDate, ct);
                 if (existing is null)
                 {
-                    await repo.CreateAttendanceAsync(new AttendanceRecord
+                    var corrected = new AttendanceRecord
                     {
-                        WorkerId = c.WorkerId,
-                        WorkDate = c.WorkDate,
-                        ClockIn = c.ProposedClockIn,
-                        ClockOut = c.ProposedClockOut,
-                        Source = "corrected",
-                        DerivedStatus = DeriveStatus(c.ProposedClockIn, c.ProposedClockOut, c.ProposedStatus),
-                        TotalHours = c.ProposedClockIn.HasValue && c.ProposedClockOut.HasValue
-                            ? (decimal)(c.ProposedClockOut.Value - c.ProposedClockIn.Value).TotalHours : 0,
-                    }, ct);
+                        WorkerId = c.WorkerId, WorkDate = c.WorkDate,
+                        ClockIn = c.ProposedClockIn, ClockOut = c.ProposedClockOut,
+                        Source = "corrected", DerivedStatus = c.ProposedStatus ?? "unknown",
+                    };
+                    await ApplyHoursAsync(corrected, ct);
+                    await repo.CreateAttendanceAsync(corrected, ct);
                 }
                 else
                 {
@@ -277,8 +465,7 @@ public sealed class TimeServiceImpl(
                     if (c.ProposedClockOut.HasValue) existing.ClockOut = c.ProposedClockOut;
                     if (c.ProposedStatus is not null) existing.DerivedStatus = c.ProposedStatus;
                     existing.Source = "corrected";
-                    if (existing.ClockIn.HasValue && existing.ClockOut.HasValue)
-                        existing.TotalHours = (decimal)(existing.ClockOut.Value - existing.ClockIn.Value).TotalHours;
+                    await ApplyHoursAsync(existing, ct);
                     await repo.UpdateAttendanceAsync(existing, ct);
                 }
                 break;
@@ -359,9 +546,7 @@ public sealed class TimeServiceImpl(
         if (clockIn == false && rec.ClockOut is null)
             rec.ClockOut = now;
 
-        if (rec.ClockIn.HasValue && rec.ClockOut.HasValue)
-            rec.TotalHours = (decimal)(rec.ClockOut.Value - rec.ClockIn.Value).TotalHours;
-        rec.DerivedStatus = DeriveStatus(rec.ClockIn, rec.ClockOut, rec.DerivedStatus);
+        await ApplyHoursAsync(rec, ct);
 
         rec = await repo.UpdateAttendanceAsync(rec, ct);
         var state = rec.ClockIn is null ? "out" : rec.ClockOut is null ? "in" : "done";
@@ -376,6 +561,61 @@ public sealed class TimeServiceImpl(
         if (clockIn is null && clockOut is null) return "unknown";
         return current is "late" or "early-departure" or "half-day" or "absent" ? current : "present";
     }
+
+    private async Task ApplyHoursAsync(AttendanceRecord record, CancellationToken ct)
+    {
+        var assignment = await repo.GetShiftAssignmentAsync(record.WorkerId, record.WorkDate, ct);
+        var shift = assignment?.Shift;
+        record.ShiftId = shift?.Id;
+        record.ScheduledHours = shift?.StandardHours ?? 0;
+        record.TotalHours = 0;
+        record.RegularHours = 0;
+        record.OvertimeHours = 0;
+        record.OvertimeMultiplier = 0;
+        if (record.ClockIn.HasValue && record.ClockOut.HasValue)
+        {
+            var elapsed = record.ClockOut.Value - record.ClockIn.Value;
+            if (elapsed < TimeSpan.Zero) elapsed += TimeSpan.FromDays(1);
+            record.TotalHours = Math.Max(0, Math.Round((decimal)elapsed.TotalHours - (shift?.UnpaidBreakMinutes ?? 0) / 60m, 4));
+
+            var calendar = assignment?.Calendar ?? (await repo.ListCalendarsAsync(ct)).FirstOrDefault(c => c.IsDefault);
+            var weekend = calendar is not null && IsWeekend(calendar, record.WorkDate);
+            var holiday = calendar?.Holidays.Any(h => HolidayDate(h) == record.WorkDate) == true;
+            if (holiday)
+            {
+                record.OvertimeHours = record.TotalHours;
+                record.OvertimeMultiplier = shift?.HolidayOvertimeMultiplier ?? 2m;
+            }
+            else if (weekend)
+            {
+                record.OvertimeHours = record.TotalHours;
+                record.OvertimeMultiplier = shift?.RestDayOvertimeMultiplier ?? 2m;
+            }
+            else
+            {
+                var threshold = shift?.DailyOvertimeThresholdHours ?? record.TotalHours;
+                record.RegularHours = Math.Min(record.TotalHours, threshold);
+                record.OvertimeHours = Math.Max(0, record.TotalHours - threshold);
+                record.OvertimeMultiplier = record.OvertimeHours > 0 ? shift?.WeekdayOvertimeMultiplier ?? 1.5m : 0;
+            }
+        }
+        record.DerivedStatus = DeriveStatus(record.ClockIn, record.ClockOut, record.DerivedStatus);
+        if (shift is not null && record.ClockIn.HasValue && record.DerivedStatus == "present" && record.ClockIn > shift.StartTime)
+            record.DerivedStatus = "late";
+        if (shift is not null && record.ClockOut.HasValue && record.DerivedStatus == "present" && record.ClockOut < shift.EndTime)
+            record.DerivedStatus = "early-departure";
+    }
+
+    private static bool IsWeekend(WorkCalendar calendar, DateOnly date)
+    {
+        var day = date.DayOfWeek.ToString().ToLowerInvariant()[..3];
+        return calendar.WeekendDays.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(w => string.Equals(w, day, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static DateOnly HolidayDate(PublicHoliday holiday)
+        => holiday.ObservedOn is not null && DateOnly.TryParse(holiday.ObservedOn, out var observed)
+            ? observed : holiday.HolidayDate;
 
     // ===================== M16: self-service leave =====================
 
@@ -456,5 +696,16 @@ public sealed class TimeServiceImpl(
 
     private static AttendanceRecordDto MapAttendance(AttendanceRecord a) => new(
         a.Id, a.WorkerId, a.Worker?.FullName ?? "", a.WorkDate.ToString(),
-        a.ClockIn?.ToString(), a.ClockOut?.ToString(), a.Source, a.DerivedStatus, a.TotalHours);
+        a.ClockIn?.ToString(), a.ClockOut?.ToString(), a.Source, a.DerivedStatus, a.TotalHours,
+        a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId);
+
+    private static ShiftDto MapShift(ShiftDefinition shift) => new(
+        shift.Id, shift.Code, shift.Name, shift.StartTime.ToString(), shift.EndTime.ToString(),
+        shift.UnpaidBreakMinutes, shift.StandardHours, shift.DailyOvertimeThresholdHours,
+        shift.WeekdayOvertimeMultiplier, shift.RestDayOvertimeMultiplier,
+        shift.HolidayOvertimeMultiplier, shift.IsActive);
+
+    private static LeaveAccrualRunDto MapAccrual(LeaveAccrualRun run) => new(
+        run.Id, run.Period, run.Status, run.WorkerCount, run.LedgerEntryCount,
+        run.TotalDaysAccrued, run.RunBySubjectId, run.CreatedAt);
 }
