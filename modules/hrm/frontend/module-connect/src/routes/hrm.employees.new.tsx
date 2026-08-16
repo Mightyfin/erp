@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { employees, entities } from "@/mock/data";
 import { api } from "@/mock/service";
 import { ApiError } from "@/platform/api-client";
-import { realApi, useApi } from "@/platform/use-api";
+import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
@@ -58,15 +58,24 @@ function NewEmployee() {
       realApi.employees({ page: 1, pageSize: 500, status: "active" }),
     ]);
     return {
-      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []) as Record<string, unknown>[],
-      orgUnits: (Array.isArray(orgUnits) ? orgUnits : []) as Record<string, unknown>[],
-      locations: (Array.isArray(locations) ? locations : []) as Record<string, unknown>[],
+      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []).map((raw) => {
+        const e = raw as Record<string, unknown>;
+        return { id: String(e.id ?? ""), registeredName: String(e.registeredName ?? ""), countryCode: String(e.countryCode ?? e.country ?? "") };
+      }),
+      orgUnits: (Array.isArray(orgUnits) ? orgUnits : []).map((raw) => {
+        const u = raw as Record<string, unknown>;
+        return { id: String(u.id ?? ""), name: String(u.name ?? ""), code: String(u.code ?? ""), legalEntityId: u.legalEntityId ? String(u.legalEntityId) : "" };
+      }),
+      locations: (Array.isArray(locations) ? locations : []).map((raw) => {
+        const l = raw as Record<string, unknown>;
+        return { id: String(l.id ?? ""), name: String(l.name ?? ""), code: String(l.code ?? ""), legalEntityId: l.legalEntityId ? String(l.legalEntityId) : "" };
+      }),
       workers: adaptWorkers(workerPage),
     };
   }, []);
-  const legalEntities = USE_REAL ? references.data?.legalEntities ?? [] : entities.map((e) => ({ id: e.id, registeredName: e.name, countryCode: e.country }));
-  const orgUnits = USE_REAL ? references.data?.orgUnits ?? [] : ["Operations", "Manufacturing", "Logistics", "Finance", "People"].map((name) => ({ id: name, name }));
-  const locations = USE_REAL ? references.data?.locations ?? [] : entities.flatMap((e) => e.branches.map((name) => ({ id: name, name, legalEntityId: e.id })));
+  const legalEntities = USE_REAL ? references.data?.legalEntities ?? [] : entities.map((e) => ({ id: e.id, registeredName: e.name, name: e.name, countryCode: e.country }));
+  const orgUnits = USE_REAL ? references.data?.orgUnits ?? [] : ["Operations", "Manufacturing", "Logistics", "Finance", "People"].map((name) => ({ id: name, name, code: "", legalEntityId: "" }));
+  const locations = USE_REAL ? references.data?.locations ?? [] : entities.flatMap((e) => e.branches.map((name) => ({ id: name, name, code: "", legalEntityId: e.id })));
   const managerOptions = USE_REAL ? references.data?.workers ?? [] : employees;
   const entity = legalEntities.find((e) => String(e.id) === entityId);
   const entityLocations = locations.filter((l) => !entityId || String(l.legalEntityId ?? "") === entityId);
@@ -141,7 +150,7 @@ function NewEmployee() {
               <SelectContent>
                 {legalEntities.map((e) => (
                   <SelectItem key={String(e.id)} value={String(e.id)}>
-                    {String(e.registeredName ?? e.name ?? e.id)} · {String(e.countryCode ?? e.country ?? "ZM")}
+                    {String(e.registeredName ?? e.id)} · {String(e.countryCode ?? "ZM")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -171,7 +180,7 @@ function NewEmployee() {
               <SelectContent>
                 {entityUnits.map((unit) => (
                   <SelectItem key={String(unit.id)} value={String(unit.id)}>
-                    {String(unit.name ?? unit.code ?? unit.id)}
+                    {String(unit.name ?? unit.id)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -241,7 +250,7 @@ function NewEmployee() {
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 Contractors are engaged, not employed. Check the classification rules for{" "}
-                {String(entity?.countryCode ?? entity?.country ?? "Zambia")} before continuing — misclassification carries real liability.
+                {String(entity?.countryCode ?? "Zambia")} before continuing — misclassification carries real liability.
               </span>
             </p>
           ) : null}
@@ -259,7 +268,7 @@ function NewEmployee() {
               ["Name", fullName || "Not given"],
               ["Job title", jobTitle || "Not given"],
               ["Employment type", employmentType],
-              ["Entity", String(entity?.registeredName ?? entity?.name ?? "Not selected")],
+              ["Entity", String(entity?.registeredName ?? "Not selected")],
               ["Work location", String(selectedLocation?.name ?? "Not selected")],
               ["Department", String(selectedUnit?.name ?? "Not selected")],
               ["Reports to", managerOptions.find((e) => e.id === managerId)?.fullName ?? "—"],

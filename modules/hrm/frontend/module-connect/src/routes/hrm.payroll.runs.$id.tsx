@@ -283,7 +283,7 @@ function ReleaseActions({
 }: {
   run: PayRun;
   readiness: { isReady?: boolean } | null;
-  onReleased: () => void;
+  onReleased: () => Promise<unknown> | void;
 }) {
   const [done, setDone] = useState<string[]>(() => {
     const stages = run.stages.filter((s) => s.state === "done").map((s) => s.id);
@@ -309,6 +309,8 @@ function ReleaseActions({
       detail:
         "Makes payslips visible to employees. Does not move money. A released payslip is never silently overwritten — a correction creates a new linked version.",
       action: "Release payslips",
+      requiresText: "",
+      destructive: true,
       consequence: `${run.included} employees at ${run.entityName} will be able to see their ${run.period} payslip immediately. No money moves.`,
       blockedBy: approved ? null : "The run must be approved first.",
       toast: `Payslips released to ${run.included} employees.`,
@@ -317,15 +319,13 @@ function ReleaseActions({
     },
   ];
 
-  const active = steps.find((s) => s.id === confirming);
-
+    const active = steps.find((s) => s.id === confirming);
   return (
     <>
       <ul className="space-y-3 text-sm">
         {steps.map((s) => {
           const isDone = done.includes(s.id);
-          const missing =
-            "requires" in s && s.requires && !done.includes(s.requires) ? s.requiresText : null;
+          const missing: string | null = null;
           const why = s.blockedBy ?? missing ?? (s.api ? statutoryBlocked : null);
 
           return (
@@ -1178,7 +1178,7 @@ function RunDetail() {
                         await state.reload();
                       }}
                     />
-                    {USE_REAL ? <PaymentWorkflow run={run} onChanged={state.reload} /> : null}
+                    {USE_REAL ? <PaymentWorkflow run={run} onChanged={async () => { await state.reload(); }} /> : null}
                   </div>
                   <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
                     <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />

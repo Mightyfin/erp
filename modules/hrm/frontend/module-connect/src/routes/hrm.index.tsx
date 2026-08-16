@@ -83,6 +83,7 @@ async function loadHome(role: string) {
       due: dueText(item.dueAt),
       overdue: Number.isFinite(dueAt) && dueAt < now,
       to: "/hrm/approvals",
+      roles: ["hr_admin", "hr_ops", "manager"],
     });
   }
   for (const item of rows(corrections)) {
@@ -94,6 +95,7 @@ async function loadHome(role: string) {
       due: dueText(item.createdAt),
       overdue: false,
       to: "/hrm/attendance",
+      roles: ["hr_admin", "hr_ops"],
     });
   }
   for (const item of rows(requests).slice(0, 10)) {
@@ -106,6 +108,7 @@ async function loadHome(role: string) {
       overdue: false,
       to: "/hrm/requests/$id",
       params: { id: String(item.id) },
+      roles: ["hr_admin", "hr_ops"],
     });
   }
   for (const item of rows(payroll).filter((run) => !["released", "reconciled", "reversed"].includes(String(run.status).toLowerCase())).slice(0, 5)) {
@@ -118,6 +121,7 @@ async function loadHome(role: string) {
       overdue: false,
       to: "/hrm/payroll/runs/$id",
       params: { id: String(item.id) },
+      roles: ["hr_admin", "payroll"],
     });
   }
 

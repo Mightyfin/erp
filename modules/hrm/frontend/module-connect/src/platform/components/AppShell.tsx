@@ -359,8 +359,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       realApi.myNotifications(),
     ]);
     return {
-      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []) as Record<string, unknown>[],
-      locations: (Array.isArray(locations) ? locations : []) as Record<string, unknown>[],
+      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []).map((raw) => {
+        const e = raw as Record<string, unknown>;
+        return { id: String(e.id ?? ""), registeredName: String(e.registeredName ?? ""), countryCode: String(e.countryCode ?? e.country ?? "") };
+      }),
+      locations: (Array.isArray(locations) ? locations : []).map((raw) => {
+        const l = raw as Record<string, unknown>;
+        return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? "") };
+      }),
       notificationInbox,
     };
   }, []);
@@ -369,11 +375,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const entity = USE_REAL
-    ? liveEntities.find((e) => String(e.id) === entityId) ?? liveEntities[0]
+    ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
     : entities.find((e) => e.id === entityId) ?? entities[0];
-  const entityLocations = USE_REAL
-    ? liveLocations.filter((location) => !entity || String(location.legalEntityId ?? "") === String(entity.id))
-    : entity?.branches.map((name) => ({ id: name, name })) ?? [];
+  const entityLocations: { id: string; name: string }[] = USE_REAL
+    ? liveLocations.filter((location) => !entity || location.legalEntityId === entity.id)
+    : (entity as { branches?: string[] })?.branches?.map((name) => ({ id: String(name), name: String(name) })) ?? [];
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   const inScope = isPathEnabled(pathname);
   const liveNotifications = shellState.data?.notificationInbox.items ?? [];
