@@ -1187,3 +1187,182 @@ test("HR administrator can review and evidence the M34 security controls", async
   expect(holdPlaced).toBe(true);
   expect(evidenceRecorded).toBe(true);
 });
+
+test("HR leadership can filter and export the M35 management dashboard", async ({ page }) => {
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-hr-leadership",
+        tenant: "mightyfin-erp",
+        preferred_username: "playwright.hr.leadership",
+        realm_access: { roles: ["hr_admin", "payroll"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        linked: true,
+        subject: "playwright-hr-leadership",
+        worker: {
+          id: "worker-m35",
+          employeeNo: "EMP-M35",
+          fullName: "HR Leadership",
+          status: "active",
+        },
+      }),
+    });
+  });
+  const departmentId = "019d0000-0000-7000-8000-000000000350";
+  let filtered = false;
+  await page.route("**/api/hrm/reports/management**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/export/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/csv",
+        body: "department,gross,net\nFinance,17348.35,16050.00\n",
+      });
+      return;
+    }
+    filtered = url.searchParams.get("orgUnitId") === departmentId;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        generatedAt: "2026-08-16T14:00:00Z",
+        dataThrough: "2026-08-16",
+        filters: {
+          fromDate: "2026-01-01",
+          toDate: "2026-08-16",
+          legalEntities: [{ id: "entity-1", code: "MF", name: "Mightyfin" }],
+          orgUnits: [{ id: departmentId, code: "FIN", name: "Finance" }],
+          locations: [{ id: "location-1", code: "LUS", name: "Lusaka" }],
+        },
+        kpis: [
+          {
+            code: "headcount",
+            label: "Active headcount",
+            value: 6,
+            unit: "people",
+            definition: "Workers active on the reporting end date.",
+            source: "Workers",
+          },
+          {
+            code: "turnover",
+            label: "Turnover",
+            value: 0,
+            unit: "percent",
+            definition: "Leavers divided by average headcount.",
+            source: "Workers",
+          },
+          {
+            code: "employer-cost",
+            label: "Employer cost",
+            value: 18215.76,
+            unit: "ZMW",
+            definition: "Gross plus employer contributions.",
+            source: "Released payroll",
+          },
+          {
+            code: "net-pay",
+            label: "Net pay",
+            value: 16050,
+            unit: "ZMW",
+            definition: "Released net pay.",
+            source: "Released payroll",
+          },
+        ],
+        trend: [
+          {
+            period: "2026-06",
+            headcount: 6,
+            hires: 0,
+            leavers: 0,
+            grossPay: 17348.35,
+            employerCost: 18215.76,
+          },
+        ],
+        departments: [
+          {
+            orgUnitId: departmentId,
+            department: "Finance",
+            headcount: 6,
+            payrollWorkers: 6,
+            grossPay: 17348.35,
+            deductions: 1298.35,
+            netPay: 16050,
+            employerContributions: 867.41,
+            employerCost: 18215.76,
+          },
+        ],
+        leave: [{ leaveType: "annual", requests: 2, approvedDays: 10, pendingDays: 2 }],
+        attendance: [
+          {
+            status: "present",
+            records: 42,
+            scheduledHours: 336,
+            workedHours: 344,
+            overtimeHours: 8,
+          },
+        ],
+        recruitment: [{ stage: "shortlisted", candidates: 3, percentage: 60 }],
+        movements: [{ movementType: "promotion", movements: 1 }],
+        statutoryLiability: {
+          paye: 430.94,
+          napsaEmployee: 867.41,
+          napsaEmployer: 867.41,
+          nhimaEmployee: 0,
+          nhimaEmployer: 0,
+          total: 2165.76,
+        },
+        catalogue: [
+          {
+            code: "payroll-department",
+            name: "Payroll by department",
+            category: "Payroll and cost",
+            description: "Released gross-to-net controls by department.",
+            owner: "Payroll",
+            certified: true,
+            payrollRestricted: true,
+            source: "Released payroll run lines",
+          },
+          {
+            code: "workforce-summary",
+            name: "Headcount and workforce movements",
+            category: "Workforce",
+            description: "Point-in-time workforce controls.",
+            owner: "HR operations",
+            certified: true,
+            payrollRestricted: false,
+            source: "Workers",
+          },
+        ],
+        reconciliationNotes: ["Payroll totals include released and closed runs only."],
+      }),
+    });
+  });
+
+  await page.goto("/hrm/reports");
+  const dashboard = page.getByTestId("management-reporting");
+  await expect(
+    page.getByRole("heading", { name: "Workforce and payroll intelligence" }),
+  ).toBeVisible();
+  await expect(page.getByText(/K\s*18,215\.76/, { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Finance" })).toBeVisible();
+  await expect(page.getByText("PAYE", { exact: true })).toBeVisible();
+  await dashboard.getByLabel("Department").click();
+  await page.getByRole("option", { name: "Finance" }).click();
+  await dashboard.getByRole("button", { name: "Apply filters" }).click();
+  await expect.poll(() => filtered).toBe(true);
+  const download = page.waitForEvent("download");
+  await page.getByTitle("Download Payroll by department").click();
+  expect((await download).suggestedFilename()).toContain("payroll-department");
+});

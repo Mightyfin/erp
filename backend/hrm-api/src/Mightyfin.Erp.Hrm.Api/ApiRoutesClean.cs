@@ -951,6 +951,13 @@ public static class Routes
         var reports = app.MapGroup($"{HrmPrefix}/reports").RequireAuthorization();
         reports.MapGet("/", async ([AsParameters] ReportQuery query, IDocumentsService svc, CancellationToken ct) =>
             await svc.GetReportAsync(query, ct));
+        reports.MapGet("/management", async ([AsParameters] ManagementReportQuery query, IManagementReportingService svc, CancellationToken ct) =>
+            await svc.GetDashboardAsync(query, ct));
+        reports.MapGet("/management/export/{reportType}", async (string reportType, [AsParameters] ManagementReportQuery query, IManagementReportingService svc, CancellationToken ct) =>
+        {
+            var file = await svc.ExportAsync(reportType, query, ct);
+            return Results.File(file.Content, file.ContentType, file.FileName);
+        });
     }
 
     public static void RegisterDq(WebApplication app)

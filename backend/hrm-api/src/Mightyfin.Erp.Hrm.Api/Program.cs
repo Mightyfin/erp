@@ -90,6 +90,7 @@ builder.Services.AddScoped<IDqService, DqServiceImpl>();
 builder.Services.AddScoped<IMasterDataService, MasterDataService>();
 builder.Services.AddScoped<IIntegrationOperationsService, IntegrationOperationsService>();
 builder.Services.AddScoped<ISecurityComplianceService, SecurityComplianceService>();
+builder.Services.AddScoped<IManagementReportingService, ManagementReportingService>();
 builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddScoped<IOutboxWriter, EfOutboxWriter>();

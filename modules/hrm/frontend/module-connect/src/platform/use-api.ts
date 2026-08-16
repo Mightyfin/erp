@@ -134,6 +134,12 @@ export const realApi = {
   dqChecks: () => hrmApi.get<unknown>("/hrm/dq/checks"),
   workerDocuments: (workerId: string) => hrmApi.get<unknown>(`/hrm/documents/worker/${workerId}`),
   reports: (params: Record<string, unknown>) => hrmApi.get<unknown>("/hrm/reports", params),
+  managementReports: (params: Record<string, unknown>) =>
+    hrmApi.get<unknown>("/hrm/reports/management", params),
+  downloadManagementReport: async (reportType: string, params: Record<string, unknown>) => {
+    const blob = await hrmApi.getBlob(`/hrm/reports/management/export/${reportType}`, params);
+    downloadUrl(URL.createObjectURL(blob), `${reportType}.csv`);
+  },
   /** Create a worker and return the created WorkerDto. */
   createWorker: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/workers", body),
