@@ -22,9 +22,7 @@ const AUTHORITY =
   (import.meta.env.VITE_OIDC_AUTHORITY as string | undefined)?.trim() ||
   "https://auth.mightyfinance.co.zm/realms/mightyfin-sandbox";
 
-const CLIENT_ID =
-  (import.meta.env.VITE_OIDC_CLIENT_ID as string | undefined)?.trim() ||
-  "erp-web";
+const CLIENT_ID = (import.meta.env.VITE_OIDC_CLIENT_ID as string | undefined)?.trim() || "erp-web";
 
 const SESSION_KEY = "erp.oidc.session";
 const STATE_KEY = "erp.oidc.state";
@@ -356,6 +354,7 @@ export async function handleLoginCallback(): Promise<string | null> {
     // Silent flow came back with login_required → not a fatal error; the UI
     // decides to render the hosted form. Clear query so reloads stay clean.
     clearAuthState();
+    window.history.replaceState(null, "", window.location.pathname);
     return null;
   }
   if (!code || !state) return null;

@@ -9,12 +9,47 @@ test("HRM entry renders or reaches the sign-in flow", async ({ page }) => {
   );
 });
 
-test("authentication route is served by the HRM frontend", async ({ page }) => {
+test("login_required settles on a stable sign-in page and interactive login uses prompt=login", async ({
+  page,
+}) => {
+  let silentAttempts = 0;
+  let interactivePrompt: string | null = null;
+  await page.route("https://auth.mightyfinance.co.zm/**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const prompt = requestUrl.searchParams.get("prompt");
+    if (prompt === "none") {
+      silentAttempts += 1;
+      const redirectUri = requestUrl.searchParams.get("redirect_uri");
+      const state = requestUrl.searchParams.get("state");
+      if (!redirectUri || !state) throw new Error("OIDC request is missing redirect_uri or state");
+      const callback = new URL(redirectUri);
+      callback.searchParams.set("error", "login_required");
+      callback.searchParams.set("state", state);
+      callback.searchParams.set("iss", "https://auth.mightyfinance.co.zm/realms/mightyfin-sandbox");
+      await route.fulfill({ status: 302, headers: { location: callback.toString() } });
+      return;
+    }
+    interactivePrompt = prompt;
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<title>Organisation sign in</title><h1>Organisation sign in</h1>",
+    });
+  });
+
   const response = await page.goto("/sign-in");
 
   expect(response?.status()).toBe(200);
-  await expect(page).not.toHaveTitle("404 Not Found");
-  await expect(page.locator("body")).toContainText(/Sign in|Checking your session/i);
+  await expect(
+    page.getByRole("button", { name: "Continue with organisation account" }),
+  ).toBeVisible();
+  await page.waitForTimeout(1_000);
+  expect(silentAttempts).toBe(1);
+  await expect(page).toHaveURL(/\/sign-in$/);
+
+  await page.getByRole("button", { name: "Continue with organisation account" }).click();
+  await expect(page).toHaveTitle("Organisation sign in");
+  expect(interactivePrompt).toBe("login");
 });
 
 test("HRM reverse proxy exposes a healthy API", async ({ request }) => {

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, KeyRound, LifeBuoy, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import {
   getSession,
   handleLoginCallback,
   isSessionValid,
+  startInteractiveLogin,
   startSilentSso,
 } from "@/platform/oidc";
 
@@ -52,12 +53,18 @@ function SignIn() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [silenceFailed, setSilenceFailed] = useState(false);
+  const callbackInProgress = useRef(false);
 
-  // (1) Handle a redirect back from Keycloak with an authorization code.
+  // (1) Handle every redirect back from Keycloak before considering another
+  // silent attempt. In particular, `login_required` is the expected response
+  // when no SSO cookie exists and must leave the hosted form stable.
   useEffect(() => {
-    if (USE_REAL && new URLSearchParams(window.location.search).has("code")) {
+    const params = new URLSearchParams(window.location.search);
+    if (USE_REAL && (params.has("code") || params.has("error"))) {
+      callbackInProgress.current = true;
       void handleLoginCallback().then((origin) => {
         if (origin) void navigate({ to: origin });
+        else setSilenceFailed(true);
       });
     }
   }, [navigate]);
@@ -69,6 +76,11 @@ function SignIn() {
       void navigate({ to: "/hrm", replace: true });
       return;
     }
+    if (callbackInProgress.current) return;
+    // A callback is already being handled by the effect above. Starting a new
+    // authorization request here would replace its PKCE state and loop.
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("code") || params.has("error")) return;
     // Only fire the silent round-trip once, and only if no attempt already
     // came back with `login_required` on this visit.
     if (silenceFailed) return;
@@ -77,17 +89,9 @@ function SignIn() {
     startSilentSso(window.location.pathname === "/sign-in" ? "/hrm" : window.location.pathname);
   }, [authenticated, navigate, silenceFailed]);
 
-  // Listen for the silent redirect returning with `error=login_required`:
-  // the route re-renders without a code and with no session — show the form.
-  useEffect(() => {
-    if (USE_REAL && !authenticated && !new URLSearchParams(window.location.search).has("code")) {
-      setSilenceFailed(true);
-    }
-  }, [authenticated]);
-
   const enterWithOrganisation = () => {
     setBusy(true);
-    startSilentSso("/hrm");
+    startInteractiveLogin("/hrm");
   };
 
   const continueDemo = () => {
