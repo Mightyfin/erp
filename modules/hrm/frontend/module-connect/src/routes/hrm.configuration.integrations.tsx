@@ -70,7 +70,7 @@ function IntegrationOperations() {
           eyebrow="Configuration · Integrations"
           title="Integration operations"
           description="Prepare, trace and reconcile every HRM hand-off without giving an external system direct access to payroll records."
-          actions={
+          primaryAction={
             <Button variant="outline" className="gap-2" onClick={dashboard.reload}>
               <RefreshCw className="size-4" />
               Refresh
