@@ -40,6 +40,7 @@ public static class Routes
         RegisterRelations(app);
         RegisterDocuments(app);
         RegisterDq(app);
+        RegisterMasterData(app);
         RegisterStatutory(app);
         RegisterNotifications(app);
         RegisterMe(app);
@@ -954,6 +955,35 @@ public static class Routes
     {
         var g = app.MapGroup($"{HrmPrefix}/dq").RequireAuthorization();
         g.MapGet("/checks", async (IDqService svc, CancellationToken ct) => await svc.RunChecksAsync(ct));
+    }
+
+    public static void RegisterMasterData(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/master-data").RequireAuthorization();
+        g.MapGet("/batches", async ([FromQuery] string? batchType, [FromQuery] string? status,
+            IMasterDataService svc, CancellationToken ct) => Results.Ok(await svc.ListAsync(batchType, status, ct)));
+        g.MapPost("/imports/preview", async (HttpContext http, IMasterDataService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkerImportPreviewRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.PreviewImportAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/bulk/preview", async (HttpContext http, IMasterDataService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkerBulkPreviewRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.PreviewBulkAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/batches/{id:guid}/apply", async (Guid id, HttpContext http, IMasterDataService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ApplyAsync(id, ResolveSubjectId(http) ?? "system", ct)));
+        g.MapPost("/batches/{id:guid}/rollback", async (Guid id, HttpContext http, IMasterDataService svc, CancellationToken ct) =>
+            Results.Ok(await svc.RollbackAsync(id, ResolveSubjectId(http) ?? "system", ct)));
+        g.MapPost("/workers/{id:guid}/reactivate", async (Guid id, HttpContext http, IMasterDataService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkerReactivateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ReactivateAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
     }
 
     public static void RegisterStatutory(WebApplication app)

@@ -58,6 +58,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<WorkerBankDetail> WorkerBankDetails => Set<WorkerBankDetail>();
     public DbSet<WorkerDocument> WorkerDocuments => Set<WorkerDocument>();
+    public DbSet<MasterDataBatch> MasterDataBatches => Set<MasterDataBatch>();
 
     // Policies & time
     public DbSet<LeaveType> LeaveTypes => Set<LeaveType>();
@@ -140,6 +141,14 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<EmergencyContact>(modelBuilder, "emergency_contacts");
         ConfigureEntity<WorkerBankDetail>(modelBuilder, "worker_bank_details");
         ConfigureEntity<WorkerDocument>(modelBuilder, "worker_documents");
+        ConfigureEntity<MasterDataBatch>(modelBuilder, "master_data_batches", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.Status, x.CreatedAt });
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnType("jsonb");
+            e.Property(x => x.SnapshotJson).HasColumnType("jsonb");
+            e.Property(x => x.ErrorsJson).HasColumnType("jsonb");
+        });
         ConfigureEntity<LeaveType>(modelBuilder, "leave_types", e => e.HasIndex(x => new { x.TenantId, x.Code }));
         ConfigureEntity<LeaveBalanceLedger>(modelBuilder, "leave_balance_ledger");
         ConfigureEntity<LeaveRequest>(modelBuilder, "leave_requests");

@@ -701,3 +701,143 @@ test("employee can use the ownership-protected M31 self-service workspace", asyn
   await expect(documents).toContainText("Updated NRC");
   expect(documentUploaded).toBe(true);
 });
+
+test("HR admin can preview, apply and recover M32 worker master-data operations", async ({
+  page,
+}) => {
+  const batchId = "019d0000-0000-7000-8000-000000000032";
+  const archivedWorkerId = "019d0000-0000-7000-8000-000000000033";
+  let batchStatus = "previewed";
+  let reactivated = false;
+  let importedName = "";
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-hr-admin",
+        preferred_username: "playwright.hr.admin",
+        realm_access: { roles: ["hr_admin", "hr_ops"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+
+  const batch = () => ({
+    id: batchId,
+    batchType: "worker-import",
+    fileName: "workers.csv",
+    status: batchStatus,
+    effectiveDate: "2026-08-16",
+    rowCount: 1,
+    readyCount: 1,
+    unchangedCount: 0,
+    errorCount: 0,
+    requestedBySubjectId: "playwright-hr-admin",
+    createdAt: "2026-08-16T10:00:00Z",
+    appliedAt: batchStatus === "previewed" ? null : "2026-08-16T10:01:00Z",
+    rolledBackAt: batchStatus === "rolled-back" ? "2026-08-16T10:02:00Z" : null,
+    canRollback: batchStatus === "applied",
+    errors: [],
+    samples: [
+      {
+        employeeNo: "EMP-0100",
+        action: "create",
+        before: "New worker",
+        after: importedName || "Chanda Banda",
+      },
+    ],
+  });
+
+  await page.route("**/api/hrm/master-data/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    if (url.pathname.endsWith("/imports/preview")) {
+      const request = route.request().postDataJSON() as {
+        fileName: string;
+        rows: Array<{ firstName: string; lastName: string }>;
+      };
+      importedName = `${request.rows[0].firstName} ${request.rows[0].lastName}`;
+      batchStatus = "previewed";
+    } else if (url.pathname.endsWith(`/${batchId}/apply`)) {
+      batchStatus = "applied";
+    } else if (url.pathname.endsWith(`/${batchId}/rollback`)) {
+      batchStatus = "rolled-back";
+    } else if (url.pathname.endsWith(`/${archivedWorkerId}/reactivate`)) {
+      const request = route.request().postDataJSON() as { reason: string };
+      expect(request.reason).toBe("Returning from approved career break");
+      reactivated = true;
+    }
+    const body =
+      url.pathname.endsWith("/batches") && method === "GET"
+        ? { items: batchStatus === "previewed" && !importedName ? [] : [batch()] }
+        : batch();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  await page.route("**/api/hrm/workers**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: reactivated
+          ? []
+          : [
+              {
+                id: archivedWorkerId,
+                employeeNo: "EMP-0099",
+                fullName: "Mwila Zulu",
+                isArchived: true,
+              },
+            ],
+      }),
+    });
+  });
+  await page.route("**/api/hrm/dq/checks", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: "dq-1", rule: "missing-statutory-id" },
+        { id: "dq-2", rule: "missing-statutory-id" },
+      ]),
+    });
+  });
+
+  await page.goto("/hrm/people/master-data");
+  const operations = page.getByTestId("master-data-operations");
+  await operations.getByLabel("Worker CSV").setInputFiles({
+    name: "workers.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("firstName,lastName,email\nChanda,Banda,chanda@example.com\n"),
+  });
+  await operations.getByRole("button", { name: "Preview import" }).click();
+  const preview = page.getByTestId("master-data-preview");
+  await expect(preview).toContainText("Chanda Banda");
+  await expect(preview).toContainText("Errors");
+  await preview.getByRole("button", { name: "Apply validated batch" }).click();
+  await expect(preview.getByRole("button", { name: "Batch applied" })).toBeDisabled();
+
+  await operations.getByRole("tab", { name: "History and recovery" }).click();
+  const history = page.getByTestId("master-data-history");
+  await expect(history).toContainText("worker-import");
+  await history.getByRole("button", { name: "Roll back batch" }).click();
+  await expect(history).toContainText("rolled-back");
+
+  await operations.getByRole("tab", { name: "Reactivation" }).click();
+  await operations.getByLabel("Archived worker").selectOption(archivedWorkerId);
+  await operations.getByLabel("Reason").fill("Returning from approved career break");
+  await operations.getByRole("button", { name: "Reactivate worker" }).click();
+  await expect(operations.getByLabel("Archived worker").locator("option")).toHaveCount(1);
+  expect(reactivated).toBe(true);
+
+  await operations.getByRole("tab", { name: "Quality dashboard" }).click();
+  const quality = page.getByTestId("master-data-quality");
+  await expect(quality).toContainText("missing statutory id");
+  await expect(quality).toContainText("2");
+});

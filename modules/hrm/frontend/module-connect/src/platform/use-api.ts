@@ -142,6 +142,26 @@ export const realApi = {
     hrmApi.put<Record<string, unknown>>(`/hrm/workers/${id}`, body),
   /** Soft-archive a worker. */
   archiveWorker: (id: string) => hrmApi.post<unknown>(`/hrm/workers/${id}/archive`, null),
+  masterDataBatches: () =>
+    hrmApi.get<{ items: Array<Record<string, unknown>> }>("/hrm/master-data/batches"),
+  previewWorkerImport: (fileName: string, rows: Array<Record<string, unknown>>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/master-data/imports/preview", {
+      fileName,
+      rows,
+    }),
+  previewWorkerBulk: (effectiveDate: string, rows: Array<Record<string, unknown>>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/master-data/bulk/preview", {
+      effectiveDate,
+      rows,
+    }),
+  applyMasterDataBatch: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/master-data/batches/${id}/apply`, null),
+  rollbackMasterDataBatch: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/master-data/batches/${id}/rollback`, null),
+  reactivateWorker: (id: string, reason: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/master-data/workers/${id}/reactivate`, {
+      reason,
+    }),
   /** Upload a document for a worker. */
   uploadDocument: (workerId: string, file: File, category: string, title: string) =>
     hrmApi.uploadDocument(workerId, file, category, title),

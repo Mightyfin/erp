@@ -59,6 +59,11 @@ export const hrmModule: ModuleDefinition = {
           roles: ["hr_ops", "hr_admin"],
         },
         { label: "Privacy and consent", to: "/hrm/people/privacy" },
+        {
+          label: "Master data operations",
+          to: "/hrm/people/master-data",
+          roles: ["hr_ops", "hr_admin"],
+        },
         { label: "Data quality", to: "/hrm/people/data-quality", roles: ["hr_ops", "hr_admin"] },
       ],
     },

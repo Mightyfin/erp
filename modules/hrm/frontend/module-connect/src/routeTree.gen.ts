@@ -57,6 +57,7 @@ import { Route as HrmPayslipsIndexRouteImport } from './routes/hrm.payslips.inde
 import { Route as HrmPayslipsIdRouteImport } from './routes/hrm.payslips.$id'
 import { Route as HrmPeopleDataQualityRouteImport } from './routes/hrm.people.data-quality'
 import { Route as HrmPeopleDocumentsRouteImport } from './routes/hrm.people.documents'
+import { Route as HrmPeopleMasterDataRouteImport } from './routes/hrm.people.master-data'
 import { Route as HrmPeopleOrgRouteImport } from './routes/hrm.people.org'
 import { Route as HrmPeoplePositionsRouteImport } from './routes/hrm.people.positions'
 import { Route as HrmPeoplePrivacyRouteImport } from './routes/hrm.people.privacy'
@@ -351,6 +352,11 @@ const HrmPeopleDocumentsRoute = HrmPeopleDocumentsRouteImport.update({
   path: '/hrm/people/documents',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmPeopleMasterDataRoute = HrmPeopleMasterDataRouteImport.update({
+  id: '/hrm/people/master-data',
+  path: '/hrm/people/master-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmPeopleOrgRoute = HrmPeopleOrgRouteImport.update({
   id: '/hrm/people/org',
   path: '/hrm/people/org',
@@ -643,6 +649,7 @@ export interface FileRoutesByFullPath {
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/master-data': typeof HrmPeopleMasterDataRoute
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
@@ -741,6 +748,7 @@ export interface FileRoutesByTo {
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/master-data': typeof HrmPeopleMasterDataRoute
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
@@ -840,6 +848,7 @@ export interface FileRoutesById {
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
+  '/hrm/people/master-data': typeof HrmPeopleMasterDataRoute
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
@@ -940,6 +949,7 @@ export interface FileRouteTypes {
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
+    | '/hrm/people/master-data'
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
@@ -1038,6 +1048,7 @@ export interface FileRouteTypes {
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
+    | '/hrm/people/master-data'
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
@@ -1136,6 +1147,7 @@ export interface FileRouteTypes {
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
+    | '/hrm/people/master-data'
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
@@ -1235,6 +1247,7 @@ export interface RootRouteChildren {
   HrmPayslipsIdRoute: typeof HrmPayslipsIdRoute
   HrmPeopleDataQualityRoute: typeof HrmPeopleDataQualityRoute
   HrmPeopleDocumentsRoute: typeof HrmPeopleDocumentsRoute
+  HrmPeopleMasterDataRoute: typeof HrmPeopleMasterDataRoute
   HrmPeopleOrgRoute: typeof HrmPeopleOrgRoute
   HrmPeoplePositionsRoute: typeof HrmPeoplePositionsRouteWithChildren
   HrmPeoplePrivacyRoute: typeof HrmPeoplePrivacyRoute
@@ -1616,6 +1629,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/people/documents'
       fullPath: '/hrm/people/documents'
       preLoaderRoute: typeof HrmPeopleDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/people/master-data': {
+      id: '/hrm/people/master-data'
+      path: '/hrm/people/master-data'
+      fullPath: '/hrm/people/master-data'
+      preLoaderRoute: typeof HrmPeopleMasterDataRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/people/org': {
@@ -2138,6 +2158,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmPayslipsIdRoute: HrmPayslipsIdRoute,
   HrmPeopleDataQualityRoute: HrmPeopleDataQualityRoute,
   HrmPeopleDocumentsRoute: HrmPeopleDocumentsRoute,
+  HrmPeopleMasterDataRoute: HrmPeopleMasterDataRoute,
   HrmPeopleOrgRoute: HrmPeopleOrgRoute,
   HrmPeoplePositionsRoute: HrmPeoplePositionsRouteWithChildren,
   HrmPeoplePrivacyRoute: HrmPeoplePrivacyRoute,
