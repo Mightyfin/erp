@@ -24,6 +24,25 @@ public class PayrollRun : Entity
     public int ExceptionCount { get; set; }
     public string? CalcVersion { get; set; }          // pinned engine + rule version snapshot
     public string? ApprovalNote { get; set; }
+
+    // M27 operational controls. Subject ids are captured at each boundary so
+    // segregation of duties is enforceable, rather than implied by status.
+    public string? PreparedBySubjectId { get; set; }
+    public string? LockedBySubjectId { get; set; }
+    public string? CalculatedBySubjectId { get; set; }
+    public string? ApprovedBySubjectId { get; set; }
+    public string? ReleasedBySubjectId { get; set; }
+    public string PaymentStatus { get; set; } = "not-created";
+    // not-created | generated | approved | released | reconciled
+    public string? PaymentFileReference { get; set; }
+    public DateTimeOffset? PaymentFileGeneratedAt { get; set; }
+    public string? PaymentFileGeneratedBySubjectId { get; set; }
+    public string? PaymentApprovedBySubjectId { get; set; }
+    public string? PaymentReleasedBySubjectId { get; set; }
+    public string? ReconciledBySubjectId { get; set; }
+    public string? ReconciliationReference { get; set; }
+    public decimal? ReconciledAmount { get; set; }
+    public DateTimeOffset? ReconciledAt { get; set; }
 }
 
 /// <summary>One line per employee per run; the line carries its own component
@@ -40,9 +59,28 @@ public class PayrollRunLine : Entity
     public decimal EmployerCost { get; set; }
     public bool HasException { get; set; }
     public string? ExceptionReason { get; set; }      // negative-net | missing-profile | variance | missing-bank
+    public string ExceptionStatus { get; set; } = "open"; // open | resolved | waived | excluded
+    public string? ExceptionDecisionReason { get; set; }
+    public string? ExceptionDecidedBySubjectId { get; set; }
+    public DateTimeOffset? ExceptionDecidedAt { get; set; }
+    public bool IsExcluded { get; set; }
     public int ComponentCount { get; set; }
     public string RuleVersionSnapshot { get; set; } = ""; // json snapshot of rule versions used for this line
     public ICollection<PayrollLineComponent> Components { get; set; } = new List<PayrollLineComponent>();
+}
+
+/// <summary>M27 append-only payroll audit history, deliberately scoped to a
+/// run so operations and auditors can export one complete decision trail.</summary>
+public class PayrollRunEvent : Entity
+{
+    public Guid RunId { get; set; }
+    public PayrollRun? Run { get; set; }
+    public string Action { get; set; } = null!;
+    public string ActorSubjectId { get; set; } = null!;
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public string? Reason { get; set; }
+    public string? DetailsJson { get; set; }
 }
 
 /// <summary>Component-level breakdown of one run line (the explainable piece):

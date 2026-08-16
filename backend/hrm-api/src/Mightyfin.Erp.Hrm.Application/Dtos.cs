@@ -137,10 +137,18 @@ public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentC
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,
     int ExceptionCount, string? CalcVersion, DateTimeOffset CreatedAt,
-    bool IsReversal = false, Guid? ReversesRunId = null);
+    bool IsReversal = false, Guid? ReversesRunId = null,
+    string? PreparedBySubjectId = null, string? ApprovedBySubjectId = null,
+    string? ReleasedBySubjectId = null, string PaymentStatus = "not-created",
+    string? PaymentFileReference = null, string? PaymentApprovedBySubjectId = null,
+    string? PaymentReleasedBySubjectId = null, string? ReconciliationReference = null,
+    decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
-    bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components);
+    bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,
+    string ExceptionStatus = "open", string? ExceptionDecisionReason = null,
+    string? ExceptionDecidedBySubjectId = null, DateTimeOffset? ExceptionDecidedAt = null,
+    bool IsExcluded = false);
 public sealed record PayrollLineComponentDto(string ComponentCode, string ComponentName,
     string ComponentType, decimal Amount, string Explanation, bool IsStatutory);
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,
@@ -150,6 +158,12 @@ public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal 
     string? WorkerNrc = null, string? WorkerTpin = null,
     string? WorkerNapsaNumber = null, string? WorkerNhimaNumber = null);
 public sealed record PayrollRunReverseCreate(string? Reason = null);
+public sealed record PayrollExceptionDecisionRequest(string Decision, string Reason);
+public sealed record PayrollCorrectionRequest(string ComponentCode, decimal Amount, string Reason);
+public sealed record PayrollPaymentApprovalRequest(string? Note = null);
+public sealed record PayrollReconciliationRequest(string Reference, decimal ActualAmount, string? Note = null);
+public sealed record PayrollRunEventDto(Guid Id, string Action, string ActorSubjectId,
+    string? FromStatus, string? ToStatus, string? Reason, string? DetailsJson, DateTimeOffset CreatedAt);
 
 /// <summary>Aggregated statutory liability for one released payroll period
 /// (M23): PAYE, NAPSA and NHIMA split by employee/employer share, plus the

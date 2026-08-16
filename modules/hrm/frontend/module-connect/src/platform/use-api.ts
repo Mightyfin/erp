@@ -277,20 +277,44 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/profiles", params ?? {}),
   createPayrollProfile: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/payroll/profiles/${workerId}`, body),
-  /** The backend has no list endpoint for runs; pages select a period via
-   *  payrollPayGroupPeriods(groupId) and then read payrollRun(id). */
-  payrollRuns: () =>
-    Promise.resolve<{ items: never[]; totalCount: number }>({ items: [], totalCount: 0 }),
+  /** M27 operational run list with live totals and workflow state. */
+  payrollRuns: () => hrmApi.get<{ items: unknown[]; totalCount: number }>("/hrm/payroll/runs"),
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),
   calculatePayrollRun: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/calculate`, null),
   lockPayrollRun: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lock`, null),
-  payrollRunApprove: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, null),
+  payrollRunApprove: (id: string, note?: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, { note }),
   payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
   payrollRunReverse: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
   payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
+  payrollExceptionDecision: (id: string, lineId: string, decision: string, reason: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lines/${lineId}/exception`, { decision, reason }),
+  payrollCorrection: (
+    id: string,
+    lineId: string,
+    componentCode: string,
+    amount: number,
+    reason: string,
+  ) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lines/${lineId}/correction`, {
+      componentCode,
+      amount,
+      reason,
+    }),
+  payrollPaymentGenerate: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/generate`, {}),
+  payrollPaymentApprove: (id: string, note?: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/approve`, { note }),
+  payrollPaymentRelease: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/release`, {}),
+  payrollReconcile: (id: string, reference: string, actualAmount: number, note?: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reconcile`, { reference, actualAmount, note }),
+  payrollRunAudit: (id: string) => hrmApi.get<unknown[]>(`/hrm/payroll/runs/${id}/audit`),
+  payrollPaymentFile: (id: string) => hrmApi.getBlob(`/hrm/payroll/runs/${id}/payments/file`),
+  payrollAuditExport: (id: string) => hrmApi.getBlob(`/hrm/payroll/runs/${id}/audit/export`),
   /** M24: per-run statutory identity readiness — who blocks the release gate. */
   payrollRunStatutoryReadiness: (id: string) =>
     hrmApi.get<{

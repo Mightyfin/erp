@@ -17,15 +17,22 @@ import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ReasonDialog } from "@/platform/components/ReasonDialog";
 import { feedback } from "@/platform/feedback";
+import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/payroll/exceptions")({
   head: () => ({
     meta: [
       { title: "Payroll exceptions — Mightyfin ERP HRM" },
-      { name: "description", content: "What is blocking release, what it would cost, and the safe way to resolve it." },
+      {
+        name: "description",
+        content: "What is blocking release, what it would cost, and the safe way to resolve it.",
+      },
       { property: "og:title", content: "Payroll exceptions — Mightyfin ERP HRM" },
-      { property: "og:description", content: "What is blocking release, what it would cost, and the safe way to resolve it." },
+      {
+        property: "og:description",
+        content: "What is blocking release, what it would cost, and the safe way to resolve it.",
+      },
     ],
   }),
   component: ExceptionsPage,
@@ -62,7 +69,10 @@ function ExceptionCard({
   return (
     <li className={`rounded-lg border p-5 ${outcome ? "border-border bg-surface" : frame}`}>
       <div className="flex flex-wrap items-start gap-2">
-        <Icon className={`mt-0.5 size-4 shrink-0 ${outcome ? "text-muted-foreground" : cls}`} aria-hidden />
+        <Icon
+          className={`mt-0.5 size-4 shrink-0 ${outcome ? "text-muted-foreground" : cls}`}
+          aria-hidden
+        />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
             <span className={`text-sm font-semibold ${outcome ? "text-muted-foreground" : cls}`}>
@@ -84,19 +94,27 @@ function ExceptionCard({
 
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What failed</dt>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            What failed
+          </dt>
           <dd className="mt-0.5">{e.what}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Business impact</dt>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Business impact
+          </dt>
           <dd className="mt-0.5">{e.impact}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recommended action</dt>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Recommended action
+          </dt>
           <dd className="mt-0.5">{e.recommended}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">If it cannot be resolved</dt>
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            If it cannot be resolved
+          </dt>
           <dd className="mt-0.5">{e.escalation}</dd>
         </div>
       </dl>
@@ -112,10 +130,17 @@ function ExceptionCard({
                   <span className="block font-medium">
                     {outcome.kind} — {verb} by {outcome.by}
                   </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{outcome.reason}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {outcome.reason}
+                  </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">{outcome.at}</span>
                 </span>
-                <Button variant="ghost" size="sm" className="shrink-0 gap-1.5 text-xs" onClick={onReopen}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 gap-1.5 text-xs"
+                  onClick={onReopen}
+                >
                   <Undo2 className="size-3.5" aria-hidden />
                   Reopen
                 </Button>
@@ -141,8 +166,8 @@ function ExceptionCard({
           </Button>
           {!e.resolvable ? (
             <p className="basis-full text-xs text-muted-foreground">
-              This cannot be resolved inside payroll — it needs information from outside the run. Waive
-              it to let the run proceed, or exclude the employee.
+              This cannot be resolved inside payroll — it needs information from outside the run.
+              Waive it to let the run proceed, or exclude the employee.
             </p>
           ) : null}
         </div>
@@ -154,13 +179,77 @@ function ExceptionCard({
 /* -------------------------------------------------------------------------- */
 
 function ExceptionsPage() {
-  const state = useMock(() => payrollRunApi.exceptions());
+  const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+  const mockState = useMock(() => payrollRunApi.exceptions());
+  const realState = useApi(async (): Promise<PayrollException[]> => {
+    if (!USE_REAL) return [];
+    const runs = await realApi.payrollRuns();
+    const calculated = (runs.items ?? []).filter(
+      (raw) => String((raw as Record<string, unknown>).status ?? "") === "calculated",
+    );
+    const results = await Promise.all(
+      calculated.map(async (rawRun) => {
+        const run = rawRun as Record<string, unknown>;
+        const lines = (await realApi.payrollRunLines(String(run.id ?? ""))) as {
+          items?: unknown[];
+        };
+        return (lines.items ?? [])
+          .filter((raw) => {
+            const l = raw as Record<string, unknown>;
+            return Boolean(l.hasException) && String(l.exceptionStatus ?? "open") === "open";
+          })
+          .map((raw) => {
+            const l = raw as Record<string, unknown>;
+            const reason = String(l.exceptionReason ?? "payroll-check");
+            const name = String(l.workerName ?? l.employeeNo ?? "Worker");
+            return {
+              id: String(l.id ?? ""),
+              runId: String(run.id ?? ""),
+              severity: "Blocking" as const,
+              kind: reason.replaceAll("-", " "),
+              affects: `${name} · ${String(l.employeeNo ?? "")}`,
+              what:
+                reason === "missing-bank"
+                  ? "No primary bank account is recorded."
+                  : reason === "negative-net"
+                    ? "Deductions exceed earnings."
+                    : reason,
+              impact:
+                reason === "missing-bank"
+                  ? "A bank payment instruction cannot be created."
+                  : "The employee's net pay may be invalid.",
+              recommended:
+                reason === "missing-bank"
+                  ? "Add and verify primary bank details, then recalculate."
+                  : "Correct the payroll input and recalculate.",
+              escalation: "Waive with an independent approver or exclude the worker with a reason.",
+              resolvable: reason !== "missing-bank",
+            } satisfies PayrollException;
+          });
+      }),
+    );
+    return results.flat();
+  }, []);
+  const state = USE_REAL ? realState : mockState;
   const [only, setOnly] = useState<Severity | "All">("All");
   // Mirrors the shared store, so a re-render picks the store's state up.
   const [outcomes, setOutcomes] = useState<Record<string, ExceptionOutcome>>({});
   const [pending, setPending] = useState<{ e: PayrollException; kind: OutcomeKind } | null>(null);
 
-  function record(e: PayrollException, kind: OutcomeKind, reason: string) {
+  async function record(e: PayrollException, kind: OutcomeKind, reason: string) {
+    if (USE_REAL) {
+      try {
+        await realApi.payrollExceptionDecision(e.runId, e.id, kind.toLowerCase(), reason);
+        feedback.saved(`${e.id} ${kind.toLowerCase()}.`);
+        await realState.reload();
+      } catch (error) {
+        feedback.blocked(
+          "Exception decision failed",
+          error instanceof Error ? error.message : "Unknown error.",
+        );
+      }
+      return;
+    }
     const outcome: ExceptionOutcome = {
       kind,
       reason,
@@ -243,124 +332,128 @@ function ExceptionsPage() {
   return (
     <AuthGate>
       <AppShell>
-      <PageHeader
-        eyebrow="Payroll"
-        title="Exceptions"
-        description="Every exception says what failed, what it would cost if ignored, the safe next step, and what to do when it cannot be fixed in time."
-      />
-      <Async state={state} rows={3}>
-        {(rows) => {
-          const outcomeFor = (id: string) => outcomes[id] ?? getExceptionOutcome(id);
-          const outstanding = rows.filter((r) => !outcomeFor(r.id));
-          const counts = {
-            Blocking: outstanding.filter((r) => r.severity === "Blocking").length,
-            Warning: outstanding.filter((r) => r.severity === "Warning").length,
-            Advisory: outstanding.filter((r) => r.severity === "Advisory").length,
-          };
-          const shown = only === "All" ? rows : rows.filter((r) => r.severity === only);
-          const dealtWith = rows.length - outstanding.length;
+        <PageHeader
+          eyebrow="Payroll"
+          title="Exceptions"
+          description="Every exception says what failed, what it would cost if ignored, the safe next step, and what to do when it cannot be fixed in time."
+        />
+        <Async state={state} rows={3}>
+          {(rows) => {
+            const outcomeFor = (id: string) => outcomes[id] ?? getExceptionOutcome(id);
+            const outstanding = rows.filter((r) => !outcomeFor(r.id));
+            const counts = {
+              Blocking: outstanding.filter((r) => r.severity === "Blocking").length,
+              Warning: outstanding.filter((r) => r.severity === "Warning").length,
+              Advisory: outstanding.filter((r) => r.severity === "Advisory").length,
+            };
+            const shown = only === "All" ? rows : rows.filter((r) => r.severity === only);
+            const dealtWith = rows.length - outstanding.length;
 
-          return (
-            <>
-              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by severity">
-                {(["All", "Blocking", "Warning", "Advisory"] as const).map((s) => (
-                  <button
-                    key={s}
-                    role="tab"
-                    aria-selected={only === s}
-                    onClick={() => setOnly(s)}
-                    className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-                      only === s
-                        ? "border-primary bg-primary-soft font-medium text-primary"
-                        : "bg-surface text-muted-foreground hover:border-border-strong"
-                    }`}
-                  >
-                    {s}
-                    {s !== "All" ? ` (${counts[s]})` : ` (${outstanding.length})`}
-                  </button>
-                ))}
-              </div>
+            return (
+              <>
+                <div
+                  className="flex flex-wrap gap-2"
+                  role="tablist"
+                  aria-label="Filter by severity"
+                >
+                  {(["All", "Blocking", "Warning", "Advisory"] as const).map((s) => (
+                    <button
+                      key={s}
+                      role="tab"
+                      aria-selected={only === s}
+                      onClick={() => setOnly(s)}
+                      className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                        only === s
+                          ? "border-primary bg-primary-soft font-medium text-primary"
+                          : "bg-surface text-muted-foreground hover:border-border-strong"
+                      }`}
+                    >
+                      {s}
+                      {s !== "All" ? ` (${counts[s]})` : ` (${outstanding.length})`}
+                    </button>
+                  ))}
+                </div>
 
-              {counts.Blocking > 0 ? (
-                <p className="flex gap-2 rounded-md border border-danger/40 bg-danger-soft p-3 text-sm text-danger">
-                  <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <span>
-                    {counts.Blocking} blocking exception{counts.Blocking === 1 ? "" : "s"} — no affected
-                    run can be approved or released until each one is resolved, waived by someone with
-                    authority, or the employee is excluded with a recorded reason.
-                  </span>
-                </p>
-              ) : (
-                <p className="flex gap-2 rounded-md border border-success/30 bg-success-soft p-3 text-sm text-success">
-                  <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  Nothing blocking is outstanding. Runs can go for approval.
-                </p>
-              )}
+                {counts.Blocking > 0 ? (
+                  <p className="flex gap-2 rounded-md border border-danger/40 bg-danger-soft p-3 text-sm text-danger">
+                    <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span>
+                      {counts.Blocking} blocking exception{counts.Blocking === 1 ? "" : "s"} — no
+                      affected run can be approved or released until each one is resolved, waived by
+                      someone with authority, or the employee is excluded with a recorded reason.
+                    </span>
+                  </p>
+                ) : (
+                  <p className="flex gap-2 rounded-md border border-success/30 bg-success-soft p-3 text-sm text-success">
+                    <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    Nothing blocking is outstanding. Runs can go for approval.
+                  </p>
+                )}
 
-              {dealtWith > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {dealtWith} dealt with in this session. Each one stays listed with its outcome —
-                  clearing an exception never removes the record of it.
-                </p>
-              ) : null}
+                {dealtWith > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {dealtWith} dealt with in this session. Each one stays listed with its outcome —
+                    clearing an exception never removes the record of it.
+                  </p>
+                ) : null}
 
-              <ul className="space-y-4">
-                {shown.map((e) => (
-                  <ExceptionCard
-                    key={e.id}
-                    e={e}
-                    outcome={outcomeFor(e.id)}
-                    onAction={(kind) => setPending({ e, kind })}
-                    onReopen={() => {
-                      clearExceptionOutcome(e.id);
-                      setOutcomes((s) => {
-                        const n = { ...s };
-                        delete n[e.id];
-                        return n;
-                      });
-                      feedback.note(`${e.id} reopened.`, "It counts against the run again.");
-                    }}
-                  />
-                ))}
-              </ul>
+                <ul className="space-y-4">
+                  {shown.map((e) => (
+                    <ExceptionCard
+                      key={e.id}
+                      e={e}
+                      outcome={outcomeFor(e.id)}
+                      onAction={(kind) => setPending({ e, kind })}
+                      onReopen={() => {
+                        clearExceptionOutcome(e.id);
+                        setOutcomes((s) => {
+                          const n = { ...s };
+                          delete n[e.id];
+                          return n;
+                        });
+                        feedback.note(`${e.id} reopened.`, "It counts against the run again.");
+                      }}
+                    />
+                  ))}
+                </ul>
 
-              {pending
-                ? (() => {
-                    const cfg = dialogFor(pending.e, pending.kind);
-                    return (
-                      <ReasonDialog
-                        open
-                        onOpenChange={(o) => !o && setPending(null)}
-                        title={cfg.title}
-                        consequence={cfg.consequence}
-                        detail={
-                          pending.kind === "Waived" ? (
-                            <span className="block">
-                              <span className="block font-medium">{pending.e.kind}</span>
-                              <span className="mt-0.5 block text-xs text-muted-foreground">
-                                {pending.e.impact}
+                {pending
+                  ? (() => {
+                      const cfg = dialogFor(pending.e, pending.kind);
+                      return (
+                        <ReasonDialog
+                          open
+                          onOpenChange={(o) => !o && setPending(null)}
+                          title={cfg.title}
+                          consequence={cfg.consequence}
+                          detail={
+                            pending.kind === "Waived" ? (
+                              <span className="block">
+                                <span className="block font-medium">{pending.e.kind}</span>
+                                <span className="mt-0.5 block text-xs text-muted-foreground">
+                                  {pending.e.impact}
+                                </span>
                               </span>
-                            </span>
-                          ) : undefined
-                        }
-                        reasonLabel={cfg.reasonLabel}
-                        placeholder={cfg.placeholder}
-                        confirmLabel={cfg.confirmLabel}
-                        destructive={cfg.destructive}
-                        blockedBecause={cfg.blockedBecause}
-                        onConfirm={(reason) => {
-                          record(pending.e, pending.kind, reason);
-                          setPending(null);
-                        }}
-                      />
-                    );
-                  })()
-                : null}
-            </>
-          );
-        }}
-      </Async>
-    </AppShell>
-      </AuthGate>
+                            ) : undefined
+                          }
+                          reasonLabel={cfg.reasonLabel}
+                          placeholder={cfg.placeholder}
+                          confirmLabel={cfg.confirmLabel}
+                          destructive={cfg.destructive}
+                          blockedBecause={cfg.blockedBecause}
+                          onConfirm={(reason) => {
+                            void record(pending.e, pending.kind, reason);
+                            setPending(null);
+                          }}
+                        />
+                      );
+                    })()
+                  : null}
+              </>
+            );
+          }}
+        </Async>
+      </AppShell>
+    </AuthGate>
   );
 }

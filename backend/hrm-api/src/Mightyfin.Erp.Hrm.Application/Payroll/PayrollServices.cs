@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
@@ -34,16 +35,28 @@ public interface IPayrollService
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
 
     // Run lifecycle
-    Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct);
+    Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
+    Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
-    Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct);
-    Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct);
+    Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
-    Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct);
-    Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct);
+    Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
 
     // M6: reversal of a released run (audit-preserving — never deletes history)
-    Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct);
+    Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system");
+
+    // M27: bank-file workflow, reconciliation, and run-scoped audit history.
+    Task<PayrollRunDto> GeneratePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct);
+    Task<PayrollRunDto> ApprovePaymentFileAsync(Guid id, PayrollPaymentApprovalRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ReconcileRunAsync(Guid id, PayrollReconciliationRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<List<PayrollRunEventDto>> GetRunAuditAsync(Guid id, CancellationToken ct);
+    Task<string> ExportRunAuditAsync(Guid id, CancellationToken ct);
 
     // M6: YTD-aware payslip document generation
     Task<PayslipDto> GeneratePayslipDocumentAsync(Guid payslipId, CancellationToken ct);
@@ -311,7 +324,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return items.Select(r => new ContributionRuleDto(r.Id, r.Code, r.Name, r.Payer, r.Rate, r.Ceiling, r.Floor)).ToList();
     }
 
-    public async Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct)
+    public async Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var items = await repo.ListRunsAsync(ct);
+        return new Paged<PayrollRunDto>(items.Select(MapRun).ToList(), items.Count, 1, 100);
+    }
+
+    public async Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
@@ -321,8 +341,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var existing = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
         if (existing is not null)
             throw new DomainException("run-already-exists", "A payroll run already exists for this period.");
-        var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId, Status = "draft", CalcVersion = "engine-v1" };
+        var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId, Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId };
         var created = await repo.CreateRunAsync(run, ct);
+        await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
     }
 
@@ -386,18 +407,20 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     /// <summary>Locks the run for editing (freeze inputs before calculation).
     /// Segregation of duties: only draft runs can be locked; calculate then
     /// proceeds from locked.</summary>
-    public async Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct)
+    public async Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status != "draft")
             throw new DomainException("run-not-lockable", $"Run is in status {run.Status}; only draft runs can be locked.");
         run.Status = "locked";
+        run.LockedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "inputs-locked", actorSubjectId, "draft", "locked", null, null, ct);
         return MapRun(run);
     }
 
-    public async Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct)
+    public async Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
@@ -442,7 +465,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             await repo.AddRunLineAsync(line, ct);
         }
         run.Status = "calculated";
+        run.CalculatedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "calculated", actorSubjectId, "calculating", "calculated", null,
+            new { run.EmployeeCount, run.ExceptionCount, run.TotalGross, run.TotalNet }, ct);
         return MapRun(run);
     }
 
@@ -460,25 +486,104 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return new Paged<PayrollRunLineDto>(items.Select(l => new PayrollRunLineDto(
             l.Id, l.WorkerId, l.Worker?.FullName ?? "", l.Worker?.EmployeeNo ?? "",
             l.GrossPay, l.TotalDeductions, l.NetPay, l.EmployerCost, l.HasException, l.ExceptionReason,
-            l.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList())).ToList(), total, 1, 100);
+            l.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
+            l.ExceptionStatus, l.ExceptionDecisionReason, l.ExceptionDecidedBySubjectId, l.ExceptionDecidedAt, l.IsExcluded)).ToList(), total, 1, 100);
     }
 
-    public async Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct)
+    public async Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await RequireCalculatedRunAsync(id, ct);
+        var line = await repo.GetRunLineAsync(id, lineId, ct)
+            ?? throw new DomainException("payroll-line-not-found", $"Line {lineId} does not belong to run {id}.");
+        if (!line.HasException)
+            throw new DomainException("payroll-line-no-exception", "This line has no exception to decide.");
+        var decision = request.Decision.Trim().ToLowerInvariant();
+        if (decision is not ("resolved" or "waived" or "excluded"))
+            throw new DomainException("bad-exception-decision", "Decision must be resolved, waived, or excluded.");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("exception-reason-required", "A reason is required for every exception decision.");
+        if (decision == "waived" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("exception-self-waiver", "The run preparer cannot waive their own exception. A separate approver must record the waiver.");
+
+        line.ExceptionStatus = decision;
+        line.ExceptionDecisionReason = request.Reason.Trim();
+        line.ExceptionDecidedBySubjectId = actorSubjectId;
+        line.ExceptionDecidedAt = DateTimeOffset.UtcNow;
+        line.IsExcluded = decision == "excluded";
+        await repo.UpdateRunLineAsync(line, ct);
+        await repo.RecalculateRunTotalsAsync(run, ct);
+        await RecordEventAsync(run, $"exception-{decision}", actorSubjectId, run.Status, run.Status,
+            request.Reason, new { lineId, line.WorkerId, line.ExceptionReason }, ct);
+        return MapRun(run);
+    }
+
+    public async Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await RequireCalculatedRunAsync(id, ct);
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("correction-reason-required", "A reason is required for a payroll correction.");
+        var line = await repo.GetRunLineAsync(id, lineId, ct)
+            ?? throw new DomainException("payroll-line-not-found", $"Line {lineId} does not belong to run {id}.");
+        var component = line.Components.FirstOrDefault(c => c.ComponentCode.Equals(request.ComponentCode, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
+        var before = component.Amount;
+        component.Amount = Math.Round(request.Amount, 2);
+        var delta = component.Amount - before;
+        switch (component.ComponentType)
+        {
+            case "earning": line.GrossPay += delta; line.NetPay += delta; break;
+            case "deduction":
+            case "tax": line.TotalDeductions += delta; line.NetPay -= delta; break;
+            case "employer-contribution": line.EmployerCost += delta; break;
+        }
+        line.ExceptionStatus = "resolved";
+        line.ExceptionDecisionReason = request.Reason.Trim();
+        line.ExceptionDecidedBySubjectId = actorSubjectId;
+        line.ExceptionDecidedAt = DateTimeOffset.UtcNow;
+        line.IsExcluded = false;
+        await repo.UpdateRunLineAsync(line, ct);
+        await repo.RecalculateRunTotalsAsync(run, ct);
+        await RecordEventAsync(run, "correction-applied", actorSubjectId, run.Status, run.Status, request.Reason,
+            new { lineId, line.WorkerId, component = component.ComponentCode, before, after = component.Amount }, ct);
+        return MapRun(run);
+    }
+
+    private async Task<PayrollRun> RequireCalculatedRunAsync(Guid id, CancellationToken ct)
+    {
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "calculated")
+            throw new DomainException("run-not-correctable", $"Run is in status {run.Status}; exceptions and corrections can only change a calculated run before approval.");
+        return run;
+    }
+
+    public async Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status != "calculated")
             throw new DomainException("run-not-review-ready", $"Run is in status {run.Status}; it must be calculated before approval.");
+        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("run-self-approval", "The person who prepared this run cannot approve it. Send it to a separate payroll or HR approver.");
+        var (lines, _) = await repo.ListRunLinesAsync(id, ct);
+        var outstanding = lines.Count(l => l.HasException && l.ExceptionStatus == "open" && !l.IsExcluded);
+        if (actorSubjectId != "system" && outstanding > 0)
+            throw new DomainException("run-exceptions-open", $"Run has {outstanding} outstanding exception(s). Resolve, waive, or exclude each exception before approval.");
         run.Status = "approved";
         run.ApprovalNote = note;
+        run.ApprovedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "approved", actorSubjectId, "calculated", "approved", note, null, ct);
         return MapRun(run);
     }
 
     /// <summary>Release finalizes payslips and generates the payment file
     /// payload. Segregation of duties: releaser cannot be the sole approver —
     /// enforced here by requiring status = approved (approval was a separate actor).</summary>
-    public async Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct)
+    public async Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
@@ -499,9 +604,12 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         }
         if (run.Status != "approved")
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
+        if (actorSubjectId != "system" && string.Equals(run.ApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("run-self-release", "The approver cannot also release the run. A separate payroll officer must release it.");
         async Task ReleaseAndEnqueue(CancellationToken transactionCt)
         {
             run.Status = "released";
+            run.ReleasedBySubjectId = actorSubjectId;
             await repo.UpdateRunAsync(run, transactionCt);
             // Reversal runs negate the original: supersede its payslips FIRST so the
             // replacement payslips generated below can chain to them via SupersedesId.
@@ -541,6 +649,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             await ReleaseAndEnqueue(ct);
         else
             await unitOfWork.ExecuteAsync(ReleaseAndEnqueue, ct);
+        await RecordEventAsync(run, "payslips-released", actorSubjectId, "approved", "released", null,
+            new { run.EmployeeCount, run.TotalNet }, ct);
         return MapRun(run);
     }
 
@@ -548,7 +658,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     /// reversal run in the same period whose release negates the original. The
     /// original run's payslips are superseded once the reversal is released; the
     /// original's status moves to reversed and it can never be re-released.</summary>
-    public async Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct)
+    public async Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
@@ -575,7 +685,132 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             ReversesRunId = run.Id,
         };
         await repo.CreateRunAsync(reversal, ct);
+        reversal.PreparedBySubjectId = actorSubjectId;
+        await repo.UpdateRunAsync(reversal, ct);
+        await RecordEventAsync(run, "reversal-created", actorSubjectId, "released", "reversed", request.Reason,
+            new { reversalRunId = reversal.Id }, ct);
+        await RecordEventAsync(reversal, "created-as-reversal", actorSubjectId, null, "draft", request.Reason,
+            new { originalRunId = run.Id }, ct);
         return MapRun(reversal);
+    }
+
+    public async Task<PayrollRunDto> GeneratePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "released")
+            throw new DomainException("payment-run-not-released", "Payslips must be released before a payment file can be generated.");
+        if (run.PaymentStatus != "not-created")
+            throw new DomainException("payment-file-exists", $"The payment workflow is already in status {run.PaymentStatus}.");
+        var rows = await repo.ListPaymentRowsAsync(id, ct);
+        if (rows.Count == 0) throw new DomainException("payment-file-empty", "No payable workers remain in this run.");
+        if (rows.Any(x => string.IsNullOrWhiteSpace(x.AccountNumber)))
+            throw new DomainException("payment-bank-details-missing", "Every payable worker must have primary bank details before file generation.");
+        run.PaymentStatus = "generated";
+        run.PaymentFileReference = $"PAY-{DateTimeOffset.UtcNow:yyyyMMdd}-{run.Id.ToString("N")[..8].ToUpperInvariant()}";
+        run.PaymentFileGeneratedAt = DateTimeOffset.UtcNow;
+        run.PaymentFileGeneratedBySubjectId = actorSubjectId;
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "payment-file-generated", actorSubjectId, "not-created", "generated", null,
+            new { run.PaymentFileReference, rowCount = rows.Count, run.TotalNet }, ct);
+        return MapRun(run);
+    }
+
+    public async Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.PaymentStatus == "not-created") throw new DomainException("payment-file-not-generated", "Generate the payment file first.");
+        var sb = new StringBuilder("payment_reference,employee_no,employee_name,bank,branch_code,account_name,account_number,amount,currency\n");
+        foreach (var row in await repo.ListPaymentRowsAsync(id, ct))
+            sb.AppendLine(string.Join(',', Csv(run.PaymentFileReference), Csv(row.EmployeeNo), Csv(row.WorkerName), Csv(row.BankName),
+                Csv(row.BranchCode), Csv(row.AccountName), Csv(row.AccountNumber), row.Amount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), "ZMW"));
+        return sb.ToString();
+    }
+
+    public async Task<PayrollRunDto> ApprovePaymentFileAsync(Guid id, PayrollPaymentApprovalRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.PaymentStatus != "generated") throw new DomainException("payment-not-approvable", $"Payment is in status {run.PaymentStatus}.");
+        if (string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("payment-self-approval", "The person who generated the payment file cannot approve it.");
+        run.PaymentStatus = "approved";
+        run.PaymentApprovedBySubjectId = actorSubjectId;
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "payment-approved", actorSubjectId, "generated", "approved", request.Note, null, ct);
+        return MapRun(run);
+    }
+
+    public async Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.PaymentStatus != "approved") throw new DomainException("payment-not-releasable", $"Payment is in status {run.PaymentStatus}.");
+        if (string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("payment-self-release", "The payment approver cannot also release the bank instruction.");
+        run.PaymentStatus = "released";
+        run.PaymentReleasedBySubjectId = actorSubjectId;
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "payment-released", actorSubjectId, "approved", "released", null,
+            new { run.PaymentFileReference, run.TotalNet }, ct);
+        return MapRun(run);
+    }
+
+    public async Task<PayrollRunDto> ReconcileRunAsync(Guid id, PayrollReconciliationRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.PaymentStatus != "released") throw new DomainException("payment-not-reconcilable", $"Payment is in status {run.PaymentStatus}.");
+        if (string.IsNullOrWhiteSpace(request.Reference)) throw new DomainException("reconciliation-reference-required", "A bank reconciliation reference is required.");
+        if (request.ActualAmount != run.TotalNet)
+            throw new DomainException("reconciliation-amount-mismatch", $"Bank total {request.ActualAmount:F2} does not match payroll net {run.TotalNet:F2}.");
+        run.PaymentStatus = "reconciled";
+        run.Status = "closed";
+        run.ReconciledBySubjectId = actorSubjectId;
+        run.ReconciliationReference = request.Reference.Trim();
+        run.ReconciledAmount = request.ActualAmount;
+        run.ReconciledAt = DateTimeOffset.UtcNow;
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "reconciled-and-closed", actorSubjectId, "released", "closed", request.Note,
+            new { request.Reference, request.ActualAmount }, ct);
+        return MapRun(run);
+    }
+
+    public async Task<List<PayrollRunEventDto>> GetRunAuditAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        _ = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        return (await repo.ListRunEventsAsync(id, ct)).Select(MapEvent).ToList();
+    }
+
+    public async Task<string> ExportRunAuditAsync(Guid id, CancellationToken ct)
+    {
+        var rows = await GetRunAuditAsync(id, ct);
+        var sb = new StringBuilder("timestamp,action,actor,from_status,to_status,reason,details\n");
+        foreach (var row in rows)
+            sb.AppendLine(string.Join(',', Csv(row.CreatedAt.ToString("O")), Csv(row.Action), Csv(row.ActorSubjectId),
+                Csv(row.FromStatus), Csv(row.ToStatus), Csv(row.Reason), Csv(row.DetailsJson)));
+        return sb.ToString();
+    }
+
+    private async Task RecordEventAsync(PayrollRun run, string action, string actor, string? from, string? to,
+        string? reason, object? details, CancellationToken ct) =>
+        await repo.AddRunEventAsync(new PayrollRunEvent
+        {
+            RunId = run.Id, Action = action, ActorSubjectId = actor, FromStatus = from, ToStatus = to,
+            Reason = reason, DetailsJson = details is null ? null : JsonSerializer.Serialize(details)
+        }, ct);
+
+    private static PayrollRunEventDto MapEvent(PayrollRunEvent e) =>
+        new(e.Id, e.Action, e.ActorSubjectId, e.FromStatus, e.ToStatus, e.Reason, e.DetailsJson, e.CreatedAt);
+
+    private static string Csv(object? value)
+    {
+        var text = value?.ToString() ?? "";
+        return $"\"{text.Replace("\"", "\"\"")}\"";
     }
 
     /// <summary>Employer statutory liability for a period, aggregated across all
@@ -730,7 +965,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
 
     private static PayrollRunDto MapRun(PayrollRun r) => new(
         r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
-        r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId);
+        r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId,
+        r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
+        r.PaymentFileReference, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
+        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
@@ -871,6 +1109,7 @@ public interface IPayrollRepository
     Task UpdatePayGroupAsync(PayGroup group, CancellationToken ct);
     Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct);
     Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct);
+    Task<List<PayrollRun>> ListRunsAsync(CancellationToken ct);
     Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct);
     Task<PayrollRun> CreateRunAsync(PayrollRun run, CancellationToken ct);
     Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct);
@@ -878,6 +1117,12 @@ public interface IPayrollRepository
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);
+    Task<PayrollRunLine?> GetRunLineAsync(Guid runId, Guid lineId, CancellationToken ct);
+    Task UpdateRunLineAsync(PayrollRunLine line, CancellationToken ct);
+    Task RecalculateRunTotalsAsync(PayrollRun run, CancellationToken ct);
+    Task<List<PayrollPaymentRow>> ListPaymentRowsAsync(Guid runId, CancellationToken ct);
+    Task AddRunEventAsync(PayrollRunEvent item, CancellationToken ct);
+    Task<List<PayrollRunEvent>> ListRunEventsAsync(Guid runId, CancellationToken ct);
     Task<List<PayslipNotificationTarget>> FinalizePayslipsAsync(Guid runId, CancellationToken ct);
     Task<int> SupersedeOriginalPayslipsAsync(Guid originalRunId, CancellationToken ct);
     Task<PayrollRun?> FindRunByReversesIdAsync(Guid reversesRunId, CancellationToken ct);
@@ -887,3 +1132,6 @@ public interface IPayrollRepository
     Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
 }
+
+public sealed record PayrollPaymentRow(Guid WorkerId, string EmployeeNo, string WorkerName,
+    string BankName, string BranchCode, string AccountName, string AccountNumber, decimal Amount);

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -482,24 +483,55 @@ public static class Routes
         g.MapPost("/runs", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            return Results.Created("", await svc.CreateRunAsync(request, ct));
+            return Results.Created("", await svc.CreateRunAsync(request, ct, ResolveSubjectId(http) ?? "system"));
         });
+        g.MapGet("/runs", async (IPayrollService svc, CancellationToken ct) => await svc.ListRunsAsync(ct));
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
-        g.MapPost("/runs/{id:guid}/lock", async (Guid id, IPayrollService svc, CancellationToken ct) =>
-            await svc.LockRunAsync(id, ct));
-        g.MapPost("/runs/{id:guid}/calculate", async (Guid id, IPayrollService svc, CancellationToken ct) =>
-            await svc.CalculateRunAsync(id, ct));
+        g.MapPost("/runs/{id:guid}/lock", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            await svc.LockRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
+        g.MapPost("/runs/{id:guid}/calculate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            await svc.CalculateRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapGet("/runs/{id:guid}/lines", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunLinesAsync(id, ct));
         g.MapPost("/runs/{id:guid}/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var note = await ReadBodyAsync<PayrollRunApprovalNote>(http, ct);
-            await svc.ApproveRunAsync(id, note?.Note, ct);
+            await svc.ApproveRunAsync(id, note?.Note, ct, ResolveSubjectId(http) ?? "system");
             return Results.Ok();
         });
-        g.MapPost("/runs/{id:guid}/release", async (Guid id, IPayrollService svc, CancellationToken ct) =>
-            await svc.ReleaseRunAsync(id, ct));
+        g.MapPost("/runs/{id:guid}/release", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            await svc.ReleaseRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
+        g.MapPost("/runs/{id:guid}/lines/{lineId:guid}/exception", async (Guid id, Guid lineId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollExceptionDecisionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideExceptionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPost("/runs/{id:guid}/lines/{lineId:guid}/correction", async (Guid id, Guid lineId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollCorrectionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ApplyCorrectionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPost("/runs/{id:guid}/payments/generate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GeneratePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
+        g.MapGet("/runs/{id:guid}/payments/file", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            Results.Text(await svc.DownloadPaymentFileAsync(id, ct), "text/csv", Encoding.UTF8));
+        g.MapPost("/runs/{id:guid}/payments/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollPaymentApprovalRequest>(http, ct) ?? new PayrollPaymentApprovalRequest();
+            return Results.Ok(await svc.ApprovePaymentFileAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPost("/runs/{id:guid}/payments/release", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ReleasePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
+        g.MapPost("/runs/{id:guid}/reconcile", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollReconciliationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ReconcileRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapGet("/runs/{id:guid}/audit", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetRunAuditAsync(id, ct)));
+        g.MapGet("/runs/{id:guid}/audit/export", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            Results.Text(await svc.ExportRunAuditAsync(id, ct), "text/csv", Encoding.UTF8));
         // M24: per-worker statutory identity readiness — the checklist the
         // release gate above enforces; inspectable before attempting release.
         g.MapGet("/runs/{id:guid}/statutory-readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
@@ -516,7 +548,7 @@ public static class Routes
         g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();
-            return Results.Ok(await svc.ReverseRunAsync(id, request, ct));
+            return Results.Ok(await svc.ReverseRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
         });
         g.MapGet("/reports/employer-liability/{periodId:guid}", async (Guid periodId, IPayrollService svc, CancellationToken ct)
             => await svc.EmployerLiabilityReportAsync(periodId, ct));

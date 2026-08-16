@@ -285,9 +285,12 @@ function ReleaseActions({
   readiness: { isReady?: boolean } | null;
   onReleased: () => void;
 }) {
-  const [done, setDone] = useState<string[]>(() =>
-    run.stages.filter((s) => s.state === "done").map((s) => s.id),
-  );
+  const [done, setDone] = useState<string[]>(() => {
+    const stages = run.stages.filter((s) => s.state === "done").map((s) => s.id);
+    return run.status === "Paid" || run.status === "Closed"
+      ? [...new Set([...stages, "s7"])]
+      : stages;
+  });
   const [confirming, setConfirming] = useState<string | null>(null);
   const [releasing, setReleasing] = useState(false);
 
@@ -311,33 +314,6 @@ function ReleaseActions({
       toast: `Payslips released to ${run.included} employees.`,
       next: "Payments are still to be released — nobody has been paid yet.",
       api: true,
-    },
-    {
-      id: "s8",
-      label: "Release payments",
-      detail:
-        "Creates the bank instruction for the net amounts. This is the step that actually pays people.",
-      action: "Release payments",
-      consequence: `A bank instruction for ${money(run.totals.net, run.currency)} across ${run.included} employees will be created. This is the step that pays people and cannot be recalled once the bank accepts it.`,
-      blockedBy: null as string | null,
-      requires: "s7",
-      requiresText: "Release the payslips first, so employees can check their pay before it lands.",
-      toast: `Payment instruction created for ${money(run.totals.net, run.currency)}.`,
-      next: "Sent to the bank for processing. Reconcile once the bank confirms.",
-      destructive: true,
-    },
-    {
-      id: "s9",
-      label: "Post to accounting",
-      detail: "Journals, cost-centre allocation and liabilities. Can happen after payment.",
-      action: "Post to accounting",
-      consequence: `Journals for ${money(run.totals.gross, run.currency)} gross and ${money(run.totals.employerCost, run.currency)} employer cost will be posted to the ${run.period} ledger period.`,
-      blockedBy: null as string | null,
-      requires: "s8",
-      requiresText:
-        "Post after the payment is released, so the ledger matches what was actually paid.",
-      toast: `${run.period} posted to accounting.`,
-      next: "The ledger period stays open until the run is reconciled and closed.",
     },
   ];
 
@@ -434,6 +410,135 @@ function ReleaseActions({
         }}
       />
     </>
+  );
+}
+
+function PaymentWorkflow({
+  run,
+  onChanged,
+}: {
+  run: OperationalPayRun;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [reference, setReference] = useState("");
+  const status = run.paymentStatus;
+  const invoke = async (label: string, action: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await action();
+      feedback.submitted(label, "The action and actor were added to the payroll audit trail.");
+      await onChanged();
+    } catch (e) {
+      feedback.blocked(`${label} failed`, e instanceof Error ? e.message : "Unknown error.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const download = async (kind: "payment" | "audit") => {
+    const blob =
+      kind === "payment"
+        ? await realApi.payrollPaymentFile(run.id)
+        : await realApi.payrollAuditExport(run.id);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${kind === "payment" ? (run.paymentFileReference ?? `payment-${run.id}`) : `payroll-audit-${run.id}`}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border p-4" data-testid="payment-workflow">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Payment file and reconciliation</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Status:{" "}
+            <span className="font-medium text-foreground">{status.replaceAll("-", " ")}</span>
+            {run.paymentFileReference ? ` · ${run.paymentFileReference}` : ""}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void download("audit")}>
+          Export audit CSV
+        </Button>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {status === "not-created" ? (
+          <Button
+            disabled={busy || run.status !== "Paid"}
+            onClick={() =>
+              void invoke("Payment file generated", () => realApi.payrollPaymentGenerate(run.id))
+            }
+          >
+            Generate bank file
+          </Button>
+        ) : null}
+        {status !== "not-created" ? (
+          <Button variant="outline" disabled={busy} onClick={() => void download("payment")}>
+            Download bank CSV
+          </Button>
+        ) : null}
+        {status === "generated" ? (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void invoke("Payment file approved", () =>
+                realApi.payrollPaymentApprove(run.id, "Reviewed against payroll control totals"),
+              )
+            }
+          >
+            Approve payment file
+          </Button>
+        ) : null}
+        {status === "approved" ? (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void invoke("Payment instruction released", () =>
+                realApi.payrollPaymentRelease(run.id),
+              )
+            }
+          >
+            Release to bank
+          </Button>
+        ) : null}
+      </div>
+      {status === "released" ? (
+        <div className="mt-4 flex flex-wrap items-end gap-2">
+          <label className="min-w-64 flex-1 text-xs font-medium">
+            Bank acknowledgement reference
+            <input
+              className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="e.g. ZANACO-ACK-202608-001"
+            />
+          </label>
+          <Button
+            disabled={busy || !reference.trim()}
+            onClick={() =>
+              void invoke("Payroll reconciled and closed", () =>
+                realApi.payrollReconcile(
+                  run.id,
+                  reference.trim(),
+                  run.totals.net,
+                  "Bank total matched payroll net",
+                ),
+              )
+            }
+          >
+            Reconcile and close
+          </Button>
+        </div>
+      ) : null}
+      {status === "reconciled" ? (
+        <p className="mt-4 text-sm text-success">
+          Reconciled and closed
+          {run.reconciliationReference ? ` · ${run.reconciliationReference}` : ""}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -590,7 +695,14 @@ function PayLines({
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
-function adaptRun(raw: unknown): PayRun {
+type OperationalPayRun = PayRun & {
+  backendStatus: string;
+  paymentStatus: string;
+  paymentFileReference?: string;
+  reconciliationReference?: string;
+};
+
+function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
   const r = raw as Record<string, unknown>;
   const statusMap: Record<string, string> = {
     draft: "Draft",
@@ -598,8 +710,9 @@ function adaptRun(raw: unknown): PayRun {
     approved: "Approved",
     released: "Paid",
     paid: "Paid",
-    locked: "Closed",
+    locked: "Draft",
     closed: "Closed",
+    reversed: "Reversed",
   };
   const status = statusMap[String(r.status ?? "")] ?? String(r.status ?? "Draft");
   return {
@@ -612,29 +725,103 @@ function adaptRun(raw: unknown): PayRun {
     status: status as PayRun["status"],
     owner: String(r.preparedBy ?? r.owner ?? "Payroll officer"),
     nextAction:
-      status === "calculated"
+      status === "Calculated"
         ? "Send for approval"
-        : status === "approved"
+        : status === "Approved"
           ? "Release payslips"
-          : "Calculate run",
+          : status === "Paid"
+            ? "Complete payment workflow"
+            : status === "Closed"
+              ? "Cycle complete"
+              : "Calculate run",
     dueDate: String(r.cutoffDate ?? ""),
-    preparedBy: String(r.preparedBy ?? "Payroll officer"),
-    approvedBy:
-      status === "approved" || status === "paid" || status === "locked" ? "HR admin" : undefined,
-    totals: { headcount: 0, gross: 0, deductions: 0, employerCost: 0, net: 0 },
-    included: 0,
+    preparedBy: String(r.preparedBySubjectId ?? r.preparedBy ?? "Payroll officer"),
+    approvedBy: r.approvedBySubjectId ? String(r.approvedBySubjectId) : undefined,
+    totals: {
+      headcount: Number(r.employeeCount ?? 0),
+      gross: Number(r.totalGross ?? 0),
+      deductions: Number(r.totalDeductions ?? 0),
+      employerCost: Number(r.totalEmployerCost ?? 0),
+      net: Number(r.totalNet ?? 0),
+    },
+    included: Number(r.employeeCount ?? 0),
     excluded: [],
     stages: [],
-    timeline: [],
+    timeline: auditRows.map((rawEvent) => {
+      const e = rawEvent as Record<string, unknown>;
+      return {
+        id: String(e.id ?? ""),
+        at: String(e.createdAt ?? ""),
+        actor: String(e.actorSubjectId ?? "system"),
+        event: String(e.action ?? "Payroll action").replaceAll("-", " "),
+        reason: e.reason ? String(e.reason) : undefined,
+        before: e.fromStatus ? String(e.fromStatus) : undefined,
+        after: e.toStatus ? String(e.toStatus) : undefined,
+      };
+    }),
+    paymentStatus: String(r.paymentStatus ?? "not-created"),
+    backendStatus: String(r.status ?? "draft"),
+    paymentFileReference: r.paymentFileReference ? String(r.paymentFileReference) : undefined,
+    reconciliationReference: r.reconciliationReference
+      ? String(r.reconciliationReference)
+      : undefined,
   };
+}
+
+function adaptLines(raw: unknown, runId: string): RunLine[] {
+  const envelope = raw as { items?: unknown[] };
+  return (envelope.items ?? []).map((item) => {
+    const l = item as Record<string, unknown>;
+    const status = String(l.exceptionStatus ?? "open");
+    const components = (l.components as Record<string, unknown>[] | undefined) ?? [];
+    return {
+      id: String(l.id ?? ""),
+      runId,
+      employeeId: String(l.workerId ?? ""),
+      employee: String(l.workerName ?? ""),
+      jobTitle: "",
+      grade: "",
+      components: components.map((c) => ({
+        code: String(c.componentCode ?? ""),
+        label: String(c.componentName ?? ""),
+        kind:
+          String(c.componentType ?? "earning") === "earning"
+            ? "Earning"
+            : String(c.componentType ?? "") === "employer-contribution"
+              ? "Employer"
+              : "Deduction",
+        amount: Number(c.amount ?? 0),
+        source: c.isStatutory ? "Statutory" : "One-off",
+        basis: String(c.explanation ?? ""),
+        inputs: [],
+        ruleVersion: "engine-v1",
+        effectiveFrom: "",
+        explanation: String(c.explanation ?? ""),
+      })),
+      gross: Number(l.grossPay ?? 0),
+      deductions: Number(l.totalDeductions ?? 0),
+      employerCost: Number(l.employerCost ?? 0),
+      net: Number(l.netPay ?? 0),
+      flags:
+        l.hasException && status === "open"
+          ? [String(l.exceptionReason ?? "Payroll exception")]
+          : [],
+    } as RunLine;
+  });
 }
 
 function RunDetail() {
   const { id } = Route.useParams();
-  const state = useApi(async (): Promise<PayRun | null> => {
-    if (!USE_REAL) return payrollRunApi.run(id);
+  const state = useApi(async (): Promise<OperationalPayRun | null> => {
+    if (!USE_REAL) {
+      const mock = await payrollRunApi.run(id);
+      return mock
+        ? { ...mock, backendStatus: mock.status.toLowerCase(), paymentStatus: "not-created" }
+        : null;
+    }
     try {
-      return adaptRun(await realApi.payrollRun(id));
+      const [run, audit] = await Promise.all([realApi.payrollRun(id), realApi.payrollRunAudit(id)]);
+      return adaptRun(run, audit);
     } catch {
       return null;
     }
@@ -643,7 +830,7 @@ function RunDetail() {
   const lines = useApi(async (): Promise<RunLine[]> => {
     if (!USE_REAL) return payrollRunApi.linesFor(id);
     try {
-      return (await realApi.payrollRunLines(id)) as RunLine[];
+      return adaptLines(await realApi.payrollRunLines(id), id);
     } catch {
       return [];
     }
@@ -722,9 +909,7 @@ function RunDetail() {
                           size="sm"
                           disabled={
                             calculating ||
-                            run.status === "Paid" ||
-                            run.status === "Closed" ||
-                            run.status === "Approved"
+                            (run.backendStatus !== "locked" && run.backendStatus !== "calculated")
                           }
                           onClick={async () => {
                             setCalculating(true);
@@ -735,6 +920,7 @@ function RunDetail() {
                                 "Review pay lines and variances before sending for approval.",
                               );
                               await state.reload();
+                              await lines.reload();
                             } catch (e) {
                               feedback.blocked(
                                 "Calculation failed",
@@ -751,14 +937,14 @@ function RunDetail() {
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          disabled={locking || run.status !== "Approved"}
+                          disabled={locking || run.backendStatus !== "draft"}
                           onClick={async () => {
                             setLocking(true);
                             try {
                               await realApi.lockPayrollRun(run.id);
                               feedback.submitted(
-                                "Run locked.",
-                                "No further changes can be made to this period.",
+                                "Payroll inputs locked.",
+                                "The run is ready to calculate.",
                               );
                               await state.reload();
                             } catch (e) {
@@ -771,7 +957,7 @@ function RunDetail() {
                             }
                           }}
                         >
-                          {locking ? "Locking…" : "Lock run"}
+                          {locking ? "Locking…" : "Lock inputs"}
                         </Button>
                       </div>
                     ) : undefined
@@ -987,8 +1173,12 @@ function RunDetail() {
                     <ReleaseActions
                       run={run}
                       readiness={readiness.data}
-                      onReleased={readiness.reload}
+                      onReleased={async () => {
+                        await readiness.reload();
+                        await state.reload();
+                      }}
                     />
+                    {USE_REAL ? <PaymentWorkflow run={run} onChanged={state.reload} /> : null}
                   </div>
                   <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
                     <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />

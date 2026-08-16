@@ -87,6 +87,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<ContributionRule> ContributionRules => Set<ContributionRule>();
     public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
     public DbSet<PayrollRunLine> PayrollRunLines => Set<PayrollRunLine>();
+    public DbSet<PayrollRunEvent> PayrollRunEvents => Set<PayrollRunEvent>();
     public DbSet<PayrollLineComponent> PayrollLineComponents => Set<PayrollLineComponent>();
     public DbSet<Payslip> Payslips => Set<Payslip>();
     public DbSet<PayslipAccessLog> PayslipAccessLogs => Set<PayslipAccessLog>();
@@ -147,6 +148,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<ContributionRule>(modelBuilder, "contribution_rules");
         ConfigureEntity<PayrollRun>(modelBuilder, "payroll_runs");
         ConfigureEntity<PayrollRunLine>(modelBuilder, "payroll_run_lines");
+        ConfigureEntity<PayrollRunEvent>(modelBuilder, "payroll_run_events", e => e.HasIndex(x => new { x.TenantId, x.RunId, x.CreatedAt }));
         ConfigureEntity<PayrollLineComponent>(modelBuilder, "payroll_line_components");
         ConfigureEntity<Payslip>(modelBuilder, "payslips", e => e.HasIndex(x => x.PayslipNo).IsUnique());
         ConfigureEntity<PayslipAccessLog>(modelBuilder, "payslip_access_logs");
@@ -197,6 +199,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<PayrollRunLine>().HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId);
         modelBuilder.Entity<PayrollRunLine>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<PayrollRunLine>().HasMany(x => x.Components).WithOne(x => x.RunLine).HasForeignKey(x => x.RunLineId);
+        modelBuilder.Entity<PayrollRunEvent>().HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId);
         modelBuilder.Entity<Payslip>().HasOne(x => x.RunLine).WithMany().HasForeignKey(x => x.RunLineId);
         modelBuilder.Entity<Payslip>().HasMany(x => x.AccessLogs).WithOne().HasForeignKey(x => x.PayslipId);
         modelBuilder.Entity<Vacancy>().HasOne(x => x.OrgUnit).WithMany().HasForeignKey(x => x.OrgUnitId);

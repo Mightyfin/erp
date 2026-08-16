@@ -722,6 +722,10 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct)
         => await db.PayrollRuns.Include(r => r.PayPeriod).FirstOrDefaultAsync(r => r.Id == id, ct);
 
+    public async Task<List<PayrollRun>> ListRunsAsync(CancellationToken ct)
+        => await db.PayrollRuns.AsNoTracking().Include(r => r.PayPeriod)
+            .OrderByDescending(r => r.PayPeriod!.StartDate).ThenByDescending(r => r.CreatedAt).ToListAsync(ct);
+
     public async Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct)
         // Only an open (non-terminal) run blocks a new run: reversed/closed runs are
         // historical and a fresh replacement run may be created after reversal.
@@ -784,12 +788,56 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (items, items.Count);
     }
 
+    public async Task<PayrollRunLine?> GetRunLineAsync(Guid runId, Guid lineId, CancellationToken ct)
+        => await db.PayrollRunLines.Include(l => l.Worker).Include(l => l.Components)
+            .FirstOrDefaultAsync(l => l.RunId == runId && l.Id == lineId, ct);
+
+    public async Task UpdateRunLineAsync(PayrollRunLine line, CancellationToken ct)
+    {
+        if (db.Entry(line).State == EntityState.Detached) db.PayrollRunLines.Update(line);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RecalculateRunTotalsAsync(PayrollRun run, CancellationToken ct)
+    {
+        var lines = await db.PayrollRunLines.Where(l => l.RunId == run.Id && !l.IsExcluded).ToListAsync(ct);
+        run.EmployeeCount = lines.Count;
+        run.TotalGross = lines.Sum(l => l.GrossPay);
+        run.TotalDeductions = lines.Sum(l => l.TotalDeductions);
+        run.TotalNet = lines.Sum(l => l.NetPay);
+        run.TotalEmployerCost = lines.Sum(l => l.GrossPay + l.EmployerCost);
+        run.ExceptionCount = lines.Count(l => l.HasException && l.ExceptionStatus == "open");
+        await UpdateRunAsync(run, ct);
+    }
+
+    public async Task<List<PayrollPaymentRow>> ListPaymentRowsAsync(Guid runId, CancellationToken ct)
+    {
+        var lines = await db.PayrollRunLines.AsNoTracking().Include(l => l.Worker).ThenInclude(w => w!.BankDetails)
+            .Where(l => l.RunId == runId && !l.IsExcluded).OrderBy(l => l.Worker!.EmployeeNo).ToListAsync(ct);
+        return lines.Select(l =>
+        {
+            var bank = l.Worker?.BankDetails.FirstOrDefault(b => b.IsPrimary);
+            return new PayrollPaymentRow(l.WorkerId, l.Worker?.EmployeeNo ?? "", l.Worker?.FullName ?? "",
+                bank?.BankName ?? "", bank?.BranchCode ?? "", bank?.AccountName ?? "", bank?.AccountNumber ?? "", l.NetPay);
+        }).ToList();
+    }
+
+    public async Task AddRunEventAsync(PayrollRunEvent item, CancellationToken ct)
+    {
+        db.PayrollRunEvents.Add(item);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<PayrollRunEvent>> ListRunEventsAsync(Guid runId, CancellationToken ct)
+        => (await db.PayrollRunEvents.AsNoTracking().Where(e => e.RunId == runId).ToListAsync(ct))
+            .OrderBy(e => e.CreatedAt).ThenBy(e => e.Id).ToList();
+
     public async Task<List<PayslipNotificationTarget>> FinalizePayslipsAsync(Guid runId, CancellationToken ct)
     {
         var run = await db.PayrollRuns.Include(r => r.PayPeriod)
             .FirstAsync(r => r.Id == runId, ct);
         var lines = await db.PayrollRunLines.Include(l => l.Worker)
-            .Where(l => l.RunId == runId).ToListAsync(ct);
+            .Where(l => l.RunId == runId && !l.IsExcluded).ToListAsync(ct);
 
         // YTD accumulation: released (non-reversed) runs in the same pay group
         // and tax year, ordered chronologically by period label.

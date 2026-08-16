@@ -78,3 +78,90 @@ test("HR admin can inspect and retry a failed notification handoff without seein
   await expect(status).toContainText("No notification handoffs yet.");
   expect(retried).toBe(true);
 });
+
+test("payroll officer can progress the M27 payment workflow through reconciliation", async ({
+  page,
+}) => {
+  const runId = "019d0000-0000-7000-8000-000000000027";
+  let paymentStatus = "not-created";
+  let runStatus = "released";
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-payroll-officer",
+        preferred_username: "playwright.payroll",
+        realm_access: { roles: ["payroll", "hr_admin"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/payroll/runs/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (url.endsWith("/audit")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      return;
+    }
+    if (url.endsWith("/lines")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: [], totalCount: 0 }),
+      });
+      return;
+    }
+    if (url.endsWith("/statutory-readiness")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ isReady: true, workers: [] }),
+      });
+      return;
+    }
+    if (method === "POST" && url.endsWith("/payments/generate")) paymentStatus = "generated";
+    if (method === "POST" && url.endsWith("/payments/approve")) paymentStatus = "approved";
+    if (method === "POST" && url.endsWith("/payments/release")) paymentStatus = "released";
+    if (method === "POST" && url.endsWith("/reconcile")) {
+      paymentStatus = "reconciled";
+      runStatus = "closed";
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: runId,
+        status: runStatus,
+        periodLabel: "August 2026",
+        employeeCount: 3,
+        totalGross: 42000,
+        totalDeductions: 9000,
+        totalNet: 33000,
+        totalEmployerCost: 44500,
+        exceptionCount: 0,
+        preparedBySubjectId: "payroll-preparer",
+        approvedBySubjectId: "hr-approver",
+        releasedBySubjectId: "payroll-releaser",
+        paymentStatus,
+        paymentFileReference: paymentStatus === "not-created" ? null : "PAY-20260816-M27TEST",
+        reconciliationReference: paymentStatus === "reconciled" ? "BANK-ACK-M27" : null,
+      }),
+    });
+  });
+
+  await page.goto(`/hrm/payroll/runs/${runId}`);
+  const workflow = page.getByTestId("payment-workflow");
+  await expect(workflow).toContainText("not created");
+  await workflow.getByRole("button", { name: "Generate bank file" }).click();
+  await expect(workflow).toContainText("generated");
+  await workflow.getByRole("button", { name: "Approve payment file" }).click();
+  await expect(workflow).toContainText("approved");
+  await workflow.getByRole("button", { name: "Release to bank" }).click();
+  await expect(workflow).toContainText("released");
+  await workflow.getByLabel("Bank acknowledgement reference").fill("BANK-ACK-M27");
+  await workflow.getByRole("button", { name: "Reconcile and close" }).click();
+  await expect(workflow).toContainText("Reconciled and closed · BANK-ACK-M27");
+});
