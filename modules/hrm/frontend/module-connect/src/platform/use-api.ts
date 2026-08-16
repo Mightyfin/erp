@@ -363,6 +363,30 @@ export const realApi = {
   legalEntities: () => hrmApi.get<unknown[]>("/hrm/admin/legal-entities"),
   calendars: () => hrmApi.get<unknown[]>("/hrm/admin/calendars"),
   capabilities: () => hrmApi.get<unknown[]>("/hrm/admin/capabilities"),
+  /** M26 operational outbox status. Payloads and recipient addresses are never returned. */
+  notificationDeliveries: (params?: { eventType?: string; status?: string; limit?: number }) =>
+    hrmApi.get<{
+      pending: number;
+      publishing: number;
+      published: number;
+      failed: number;
+      fallbackDelivered: number;
+      items: Array<{
+        id: string;
+        publicId: string;
+        eventType: string;
+        status: string;
+        publishAttempts: number;
+        lastTransport?: string | null;
+        lastError?: string | null;
+        correlationId: string;
+        createdAt: string;
+        availableAt: string;
+        publishedAt?: string | null;
+      }>;
+    }>("/hrm/admin/notifications", params ?? {}),
+  retryNotification: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/admin/notifications/${id}/retry`, null),
 
   /* ------------------------------------------------------------------ */
   /* M19 organisation configuration CRUD (write surfaces)                */

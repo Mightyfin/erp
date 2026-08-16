@@ -128,6 +128,63 @@ public sealed class EfOutboxPublisherStore(HrmDbContext db) : IOutboxPublisherSt
     }
 }
 
+public sealed class NotificationDeliveryService(
+    HrmDbContext db,
+    IAuthzService authz) : INotificationDeliveryService
+{
+    public async Task<NotificationDeliverySummaryDto> ListAsync(
+        string? eventType, string? status, int limit, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        limit = Math.Clamp(limit, 1, 200);
+        var tenantRows = db.OutboxMessages.AsNoTracking();
+        var pending = await tenantRows.CountAsync(x => x.Status == "pending", ct);
+        var publishing = await tenantRows.CountAsync(x => x.Status == "publishing", ct);
+        var published = await tenantRows.CountAsync(x => x.Status == "published", ct);
+        var failed = await tenantRows.CountAsync(x => x.Status == "failed", ct);
+        var fallbackDelivered = await tenantRows.CountAsync(x => x.Status == "fallback-delivered", ct);
+
+        var query = tenantRows;
+        if (!string.IsNullOrWhiteSpace(eventType))
+            query = query.Where(x => x.EventType == eventType.Trim());
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(x => x.Status == status.Trim().ToLowerInvariant());
+        // Entity ids are UUIDv7, so descending id preserves creation order and
+        // remains portable across PostgreSQL and the SQLite test provider.
+        var rows = await query.OrderByDescending(x => x.Id).Take(limit).ToListAsync(ct);
+        return new NotificationDeliverySummaryDto(
+            pending, publishing, published, failed, fallbackDelivered,
+            rows.Select(MapDelivery).ToList());
+    }
+
+    public async Task<NotificationDeliveryDto> RetryAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var row = await db.OutboxMessages.FirstOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new DomainException("notification-not-found", $"Notification {id} does not exist.");
+        if (row.Status != "failed")
+            throw new DomainException("notification-not-retryable", $"Notification is {row.Status}; only failed notifications can be retried.");
+        row.Status = "pending";
+        row.AvailableAt = DateTimeOffset.UtcNow;
+        row.LastError = null;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return MapDelivery(row);
+    }
+
+    private static NotificationDeliveryDto MapDelivery(OutboxMessage row) => new(
+        row.Id, row.PublicId, row.EventType, row.Status, row.PublishAttempts,
+        row.LastTransport, SanitizeError(row.LastError), row.CorrelationId,
+        row.CreatedAt, row.AvailableAt, row.PublishedAt);
+
+    private static string? SanitizeError(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error)) return null;
+        var oneLine = string.Join(" ", error.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        return oneLine[..Math.Min(oneLine.Length, 240)];
+    }
+}
+
 public interface IHrmEventPublisher : IAsyncDisposable
 {
     Task EnsureStreamAsync(CancellationToken ct);
@@ -224,6 +281,15 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
             HrmEventTypes.RequestDecided => (
                 "Your HR request was updated",
                 $"Hello {firstName},\n\nThe status of your HR request is now {Optional(root, "status")}. Sign in to view it: {portalUrl}/hrm/requests/{Optional(root, "request_id")}\n"),
+            HrmEventTypes.LeaveRequested => (
+                "Your leave request was submitted",
+                $"Hello {firstName},\n\nYour {Optional(root, "leave_type_code")} leave request has been submitted. Sign in to view it: {portalUrl}/hrm/leave\n"),
+            HrmEventTypes.LeaveDecided => (
+                "Your leave request was updated",
+                $"Hello {firstName},\n\nYour leave request is now {Optional(root, "status")}. Sign in to view it: {portalUrl}/hrm/leave\n"),
+            HrmEventTypes.LeaveCancelled => (
+                "Your leave request was cancelled",
+                $"Hello {firstName},\n\nYour leave request has been cancelled. Sign in to view it: {portalUrl}/hrm/leave\n"),
             _ => throw new InvalidOperationException($"No SMTP fallback template exists for {row.EventType}."),
         };
 

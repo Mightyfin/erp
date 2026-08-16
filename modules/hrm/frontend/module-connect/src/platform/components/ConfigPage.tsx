@@ -16,6 +16,7 @@ export function ConfigPage({
   active,
   onSelect,
   children,
+  notice = "Nothing on this screen is saved in this build. Changing a value here would normally be recorded with who changed it, when, and what it was before.",
 }: {
   title: string;
   description: string;
@@ -23,6 +24,7 @@ export function ConfigPage({
   active: string;
   onSelect: (id: string) => void;
   children: ReactNode;
+  notice?: string;
 }) {
   return (
     <AppShell>
@@ -58,8 +60,7 @@ export function ConfigPage({
 
       <p className="flex gap-2 text-xs text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Nothing on this screen is saved in this build. Changing a value here would normally be
-        recorded with who changed it, when, and what it was before.
+        {notice}
       </p>
     </AppShell>
   );

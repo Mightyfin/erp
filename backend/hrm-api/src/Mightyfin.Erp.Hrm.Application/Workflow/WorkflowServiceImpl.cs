@@ -10,7 +10,11 @@ namespace Mightyfin.Erp.Hrm.Application.Workflow;
 /// Approved requests trigger effect application (e.g. leave approval finalizes
 /// the balance reservation; letter approval renders the template). Overdue items
 /// can be escalated up the reporting chain.</summary>
-public sealed class WorkflowServiceImpl(IWorkflowRepository repo, IAuthzService authz, ILeaveEffectApplier effects) : IWorkflowService
+public sealed class WorkflowServiceImpl(
+    IWorkflowRepository repo,
+    IAuthzService authz,
+    ILeaveEffectApplier effects,
+    IUnitOfWork? unitOfWork = null) : IWorkflowService
 {
     // draft -> submitted -> in-review -> approved | returned | rejected | cancelled
     private static readonly Dictionary<string, HashSet<string>> Transitions = new()
@@ -70,8 +74,16 @@ public sealed class WorkflowServiceImpl(IWorkflowRepository repo, IAuthzService 
             req.ReturnNote = decision.Action == "return" ? decision.Reason : req.ReturnNote;
             req.CurrentApproverId = decision.Action == "return" ? req.SubjectWorkerId : null;
         }
-        var updated = await repo.UpdateRequestAsync(req, ct);
-        await effects.ApplyAsync(updated, decision.Action, ct);
+        WorkflowRequest updated = req;
+        async Task DecideAndApply(CancellationToken transactionCt)
+        {
+            updated = await repo.UpdateRequestAsync(req, transactionCt);
+            await effects.ApplyAsync(updated, decision.Action, transactionCt);
+        }
+        if (unitOfWork is null)
+            await DecideAndApply(ct);
+        else
+            await unitOfWork.ExecuteAsync(DecideAndApply, ct);
         return updated;
     }
 

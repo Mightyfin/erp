@@ -40,7 +40,18 @@ public static class Routes
         RegisterDocuments(app);
         RegisterDq(app);
         RegisterStatutory(app);
+        RegisterNotifications(app);
         RegisterMe(app);
+    }
+
+    public static void RegisterNotifications(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/admin/notifications").RequireAuthorization();
+        g.MapGet("/", async (string? eventType, string? status, int? limit,
+            INotificationDeliveryService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ListAsync(eventType, status, limit ?? 50, ct)));
+        g.MapPost("/{id:guid}/retry", async (Guid id, INotificationDeliveryService svc, CancellationToken ct) =>
+            Results.Ok(await svc.RetryAsync(id, ct)));
     }
 
 

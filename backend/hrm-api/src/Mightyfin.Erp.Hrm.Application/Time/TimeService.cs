@@ -48,7 +48,13 @@ public sealed record AttendanceCorrectionDto(Guid Id, Guid WorkerId, string Work
     string IssueType, string? ProposedClockIn, string? ProposedClockOut, string? ProposedStatus,
     string Reason, string Status, DateTimeOffset CreatedAt);
 
-public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, IWorkflowService workflow, IWorkerRepository workers) : ITimeService
+public sealed class TimeServiceImpl(
+    ITimeRepository repo,
+    IAuthzService authz,
+    IWorkflowService workflow,
+    IWorkerRepository workers,
+    IOutboxWriter? outbox = null,
+    IUnitOfWork? unitOfWork = null) : ITimeService
 {
     public async Task<Paged<LeaveRequestDto>> ListLeaveAsync(Guid? workerId, string? status, CancellationToken ct)
     {
@@ -92,11 +98,23 @@ public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, I
             CrossesCutoff = crosses,
             Status = "submitted",
         };
-        var created = await repo.CreateLeaveRequestAsync(lr, ct);
-
-        // reserve balance and open approval workflow
-        await repo.ReserveBalanceAsync(request.WorkerId, request.LeaveTypeCode, -requestedDays, created.Id, ct);
-        await workflow.OpenAsync("leave", created.Id, created.WorkerId, JsonSerializer.Serialize(new { created.LeaveTypeCode, created.StartDate, created.EndDate, created.RequestedDays }), ct);
+        var worker = await workers.GetByIdAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {request.WorkerId} does not exist.");
+        LeaveRequest created = lr;
+        async Task CreateAndEnqueue(CancellationToken transactionCt)
+        {
+            created = await repo.CreateLeaveRequestAsync(lr, transactionCt);
+            // reserve balance and open approval workflow
+            await repo.ReserveBalanceAsync(request.WorkerId, request.LeaveTypeCode, -requestedDays, created.Id, transactionCt);
+            await workflow.OpenAsync("leave", created.Id, created.WorkerId,
+                JsonSerializer.Serialize(new { created.LeaveTypeCode, created.StartDate, created.EndDate, created.RequestedDays }), transactionCt);
+            if (outbox is null) return;
+            await EnqueueLeaveEventAsync(HrmEventTypes.LeaveRequested, created, worker, transactionCt);
+        }
+        if (unitOfWork is null)
+            await CreateAndEnqueue(ct);
+        else
+            await unitOfWork.ExecuteAsync(CreateAndEnqueue, ct);
         return Map(created);
     }
 
@@ -290,29 +308,40 @@ public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, I
         if (lr.Status != "submitted" && lr.Status != "in-review")
             throw new DomainException("leave-not-reviewable", $"Leave request is {lr.Status} and cannot be decided.");
 
-        switch (request.Action.ToLowerInvariant())
+        LeaveRequest decided = lr;
+        async Task DecideAndEnqueue(CancellationToken transactionCt)
         {
-            case "approve":
-                lr.Status = "approved";
-                lr.BalanceReserved = true;
-                // convert the open reservation into a permanent (taken) ledger deduction
-                await repo.ConvertReservationAsync(lr.Id, ct);
-                break;
-            case "return":
-                lr.Status = "returned";
-                lr.RejectionReason = request.Reason;
-                await repo.ReleaseReservationAsync(lr.Id, ct);
-                break;
-            case "reject":
-                lr.Status = "rejected";
-                lr.RejectionReason = request.Reason;
-                await repo.ReleaseReservationAsync(lr.Id, ct);
-                break;
-            default:
-                throw new DomainException("leave-invalid-decision",
-                    "Decision action must be approve, return or reject.");
+            switch (request.Action.ToLowerInvariant())
+            {
+                case "approve":
+                    lr.Status = "approved";
+                    lr.BalanceReserved = true;
+                    // convert the open reservation into a permanent (taken) ledger deduction
+                    await repo.ConvertReservationAsync(lr.Id, transactionCt);
+                    break;
+                case "return":
+                    lr.Status = "returned";
+                    lr.RejectionReason = request.Reason;
+                    await repo.ReleaseReservationAsync(lr.Id, transactionCt);
+                    break;
+                case "reject":
+                    lr.Status = "rejected";
+                    lr.RejectionReason = request.Reason;
+                    await repo.ReleaseReservationAsync(lr.Id, transactionCt);
+                    break;
+                default:
+                    throw new DomainException("leave-invalid-decision",
+                        "Decision action must be approve, return or reject.");
+            }
+            decided = await repo.UpdateLeaveRequestAsync(lr, transactionCt);
+            if (outbox is null || lr.Worker is null) return;
+            await EnqueueLeaveEventAsync(HrmEventTypes.LeaveDecided, lr, lr.Worker, transactionCt);
         }
-        return Map(await repo.UpdateLeaveRequestAsync(lr, ct));
+        if (unitOfWork is null)
+            await DecideAndEnqueue(ct);
+        else
+            await unitOfWork.ExecuteAsync(DecideAndEnqueue, ct);
+        return Map(decided);
     }
 
     private async Task<PunchResultDto> GetOrCreatePunchAsync(Guid workerId, DateOnly date, bool? clockIn, CancellationToken ct)
@@ -380,15 +409,45 @@ public sealed class TimeServiceImpl(ITimeRepository repo, IAuthzService authz, I
             throw new DomainException("leave-not-cancellable",
                 $"Leave request is {lr.Status} and cannot be cancelled. Only open requests can be cancelled.");
 
-        lr.Status = "cancelled";
-        await repo.UpdateLeaveRequestAsync(lr, ct);
-        await repo.ReleaseReservationAsync(lr.Id, ct);
-        // close the approval workflow so nothing is left sitting in an approver's queue.
-        // the workflow request is keyed on the worker, not the leave id
-        var wfReq = await workflow.GetOpenBySubjectAsync("leave", worker.Id, ct);
-        if (wfReq is not null)
-            await workflow.CancelAsync(wfReq.Id, ct);
+        async Task CancelAndEnqueue(CancellationToken transactionCt)
+        {
+            lr.Status = "cancelled";
+            await repo.UpdateLeaveRequestAsync(lr, transactionCt);
+            await repo.ReleaseReservationAsync(lr.Id, transactionCt);
+            // close the approval workflow so nothing is left sitting in an approver's queue.
+            // the workflow request is keyed on the worker, not the leave id
+            var wfReq = await workflow.GetOpenBySubjectAsync("leave", worker.Id, transactionCt);
+            if (wfReq is not null)
+                await workflow.CancelAsync(wfReq.Id, transactionCt);
+            if (outbox is null) return;
+            await EnqueueLeaveEventAsync(HrmEventTypes.LeaveCancelled, lr, worker, transactionCt);
+        }
+        if (unitOfWork is null)
+            await CancelAndEnqueue(ct);
+        else
+            await unitOfWork.ExecuteAsync(CancelAndEnqueue, ct);
         return Map(lr);
+    }
+
+    private async Task EnqueueLeaveEventAsync(string eventType, LeaveRequest leave, Worker worker, CancellationToken ct)
+    {
+        if (outbox is null) return;
+        await outbox.EnqueueAsync(
+            eventType,
+            worker.SubjectId ?? worker.Id.ToString("D"),
+            new
+            {
+                leave_id = leave.Id.ToString("D"),
+                worker_id = worker.Id.ToString("D"),
+                leave_type_code = leave.LeaveTypeCode,
+                start_date = leave.StartDate.ToString("yyyy-MM-dd"),
+                end_date = leave.EndDate.ToString("yyyy-MM-dd"),
+                status = leave.Status,
+                email = worker.Email ?? "",
+                first_name = worker.FirstName,
+                last_name = worker.LastName,
+            },
+            ct);
     }
 
     private static LeaveRequestDto Map(LeaveRequest r) => new(

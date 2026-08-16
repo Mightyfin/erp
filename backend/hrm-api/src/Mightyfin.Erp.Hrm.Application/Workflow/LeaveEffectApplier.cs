@@ -9,7 +9,12 @@ namespace Mightyfin.Erp.Hrm.Application.Workflow;
 /// returned leave releases the reservation; approved letters get rendered from
 /// their templates; movements and HR requests are marked approved at this stage
 /// (execution of movements is handled by the movement service).</summary>
-public sealed class LeaveEffectApplierImpl(ITimeRepository timeRepo, IWorkflowRepository workflowRepo, ILetterTemplates templates, IExperienceRepository experienceRepo, IMergeDataProvider merge) : ILeaveEffectApplier
+public sealed class LeaveEffectApplierImpl(
+    ITimeRepository timeRepo,
+    ILetterTemplates templates,
+    IExperienceRepository experienceRepo,
+    IMergeDataProvider merge,
+    IOutboxWriter? outbox = null) : ILeaveEffectApplier
 {
     public async Task ApplyAsync(WorkflowRequest request, string decisionAction, CancellationToken ct)
     {
@@ -29,15 +34,34 @@ public sealed class LeaveEffectApplierImpl(ITimeRepository timeRepo, IWorkflowRe
                 case "reject":
                     lr.Status = "rejected";
                     lr.RejectionReason = request.RejectionReason;
-                    await ReleaseReservationAsync(lr, ct);
+                    await timeRepo.ReleaseReservationAsync(lr.Id, ct);
                     break;
                 case "return":
                     lr.Status = "returned";
                     lr.ReturnNote = request.ReturnNote;
-                    await ReleaseReservationAsync(lr, ct);
+                    await timeRepo.ReleaseReservationAsync(lr.Id, ct);
                     break;
                 case "delegate":
                     return; // no state change on the subject
+            }
+            if (outbox is not null && lr.Worker is not null)
+            {
+                await outbox.EnqueueAsync(
+                    HrmEventTypes.LeaveDecided,
+                    lr.Worker.SubjectId ?? lr.Worker.Id.ToString("D"),
+                    new
+                    {
+                        leave_id = lr.Id.ToString("D"),
+                        worker_id = lr.Worker.Id.ToString("D"),
+                        leave_type_code = lr.LeaveTypeCode,
+                        start_date = lr.StartDate.ToString("yyyy-MM-dd"),
+                        end_date = lr.EndDate.ToString("yyyy-MM-dd"),
+                        status = lr.Status,
+                        email = lr.Worker.Email ?? "",
+                        first_name = lr.Worker.FirstName,
+                        last_name = lr.Worker.LastName,
+                    },
+                    ct);
             }
         }
         else if (workflowType == "attendance-correction" && request.SubjectWorkerId.HasValue)
@@ -141,12 +165,6 @@ public sealed class LeaveEffectApplierImpl(ITimeRepository timeRepo, IWorkflowRe
                     return; // no state change on the subject
             }
         }
-    }
-
-    private async Task ReleaseReservationAsync(LeaveRequest lr, CancellationToken ct)
-    {
-        if (lr.BalanceReserved)
-            await timeRepo.ReleaseReservationAsync(lr.Id, ct);
     }
 
     /// <summary>Duplicate of the status derivation used by the time service —
