@@ -28,6 +28,7 @@ export const hrmModule: ModuleDefinition = {
   shortName: "HRM",
   sections: [
     { id: "home", label: "Home", icon: Home, to: "/hrm" },
+    { id: "self-service", label: "My HR", icon: UserCog, to: "/hrm/self-service" },
     {
       id: "people",
       label: "People",
@@ -51,7 +52,12 @@ export const hrmModule: ModuleDefinition = {
           to: "/hrm/people/org",
           roles: ["hr_ops", "hr_admin", "manager"],
         },
-        { label: "Documents", to: "/hrm/people/documents" },
+        { label: "My documents", to: "/hrm/my-documents" },
+        {
+          label: "Employee documents",
+          to: "/hrm/people/documents",
+          roles: ["hr_ops", "hr_admin"],
+        },
         { label: "Privacy and consent", to: "/hrm/people/privacy" },
         { label: "Data quality", to: "/hrm/people/data-quality", roles: ["hr_ops", "hr_admin"] },
       ],

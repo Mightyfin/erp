@@ -23,6 +23,7 @@ services:
       - "127.0.0.1:28911:8080"
     volumes:
       - hrm_relations_evidence:/tmp/erp-relations-evidence
+      - hrm_employee_documents:/tmp/erp-docs
     networks:
       - erp_default
     depends_on:
@@ -114,3 +115,4 @@ networks:
 
 volumes:
   hrm_relations_evidence:
+  hrm_employee_documents:

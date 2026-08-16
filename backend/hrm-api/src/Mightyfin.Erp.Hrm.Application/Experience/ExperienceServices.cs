@@ -18,6 +18,9 @@ public interface IExperienceService
     // M25: subject-keyed mirror of ListRequestsAsync — an employee sees only
     // their own requests; HR roles keep the broad query.
     Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct);
+    Task<HrRequestDto> CreateMyRequestAsync(string subjectId, HrRequestCreate request, CancellationToken ct);
+    Task<HrRequestDto> GetMyRequestAsync(Guid requestId, string subjectId, CancellationToken ct);
+    Task<HrRequestDto> AddMyRequestMessageAsync(Guid requestId, string subjectId, HrRequestMessageCreate message, CancellationToken ct);
     Task<HrRequestDto> AddMessageAsync(Guid requestId, Guid? actorWorkerId, string actorRole, HrRequestMessageCreate message, CancellationToken ct);
     Task<HrRequestDto> ResolveRequestAsync(Guid requestId, CancellationToken ct);
 
@@ -25,13 +28,16 @@ public interface IExperienceService
     Task<Paged<HrLetterDto>> ListLettersAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<HrLetterDto> CreateLetterAsync(Guid workerId, HrLetterCreate request, CancellationToken ct);
     Task<HrLetterDto> ApproveLetterAsync(Guid id, CancellationToken ct);
+    Task<Paged<HrLetterDto>> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct);
+    Task<HrLetterDto> CreateMyLetterAsync(string subjectId, HrLetterCreate request, CancellationToken ct);
+    Task<HrLetterDto> GetMyLetterAsync(Guid id, string subjectId, CancellationToken ct);
 
     // Protected disclosure (speak up)
     Task<ProtectedDisclosureDto> SubmitDisclosureAsync(ProtectedDisclosureCreate request, CancellationToken ct);
     Task<ProtectedDisclosureStatusResponse?> GetDisclosureStatusAsync(string caseReference, string accessCode, CancellationToken ct);
 }
 
-public sealed record HrRequestDto(Guid Id, Guid? WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages);
+public sealed record HrRequestDto(Guid Id, Guid? WorkerId, string WorkerName, string Category, string Subject, string Status, string Confidentiality, DateTimeOffset CreatedAt, List<HrRequestMessageDto> Messages, string? Body = null);
 public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool IsInternalNote, DateTimeOffset CreatedAt);
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
@@ -40,9 +46,9 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
 {
     public async Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
+        authz.RequireAnyRole("hr_ops", "hr_admin");
         var (items, total) = await repo.ListRequestsAsync(workerId, status, ct);
-        return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
+        return new Paged<HrRequestDto>(items.Select(x => Map(x)).ToList(), total, 1, 50);
     }
 
     // M25: subject-keyed inbox — resolves the worker bound to the caller's
@@ -54,15 +60,42 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         // never see anyone else's requests — unknown identity → empty inbox.
         if (!string.IsNullOrEmpty(subjectId))
         {
+            if (workers is null) return new Paged<HrRequestDto>([], 0, 1, 50);
             var own = await workers.GetBySubjectAsync(subjectId, ct);
             if (own is null)
                 return new Paged<HrRequestDto>([], 0, 1, 50);
             var (items, total) = await repo.ListRequestsAsync(own.Id, status, ct);
-            return new Paged<HrRequestDto>(items.Select(Map).ToList(), total, 1, 50);
+            return new Paged<HrRequestDto>(items.Select(x => Map(x, includeInternalNotes: false)).ToList(), total, 1, 50);
         }
         // No identity claim on the caller: they have no inbox (an unlinked
         // principal must never be able to enumerate anyone's requests).
         return new Paged<HrRequestDto>([], 0, 1, 50);
+    }
+
+    public async Task<HrRequestDto> GetMyRequestAsync(Guid requestId, string subjectId, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var request = await repo.GetRequestAsync(requestId, ct)
+            ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
+        if (request.WorkerId != own.Id) throw new DomainException("hr-request-not-owned", "The request does not belong to the signed-in worker.");
+        return Map(request, includeInternalNotes: false);
+    }
+
+    public async Task<HrRequestDto> CreateMyRequestAsync(string subjectId, HrRequestCreate request, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        return await CreateRequestAsync(own.Id, request with { WorkerId = own.Id }, ct);
+    }
+
+    public async Task<HrRequestDto> AddMyRequestMessageAsync(Guid requestId, string subjectId, HrRequestMessageCreate message, CancellationToken ct)
+    {
+        if (message.IsInternalNote) throw new DomainException("internal-note-forbidden", "Employees cannot create internal HR notes.");
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var request = await repo.GetRequestAsync(requestId, ct)
+            ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
+        if (request.WorkerId != own.Id) throw new DomainException("hr-request-not-owned", "The request does not belong to the signed-in worker.");
+        if (request.Status is "resolved" or "closed") throw new DomainException("hr-request-closed", "A closed request cannot receive new replies.");
+        return await AddMessageAsync(requestId, own.Id, "employee", message with { IsInternalNote = false }, ct);
     }
 
     public async Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct)
@@ -87,6 +120,10 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
         var req = await repo.GetRequestAsync(requestId, ct) ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
+        if (actorRole == "employee" && (actorWorkerId is null || req.WorkerId != actorWorkerId))
+            throw new DomainException("hr-request-not-owned", "The request does not belong to the signed-in worker.");
+        if (actorRole == "employee" && message.IsInternalNote)
+            throw new DomainException("internal-note-forbidden", "Employees cannot create internal HR notes.");
         // internal notes are always HR-side; conversational messages record who wrote them
         var from = message.IsInternalNote ? "hr" : actorRole == "hr_ops" || actorRole == "hr_admin" ? "hr" : "employee";
         if (from == "employee" && req.Status == "awaiting-employee") req.Status = "in-progress";
@@ -136,7 +173,7 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
 
     public async Task<Paged<HrLetterDto>> ListLettersAsync(Guid? workerId, string? status, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
+        authz.RequireAnyRole("hr_ops", "hr_admin");
         var (items, total) = await repo.ListLettersAsync(workerId, status, ct);
         return new Paged<HrLetterDto>(items.Select(MapLetter).ToList(), total, 1, 50);
     }
@@ -169,6 +206,28 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         RenderAndStore(letter, ct); // re-render so final version always reflects latest worker data
         var updated = await repo.UpdateLetterAsync(letter, ct);
         return MapLetter(updated);
+    }
+
+    public async Task<Paged<HrLetterDto>> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var (items, total) = await repo.ListLettersAsync(own.Id, status, ct);
+        return new Paged<HrLetterDto>(items.Select(MapLetter).ToList(), total, 1, 50);
+    }
+
+    public async Task<HrLetterDto> CreateMyLetterAsync(string subjectId, HrLetterCreate request, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        return await CreateLetterAsync(own.Id, request with { WorkerId = own.Id }, ct);
+    }
+
+    public async Task<HrLetterDto> GetMyLetterAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var letter = await repo.GetLetterAsync(id, ct)
+            ?? throw new DomainException("letter-not-found", $"Letter {id} does not exist.");
+        if (letter.WorkerId != own.Id) throw new DomainException("letter-not-owned", "The letter does not belong to the signed-in worker.");
+        return MapLetter(letter);
     }
 
     /// <summary>Merges worker data into the matching built-in template and
@@ -232,9 +291,18 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         return chars.ToString();
     }
 
-    private static HrRequestDto Map(HrRequest r) => new(
+    private async Task<WorkerDto> RequireOwnWorkerAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        if (string.IsNullOrWhiteSpace(subjectId)) throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        if (workers is null) throw new DomainException("worker-resolution-unavailable", "Worker identity resolution is unavailable.");
+        return await workers.GetBySubjectAsync(subjectId, ct)
+            ?? throw new DomainException("not-linked", "No worker record is linked to the signed-in identity.");
+    }
+
+    private static HrRequestDto Map(HrRequest r, bool includeInternalNotes = true) => new(
         r.Id, r.WorkerId, r.Worker?.FullName ?? "", r.Category, r.Subject, r.Status, r.Confidentiality, r.CreatedAt,
-        r.Messages.Select(m => new HrRequestMessageDto(m.Id, m.From, m.Body, m.IsInternalNote, m.CreatedAt)).ToList());
+        r.Messages.Where(m => includeInternalNotes || !m.IsInternalNote).Select(m => new HrRequestMessageDto(m.Id, m.From, m.Body, m.IsInternalNote, m.CreatedAt)).ToList(), r.Body);
 
     private static HrLetterDto MapLetter(HrLetter l) => new(
         l.Id, l.WorkerId, l.Worker?.FullName ?? "", l.LetterType, l.Status, l.Addressee, l.Purpose,

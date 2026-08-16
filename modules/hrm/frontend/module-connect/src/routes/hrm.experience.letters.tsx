@@ -4,7 +4,13 @@ import { Check, Clock, Download, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { employees } from "@/mock/data";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
@@ -14,14 +20,23 @@ import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/hrm/experience/letters")({
   head: () => ({
     meta: [
       { title: "Letters — Mightyfin ERP HRM" },
-      { name: "description", content: "Request an employment letter and see exactly what it will say before it is issued." },
+      {
+        name: "description",
+        content:
+          "Request an employment letter and see exactly what it will say before it is issued.",
+      },
       { property: "og:title", content: "Letters — Mightyfin ERP HRM" },
-      { property: "og:description", content: "Request an employment letter and see exactly what it will say before it is issued." },
+      {
+        property: "og:description",
+        content:
+          "Request an employment letter and see exactly what it will say before it is issued.",
+      },
     ],
   }),
   component: LettersPage,
@@ -58,7 +73,14 @@ const letterTypes: LetterType[] = [
     id: "visa",
     name: "Visa support letter",
     purpose: "Supports a visa or travel permit application.",
-    discloses: ["Full name", "Job title", "Start date", "Salary", "Travel dates", "Passport number"],
+    discloses: [
+      "Full name",
+      "Job title",
+      "Start date",
+      "Salary",
+      "Travel dates",
+      "Passport number",
+    ],
     needsApproval: true,
     turnaround: "Usually within 3 working days",
   },
@@ -73,10 +95,9 @@ const letterTypes: LetterType[] = [
 ];
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
-const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
-
 const letterStatus: Record<string, string> = {
   generated: "Approved",
+  "pending-approval": "In review",
   pending: "In review",
   issued: "Approved",
   draft: "Draft",
@@ -136,7 +157,8 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
     {
       id: "purpose",
       title: "What do you need the letter for?",
-      purpose: "Each letter says something different. Picking the right one avoids a second request.",
+      purpose:
+        "Each letter says something different. Picking the right one avoids a second request.",
       render: () => (
         <div className="max-w-xl space-y-3">
           {letterTypes.map((t) => (
@@ -165,7 +187,8 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
     {
       id: "disclosure",
       title: "What this letter will say",
-      purpose: "Check what is disclosed before it goes anywhere. Nothing else about you is included.",
+      purpose:
+        "Check what is disclosed before it goes anywhere. Nothing else about you is included.",
       render: () => (
         <div className="max-w-xl space-y-4">
           <ul className="space-y-1.5">
@@ -224,10 +247,10 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
           <div className="rounded-lg border bg-surface-muted p-4 text-sm leading-relaxed">
             <p className="font-medium">{addressee || "To whom it may concern"}</p>
             <p className="mt-3">
-              This confirms that <span className="font-medium">{me.fullName}</span> ({me.employeeNo}) is
-              employed by Mighty Finance Solutions Industrial Services Zambia Ltd as{" "}
-              <span className="font-medium">{me.jobTitle}</span>, on a {me.employmentType.toLowerCase()}{" "}
-              basis, since {me.startDate}.
+              This confirms that <span className="font-medium">{me.fullName}</span> ({me.employeeNo}
+              ) is employed by Mighty Finance Solutions Industrial Services Zambia Ltd as{" "}
+              <span className="font-medium">{me.jobTitle}</span>, on a{" "}
+              {me.employmentType.toLowerCase()} basis, since {me.startDate}.
             </p>
             {type.discloses.includes("Gross annual salary") ? (
               <p className="mt-2">Gross annual salary: K57,600.00, paid monthly.</p>
@@ -254,9 +277,15 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
       submitLabel="Request letter"
       onSubmit={async () => {
         if (USE_REAL) {
-          const r = await realApi.createLetter({
-            workerId: DEFAULT_WORKER,
-            letterType: typeId === "salary" ? "salary" : typeId === "visa" ? "visa" : typeId === "service" ? "service" : "reference",
+          const r = await realApi.createMyLetter({
+            letterType:
+              typeId === "salary"
+                ? "salary-confirmation"
+                : typeId === "visa"
+                  ? "visa"
+                  : typeId === "service"
+                    ? "service-certificate"
+                    : "employment-confirmation",
             addressee: addressee || "To whom it may concern",
             purpose: type.name,
           });
@@ -274,35 +303,35 @@ function LettersPage() {
   const [ref, setRef] = useState<string | null>(null);
   const issuedState = useApi(
     async (): Promise<IssuedLetter[]> =>
-      USE_REAL ? adaptLetters((await realApi.experienceLetters()).items) : staticLetters,
+      USE_REAL ? adaptLetters((await realApi.myLetters()).items) : staticLetters,
     [],
   );
 
   if (ref) {
     return (
       <AuthGate>
-      <AppShell>
-        <PageHeader eyebrow="Letters" title="Request submitted" />
-        <NextSteps
-          reference={`LT-${ref}`}
-          title="Letter requested"
-          steps={[
-            "HR operations will issue it within the stated turnaround.",
-            "You will be notified here when it is ready to download.",
-            "Each issued letter carries a verification code the recipient can check.",
-          ]}
-          actions={
-            <Button
-              onClick={() => {
-                setRef(null);
-                setRequesting(false);
-              }}
-            >
-              Back to letters
-            </Button>
-          }
-        />
-      </AppShell>
+        <AppShell>
+          <PageHeader eyebrow="Letters" title="Request submitted" />
+          <NextSteps
+            reference={`LT-${ref}`}
+            title="Letter requested"
+            steps={[
+              "HR operations will issue it within the stated turnaround.",
+              "You will be notified here when it is ready to download.",
+              "Each issued letter carries a verification code the recipient can check.",
+            ]}
+            actions={
+              <Button
+                onClick={() => {
+                  setRef(null);
+                  setRequesting(false);
+                }}
+              >
+                Back to letters
+              </Button>
+            }
+          />
+        </AppShell>
       </AuthGate>
     );
   }
@@ -360,27 +389,41 @@ function LettersPage() {
           {(rows) => (
             <ul className="mt-3 divide-y rounded-lg border bg-surface">
               {rows.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center gap-3 p-4">
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-muted-foreground">{l.id}</span>
-                  <span className="text-sm font-medium">{l.type}</span>
-                  <StatusBadge status={l.status} />
-                </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  For {l.addressee} · requested {l.requested}
-                </span>
-                <span className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <ShieldCheck className="size-3.5 shrink-0 text-success" aria-hidden />
-                  Verification code {l.verification}
-                </span>
-              </span>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="size-4" aria-hidden />
-                Download
-              </Button>
-              </li>
-            ))}
+                <li key={l.id} className="flex flex-wrap items-center gap-3 p-4">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{l.id}</span>
+                      <span className="text-sm font-medium">{l.type}</span>
+                      <StatusBadge status={l.status} />
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      For {l.addressee} · requested {l.requested}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <ShieldCheck className="size-3.5 shrink-0 text-success" aria-hidden />
+                      Verification code {l.verification}
+                    </span>
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    disabled={l.status === "In review"}
+                    onClick={async () => {
+                      try {
+                        await realApi.downloadMyLetter(l.id, `${l.type}-${l.id}.txt`);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error ? error.message : "Letter download failed",
+                        );
+                      }
+                    }}
+                  >
+                    <Download className="size-4" aria-hidden />
+                    Download
+                  </Button>
+                </li>
+              ))}
             </ul>
           )}
         </Async>

@@ -20,4 +20,5 @@ public sealed class OutboxMessage : Entity
     public DateTimeOffset? PublishedAt { get; set; }
     public string? LastTransport { get; set; }
     public string? LastError { get; set; }
+    public DateTimeOffset? EmployeeReadAt { get; set; }
 }

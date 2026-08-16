@@ -81,7 +81,29 @@ function PayslipDetail() {
   const mockState = useMock(() => payrollRunApi.payslip(id), [id]);
   const realState = useApi(async () => {
     if (!USE_REAL) return null;
-    return (await realApi.payslipById(id)) as Record<string, unknown> | null;
+    const raw = (await realApi.myPayslipById(id)) as Record<string, unknown> | null;
+    if (!raw) return null;
+    const components = Array.isArray(raw.components)
+      ? (raw.components as Record<string, unknown>[]).map((component) => ({
+          ...component,
+          name: component.componentName,
+          kind:
+            component.componentType === "earning"
+              ? "Earning"
+              : component.componentType === "employer-contribution"
+                ? "Employer"
+                : "Deduction",
+        }))
+      : [];
+    return {
+      ...raw,
+      employee: raw.workerName,
+      period: raw.periodLabel,
+      gross: raw.grossPay,
+      deductions: raw.totalDeductions,
+      net: raw.netPay,
+      components,
+    };
   }, [id]);
   const [generating, setGenerating] = useState(false);
 
@@ -98,8 +120,6 @@ function PayslipDetail() {
         <Async state={state} rows={4}>
           {(slip) => {
             if (!slip) return <RestrictedState />;
-            const documentUrl = String(slip.documentUrl ?? "");
-
             type Kinded = { kind?: string } & Partial<CalculationLine>;
             const components = (slip.components ?? []) as Kinded[];
             const asLines = (xs: Kinded[]): CalculationLine[] => xs as unknown as CalculationLine[];
@@ -114,52 +134,43 @@ function PayslipDetail() {
                   title={`Payslip — ${String(slip.period ?? "")}`}
                   description={`${String(slip.employee ?? "")} · ${String(slip.entityName ?? "")}`}
                   primaryAction={
-                    documentUrl ? (
-                      <Button variant="outline" className="gap-2" asChild>
-                        <a href={documentUrl} target="_blank" rel="noreferrer">
-                          <Download className="size-4" aria-hidden />
-                          Download PDF
-                        </a>
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        className="gap-2"
-                        disabled={generating}
-                        onClick={async () => {
-                          if (USE_REAL) {
-                            setGenerating(true);
-                            try {
-                              await realApi.payslipGenerate(id);
-                              feedback.submitted(
-                                "Payslip PDF generated.",
-                                "Open the page again to download the new document.",
-                              );
-                              await realState.reload();
-                            } catch (e) {
-                              feedback.blocked(
-                                "PDF generation failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                            } finally {
-                              setGenerating(false);
-                            }
-                            return;
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      disabled={generating}
+                      onClick={async () => {
+                        if (USE_REAL) {
+                          setGenerating(true);
+                          try {
+                            const { url } = await realApi.myPayslipDownloadUrl(id);
+                            window.open(url, "_blank", "noopener,noreferrer");
+                            feedback.submitted(
+                              "Payslip download ready.",
+                              "The generated copy opened in a new browser tab.",
+                            );
+                          } catch (e) {
+                            feedback.blocked(
+                              "PDF generation failed",
+                              e instanceof Error ? e.message : "Unknown error.",
+                            );
+                          } finally {
+                            setGenerating(false);
                           }
-                          feedback.note(
-                            "Payslip PDF is not generated in this build.",
-                            "The released payslip is the record; the PDF is only a copy of it.",
-                          );
-                        }}
-                      >
-                        <Download className="size-4" aria-hidden />
-                        {USE_REAL
-                          ? generating
-                            ? "Generating…"
-                            : "Generate PDF"
-                          : "Download PDF (mock)"}
-                      </Button>
-                    )
+                          return;
+                        }
+                        feedback.note(
+                          "Payslip PDF is not generated in this build.",
+                          "The released payslip is the record; the PDF is only a copy of it.",
+                        );
+                      }}
+                    >
+                      <Download className="size-4" aria-hidden />
+                      {USE_REAL
+                        ? generating
+                          ? "Preparing…"
+                          : "Download PDF"
+                        : "Download PDF (mock)"}
+                    </Button>
                   }
                   meta={
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">

@@ -91,6 +91,7 @@ builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>(
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddScoped<IOutboxWriter, EfOutboxWriter>();
 builder.Services.AddScoped<INotificationDeliveryService, NotificationDeliveryService>();
+builder.Services.AddScoped<IEmployeeNotificationService, EmployeeNotificationService>();
 builder.Services.AddScoped<IOutboxPublisherStore, EfOutboxPublisherStore>();
 builder.Services.AddSingleton<IHrmEventPublisher, NatsHrmEventPublisher>();
 builder.Services.AddSingleton<ISmtpNotificationFallback, SmtpNotificationFallback>();

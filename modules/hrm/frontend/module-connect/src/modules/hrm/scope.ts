@@ -20,6 +20,7 @@ export const ENABLED_SECTIONS = new Set([
   "lifecycle", // M22 onboarding — statutory readiness feeds the payroll record
   "experience", // M22 HR requests — the admin inbox lands on approvals
   "reports", // M23 statutory filings — PAYE returns and remittances
+  "self-service", // M31 employee-owned profile, pay, leave, documents and notifications
   "recruitment", // M29 candidate-to-worker workflow is operational
   "relations", // M30 restricted case and protected-disclosure operations
   "configuration",
@@ -37,6 +38,10 @@ const ENABLED_PREFIXES = [
   "/hrm/payroll",
   "/hrm/approvals",
   "/hrm/requests",
+  "/hrm/self-service",
+  "/hrm/my-profile",
+  "/hrm/my-documents",
+  "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",
   "/hrm/reports", // M23 statutory filings
   "/hrm/recruitment", // M29 vacancy, candidate, offer and preboarding operations

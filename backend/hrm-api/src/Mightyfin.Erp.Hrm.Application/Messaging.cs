@@ -59,6 +59,26 @@ public interface INotificationDeliveryService
     Task<NotificationDeliveryDto> RetryAsync(Guid id, CancellationToken ct);
 }
 
+public sealed record EmployeeNotificationDto(
+    Guid Id,
+    string EventType,
+    string Title,
+    string Status,
+    string ActionUrl,
+    bool IsRead,
+    DateTimeOffset CreatedAt);
+
+public sealed record EmployeeNotificationInboxDto(
+    int UnreadCount,
+    List<EmployeeNotificationDto> Items);
+
+public interface IEmployeeNotificationService
+{
+    Task<EmployeeNotificationInboxDto> ListAsync(string subjectId, CancellationToken ct);
+    Task<EmployeeNotificationDto> MarkReadAsync(Guid id, string subjectId, CancellationToken ct);
+    Task<int> MarkAllReadAsync(string subjectId, CancellationToken ct);
+}
+
 /// <summary>Minimum recipient and payslip facts needed to build a privacy-safe
 /// notification event after payslips are finalized.</summary>
 public sealed record PayslipNotificationTarget(

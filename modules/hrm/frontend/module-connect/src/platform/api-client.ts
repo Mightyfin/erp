@@ -230,6 +230,41 @@ export const hrmApi = {
     return handleResponse(res);
   },
 
+  async uploadMyDocument(file: File, category: string, title: string): Promise<unknown> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("category", category);
+    form.append("title", title);
+    const res = await fetch(`${BASE}/hrm/me/documents`, {
+      method: "POST",
+      headers: headers(),
+      body: form,
+    });
+    return handleResponse(res);
+  },
+
+  async downloadMyDocument(documentId: string): Promise<string> {
+    const res = await fetch(`${BASE}/hrm/me/documents/${documentId}/download`, {
+      headers: headers(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
+
+  async downloadMyLetter(letterId: string): Promise<string> {
+    const res = await fetch(`${BASE}/hrm/me/letters/${letterId}/download`, {
+      headers: headers(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
+
   async downloadRelationsEvidence(evidenceId: string): Promise<string> {
     const res = await fetch(`${BASE}/hrm/relations/evidence/${evidenceId}/download`, {
       headers: headers(),

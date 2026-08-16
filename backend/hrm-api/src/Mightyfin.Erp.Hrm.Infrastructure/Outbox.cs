@@ -185,6 +185,62 @@ public sealed class NotificationDeliveryService(
     }
 }
 
+public sealed class EmployeeNotificationService(HrmDbContext db, IAuthzService authz) : IEmployeeNotificationService
+{
+    public async Task<EmployeeNotificationInboxDto> ListAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        RequireSubject(subjectId);
+        var rows = await db.OutboxMessages.AsNoTracking()
+            .Where(x => x.SubjectId == subjectId)
+            .OrderByDescending(x => x.Id)
+            .Take(100)
+            .ToListAsync(ct);
+        return new EmployeeNotificationInboxDto(rows.Count(x => x.EmployeeReadAt is null), rows.Select(MapEmployee).ToList());
+    }
+
+    public async Task<EmployeeNotificationDto> MarkReadAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        RequireSubject(subjectId);
+        var row = await db.OutboxMessages.FirstOrDefaultAsync(x => x.Id == id && x.SubjectId == subjectId, ct)
+            ?? throw new DomainException("notification-not-owned", "The notification does not belong to the signed-in worker.");
+        row.EmployeeReadAt ??= DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return MapEmployee(row);
+    }
+
+    public async Task<int> MarkAllReadAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        RequireSubject(subjectId);
+        var rows = await db.OutboxMessages.Where(x => x.SubjectId == subjectId && x.EmployeeReadAt == null).ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var row in rows) row.EmployeeReadAt = now;
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
+    private static void RequireSubject(string subjectId)
+    {
+        if (string.IsNullOrWhiteSpace(subjectId)) throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+    }
+
+    private static EmployeeNotificationDto MapEmployee(OutboxMessage row)
+    {
+        var (title, url) = row.EventType switch
+        {
+            HrmEventTypes.PayslipReleased => ("Your payslip is ready", "/hrm/payslips"),
+            HrmEventTypes.RequestDecided => ("Your HR request was updated", "/hrm/requests"),
+            HrmEventTypes.LeaveRequested => ("Your leave request was submitted", "/hrm/leave"),
+            HrmEventTypes.LeaveDecided => ("Your leave request was decided", "/hrm/leave"),
+            HrmEventTypes.LeaveCancelled => ("Your leave request was cancelled", "/hrm/leave"),
+            _ => ("HR update", "/hrm/self-service")
+        };
+        return new EmployeeNotificationDto(row.Id, row.EventType, title, row.Status, url, row.EmployeeReadAt is not null, row.CreatedAt);
+    }
+}
+
 public interface IHrmEventPublisher : IAsyncDisposable
 {
     Task EnsureStreamAsync(CancellationToken ct);

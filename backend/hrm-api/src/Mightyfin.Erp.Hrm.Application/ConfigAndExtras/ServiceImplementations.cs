@@ -576,18 +576,23 @@ public sealed class RelationsServiceImpl(IRelationsRepository repo, IAuthzServic
         reveal ? x.Description : null, reveal ? x.TriageNotes : null, reveal ? x.Outcome : null, x.AssignedToSubjectId, x.CreatedAt, history.Select(MapEvent).ToList());
 }
 
-public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepository configRepo, IAuthzService authz) : IDocumentsService
+public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepository configRepo, IAuthzService authz, IWorkerService? workers = null) : IDocumentsService
 {
     public async Task<Paged<WorkerDocumentDto>> ListDocumentsAsync(Guid workerId, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
+        authz.RequireAnyRole("hr_ops", "hr_admin");
         var (items, total) = await repo.ListDocumentsAsync(workerId, ct);
-        return new Paged<WorkerDocumentDto>(items.Select(d => new WorkerDocumentDto(d.Id, d.WorkerId, d.Category, d.Title, d.FileName, d.ContentType, d.SizeBytes, d.Classification, d.ExpiryDate?.ToString())).ToList(), total, 1, 50);
+        return new Paged<WorkerDocumentDto>(items.Select(MapDocument).ToList(), total, 1, 50);
     }
 
     public async Task<WorkerDocumentDto> UploadDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        return await StoreDocumentAsync(workerId, category, title, fileName, contentType, sizeBytes, storagePath, ct);
+    }
+
+    private async Task<WorkerDocumentDto> StoreDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
+    {
         if (!ValidDocumentCategories.Contains(category))
             throw new DomainException("document-invalid-category", $"Category '{category}' is not valid. Valid categories: {string.Join(", ", ValidDocumentCategories)}.");
         if (!AllowedContentTypes.Any(a => contentType.StartsWith(a, StringComparison.OrdinalIgnoreCase)))
@@ -597,12 +602,12 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
             throw new DomainException("document-too-large", $"Document size {sizeBytes} bytes exceeds the {MaxSizeBytes} byte limit.");
         var d = new WorkerDocument { WorkerId = workerId, Category = category, Title = title, FileName = fileName, ContentType = contentType, Classification = "internal", StoragePath = storagePath, SizeBytes = sizeBytes, IsLatest = true };
         var created = await repo.CreateDocumentAsync(d, ct);
-        return new WorkerDocumentDto(created.Id, created.WorkerId, created.Category, created.Title, created.FileName, created.ContentType, created.SizeBytes, created.Classification, created.ExpiryDate?.ToString());
+        return MapDocument(created);
     }
 
     public async Task<(WorkerDocument Document, Stream Stream)> GetDocumentStreamAsync(Guid documentId, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "employee");
+        authz.RequireAnyRole("hr_ops", "hr_admin");
         var doc = await repo.GetDocumentAsync(documentId, ct)
             ?? throw new DomainException("document-not-found", $"Document {documentId} does not exist.");
         if (!File.Exists(doc.StoragePath))
@@ -610,7 +615,43 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
         return (doc, new FileStream(doc.StoragePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan));
     }
 
+    public async Task<Paged<WorkerDocumentDto>> ListMyDocumentsAsync(string subjectId, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var (items, _) = await repo.ListDocumentsAsync(own.Id, ct);
+        var visible = items.Where(x => x.Classification != "restricted").ToList();
+        return new Paged<WorkerDocumentDto>(visible.Select(MapDocument).ToList(), visible.Count, 1, 50);
+    }
+
+    public async Task<WorkerDocumentDto> UploadMyDocumentAsync(string subjectId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        if (!SelfUploadCategories.Contains(category)) throw new DomainException("document-self-category-forbidden", "Employees may upload identity, qualification, medical, and certificate documents.");
+        return await StoreDocumentAsync(own.Id, category, title, fileName, contentType, sizeBytes, storagePath, ct);
+    }
+
+    public async Task<(WorkerDocument Document, Stream Stream)> GetMyDocumentStreamAsync(Guid documentId, string subjectId, CancellationToken ct)
+    {
+        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        var doc = await repo.GetDocumentAsync(documentId, ct)
+            ?? throw new DomainException("document-not-found", $"Document {documentId} does not exist.");
+        if (doc.WorkerId != own.Id || doc.Classification == "restricted") throw new DomainException("document-not-owned", "The document is not available to the signed-in worker.");
+        if (!File.Exists(doc.StoragePath)) throw new DomainException("document-missing", "The stored document file is unavailable.");
+        return (doc, File.OpenRead(doc.StoragePath));
+    }
+
+    private async Task<WorkerDto> RequireOwnWorkerAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        if (string.IsNullOrWhiteSpace(subjectId)) throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        if (workers is null) throw new DomainException("worker-resolution-unavailable", "Worker identity resolution is unavailable.");
+        return await workers.GetBySubjectAsync(subjectId, ct) ?? throw new DomainException("not-linked", "No worker record is linked to the signed-in identity.");
+    }
+
+    private static WorkerDocumentDto MapDocument(WorkerDocument d) => new(d.Id, d.WorkerId, d.Category, d.Title, d.FileName, d.ContentType, d.SizeBytes, d.Classification, d.ExpiryDate?.ToString(), d.CreatedAt);
+
     private static readonly HashSet<string> ValidDocumentCategories = new(StringComparer.OrdinalIgnoreCase) { "contract", "id", "qualification", "medical", "certificate", "letter", "evidence" };
+    private static readonly HashSet<string> SelfUploadCategories = new(StringComparer.OrdinalIgnoreCase) { "id", "qualification", "medical", "certificate" };
     private static readonly string[] AllowedContentTypes = { "application/pdf", "image/png", "image/jpeg", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
 
     /// <summary>Report engine (M8): headcount, leave, and payroll register built

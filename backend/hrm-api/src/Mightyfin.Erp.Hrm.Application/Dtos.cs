@@ -156,7 +156,10 @@ public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal 
     string Status, string? DocumentUrl, DateTimeOffset? ReleasedAt, Guid? SupersedesId,
     // M24: statutory identity pack snapshotted at payment time (appended so existing callers stay binary-compatible)
     string? WorkerNrc = null, string? WorkerTpin = null,
-    string? WorkerNapsaNumber = null, string? WorkerNhimaNumber = null);
+    string? WorkerNapsaNumber = null, string? WorkerNhimaNumber = null,
+    string? WorkerName = null, string? EmployeeNo = null, string? PeriodLabel = null,
+    string? PayDate = null, Guid? RunId = null, string Currency = "ZMW",
+    List<PayrollLineComponentDto>? Components = null);
 public sealed record PayrollRunReverseCreate(string? Reason = null);
 public sealed record PayrollExceptionDecisionRequest(string Decision, string Reason);
 public sealed record PayrollCorrectionRequest(string ComponentCode, decimal Amount, string Reason);

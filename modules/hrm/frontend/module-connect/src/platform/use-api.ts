@@ -21,6 +21,14 @@ export interface ApiState<T> {
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
+function downloadUrl(url: string, fileName: string) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -361,11 +369,42 @@ export const realApi = {
 
   /** Own payslips — empty list when the identity is not linked to a worker. */
   myPayslips: () => hrmApi.get<unknown>("/hrm/me/payslips"),
+  myLeave: () => hrmApi.myLeave(),
   /** Full snapshot of one own payslip. */
   myPayslipById: (id: string) => hrmApi.get<unknown>(`/hrm/me/payslips/${id}`),
+  myPayslipDownloadUrl: (id: string) =>
+    hrmApi.get<{ url: string }>(`/hrm/me/payslips/${id}/download`),
   /** Own HR-request inbox, optionally filtered by status. */
   myRequests: (status?: string) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/me/requests", status ? { status } : {}),
+  myRequest: (id: string) => hrmApi.get<Record<string, unknown>>(`/hrm/me/requests/${id}`),
+  createMyRequest: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/me/requests", body),
+  addMyRequestMessage: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/me/requests/${id}/messages`, body),
+  myLetters: (status?: string) =>
+    hrmApi.get<{ items: unknown[] }>("/hrm/me/letters", status ? { status } : {}),
+  createMyLetter: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/me/letters", body),
+  downloadMyLetter: async (id: string, fileName: string) => {
+    const url = await hrmApi.downloadMyLetter(id);
+    downloadUrl(url, fileName);
+  },
+  myDocuments: () => hrmApi.get<{ items: unknown[] }>("/hrm/me/documents"),
+  uploadMyDocument: (file: File, category: string, title: string) =>
+    hrmApi.uploadMyDocument(file, category, title),
+  downloadMyDocument: async (id: string, fileName: string) => {
+    const url = await hrmApi.downloadMyDocument(id);
+    downloadUrl(url, fileName);
+  },
+  myNotifications: () =>
+    hrmApi.get<{ unreadCount: number; items: Array<Record<string, unknown>> }>(
+      "/hrm/me/notifications",
+    ),
+  markMyNotificationRead: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/me/notifications/${id}/read`, null),
+  markAllMyNotificationsRead: () =>
+    hrmApi.post<{ markedRead: number }>("/hrm/me/notifications/read-all", null),
   /** Trigger payslip document (PDF) generation, returns the updated payslip. */
   payslipGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/payslips/${id}/generate`, null),

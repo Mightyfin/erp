@@ -73,6 +73,7 @@ public interface IPayrollService
     // token subject — an employee can never reach another worker's slips.
     Task<Paged<PayslipDto>> GetMyPayslipsAsync(string subjectId, CancellationToken ct);
     Task<PayslipDto?> GetMyPayslipByIdAsync(Guid id, string subjectId, CancellationToken ct);
+    Task<string> GetMyPayslipDownloadUrlAsync(Guid id, string subjectId, CancellationToken ct);
 
     // M24: statutory identity readiness per run — hard gate on release.
     Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
@@ -863,7 +864,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     /// payslip (idempotent — re-generating replaces the document).</summary>
     public async Task<PayslipDto> GeneratePayslipDocumentAsync(Guid payslipId, CancellationToken ct)
     {
-        authz.RequireAnyRole("employee", "payroll", "hr_admin");
+        authz.RequireAnyRole("payroll", "hr_admin");
         var slip = await repo.GetPayslipAsync(payslipId, ct)
             ?? throw new DomainException("payslip-not-found", $"Payslip {payslipId} does not exist.");
         var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
@@ -924,6 +925,27 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapPayslip(slip);
     }
 
+    public async Task<string> GetMyPayslipDownloadUrlAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin", "manager", "hr_ops");
+        if (string.IsNullOrWhiteSpace(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        var slip = await repo.GetPayslipAsync(id, ct)
+            ?? throw new DomainException("payslip-not-found", $"Payslip {id} does not exist.");
+        if (worker is null || slip.WorkerId != worker.Id)
+            throw new DomainException("payslip-not-owned", "The payslip does not belong to the signed-in worker.");
+        if (string.IsNullOrWhiteSpace(slip.DocumentUrl))
+        {
+            var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
+                ?? throw new DomainException("payslip-line-missing", $"Payslip {id} has no run line.");
+            slip.DocumentUrl = await payslipDocument.GenerateAsync(slip, line, ct);
+            slip.Status = "final";
+            await repo.UpdatePayslipAsync(slip, ct);
+        }
+        return slip.DocumentUrl;
+    }
+
     // M25: for an employee-only caller, resolve their own worker from the
     // token subject (supplied by the route layer) and confirm the worker id
     // matches their own record.
@@ -941,7 +963,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         p.Id, p.PayslipNo, p.Version, p.GrossPay, p.TotalDeductions, p.NetPay,
         p.YtdGross, p.YtdTax, p.YtdNet, p.Status, p.DocumentUrl, p.ReleasedAt, p.SupersedesId,
         // M24: statutory identity pack snapshotted at payment time
-        p.WorkerNrc, p.WorkerTpin, p.WorkerNapsaNumber, p.WorkerNhimaNumber);
+        p.WorkerNrc, p.WorkerTpin, p.WorkerNapsaNumber, p.WorkerNhimaNumber,
+        p.RunLine?.Worker?.FullName, p.RunLine?.Worker?.EmployeeNo,
+        p.RunLine?.Run?.PayPeriod?.PeriodLabel, p.RunLine?.Run?.PayPeriod?.PayDate.ToString("yyyy-MM-dd"),
+        p.RunLine?.RunId, "ZMW",
+        p.RunLine?.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList());
 
     /// <summary>M24: per-worker statutory identity readiness for the run. The
     /// four Zambian identity references (NRC, TPIN, NAPSA, NHIMA) must all be

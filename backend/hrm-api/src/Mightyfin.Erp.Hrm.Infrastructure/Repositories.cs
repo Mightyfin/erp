@@ -1040,13 +1040,19 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct)
     {
-        var items = (await db.Payslips.Where(p => p.WorkerId == workerId).ToListAsync(ct))
+        var items = (await db.Payslips.Include(p => p.RunLine).ThenInclude(l => l!.Components)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Worker)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Run).ThenInclude(r => r!.PayPeriod)
+            .Where(p => p.WorkerId == workerId).ToListAsync(ct))
             .OrderByDescending(p => p.ReleasedAt).ToList();
         return (items, items.Count);
     }
 
     public async Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct)
-        => await db.Payslips.FirstOrDefaultAsync(p => p.Id == id, ct);
+        => await db.Payslips.Include(p => p.RunLine).ThenInclude(l => l!.Components)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Worker)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Run).ThenInclude(r => r!.PayPeriod)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
 
     public async Task<PayrollRun?> FindRunByReversesIdAsync(Guid reversesRunId, CancellationToken ct)
         => await db.PayrollRuns.FirstOrDefaultAsync(r => r.ReversesRunId == reversesRunId && r.IsReversal, ct);

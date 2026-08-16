@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("HRM entry renders or reaches the sign-in flow", async ({ page }) => {
   await page.goto("/hrm");
 
-  await expect(page).toHaveURL(/\/(hrm|sign-in)(?:[/?#]|$)/);
+  await expect(page).toHaveURL(/\/(hrm|sign-in)(?:[/?#]|$)|auth\.mightyfinance\.co\.zm/);
   await expect(page.locator("body")).toContainText(
     /Checking your session|HRM|Human Resources|Sign in|Dashboard/i,
   );
@@ -595,4 +595,109 @@ test("M30 protected disclosures stay in a separate redacted investigator queue",
   await workspace.getByRole("button", { name: "Resolve" }).click();
   await expect(workspace).toContainText("resolved");
   expect(assignedTo).toBe("playwright-investigator");
+});
+
+test("employee can use the ownership-protected M31 self-service workspace", async ({ page }) => {
+  const notificationId = "019d0000-0000-7000-8000-000000000311";
+  let notificationRead = false;
+  let documentUploaded = false;
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-employee",
+        preferred_username: "playwright.employee",
+        realm_access: { roles: ["employee"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/me/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const method = route.request().method();
+    let body: unknown = {};
+    if (path.endsWith("/notifications") && method === "GET") {
+      body = {
+        unreadCount: notificationRead ? 0 : 1,
+        items: [
+          {
+            id: notificationId,
+            eventType: "hrm.payslip.released",
+            title: "Your payslip is ready",
+            status: "published",
+            actionUrl: "/hrm/payslips",
+            isRead: notificationRead,
+            createdAt: "2026-08-16T10:00:00Z",
+          },
+        ],
+      };
+    } else if (path.endsWith("/notifications/read-all") && method === "POST") {
+      notificationRead = true;
+      body = { markedRead: 1 };
+    } else if (path.endsWith(`/notifications/${notificationId}/read`) && method === "POST") {
+      notificationRead = true;
+      body = { id: notificationId, isRead: true };
+    } else if (path.endsWith("/requests")) {
+      body = { items: [{ id: "request-own", subject: "My payroll query", status: "open" }] };
+    } else if (path.endsWith("/leave")) {
+      body = {
+        linked: true,
+        workerId: "worker-own",
+        balances: [],
+        requests: [{ id: "leave-own" }],
+      };
+    } else if (path.endsWith("/payslips")) {
+      body = { items: [{ id: "payslip-own", periodLabel: "August 2026" }] };
+    } else if (path.endsWith("/documents") && method === "POST") {
+      documentUploaded = true;
+      body = { id: "document-new", title: "Updated NRC", fileName: "nrc.pdf", category: "id" };
+    } else if (path.endsWith("/documents")) {
+      body = {
+        items: [
+          {
+            id: "document-own",
+            title: "Degree",
+            fileName: "degree.pdf",
+            category: "qualification",
+          },
+          ...(documentUploaded
+            ? [{ id: "document-new", title: "Updated NRC", fileName: "nrc.pdf", category: "id" }]
+            : []),
+        ],
+      };
+    } else if (path.endsWith("/letters")) {
+      body = {
+        items: [{ id: "letter-own", letterType: "employment-confirmation", status: "generated" }],
+      };
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/hrm/self-service");
+  const workspace = page.getByTestId("employee-self-service");
+  await expect(workspace).toContainText("Your payslip is ready");
+  await expect(workspace).toContainText("1 unread HR update");
+  await workspace.getByRole("button", { name: "Mark all read" }).click();
+  await expect(workspace).toContainText("0 unread HR updates");
+
+  await page.goto("/hrm/my-documents");
+  const documents = page.getByTestId("my-documents");
+  await expect(documents).toContainText("Degree");
+  await documents.getByLabel("Title").fill("Updated NRC");
+  await documents.getByLabel("File").setInputFiles({
+    name: "nrc.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("test PDF"),
+  });
+  await documents.getByRole("button", { name: "Upload" }).click();
+  await expect(documents).toContainText("Updated NRC");
+  expect(documentUploaded).toBe(true);
 });

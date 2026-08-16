@@ -134,7 +134,60 @@ public static class Routes
         // M25 self-service: the signed-in worker's own HR requests — keyed on
         // the token subject so an employee can never list another's inbox.
         g.MapGet("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
-            Results.Ok(await svc.GetMyRequestsAsync(ResolveSubjectId(http), null, ct)));
+            Results.Ok(await svc.GetMyRequestsAsync(ResolveSubjectId(http) ?? "", null, ct)));
+        g.MapPost("/requests", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateMyRequestAsync(ResolveSubjectId(http) ?? "", request, ct));
+        });
+        g.MapGet("/requests/{id:guid}", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyRequestAsync(id, ResolveSubjectId(http) ?? "", ct)));
+        g.MapPost("/requests/{id:guid}/messages", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<HrRequestMessageCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.AddMyRequestMessageAsync(id, ResolveSubjectId(http) ?? "", request, ct));
+        });
+
+        g.MapGet("/letters", async (HttpContext http, [FromQuery] string? status, IExperienceService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetMyLettersAsync(ResolveSubjectId(http) ?? "", status, ct)));
+        g.MapPost("/letters", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<HrLetterCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateMyLetterAsync(ResolveSubjectId(http) ?? "", request, ct));
+        });
+        g.MapGet("/letters/{id:guid}/download", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
+        {
+            var letter = await svc.GetMyLetterAsync(id, ResolveSubjectId(http) ?? "", ct);
+            if (string.IsNullOrWhiteSpace(letter.TemplateBody)) throw new DomainException("letter-not-ready", "The letter is not ready to download.");
+            return Results.File(Encoding.UTF8.GetBytes(letter.TemplateBody), "text/plain; charset=utf-8", $"{letter.LetterType}-{letter.Id:N}.txt");
+        });
+
+        g.MapGet("/documents", async (HttpContext http, IDocumentsService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ListMyDocumentsAsync(ResolveSubjectId(http) ?? "", ct)));
+        g.MapPost("/documents", async (HttpContext http, IDocumentsService svc, CancellationToken ct) =>
+        {
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.FirstOrDefault() ?? throw new DomainException("bad-request", "No personal document was uploaded.");
+            if (file.Length == 0) throw new DomainException("bad-request", "Uploaded file is empty.");
+            if (file.Length > 25 * 1024 * 1024) throw new DomainException("document-too-large", "Personal documents must not exceed 25 MB.");
+            var storageDir = Path.Combine(Path.GetTempPath(), "erp-docs"); Directory.CreateDirectory(storageDir);
+            var storagePath = Path.Combine(storageDir, $"{Guid.NewGuid():N}-{Path.GetFileName(file.FileName)}");
+            await using (var fs = File.Create(storagePath)) await file.CopyToAsync(fs, ct);
+            try
+            {
+                return Results.Created("", await svc.UploadMyDocumentAsync(ResolveSubjectId(http) ?? "", form["category"].ToString(), form["title"].ToString(), file.FileName, file.ContentType ?? "application/octet-stream", file.Length, storagePath, ct));
+            }
+            catch
+            {
+                File.Delete(storagePath);
+                throw;
+            }
+        }).DisableAntiforgery();
+        g.MapGet("/documents/{id:guid}/download", async (Guid id, HttpContext http, IDocumentsService svc, CancellationToken ct) =>
+        {
+            var (document, stream) = await svc.GetMyDocumentStreamAsync(id, ResolveSubjectId(http) ?? "", ct);
+            return Results.File(stream, document.ContentType, document.FileName);
+        });
 
 
         // M25 self-service: the signed-in worker's own payslips — keyed on
@@ -149,6 +202,20 @@ public static class Routes
             var slip = await svc.GetMyPayslipByIdAsync(id, subject, ct);
             return slip is null ? Results.NotFound() : Results.Ok(slip);
         });
+        g.MapGet("/payslips/{id:guid}/download", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            return Results.Ok(new { url = await svc.GetMyPayslipDownloadUrlAsync(id, subject, ct) });
+        });
+
+        g.MapGet("/notifications", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ListAsync(ResolveSubjectId(http) ?? "", ct)));
+        g.MapPost("/notifications/{id:guid}/read", async (Guid id, HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
+            Results.Ok(await svc.MarkReadAsync(id, ResolveSubjectId(http) ?? "", ct)));
+        g.MapPost("/notifications/read-all", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
+            Results.Ok(new { markedRead = await svc.MarkAllReadAsync(ResolveSubjectId(http) ?? "", ct) }));
     }
 
     public static void RegisterWorkers(WebApplication app)
@@ -407,6 +474,8 @@ public static class Routes
         g.MapPost("/requests", async (HttpContext http, IExperienceService svc, IWorkerService ws, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            if (!http.User.IsInRole("hr_ops") && !http.User.IsInRole("hr_admin"))
+                return Results.Created("", await svc.CreateMyRequestAsync(ResolveSubjectId(http) ?? "", request, ct));
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             // M22: without a worker_id claim, resolve the caller via the M14
             // subject identity link instead of the raw sub Guid (a Keycloak
@@ -424,7 +493,10 @@ public static class Routes
         {
             var request = await ReadBodyAsync<HrRequestMessageCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var actorRole = http.User.IsInRole("hr_ops") || http.User.IsInRole("hr_admin") ? "hr_ops" : "employee";
-            await svc.AddMessageAsync(id, ResolveWorkerId(http), actorRole, request, ct);
+            if (actorRole == "employee")
+                await svc.AddMyRequestMessageAsync(id, ResolveSubjectId(http) ?? "", request, ct);
+            else
+                await svc.AddMessageAsync(id, ResolveWorkerId(http), actorRole, request, ct);
             return Results.Ok();
         });
         g.MapPost("/requests/{id:guid}/resolve", async (Guid id, IExperienceService svc, CancellationToken ct) =>
@@ -436,6 +508,8 @@ public static class Routes
         g.MapPost("/letters", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrLetterCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            if (!http.User.IsInRole("hr_ops") && !http.User.IsInRole("hr_admin"))
+                return Results.Created("", await svc.CreateMyLetterAsync(ResolveSubjectId(http) ?? "", request, ct));
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             if (workerId is null)
                 return Results.UnprocessableEntity(new ApiError("missing-worker", "WorkerId is required; either include worker_id in the body or authenticate as the worker.", []));

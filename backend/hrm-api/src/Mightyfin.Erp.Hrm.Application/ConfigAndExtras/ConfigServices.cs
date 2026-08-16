@@ -94,9 +94,12 @@ public interface IDocumentsService
     Task<Paged<WorkerDocumentDto>> ListDocumentsAsync(Guid workerId, CancellationToken ct);
     Task<WorkerDocumentDto> UploadDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
     Task<(WorkerDocument Document, Stream Stream)> GetDocumentStreamAsync(Guid documentId, CancellationToken ct);
+    Task<Paged<WorkerDocumentDto>> ListMyDocumentsAsync(string subjectId, CancellationToken ct);
+    Task<WorkerDocumentDto> UploadMyDocumentAsync(string subjectId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
+    Task<(WorkerDocument Document, Stream Stream)> GetMyDocumentStreamAsync(Guid documentId, string subjectId, CancellationToken ct);
     Task<ReportDto> GetReportAsync(ReportQuery query, CancellationToken ct);
 }
-public sealed record WorkerDocumentDto(Guid Id, Guid WorkerId, string Category, string Title, string FileName, string ContentType, long SizeBytes, string Classification, string? ExpiryDate);
+public sealed record WorkerDocumentDto(Guid Id, Guid WorkerId, string Category, string Title, string FileName, string ContentType, long SizeBytes, string Classification, string? ExpiryDate, DateTimeOffset? CreatedAt = null);
 
 /// <summary>Data-quality engine (M8): workspace rules evaluated per worker or
 /// across the tenant — completeness, identity duplicates, and expiring documents.</summary>
