@@ -359,6 +359,11 @@ export const configurationGroups: {
         to: "/hrm/configuration/integrations",
       },
       {
+        label: "Production readiness",
+        detail: "Go-live gates, evidence, rehearsals and role sign-off",
+        to: "/hrm/configuration/go-live",
+      },
+      {
         label: "Vendor and contract management",
         detail: "No vendors recorded",
         to: "/hrm/configuration/technical",

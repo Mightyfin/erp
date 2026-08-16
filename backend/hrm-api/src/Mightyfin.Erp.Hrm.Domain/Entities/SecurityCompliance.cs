@@ -26,6 +26,18 @@ public sealed class ComplianceEvidence : Entity
     public string ExecutedBySubjectId { get; set; } = null!;
 }
 
+/// <summary>Append-only, role-specific acceptance of the current go-live
+/// decision. A later decision supersedes an earlier one without destroying
+/// the audit history.</summary>
+public sealed class GoLiveSignoff : Entity
+{
+    public string RoleKey { get; set; } = null!;
+    public string Decision { get; set; } = null!; // approved | rejected | withdrawn
+    public string? Notes { get; set; }
+    public string ActorSubjectId { get; set; } = null!;
+    public DateTimeOffset SignedAt { get; set; }
+}
+
 /// <summary>A legal hold prevents retention disposal for its declared scope.</summary>
 public sealed class LegalHold : Entity
 {

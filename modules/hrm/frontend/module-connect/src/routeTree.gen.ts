@@ -26,6 +26,7 @@ import { Route as HrmAttendanceNewRouteImport } from './routes/hrm.attendance.ne
 import { Route as HrmConfigurationIndexRouteImport } from './routes/hrm.configuration.index'
 import { Route as HrmConfigurationBusinessRouteImport } from './routes/hrm.configuration.business'
 import { Route as HrmConfigurationComplianceRouteImport } from './routes/hrm.configuration.compliance'
+import { Route as HrmConfigurationGoLiveRouteImport } from './routes/hrm.configuration.go-live'
 import { Route as HrmConfigurationIntegrationsRouteImport } from './routes/hrm.configuration.integrations'
 import { Route as HrmConfigurationOrganisationRouteImport } from './routes/hrm.configuration.organisation'
 import { Route as HrmConfigurationPayrollRouteImport } from './routes/hrm.configuration.payroll'
@@ -195,6 +196,11 @@ const HrmConfigurationComplianceRoute =
     path: '/hrm/configuration/compliance',
     getParentRoute: () => rootRouteImport,
   } as any)
+const HrmConfigurationGoLiveRoute = HrmConfigurationGoLiveRouteImport.update({
+  id: '/hrm/configuration/go-live',
+  path: '/hrm/configuration/go-live',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmConfigurationIntegrationsRoute =
   HrmConfigurationIntegrationsRouteImport.update({
     id: '/hrm/configuration/integrations',
@@ -630,6 +636,7 @@ export interface FileRoutesByFullPath {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
@@ -730,6 +737,7 @@ export interface FileRoutesByTo {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
@@ -831,6 +839,7 @@ export interface FileRoutesById {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
@@ -933,6 +942,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/go-live'
     | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
@@ -1033,6 +1043,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/go-live'
     | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
@@ -1133,6 +1144,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/go-live'
     | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
@@ -1234,6 +1246,7 @@ export interface RootRouteChildren {
   HrmAttendanceNewRoute: typeof HrmAttendanceNewRoute
   HrmConfigurationBusinessRoute: typeof HrmConfigurationBusinessRoute
   HrmConfigurationComplianceRoute: typeof HrmConfigurationComplianceRoute
+  HrmConfigurationGoLiveRoute: typeof HrmConfigurationGoLiveRoute
   HrmConfigurationIntegrationsRoute: typeof HrmConfigurationIntegrationsRoute
   HrmConfigurationOrganisationRoute: typeof HrmConfigurationOrganisationRoute
   HrmConfigurationPayrollRoute: typeof HrmConfigurationPayrollRoute
@@ -1426,6 +1439,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/configuration/compliance'
       fullPath: '/hrm/configuration/compliance'
       preLoaderRoute: typeof HrmConfigurationComplianceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/go-live': {
+      id: '/hrm/configuration/go-live'
+      path: '/hrm/configuration/go-live'
+      fullPath: '/hrm/configuration/go-live'
+      preLoaderRoute: typeof HrmConfigurationGoLiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/configuration/integrations': {
@@ -2153,6 +2173,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmAttendanceNewRoute: HrmAttendanceNewRoute,
   HrmConfigurationBusinessRoute: HrmConfigurationBusinessRoute,
   HrmConfigurationComplianceRoute: HrmConfigurationComplianceRoute,
+  HrmConfigurationGoLiveRoute: HrmConfigurationGoLiveRoute,
   HrmConfigurationIntegrationsRoute: HrmConfigurationIntegrationsRoute,
   HrmConfigurationOrganisationRoute: HrmConfigurationOrganisationRoute,
   HrmConfigurationPayrollRoute: HrmConfigurationPayrollRoute,

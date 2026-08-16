@@ -49,7 +49,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             {
                 if (!string.Equals(entry.Entity.TenantId, tenantId, StringComparison.Ordinal))
                     throw new DomainException("cross-tenant-write", "A record from another tenant cannot be changed.");
-                if (entry.Entity is AuditEntry or PrivilegedActionEvent or Mightyfin.Erp.Hrm.Domain.Entities.ComplianceEvidence)
+                if (entry.Entity is AuditEntry or PrivilegedActionEvent or Mightyfin.Erp.Hrm.Domain.Entities.ComplianceEvidence or GoLiveSignoff)
                     throw new DomainException("audit-immutable", "Compliance and audit evidence is append-only.");
             }
         }
@@ -112,6 +112,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<IntegrationOperation> IntegrationOperations => Set<IntegrationOperation>();
     public DbSet<PrivilegedActionEvent> PrivilegedActionEvents => Set<PrivilegedActionEvent>();
     public DbSet<ComplianceEvidence> ComplianceEvidenceRecords => Set<ComplianceEvidence>();
+    public DbSet<GoLiveSignoff> GoLiveSignoffs => Set<GoLiveSignoff>();
     public DbSet<LegalHold> LegalHolds => Set<LegalHold>();
 
     // Config & extras
@@ -227,6 +228,8 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         });
         ConfigureEntity<ComplianceEvidence>(modelBuilder, "compliance_evidence", e =>
             e.HasIndex(x => new { x.TenantId, x.ControlKey, x.ExecutedAt }));
+        ConfigureEntity<GoLiveSignoff>(modelBuilder, "go_live_signoffs", e =>
+            e.HasIndex(x => new { x.TenantId, x.RoleKey, x.SignedAt }));
         ConfigureEntity<LegalHold>(modelBuilder, "legal_holds", e =>
             e.HasIndex(x => new { x.TenantId, x.Reference }).IsUnique().HasFilter("status = 'active'"));
         ConfigureEntity<CapabilityConfig>(modelBuilder, "capability_configs");

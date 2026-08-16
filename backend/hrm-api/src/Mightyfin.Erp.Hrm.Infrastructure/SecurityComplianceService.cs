@@ -55,8 +55,11 @@ public sealed class SecurityComplianceService(
     {
         authz.RequireAnyRole("hr_admin");
         var key = request.ControlKey.Trim().ToLowerInvariant();
-        if (key is not ("backup-restore" or "tenant-isolation" or "security-test"))
-            throw new DomainException("control-key-invalid", "Control must be backup-restore, tenant-isolation, or security-test.");
+        if (key is not ("backup-restore" or "tenant-isolation" or "security-test" or
+            "migration-rehearsal" or "performance-test" or "monitoring-alerts" or
+            "incident-runbook" or "rollback-rehearsal" or "uat-hr" or "uat-payroll" or
+            "training-hr" or "training-payroll"))
+            throw new DomainException("control-key-invalid", "The control key is not recognised.");
         var status = request.Status.Trim().ToLowerInvariant();
         if (status is not ("passed" or "failed"))
             throw new DomainException("control-status-invalid", "Evidence status must be passed or failed.");

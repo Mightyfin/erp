@@ -14,7 +14,7 @@ services:
     build:
       context: ../..
       dockerfile: deployment/hrm/Dockerfile
-    image: mightyfin/hrm-api:local
+    image: ${HRM_API_IMAGE:-mightyfin/hrm-api:local}
     container_name: hrm-api-1
     restart: unless-stopped
     env_file:
@@ -38,7 +38,7 @@ services:
     build:
       context: ../..
       dockerfile: deployment/hrm/Dockerfile
-    image: mightyfin/hrm-api:local
+    image: ${HRM_API_IMAGE:-mightyfin/hrm-api:local}
     container_name: hrm-migrate-1
     entrypoint: ["dotnet", "Mightyfin.Erp.Hrm.Api.dll", "--apply-migrations-only"]
     env_file:
@@ -51,7 +51,7 @@ services:
     build:
       context: ../..
       dockerfile: deployment/hrm/Dockerfile
-    image: mightyfin/hrm-api:local
+    image: ${HRM_API_IMAGE:-mightyfin/hrm-api:local}
     container_name: hrm-outbox-publisher-1
     entrypoint: ["dotnet", "Mightyfin.Erp.Hrm.Api.dll", "--run-outbox-publisher"]
     restart: unless-stopped
@@ -71,7 +71,7 @@ services:
     build:
       context: ../..
       dockerfile: deployment/hrm/web.Dockerfile
-    image: mightyfin/hrm-web:local
+    image: ${HRM_WEB_IMAGE:-mightyfin/hrm-web:local}
     container_name: hrm-web-1
     restart: unless-stopped
     environment:

@@ -43,6 +43,7 @@ public static class Routes
         RegisterMasterData(app);
         RegisterIntegrations(app);
         RegisterSecurityCompliance(app);
+        RegisterGoLive(app);
         RegisterStatutory(app);
         RegisterNotifications(app);
         RegisterMe(app);
@@ -1081,6 +1082,26 @@ public static class Routes
             var request = await ReadBodyAsync<LegalHoldReleaseRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ReleaseLegalHoldAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+    }
+
+    public static void RegisterGoLive(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/go-live").RequireAuthorization();
+        g.MapGet("/", async (IGoLiveReadinessService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetAsync(ct)));
+        g.MapPost("/evidence", async (HttpContext http, IGoLiveReadinessService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<GoLiveEvidenceRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.RecordEvidenceAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/signoffs/{roleKey}", async (string roleKey, HttpContext http,
+            IGoLiveReadinessService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<GoLiveSignoffRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.RecordSignoffAsync(roleKey, request, ResolveSubjectId(http) ?? "system", ct));
         });
     }
 }

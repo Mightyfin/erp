@@ -69,6 +69,7 @@ export const HRM_STAFF_ROLES = [
   "manager",
   "hr_ops",
   "payroll",
+  "finance_approver",
   "hr_admin",
   "investigator",
 ] as const;
@@ -80,7 +81,7 @@ export function hasHrmStaffRole(roles: string[]): boolean {
 
 function mapRolesToDemoRole(roles: string[]): Role {
   const set = new Set(roles);
-  if (set.has("payroll")) return "payroll";
+  if (set.has("payroll") || set.has("finance_approver")) return "payroll";
   if (set.has("hr_admin") || set.has("investigator")) return "hr_admin";
   if (set.has("hr_ops")) return "hr_ops";
   if (set.has("manager")) return "manager";

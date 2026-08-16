@@ -698,6 +698,41 @@ export const realApi = {
     const blob = await hrmApi.getBlob("/hrm/security/audit/export");
     downloadUrl(URL.createObjectURL(blob), "hrm-privileged-audit.csv");
   },
+  /** M36 fail-closed production readiness decision and acceptance ledger. */
+  goLiveReadiness: () =>
+    hrmApi.get<{
+      decision: "blocked" | "ready-for-signoff" | "approved";
+      canGoLive: boolean;
+      evaluatedAt: string;
+      passedGates: number;
+      totalGates: number;
+      blockers: string[];
+      gates: Array<{
+        key: string;
+        category: string;
+        name: string;
+        status: string;
+        detail: string;
+        evidenceReference?: string | null;
+        verifiedAt?: string | null;
+      }>;
+      signoffs: Array<{
+        id: string;
+        roleKey: string;
+        roleName: string;
+        decision: string;
+        notes?: string | null;
+        actorSubjectId: string;
+        signedAt: string;
+      }>;
+    }>("/hrm/go-live"),
+  recordGoLiveEvidence: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/go-live/evidence", body),
+  recordGoLiveSignoff: (roleKey: string, decision: string, notes?: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/go-live/signoffs/${roleKey}`, {
+      decision,
+      notes,
+    }),
 
   /* ------------------------------------------------------------------ */
   /* M19 organisation configuration CRUD (write surfaces)                */

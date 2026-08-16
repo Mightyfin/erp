@@ -1366,3 +1366,117 @@ test("HR leadership can filter and export the M35 management dashboard", async (
   await page.getByTitle("Download Payroll by department").click();
   expect((await download).suggestedFilename()).toContain("payroll-department");
 });
+
+test("M36 coordinator records rehearsal evidence and a role-enforced go-live sign-off", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-go-live-admin",
+        tenant: "mightyfin-erp",
+        preferred_username: "go.live.admin",
+        realm_access: { roles: ["hr_admin", "payroll", "finance_approver"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({
+        accessToken: token,
+        idToken: token,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+  });
+  let evidenceRecorded = false;
+  let signoffRecorded = false;
+  const dashboard = () => ({
+    decision: signoffRecorded ? "approved" : evidenceRecorded ? "ready-for-signoff" : "blocked",
+    canGoLive: signoffRecorded,
+    evaluatedAt: "2026-08-16T15:00:00Z",
+    passedGates: evidenceRecorded ? 2 : 1,
+    totalGates: 2,
+    blockers: evidenceRecorded ? [] : ["Production migration rehearsal"],
+    gates: [
+      {
+        key: "database-migrations",
+        category: "technical",
+        name: "Database migrations",
+        status: "passed",
+        detail: "No pending migrations.",
+        evidenceReference: "automated:ef-migrations",
+        verifiedAt: "2026-08-16T15:00:00Z",
+      },
+      {
+        key: "migration-rehearsal",
+        category: "evidence",
+        name: "Production migration rehearsal",
+        status: evidenceRecorded ? "passed" : "blocked",
+        detail: evidenceRecorded ? "Current evidence is passed." : "No evidence has been recorded.",
+        evidenceReference: evidenceRecorded ? "M36-REHEARSAL-001" : null,
+        verifiedAt: evidenceRecorded ? "2026-08-16T15:01:00Z" : null,
+      },
+    ],
+    signoffs: [
+      {
+        id: signoffRecorded ? "signoff-1" : "00000000-0000-0000-0000-000000000000",
+        roleKey: "hr-owner",
+        roleName: "HR owner",
+        decision: signoffRecorded ? "approved" : "pending",
+        notes: signoffRecorded ? "Reviewed." : null,
+        actorSubjectId: signoffRecorded ? "playwright-go-live-admin" : "",
+        signedAt: signoffRecorded ? "2026-08-16T15:02:00Z" : "0001-01-01T00:00:00Z",
+      },
+    ],
+  });
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/hrm/me")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          linked: true,
+          worker: {
+            id: "worker-m36",
+            employeeNo: "EMP-M36",
+            fullName: "Go-live Admin",
+            status: "active",
+          },
+        }),
+      });
+      return;
+    }
+    if (route.request().method() === "POST" && url.pathname.endsWith("/evidence")) {
+      const body = route.request().postDataJSON() as {
+        controlKey: string;
+        evidenceReference: string;
+      };
+      expect(body.controlKey).toBe("migration-rehearsal");
+      expect(body.evidenceReference).toBe("M36-REHEARSAL-001");
+      evidenceRecorded = true;
+    }
+    if (route.request().method() === "POST" && url.pathname.endsWith("/signoffs/hr-owner"))
+      signoffRecorded = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(route.request().method() === "GET" ? dashboard() : {}),
+    });
+  });
+
+  await page.goto("/hrm/configuration/go-live");
+  const workspace = page.getByTestId("go-live-readiness");
+  await expect(workspace).toContainText("Production migration rehearsal");
+  await expect(page.getByTestId("release-decision")).toHaveText("blocked");
+  await page.getByRole("tab", { name: "Evidence" }).click();
+  await page.getByLabel("Evidence reference").fill("M36-REHEARSAL-001");
+  await page.getByRole("button", { name: "Record passed evidence" }).click();
+  await expect(page.getByTestId("release-decision")).toHaveText("ready for signoff");
+  await page.getByRole("tab", { name: "Formal sign-off" }).click();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByTestId("release-decision")).toHaveText("approved");
+  expect(evidenceRecorded).toBe(true);
+  expect(signoffRecorded).toBe(true);
+});

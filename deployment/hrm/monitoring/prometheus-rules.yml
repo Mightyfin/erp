@@ -1,0 +1,17 @@
+groups:
+  - name: mightyfin-erp-hrm
+    rules:
+      - alert: HrmPublicEndpointDown
+        expr: probe_success{job="mightyfin-erp-hrm"} == 0
+        for: 2m
+        labels: { severity: critical, service: hrm, owner: platform }
+        annotations:
+          summary: "Mightyfin ERP HRM public endpoint is unavailable"
+          runbook_url: "docs/hrm/M36-INCIDENT-RUNBOOK.md#public-endpoint-or-readiness-failure"
+      - alert: HrmReadinessLatencyHigh
+        expr: probe_duration_seconds{job="mightyfin-erp-hrm"} > 1.5
+        for: 10m
+        labels: { severity: warning, service: hrm, owner: platform }
+        annotations:
+          summary: "Mightyfin ERP HRM readiness latency exceeds 1.5 seconds"
+          runbook_url: "docs/hrm/M36-INCIDENT-RUNBOOK.md#latency-or-capacity-degradation"
