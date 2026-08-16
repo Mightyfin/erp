@@ -1,6 +1,6 @@
 # M26 — Notification Delivery
 
-M26 delivers HRM notifications through the platform communications path:
+M26 delivers HRM notifications through the organisation’s existing communications infrastructure rather than introducing an independent SMTP system:
 
 ```text
 HRM business transaction
@@ -12,7 +12,7 @@ HRM business transaction
   -> configured delivery provider
 ```
 
-The supported version-1 events are:
+## Supported events
 
 | Event | Trigger | Novu workflow |
 |---|---|---|
@@ -24,27 +24,32 @@ The supported version-1 events are:
 
 ## Delivery guarantees
 
-- The business mutation and outbox insert share one database transaction.
-- JetStream de-duplicates on the stable public event ID (`Nats-Msg-Id`).
-- The publisher claims rows with `FOR UPDATE SKIP LOCKED`; failed rows retry with bounded exponential backoff.
-- The communications orchestrator applies its persistent idempotency, retry, audit, and dead-letter behavior.
-- Events carry routing and display facts only. Payslip amounts, statutory identifiers, request subjects/bodies, leave reasons/evidence/balances, and internal notes are excluded.
+The business mutation and outbox insert share one database transaction. The durable outbox therefore protects the notification handoff when the communications stack is temporarily unavailable.
+
+The publisher claims rows with `FOR UPDATE SKIP LOCKED`; failed rows retry with bounded exponential backoff. JetStream de-duplicates messages using the stable public event ID through `Nats-Msg-Id`. The communications orchestrator provides its own persistent idempotency, retry, audit, and dead-letter behavior.
+
+Events contain routing and display facts only. Payslip amounts, statutory identifiers, request subjects and bodies, leave reasons, evidence, balances, and internal notes are excluded from the published notification envelope.
 
 ## Runtime configuration
 
-The publisher runs from the API image with `--run-outbox-publisher`. Required settings are `HRM:NatsUrl` and either `HRM:NatsToken` or `HRM:NatsTokenFile`. `HRM:Environment`, `HRM:OutboxPollSeconds`, and `HRM:PublicUrl` are optional.
+The publisher runs from the API image with the `--run-outbox-publisher` argument. Required settings are `HRM:NatsUrl` and either `HRM:NatsToken` or `HRM:NatsTokenFile`. Optional settings include `HRM:Environment`, `HRM:OutboxPollSeconds`, and `HRM:PublicUrl`.
 
-Direct SMTP is disabled by default. It becomes active only when `HRM:NotificationFallback=smtp` and the `HRM:Smtp:*` settings are explicitly supplied. SMTP is an emergency fallback after NATS publication fails; it is not an independent default notification system.
+Direct SMTP is disabled by default. It becomes active only when `HRM:NotificationFallback=smtp` and the `HRM:Smtp:*` settings are explicitly supplied through environment secrets. SMTP is an emergency fallback after NATS publication fails; it is not an independent default notification system.
 
 ## Operations
 
-Inspect backlog and failures without exposing payloads:
+HR administrators can use **Configuration → Technical → Notification delivery** to view tenant-scoped handoff counts, attempts, transport, and trace identifiers, and to requeue failed rows.
 
-- HR admins use **Configuration → Technical → Notification delivery** to see tenant-scoped handoff counts, attempts, transport, and trace identifiers, and to requeue failed rows.
-- `GET /api/hrm/admin/notifications` and `POST /api/hrm/admin/notifications/{id}/retry` provide the same role-gated operational surface through the production proxy (the API also registers its versioned `/api/v1/hrm` surface internally). Neither endpoint returns event payloads, subject IDs, or recipient addresses.
-- A `published` row means JetStream accepted the HRM handoff. Provider-level delivery remains authoritative in Novu's Activity Feed; it is not presented as delivered by HRM.
+The equivalent role-gated API surface is:
 
-Database operators can inspect aggregate state directly:
+```text
+GET  /api/hrm/admin/notifications
+POST /api/hrm/admin/notifications/{id}/retry
+```
+
+Neither endpoint returns event payloads, subject IDs, or recipient addresses. A `published` row means JetStream accepted the HRM handoff. Provider-level delivery remains authoritative in Novu Activity Feed and is not represented as final delivery by HRM.
+
+Database operators can inspect aggregate state without exposing payloads:
 
 ```sql
 SELECT status, event_type, count(*)
@@ -53,4 +58,39 @@ GROUP BY status, event_type
 ORDER BY status, event_type;
 ```
 
-The expected healthy state is a running `hrm-outbox-publisher-1`, an `HRM_EVENTS` JetStream stream, a `communications-orchestrator-hrm` durable consumer, and all five active Novu workflows listed above.
+A healthy deployment has a running `hrm-outbox-publisher-1`, an `HRM_EVENTS` JetStream stream, a `communications-orchestrator-hrm` durable consumer, and active Novu mappings for the supported events.
+
+## Event envelope
+
+The event envelope is intentionally stable and privacy-preserving. It contains the public event identifier used for idempotency, event type and version, tenant and subject references required for routing, timestamps, and display metadata required by the communications orchestrator. It does not contain sensitive payroll, statutory, medical, leave-evidence, or internal case data.
+
+The publisher uses the subject pattern `mightyfin.hrm.>` and publishes to the organisation’s `HRM_EVENTS` JetStream stream. The communications orchestrator subscribes to that subject hierarchy and maps event types to Novu workflows.
+
+## Production verification
+
+The M26 deployment was verified on **16 August 2026** against `https://erp.mightyfinance.co.zm`.
+
+| Check | Result |
+|---|---|
+| Frontend root | HTTP 200 |
+| Application health endpoint `/health/live` | HTTP 200 |
+| Unauthenticated protected routes | HTTP 401, as expected |
+| Authenticated `GET /api/hrm/me/payslips` | Successful authenticated response |
+| Authenticated `GET /api/hrm/me/notifications` | Successful authenticated response |
+| Authenticated `GET /api/hrm/admin/notifications` | Successful role-gated response |
+| `hrm-outbox-publisher-1` NATS connection | Connected to NATS and confirmed `HRM_EVENTS` |
+| SMTP fallback | Disabled |
+| Backend regression suite | 187/187 tests passing |
+| React TypeScript and Vite build | Zero errors |
+
+The production proxy removes the `/api/hrm` prefix before forwarding to the ASP.NET API. Accordingly, `/health/live` is the application health path, while `/api/hrm/workers` and other prefixed paths are externally exposed proxy paths.
+
+## Follow-up verification
+
+The remaining provider-level check is to execute one controlled test-tenant notification and verify the result in Novu Activity Feed. The HRM `published` state confirms JetStream acceptance, not final provider delivery. The communications orchestrator should be checked for active mappings for at least `hrm.payslip.released` and `hrm.request.decided` before production rollout.
+
+## Source references
+
+The implementation contract is defined by [`Messaging.cs`](../../backend/hrm-api/src/Mightyfin.Erp.Hrm.Application/Messaging.cs), [`Outbox.cs`](../../backend/hrm-api/src/Mightyfin.Erp.Hrm.Infrastructure/Outbox.cs), and [`ApiRoutesClean.cs`](../../backend/hrm-api/src/Mightyfin.Erp.Hrm.Api/ApiRoutesClean.cs). Automated coverage is located in the M26 notification outbox tests under `backend/hrm-api/src/Mightyfin.Erp.Hrm.Tests`.
+
+**Last verified:** 16 August 2026
