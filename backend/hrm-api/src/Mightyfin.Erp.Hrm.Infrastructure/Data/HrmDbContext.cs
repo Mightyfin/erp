@@ -90,6 +90,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PayrollLineComponent> PayrollLineComponents => Set<PayrollLineComponent>();
     public DbSet<Payslip> Payslips => Set<Payslip>();
     public DbSet<PayslipAccessLog> PayslipAccessLogs => Set<PayslipAccessLog>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     // Config & extras
     public DbSet<CapabilityConfig> CapabilityConfigs => Set<CapabilityConfig>();
@@ -149,6 +150,13 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<PayrollLineComponent>(modelBuilder, "payroll_line_components");
         ConfigureEntity<Payslip>(modelBuilder, "payslips", e => e.HasIndex(x => x.PayslipNo).IsUnique());
         ConfigureEntity<PayslipAccessLog>(modelBuilder, "payslip_access_logs");
+        ConfigureEntity<OutboxMessage>(modelBuilder, "outbox_messages", e =>
+        {
+            e.HasIndex(x => x.PublicId).IsUnique();
+            e.HasIndex(x => new { x.Status, x.AvailableAt, x.CreatedAt });
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb");
+            e.Property(x => x.LastError).HasMaxLength(2000);
+        });
         ConfigureEntity<CapabilityConfig>(modelBuilder, "capability_configs");
         ConfigureEntity<AuditEntry>(modelBuilder, "audit_entries");
         ConfigureEntity<Vacancy>(modelBuilder, "vacancies");

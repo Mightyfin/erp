@@ -47,6 +47,8 @@ VITE_HRM_TENANT_ID=019ffa8b-0fb0-71e6-849a-f76e5a28e0b5
 
 The API stack runs as Docker Compose at `/home/mightyfin/production/hrm` on `187.124.27.67` (image built from this repo, tag `:local`, tests run during build, migrations applied at startup). It reuses the shared `erp-postgres-1` database over the `erp_default` network, binds only to `127.0.0.1` (API `:28911`, web proxy `:28912`), and follows the platform's env convention at `/home/mightyfin/.config/mightyfin/hrm/.env`. The Go ERP API on `:28910`, `admin-lms`, and the `efaas` stacks are untouched.
 
+The `hrm-outbox-publisher-1` service uses the same API image in publisher mode. It joins the shared communications network and publishes `mightyfin.hrm.>` events to the `HRM_EVENTS` JetStream stream. Deploy Compose with the communications environment file so `NATS_AUTH_TOKEN` is supplied during interpolation, for example `docker compose --env-file /home/mightyfin/.config/mightyfin/communications-sandbox/.env -f docker-compose.prod.yml up -d`. Direct SMTP remains off unless `HRM__NotificationFallback=smtp` is set explicitly. See [M26 notification delivery](../../docs/hrm/M26-NOTIFICATION-DELIVERY.md).
+
 ## Conventions respected
 
 The deployment deliberately introduces minimal new networking: it reuses the existing token-based Cloudflare Tunnel (remote config), the `erp_default` bridge network, the shared `erp-postgres-1` container, the `:local` image-tag convention, the `/home/mightyfin/production/*` stack layout, and the `/home/mightyfin/.config/mightyfin/*` env convention. The entire public surface is exactly one subdomain (`erp.mightyfinance.co.zm`); the API rule is appended as a path rule on the existing tunnel hostname, with no other names or records touched.

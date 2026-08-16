@@ -88,6 +88,11 @@ builder.Services.AddScoped<IDocumentsRepository, DocumentsRepository>();
 builder.Services.AddScoped<IDocumentsService, DocumentsServiceImpl>();
 builder.Services.AddScoped<IDqService, DqServiceImpl>();
 builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>();
+builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+builder.Services.AddScoped<IOutboxWriter, EfOutboxWriter>();
+builder.Services.AddScoped<IOutboxPublisherStore, EfOutboxPublisherStore>();
+builder.Services.AddSingleton<IHrmEventPublisher, NatsHrmEventPublisher>();
+builder.Services.AddSingleton<ISmtpNotificationFallback, SmtpNotificationFallback>();
 
 // ---------- AuthN: OIDC via Keycloak, with developer-fallback mode ----------
 var authMode = builder.Configuration["ERP:AuthMode"] ?? builder.Configuration["HRM:AuthMode"] ?? "oidc";
@@ -150,6 +155,11 @@ using (var scope = app.Services.CreateScope())
 if (args.Contains("--apply-migrations-only"))
 {
     Console.WriteLine("Migrations applied. Exiting.");
+    return;
+}
+if (args.Contains("--run-outbox-publisher"))
+{
+    await RunOutboxPublisherAsync(app.Services, builder.Configuration);
     return;
 }
 
@@ -246,6 +256,89 @@ Routes.HrmPrefix = "/api/hrm"; // legacy prefix, kept for existing clients
 Routes.RegisterAll(app);
 
 app.Run();
+
+static async Task RunOutboxPublisherAsync(IServiceProvider services, IConfiguration configuration)
+{
+    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("HrmOutboxPublisher");
+    var publisher = services.GetRequiredService<IHrmEventPublisher>();
+    var smtpFallback = services.GetRequiredService<ISmtpNotificationFallback>();
+    var pollSeconds = int.TryParse(configuration["HRM:OutboxPollSeconds"], out var configuredPoll)
+        ? Math.Clamp(configuredPoll, 1, 60)
+        : 1;
+    using var stopping = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        stopping.Cancel();
+    };
+    System.Runtime.Loader.AssemblyLoadContext.Default.Unloading += _ => stopping.Cancel();
+
+    var streamReady = false;
+
+    while (!stopping.IsCancellationRequested)
+    {
+        try
+        {
+            if (!streamReady)
+            {
+                await publisher.EnsureStreamAsync(stopping.Token);
+                streamReady = true;
+                logger.LogInformation("HRM outbox publisher connected to HRM_EVENTS; SMTP fallback enabled={SmtpFallbackEnabled}", smtpFallback.Enabled);
+            }
+            await using var scope = services.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<IOutboxPublisherStore>();
+            var rows = await store.ClaimAsync(50, stopping.Token);
+            foreach (var row in rows)
+            {
+                try
+                {
+                    await publisher.PublishAsync(row, stopping.Token);
+                    await store.CompleteAsync(row.Id, true, "nats", null, stopping.Token);
+                    logger.LogInformation("Published HRM event {EventId} {EventType}", row.PublicId, row.EventType);
+                }
+                catch (Exception publishError) when (!stopping.IsCancellationRequested)
+                {
+                    if (smtpFallback.Enabled)
+                    {
+                        try
+                        {
+                            await smtpFallback.DeliverAsync(row, stopping.Token);
+                            await store.CompleteAsync(row.Id, true, "smtp", publishError.Message, stopping.Token);
+                            logger.LogWarning(publishError, "NATS publish failed; explicitly enabled SMTP fallback delivered event {EventId}", row.PublicId);
+                            continue;
+                        }
+                        catch (Exception smtpError) when (!stopping.IsCancellationRequested)
+                        {
+                            await store.CompleteAsync(row.Id, false, "smtp", $"NATS: {publishError.Message}; SMTP: {smtpError.Message}", stopping.Token);
+                            logger.LogError(smtpError, "Both NATS and SMTP fallback failed for event {EventId}", row.PublicId);
+                            continue;
+                        }
+                    }
+                    await store.CompleteAsync(row.Id, false, "nats", publishError.Message, stopping.Token);
+                    logger.LogError(publishError, "NATS publish failed for event {EventId}; retry scheduled", row.PublicId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+        {
+            break;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "HRM outbox claim cycle failed");
+        }
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(pollSeconds), stopping.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+    }
+    logger.LogInformation("HRM outbox publisher stopped");
+}
 
 /// <summary>In-process JWT verification bypass for local development only:
 /// mirrors the Go skeleton's ERP_AUTH_MODE=disabled behaviour — never enable in production.</summary>

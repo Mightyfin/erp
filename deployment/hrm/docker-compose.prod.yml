@@ -44,6 +44,26 @@ services:
       - erp_default
     restart: "no"
 
+  hrm-outbox-publisher:
+    build:
+      context: ../..
+      dockerfile: deployment/hrm/Dockerfile
+    image: mightyfin/hrm-api:local
+    container_name: hrm-outbox-publisher-1
+    entrypoint: ["dotnet", "Mightyfin.Erp.Hrm.Api.dll", "--run-outbox-publisher"]
+    restart: unless-stopped
+    env_file:
+      - /home/mightyfin/.config/mightyfin/hrm/.env
+    environment:
+      HRM__NatsUrl: "nats://nats:4222"
+      HRM__NatsToken: "${NATS_AUTH_TOKEN:?NATS_AUTH_TOKEN must be provided from the communications environment}"
+      HRM__NotificationFallback: "off"
+    networks:
+      - erp_default
+      - communications
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   hrn-web:
     build:
       context: ../..
@@ -86,3 +106,6 @@ services:
 networks:
   erp_default:
     external: true
+  communications:
+    external: true
+    name: mightyfin-communications-sandbox_communications

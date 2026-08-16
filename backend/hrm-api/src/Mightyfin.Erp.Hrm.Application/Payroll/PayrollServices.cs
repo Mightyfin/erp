@@ -84,7 +84,9 @@ public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string F
     int CalendarDayOfMonth, int InputCutoffDaysBeforePayday, bool IsDefault, string Status);
 
 public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService authz,
-    IPayslipDocumentService payslipDocument) : IPayrollService
+    IPayslipDocumentService payslipDocument,
+    IOutboxWriter? outbox = null,
+    IUnitOfWork? unitOfWork = null) : IPayrollService
 {
     public async Task<List<SalaryComponentDto>> ListComponentsAsync(string? type, CancellationToken ct)
     {
@@ -497,21 +499,48 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         }
         if (run.Status != "approved")
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
-        run.Status = "released";
-        await repo.UpdateRunAsync(run, ct);
-        // Reversal runs negate the original: supersede its payslips FIRST so the
-        // replacement payslips generated below can chain to them via SupersedesId.
-        if (run.IsReversal && run.ReversesRunId.HasValue)
+        async Task ReleaseAndEnqueue(CancellationToken transactionCt)
         {
-            await repo.SupersedeOriginalPayslipsAsync(run.ReversesRunId.Value, ct);
-            var original = await repo.GetRunAsync(run.ReversesRunId.Value, ct);
-            if (original is not null && original.Status == "reversed")
+            run.Status = "released";
+            await repo.UpdateRunAsync(run, transactionCt);
+            // Reversal runs negate the original: supersede its payslips FIRST so the
+            // replacement payslips generated below can chain to them via SupersedesId.
+            if (run.IsReversal && run.ReversesRunId.HasValue)
             {
-                original.Status = "closed"; // release cycle complete
-                await repo.UpdateRunAsync(original, ct);
+                await repo.SupersedeOriginalPayslipsAsync(run.ReversesRunId.Value, transactionCt);
+                var original = await repo.GetRunAsync(run.ReversesRunId.Value, transactionCt);
+                if (original is not null && original.Status == "reversed")
+                {
+                    original.Status = "closed"; // release cycle complete
+                    await repo.UpdateRunAsync(original, transactionCt);
+                }
+            }
+
+            var targets = await repo.FinalizePayslipsAsync(run.Id, transactionCt);
+            if (outbox is null) return; // legacy/unit-test construction only; production always registers the writer
+            foreach (var target in targets)
+            {
+                await outbox.EnqueueAsync(
+                    HrmEventTypes.PayslipReleased,
+                    target.SubjectId ?? target.WorkerId.ToString("D"),
+                    new
+                    {
+                        payslip_id = target.PayslipId.ToString("D"),
+                        payslip_no = target.PayslipNo,
+                        period_label = target.PeriodLabel,
+                        worker_id = target.WorkerId.ToString("D"),
+                        email = target.Email ?? "",
+                        first_name = target.FirstName,
+                        last_name = target.LastName,
+                    },
+                    transactionCt);
             }
         }
-        await repo.FinalizePayslipsAsync(run.Id, ct);
+
+        if (unitOfWork is null)
+            await ReleaseAndEnqueue(ct);
+        else
+            await unitOfWork.ExecuteAsync(ReleaseAndEnqueue, ct);
         return MapRun(run);
     }
 
@@ -849,7 +878,7 @@ public interface IPayrollRepository
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);
-    Task FinalizePayslipsAsync(Guid runId, CancellationToken ct);
+    Task<List<PayslipNotificationTarget>> FinalizePayslipsAsync(Guid runId, CancellationToken ct);
     Task<int> SupersedeOriginalPayslipsAsync(Guid originalRunId, CancellationToken ct);
     Task<PayrollRun?> FindRunByReversesIdAsync(Guid reversesRunId, CancellationToken ct);
     Task<List<PayrollRunLine>> ListReleasedRunLinesForPeriodAsync(Guid payPeriodId, CancellationToken ct);

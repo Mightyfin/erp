@@ -36,7 +36,7 @@ public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
 
-public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge, Workers.IWorkerService? workers = null) : IExperienceService
+public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge, Workers.IWorkerService? workers = null, IOutboxWriter? outbox = null, IUnitOfWork? unitOfWork = null) : IExperienceService
 {
     public async Task<Paged<HrRequestDto>> ListRequestsAsync(Guid? workerId, string? status, CancellationToken ct)
     {
@@ -107,8 +107,30 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var req = await repo.GetRequestAsync(requestId, ct) ?? throw new DomainException("hr-request-not-found", $"Request {requestId} does not exist.");
-        req.Status = req.Status == "resolved" ? "closed" : "resolved";
-        var updated = await repo.UpdateRequestAsync(req, ct);
+        HrRequest updated = req;
+        async Task DecideAndEnqueue(CancellationToken transactionCt)
+        {
+            req.Status = req.Status == "resolved" ? "closed" : "resolved";
+            updated = await repo.UpdateRequestAsync(req, transactionCt);
+            if (outbox is null || req.Worker is null) return;
+            await outbox.EnqueueAsync(
+                HrmEventTypes.RequestDecided,
+                req.Worker.SubjectId ?? req.Worker.Id.ToString("D"),
+                new
+                {
+                    request_id = req.Id.ToString("D"),
+                    worker_id = req.Worker.Id.ToString("D"),
+                    status = req.Status,
+                    email = req.Worker.Email ?? "",
+                    first_name = req.Worker.FirstName,
+                    last_name = req.Worker.LastName,
+                },
+                transactionCt);
+        }
+        if (unitOfWork is null)
+            await DecideAndEnqueue(ct);
+        else
+            await unitOfWork.ExecuteAsync(DecideAndEnqueue, ct);
         return Map(updated);
     }
 

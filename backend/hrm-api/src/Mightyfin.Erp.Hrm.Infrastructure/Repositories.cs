@@ -461,7 +461,7 @@ public sealed class ExperienceRepository(HrmDbContext db) : IExperienceRepositor
     }
 
     public async Task<HrRequest?> GetRequestAsync(Guid id, CancellationToken ct)
-        => await db.HrRequests.Include(r => r.Messages).FirstOrDefaultAsync(r => r.Id == id, ct);
+        => await db.HrRequests.Include(r => r.Messages).Include(r => r.Worker).FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public async Task<HrRequest> CreateRequestAsync(HrRequest request, CancellationToken ct)
     {
@@ -784,7 +784,7 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (items, items.Count);
     }
 
-    public async Task FinalizePayslipsAsync(Guid runId, CancellationToken ct)
+    public async Task<List<PayslipNotificationTarget>> FinalizePayslipsAsync(Guid runId, CancellationToken ct)
     {
         var run = await db.PayrollRuns.Include(r => r.PayPeriod)
             .FirstAsync(r => r.Id == runId, ct);
@@ -831,13 +831,14 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Select(part => int.TryParse(part.Split('-').Last(), out var v) ? v : 0)
             .DefaultIfEmpty(0).Max();
         int idx = maxSeq;
+        var notifications = new List<PayslipNotificationTarget>();
         foreach (var line in lines)
         {
             idx++;
             var ytdGross = prior.Sum(x => x.Run.TotalGross) + line.GrossPay;
             var ytdNet = prior.Sum(x => x.Run.TotalNet) + line.NetPay;
             var ytdTax = prior.Sum(x => x.Run.TotalDeductions) + line.TotalDeductions;
-            db.Payslips.Add(new Payslip
+            var slip = new Payslip
             {
                 RunLineId = line.Id,
                 WorkerId = line.WorkerId,
@@ -859,9 +860,20 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 WorkerTpin = line.Worker?.Tpin,
                 WorkerNapsaNumber = line.Worker?.NapsaNumber,
                 WorkerNhimaNumber = line.Worker?.NhimaNumber,
-            });
+            };
+            db.Payslips.Add(slip);
+            notifications.Add(new PayslipNotificationTarget(
+                slip.Id,
+                slip.PayslipNo,
+                run.PayPeriod?.PeriodLabel ?? "",
+                line.WorkerId,
+                line.Worker?.SubjectId,
+                line.Worker?.Email,
+                line.Worker?.FirstName ?? "",
+                line.Worker?.LastName ?? ""));
         }
         await db.SaveChangesAsync(ct);
+        return notifications;
     }
 
     /// <summary>On release of a reversal run, supersede the original run's
