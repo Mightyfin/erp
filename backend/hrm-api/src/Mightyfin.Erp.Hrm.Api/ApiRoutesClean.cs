@@ -450,9 +450,9 @@ public static class Routes
         {
             var request = await ReadBodyAsync<ProtectedDisclosureCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created($"{HrmPrefix}/experience/speak-up/status", await svc.SubmitDisclosureAsync(request, ct));
-        });
+        }).AllowAnonymous();
         g.MapGet("/speak-up/status", async ([FromQuery] string caseReference, [FromQuery] string accessCode, IExperienceService svc, CancellationToken ct) =>
-            await svc.GetDisclosureStatusAsync(caseReference, accessCode, ct));
+            await svc.GetDisclosureStatusAsync(caseReference, accessCode, ct)).AllowAnonymous();
     }
 
     public static void RegisterPayroll(WebApplication app)
@@ -788,6 +788,57 @@ public static class Routes
         {
             var request = await ReadBodyAsync<RelationsCaseUpdate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.UpdateCaseAsync(id, request, ct));
+        });
+        g.MapGet("/cases/{id:guid}", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetCaseAsync(id, ResolveSubjectId(http) ?? "system", ct)));
+        g.MapPost("/cases/{id:guid}/access-declarations", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsAccessDeclarationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DeclareAccessAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/cases/{id:guid}/assign", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsCaseAssignRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.AssignCaseAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/cases/{id:guid}/transition", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsCaseTransitionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.TransitionCaseAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/cases/{id:guid}/actions", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsActionCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.AddActionAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPatch("/cases/{caseId:guid}/actions/{actionId:guid}", async (Guid caseId, Guid actionId, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RelationsActionUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateActionAsync(caseId, actionId, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/cases/{id:guid}/evidence", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.FirstOrDefault() ?? throw new DomainException("bad-request", "No evidence file was uploaded.");
+            var storageDir = Path.Combine(Path.GetTempPath(), "erp-relations-evidence"); Directory.CreateDirectory(storageDir);
+            var storagePath = Path.Combine(storageDir, $"{Guid.NewGuid():N}-{Path.GetFileName(file.FileName)}");
+            await using (var fs = File.Create(storagePath)) await file.CopyToAsync(fs, ct);
+            return Results.Created("", await svc.AddEvidenceAsync(id, form["title"].ToString(), form["evidenceType"].ToString(), file.FileName,
+                file.ContentType ?? "application/octet-stream", file.Length, storagePath, ResolveSubjectId(http) ?? "system", ct));
+        }).DisableAntiforgery();
+        g.MapGet("/evidence/{id:guid}/download", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var (evidence, stream) = await svc.GetEvidenceAsync(id, ResolveSubjectId(http) ?? "system", ct);
+            return Results.File(stream, evidence.ContentType, evidence.FileName);
+        });
+        g.MapGet("/protected-disclosures", async ([FromQuery] string? status, IRelationsService svc, CancellationToken ct) =>
+            await svc.ListProtectedDisclosuresAsync(status, ct));
+        g.MapGet("/protected-disclosures/{id:guid}", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+            await svc.GetProtectedDisclosureAsync(id, ResolveSubjectId(http) ?? "system", ct));
+        g.MapPost("/protected-disclosures/{id:guid}/transition", async (Guid id, HttpContext http, IRelationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ProtectedDisclosureUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateProtectedDisclosureAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
         });
     }
 

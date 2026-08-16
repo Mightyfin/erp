@@ -110,6 +110,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PreboardingCase> PreboardingCases => Set<PreboardingCase>();
     public DbSet<PreboardingTask> PreboardingTasks => Set<PreboardingTask>();
     public DbSet<RelationsCase> RelationsCases => Set<RelationsCase>();
+    public DbSet<RelationsCaseAccess> RelationsCaseAccessDeclarations => Set<RelationsCaseAccess>();
+    public DbSet<RelationsCaseEvent> RelationsCaseEvents => Set<RelationsCaseEvent>();
+    public DbSet<RelationsCaseAction> RelationsCaseActions => Set<RelationsCaseAction>();
+    public DbSet<RelationsEvidence> RelationsEvidence => Set<RelationsEvidence>();
+    public DbSet<ProtectedDisclosureEvent> ProtectedDisclosureEvents => Set<ProtectedDisclosureEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -184,7 +189,12 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<CandidateDocument>(modelBuilder, "candidate_documents");
         ConfigureEntity<PreboardingCase>(modelBuilder, "preboarding_cases", e => e.HasIndex(x => new { x.TenantId, x.CandidateId }).IsUnique());
         ConfigureEntity<PreboardingTask>(modelBuilder, "preboarding_tasks");
-        ConfigureEntity<RelationsCase>(modelBuilder, "relations_cases");
+        ConfigureEntity<RelationsCase>(modelBuilder, "relations_cases", e => e.HasIndex(x => new { x.TenantId, x.Reference }).IsUnique());
+        ConfigureEntity<RelationsCaseAccess>(modelBuilder, "relations_case_access", e => e.HasIndex(x => new { x.TenantId, x.CaseId, x.ActorSubjectId }).IsUnique());
+        ConfigureEntity<RelationsCaseEvent>(modelBuilder, "relations_case_events");
+        ConfigureEntity<RelationsCaseAction>(modelBuilder, "relations_case_actions");
+        ConfigureEntity<RelationsEvidence>(modelBuilder, "relations_evidence");
+        ConfigureEntity<ProtectedDisclosureEvent>(modelBuilder, "protected_disclosure_events");
 
         // Relationships
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId).OnDelete(DeleteBehavior.Restrict);
@@ -236,6 +246,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<PreboardingCase>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<PreboardingCase>().HasMany(x => x.Tasks).WithOne(x => x.PreboardingCase).HasForeignKey(x => x.PreboardingCaseId);
         modelBuilder.Entity<RelationsCase>().HasOne(x => x.SubjectWorker).WithMany().HasForeignKey(x => x.SubjectWorkerId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<RelationsCase>().HasMany(x => x.Actions).WithOne(x => x.Case).HasForeignKey(x => x.CaseId);
+        modelBuilder.Entity<RelationsCase>().HasMany(x => x.Evidence).WithOne(x => x.Case).HasForeignKey(x => x.CaseId);
+        modelBuilder.Entity<RelationsCaseAccess>().HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId);
+        modelBuilder.Entity<RelationsCaseEvent>().HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId);
+        modelBuilder.Entity<ProtectedDisclosureEvent>().HasOne(x => x.Disclosure).WithMany().HasForeignKey(x => x.DisclosureId);
 
         base.OnModelCreating(modelBuilder);
     }

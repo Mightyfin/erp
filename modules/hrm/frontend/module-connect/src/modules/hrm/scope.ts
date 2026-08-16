@@ -21,6 +21,7 @@ export const ENABLED_SECTIONS = new Set([
   "experience", // M22 HR requests — the admin inbox lands on approvals
   "reports", // M23 statutory filings — PAYE returns and remittances
   "recruitment", // M29 candidate-to-worker workflow is operational
+  "relations", // M30 restricted case and protected-disclosure operations
   "configuration",
 ]);
 
@@ -39,6 +40,7 @@ const ENABLED_PREFIXES = [
   "/hrm/lifecycle/onboarding",
   "/hrm/reports", // M23 statutory filings
   "/hrm/recruitment", // M29 vacancy, candidate, offer and preboarding operations
+  "/hrm/relations", // M30 employee-relations and investigator workspaces
   "/hrm/configuration",
   "/hrm/setup",
   "/hrm/help",
@@ -62,5 +64,4 @@ export const COMING_SOON_AREAS = [
   "Lifecycle — onboarding, movements, offboarding, assets",
   "Talent — goals, reviews, learning, succession",
   "Employee experience — requests, letters, knowledge, engagement",
-  "Relations and safety — cases, discipline, health and safety, ethics",
 ];

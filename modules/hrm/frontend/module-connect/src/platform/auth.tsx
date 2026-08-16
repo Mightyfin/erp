@@ -67,7 +67,7 @@ const Ctx = createContext<AuthState | null>(null);
 function mapRolesToDemoRole(roles: string[]): Role {
   const set = new Set(roles);
   if (set.has("payroll")) return "payroll";
-  if (set.has("hr_admin") || set.has("admin")) return "hr_admin";
+  if (set.has("hr_admin") || set.has("admin") || set.has("investigator")) return "hr_admin";
   if (set.has("hr_ops")) return "hr_ops";
   if (set.has("manager")) return "manager";
   return "employee";
@@ -159,8 +159,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const value = useMemo<AuthState>(
-    () => ({ session, user, loading, authenticated, resolveRole, signInInteractive, signOut, worker, resolvingWorker }),
-    [session, user, loading, authenticated, resolveRole, signInInteractive, signOut, worker, resolvingWorker],
+    () => ({
+      session,
+      user,
+      loading,
+      authenticated,
+      resolveRole,
+      signInInteractive,
+      signOut,
+      worker,
+      resolvingWorker,
+    }),
+    [
+      session,
+      user,
+      loading,
+      authenticated,
+      resolveRole,
+      signInInteractive,
+      signOut,
+      worker,
+      resolvingWorker,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

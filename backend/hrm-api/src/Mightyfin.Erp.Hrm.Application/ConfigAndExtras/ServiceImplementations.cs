@@ -378,17 +378,27 @@ public sealed class RelationsServiceImpl(IRelationsRepository repo, IAuthzServic
 {
     public async Task<Paged<RelationsCaseDto>> ListCasesAsync(string? category, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_admin"); // restricted: HR admin only
+        authz.RequireAnyRole("hr_admin", "investigator");
         var (items, total) = await repo.ListCasesAsync(category, ct);
-        return new Paged<RelationsCaseDto>(items.Select(c => new RelationsCaseDto(c.Id, c.SubjectWorkerId, c.CaseType, c.Category, c.Severity, c.Summary, c.Status, c.CreatedAt)).ToList(), total, 1, 50);
+        return new Paged<RelationsCaseDto>(items.Select(x => MapList(x)).ToList(), total, 1, 50);
     }
 
     public async Task<RelationsCaseDto> CreateCaseAsync(RelationsCaseCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_admin");
-        var c = new RelationsCase { SubjectWorkerId = request.SubjectWorkerId, CaseType = request.CaseType, Category = string.IsNullOrWhiteSpace(request.Category) ? request.CaseType : request.Category, Severity = request.Severity, Summary = request.Summary, Description = request.Description, Status = "open" };
+        var count = await repo.CountCasesThisYearAsync(ct);
+        var c = new RelationsCase
+        {
+            Reference = $"ER-{DateTimeOffset.UtcNow.Year}-{count + 1:D5}", SubjectWorkerId = request.SubjectWorkerId,
+            CaseType = request.CaseType.Trim().ToLowerInvariant(), Category = string.IsNullOrWhiteSpace(request.Category) ? request.CaseType : request.Category,
+            Severity = request.Severity, Summary = request.Summary, Description = request.Description, Status = "open",
+            Confidentiality = request.Confidentiality == "confidential" ? "confidential" : "restricted",
+            Classification = "restricted", OwnerSubjectId = request.OwnerSubjectId, RaisedBy = request.RaisedBy,
+            DueDate = string.IsNullOrWhiteSpace(request.DueDate) ? null : DateOnly.Parse(request.DueDate)
+        };
         var created = await repo.CreateCaseAsync(c, ct);
-        return new RelationsCaseDto(created.Id, created.SubjectWorkerId, created.CaseType, created.Category, created.Severity, created.Summary, created.Status, created.CreatedAt);
+        await repo.CreateEventAsync(new RelationsCaseEvent { CaseId = created.Id, Action = "created", ActorSubjectId = "system", ToStatus = "open" }, ct);
+        return MapList(created, revealSummary: true);
     }
 
     public async Task<RelationsCaseDto> UpdateCaseAsync(Guid caseId, RelationsCaseUpdate request, CancellationToken ct)
@@ -407,9 +417,163 @@ public sealed class RelationsServiceImpl(IRelationsRepository repo, IAuthzServic
         if (request.Description is not null) c.Description = request.Description;
         if (request.Outcome is not null) c.Outcome = request.Outcome;
         var updated = await repo.UpdateCaseAsync(c, ct);
-        return new RelationsCaseDto(updated.Id, updated.SubjectWorkerId, updated.CaseType, updated.Category, updated.Severity, updated.Summary, updated.Status, updated.CreatedAt);
+        return MapList(updated, revealSummary: true);
     }
     private static readonly HashSet<string> ValidCaseStatuses = ["open", "in-progress", "resolved", "closed"];
+
+    public async Task<RelationsAccessDto> DeclareAccessAsync(Guid caseId, RelationsAccessDeclarationRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "investigator");
+        var c = await RequireCaseAsync(caseId, ct);
+        RequireAssignedOrAdmin(c, actorSubjectId);
+        var decision = request.Decision.Trim().ToLowerInvariant();
+        if (decision is not ("no-conflict" or "conflict")) throw new DomainException("access-decision-invalid", "Decision must be no-conflict or conflict.");
+        if (decision == "conflict" && string.IsNullOrWhiteSpace(request.Notes)) throw new DomainException("conflict-reason-required", "Explain the conflict so the case can be reassigned safely.");
+        var declaration = await repo.CreateAccessAsync(new RelationsCaseAccess { CaseId = caseId, ActorSubjectId = actorSubjectId, Decision = decision, Notes = request.Notes }, ct);
+        await RecordAsync(caseId, decision == "conflict" ? "conflict-declared" : "access-declared", actorSubjectId, c.Status, c.Status, request.Notes, ct);
+        return MapAccess(declaration);
+    }
+
+    public async Task<RelationsCaseDetailDto> GetCaseAsync(Guid caseId, string actorSubjectId, CancellationToken ct)
+    {
+        var c = await RequireAccessibleAsync(caseId, actorSubjectId, ct);
+        await RecordAsync(caseId, "viewed", actorSubjectId, c.Status, c.Status, null, ct);
+        return await MapDetailAsync(c, ct);
+    }
+
+    public async Task<RelationsCaseDto> AssignCaseAsync(Guid caseId, RelationsCaseAssignRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var c = await RequireCaseAsync(caseId, ct);
+        if (string.IsNullOrWhiteSpace(request.OwnerSubjectId)) throw new DomainException("owner-required", "An investigator subject id is required.");
+        c.OwnerSubjectId = request.OwnerSubjectId.Trim(); await repo.UpdateCaseAsync(c, ct);
+        await RecordAsync(caseId, "assigned", actorSubjectId, c.Status, c.Status, $"Assigned to {c.OwnerSubjectId}", ct);
+        return MapList(c, revealSummary: true);
+    }
+
+    public async Task<RelationsCaseDetailDto> TransitionCaseAsync(Guid caseId, RelationsCaseTransitionRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        var c = await RequireAccessibleAsync(caseId, actorSubjectId, ct);
+        var target = request.Status.Trim().ToLowerInvariant();
+        if (!CaseTransitions.TryGetValue(c.Status, out var allowed) || !allowed.Contains(target))
+            throw new DomainException("case-invalid-transition", $"Case cannot move from '{c.Status}' to '{target}'. Allowed: {string.Join(", ", allowed ?? [])}.");
+        if (target is "resolved" or "closed" && string.IsNullOrWhiteSpace(request.Outcome ?? c.Outcome))
+            throw new DomainException("case-outcome-required", "An outcome is required before resolution or closure.");
+        if (target == "resolved" && string.IsNullOrWhiteSpace(request.Findings ?? c.Findings))
+            throw new DomainException("case-findings-required", "Findings are required before resolution.");
+        if (target == "resolved" && (await repo.ListActionsAsync(caseId, ct)).Any(x => x.Status == "pending"))
+            throw new DomainException("case-actions-open", "Complete or cancel all pending actions before resolving the case.");
+        var from = c.Status; c.Status = target;
+        if (request.Findings is not null) c.Findings = request.Findings;
+        if (request.Outcome is not null) c.Outcome = request.Outcome;
+        if (target == "closed") c.ClosedAt = DateTimeOffset.UtcNow;
+        await repo.UpdateCaseAsync(c, ct);
+        await RecordAsync(caseId, "status-changed", actorSubjectId, from, target, request.Notes, ct);
+        return await MapDetailAsync(c, ct);
+    }
+
+    public async Task<RelationsActionDto> AddActionAsync(Guid caseId, RelationsActionCreateRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        _ = await RequireAccessibleAsync(caseId, actorSubjectId, ct);
+        if (string.IsNullOrWhiteSpace(request.Title)) throw new DomainException("action-title-required", "Action title is required.");
+        var action = await repo.CreateActionAsync(new RelationsCaseAction { CaseId = caseId, ActionType = request.ActionType, Title = request.Title.Trim(), OwnerSubjectId = request.OwnerSubjectId, DueDate = string.IsNullOrWhiteSpace(request.DueDate) ? null : DateOnly.Parse(request.DueDate), Notes = request.Notes }, ct);
+        await RecordAsync(caseId, "action-added", actorSubjectId, null, null, action.Title, ct); return MapAction(action);
+    }
+
+    public async Task<RelationsActionDto> UpdateActionAsync(Guid caseId, Guid actionId, RelationsActionUpdateRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        _ = await RequireAccessibleAsync(caseId, actorSubjectId, ct);
+        var action = await repo.GetActionAsync(actionId, ct) ?? throw new DomainException("case-action-not-found", $"Action {actionId} does not exist.");
+        if (action.CaseId != caseId) throw new DomainException("case-action-not-found", "Action does not belong to this case.");
+        if (request.Status is not ("pending" or "completed" or "cancelled")) throw new DomainException("case-action-status-invalid", "Action status must be pending, completed, or cancelled.");
+        action.Status = request.Status; action.Notes = request.Notes; action.CompletedAt = request.Status == "completed" ? DateTimeOffset.UtcNow : null;
+        await repo.UpdateActionAsync(action, ct); await RecordAsync(caseId, $"action-{request.Status}", actorSubjectId, null, null, action.Title, ct); return MapAction(action);
+    }
+
+    public async Task<RelationsEvidenceDto> AddEvidenceAsync(Guid caseId, string title, string evidenceType, string fileName, string contentType, long sizeBytes, string storagePath, string actorSubjectId, CancellationToken ct)
+    {
+        _ = await RequireAccessibleAsync(caseId, actorSubjectId, ct);
+        if (sizeBytes <= 0 || sizeBytes > 10 * 1024 * 1024) throw new DomainException("evidence-size-invalid", "Evidence must be between 1 byte and 10 MB.");
+        if (contentType is not ("application/pdf" or "image/png" or "image/jpeg" or "text/plain")) throw new DomainException("evidence-type-invalid", "Evidence must be PDF, PNG, JPEG, or plain text.");
+        var evidence = await repo.CreateEvidenceAsync(new RelationsEvidence { CaseId = caseId, Title = title, EvidenceType = evidenceType, FileName = fileName, ContentType = contentType, SizeBytes = sizeBytes, StoragePath = storagePath, AddedBySubjectId = actorSubjectId }, ct);
+        await RecordAsync(caseId, "evidence-added", actorSubjectId, null, null, title, ct); return MapEvidence(evidence);
+    }
+
+    public async Task<(RelationsEvidence Evidence, Stream Stream)> GetEvidenceAsync(Guid evidenceId, string actorSubjectId, CancellationToken ct)
+    {
+        var evidence = await repo.GetEvidenceAsync(evidenceId, ct) ?? throw new DomainException("case-evidence-not-found", $"Evidence {evidenceId} does not exist.");
+        _ = await RequireAccessibleAsync(evidence.CaseId, actorSubjectId, ct);
+        if (!File.Exists(evidence.StoragePath)) throw new DomainException("evidence-file-missing", "The evidence file is unavailable.");
+        await RecordAsync(evidence.CaseId, "evidence-downloaded", actorSubjectId, null, null, evidence.Title, ct);
+        return (evidence, File.OpenRead(evidence.StoragePath));
+    }
+
+    public async Task<Paged<ProtectedDisclosureInvestigationDto>> ListProtectedDisclosuresAsync(string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "investigator"); var (items, total) = await repo.ListProtectedDisclosuresAsync(status, ct);
+        return new Paged<ProtectedDisclosureInvestigationDto>(items.Select(x => MapDisclosure(x, [], false)).ToList(), total, 1, 50);
+    }
+
+    public async Task<ProtectedDisclosureInvestigationDto> GetProtectedDisclosureAsync(Guid id, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "investigator"); var d = await RequireDisclosureAsync(id, actorSubjectId, ct);
+        await repo.CreateProtectedDisclosureEventAsync(new ProtectedDisclosureEvent { DisclosureId = id, Action = "viewed", ActorSubjectId = actorSubjectId, FromStatus = d.Status, ToStatus = d.Status }, ct);
+        return MapDisclosure(d, await repo.ListProtectedDisclosureEventsAsync(id, ct), true);
+    }
+
+    public async Task<ProtectedDisclosureInvestigationDto> UpdateProtectedDisclosureAsync(Guid id, ProtectedDisclosureUpdateRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "investigator"); var d = await RequireDisclosureAsync(id, actorSubjectId, ct); var target = request.Status.Trim().ToLowerInvariant();
+        if (!DisclosureTransitions.TryGetValue(d.Status, out var allowed) || !allowed.Contains(target)) throw new DomainException("disclosure-invalid-transition", $"Disclosure cannot move from '{d.Status}' to '{target}'.");
+        if (target is "resolved" or "dismissed" && string.IsNullOrWhiteSpace(request.Outcome)) throw new DomainException("disclosure-outcome-required", "An outcome is required to close a protected disclosure.");
+        var from = d.Status; d.Status = target; if (request.TriageNotes is not null) d.TriageNotes = request.TriageNotes; if (request.Outcome is not null) d.Outcome = request.Outcome;
+        if (request.AssignedToSubjectId is not null) d.AssignedToSubjectId = request.AssignedToSubjectId;
+        if (target is "resolved" or "dismissed") d.ClosedAt = DateTimeOffset.UtcNow;
+        await repo.UpdateProtectedDisclosureAsync(d, ct); await repo.CreateProtectedDisclosureEventAsync(new ProtectedDisclosureEvent { DisclosureId = id, Action = "status-changed", ActorSubjectId = actorSubjectId, FromStatus = from, ToStatus = target, Notes = request.TriageNotes }, ct);
+        return MapDisclosure(d, await repo.ListProtectedDisclosureEventsAsync(id, ct), true);
+    }
+
+    private static readonly Dictionary<string, HashSet<string>> CaseTransitions = new()
+    {
+        ["open"] = ["triage"], ["triage"] = ["investigating"], ["investigating"] = ["action-pending", "resolved"],
+        ["in-progress"] = ["investigating", "resolved"],
+        ["action-pending"] = ["investigating", "resolved"], ["resolved"] = ["investigating", "closed"], ["closed"] = []
+    };
+    private static readonly Dictionary<string, HashSet<string>> DisclosureTransitions = new()
+    { ["new"] = ["triage"], ["triage"] = ["investigating", "dismissed"], ["investigating"] = ["resolved", "dismissed"], ["resolved"] = [], ["dismissed"] = [] };
+
+    private async Task<RelationsCase> RequireCaseAsync(Guid id, CancellationToken ct) => await repo.GetCaseAsync(id, ct) ?? throw new DomainException("case-not-found", $"Relations case {id} does not exist.");
+    private void RequireAssignedOrAdmin(RelationsCase c, string actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor) || actor == "system") throw new DomainException("actor-required", "An authenticated subject is required.");
+        if (c.OwnerSubjectId is not null && !string.Equals(c.OwnerSubjectId, actor, StringComparison.Ordinal) && !authz.IsRole("hr_admin")) throw new DomainException("case-access-denied", "This case is assigned to another investigator.");
+    }
+    private async Task<RelationsCase> RequireAccessibleAsync(Guid id, string actor, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "investigator"); var c = await RequireCaseAsync(id, ct); RequireAssignedOrAdmin(c, actor);
+        var declaration = await repo.GetAccessAsync(id, actor, ct);
+        if (declaration?.Decision != "no-conflict") throw new DomainException(declaration?.Decision == "conflict" ? "case-conflict-declared" : "case-access-declaration-required", "Declare that you have no conflict before accessing restricted case details.");
+        return c;
+    }
+    private async Task<ProtectedDisclosure> RequireDisclosureAsync(Guid id, string actor, CancellationToken ct)
+    {
+        var d = await repo.GetProtectedDisclosureAsync(id, ct) ?? throw new DomainException("disclosure-not-found", $"Protected disclosure {id} does not exist.");
+        if (d.AssignedToSubjectId is not null && d.AssignedToSubjectId != actor && !authz.IsRole("hr_admin")) throw new DomainException("disclosure-access-denied", "This protected disclosure is assigned to another investigator."); return d;
+    }
+    private async Task RecordAsync(Guid caseId, string action, string actor, string? from, string? to, string? notes, CancellationToken ct)
+        => _ = await repo.CreateEventAsync(new RelationsCaseEvent { CaseId = caseId, Action = action, ActorSubjectId = actor, FromStatus = from, ToStatus = to, Notes = notes }, ct);
+    private async Task<RelationsCaseDetailDto> MapDetailAsync(RelationsCase c, CancellationToken ct) => new(MapList(c, true), c.Description, c.Findings, c.Outcome, c.RaisedBy,
+        (await repo.ListActionsAsync(c.Id, ct)).Select(MapAction).ToList(), (await repo.ListEvidenceAsync(c.Id, ct)).Select(MapEvidence).ToList(),
+        (await repo.ListEventsAsync(c.Id, ct)).Select(MapEvent).ToList(), (await repo.ListAccessAsync(c.Id, ct)).Select(MapAccess).ToList());
+    private static RelationsCaseDto MapList(RelationsCase c, bool revealSummary = false) => new(c.Id, c.SubjectWorkerId, c.CaseType, c.Category, c.Severity,
+        revealSummary || c.Confidentiality != "restricted" ? c.Summary : "Restricted case", c.Status, c.CreatedAt, c.Reference, c.Confidentiality, c.OwnerSubjectId, c.DueDate?.ToString("yyyy-MM-dd"));
+    private static RelationsAccessDto MapAccess(RelationsCaseAccess x) => new(x.Id, x.CaseId, x.ActorSubjectId, x.Decision, x.Notes, x.CreatedAt);
+    private static RelationsEventDto MapEvent(RelationsCaseEvent x) => new(x.Id, x.Action, x.ActorSubjectId, x.FromStatus, x.ToStatus, x.Notes, x.CreatedAt);
+    private static RelationsEventDto MapEvent(ProtectedDisclosureEvent x) => new(x.Id, x.Action, x.ActorSubjectId, x.FromStatus, x.ToStatus, x.Notes, x.CreatedAt);
+    private static RelationsActionDto MapAction(RelationsCaseAction x) => new(x.Id, x.ActionType, x.Title, x.Status, x.OwnerSubjectId, x.DueDate?.ToString("yyyy-MM-dd"), x.Notes, x.CompletedAt);
+    private static RelationsEvidenceDto MapEvidence(RelationsEvidence x) => new(x.Id, x.Title, x.EvidenceType, x.FileName, x.ContentType, x.SizeBytes, x.Classification, x.AddedBySubjectId, x.CreatedAt);
+    private static ProtectedDisclosureInvestigationDto MapDisclosure(ProtectedDisclosure x, List<ProtectedDisclosureEvent> history, bool reveal) => new(x.Id, x.CaseReference, x.Category, x.Severity, x.Status,
+        reveal ? x.Description : null, reveal ? x.TriageNotes : null, reveal ? x.Outcome : null, x.AssignedToSubjectId, x.CreatedAt, history.Select(MapEvent).ToList());
 }
 
 public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepository configRepo, IAuthzService authz) : IDocumentsService

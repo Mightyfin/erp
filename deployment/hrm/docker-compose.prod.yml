@@ -21,6 +21,8 @@ services:
       - /home/mightyfin/.config/mightyfin/hrm/.env
     ports:
       - "127.0.0.1:28911:8080"
+    volumes:
+      - hrm_relations_evidence:/tmp/erp-relations-evidence
     networks:
       - erp_default
     depends_on:
@@ -109,3 +111,6 @@ networks:
   communications:
     external: true
     name: mightyfin-communications-sandbox_communications
+
+volumes:
+  hrm_relations_evidence:

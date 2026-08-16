@@ -214,7 +214,14 @@ public sealed record PreboardingTaskUpdateRequest(string Status, string? Notes =
 
 // ===================== Relations (M7) =====================
 
-public sealed record RelationsCaseCreate(Guid? SubjectWorkerId, string CaseType, string Category, string Severity, string Summary, string Description);
+public sealed record RelationsCaseCreate(Guid? SubjectWorkerId, string CaseType, string Category, string Severity, string Summary, string Description,
+    string Confidentiality = "restricted", string? OwnerSubjectId = null, string? DueDate = null, string? RaisedBy = null);
+public sealed record RelationsAccessDeclarationRequest(string Decision, string? Notes = null);
+public sealed record RelationsCaseAssignRequest(string OwnerSubjectId);
+public sealed record RelationsCaseTransitionRequest(string Status, string? Notes = null, string? Findings = null, string? Outcome = null);
+public sealed record RelationsActionCreateRequest(string ActionType, string Title, string? OwnerSubjectId = null, string? DueDate = null, string? Notes = null);
+public sealed record RelationsActionUpdateRequest(string Status, string? Notes = null);
+public sealed record ProtectedDisclosureUpdateRequest(string Status, string? TriageNotes = null, string? Outcome = null, string? AssignedToSubjectId = null);
 
 // ===================== Documents & reports (M8) =====================
 

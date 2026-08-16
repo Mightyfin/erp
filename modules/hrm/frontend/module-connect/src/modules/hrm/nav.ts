@@ -171,6 +171,8 @@ export const hrmModule: ModuleDefinition = {
       icon: Shield,
       roles: ["hr_ops", "hr_admin"],
       items: [
+        { label: "Case operations", to: "/hrm/relations/operations" },
+        { label: "Protected disclosures", to: "/hrm/relations/protected-disclosures" },
         { label: "Cases", to: "/hrm/relations/cases" },
         { label: "Warning register", to: "/hrm/relations/discipline" },
         { label: "Health and safety", to: "/hrm/relations/safety" },

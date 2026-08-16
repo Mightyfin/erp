@@ -417,6 +417,42 @@ export const realApi = {
     hrmApi.get<{ items: unknown[] }>("/hrm/relations/cases", params ?? {}),
   createCase: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/relations/cases", body),
+  relationsCase: (id: string) => hrmApi.get<Record<string, unknown>>(`/hrm/relations/cases/${id}`),
+  declareRelationsAccess: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/relations/cases/${id}/access-declarations`, body),
+  assignRelationsCase: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/relations/cases/${id}/assign`, body),
+  transitionRelationsCase: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/relations/cases/${id}/transition`, body),
+  createRelationsAction: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/relations/cases/${id}/actions`, body),
+  updateRelationsAction: (caseId: string, actionId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(
+      `/hrm/relations/cases/${caseId}/actions/${actionId}`,
+      body,
+    ),
+  uploadRelationsEvidence: (caseId: string, file: File, title: string, evidenceType: string) =>
+    hrmApi.uploadRelationsEvidence(caseId, file, title, evidenceType),
+  downloadRelationsEvidence: async (evidenceId: string, fileName: string) => {
+    const url = await hrmApi.downloadRelationsEvidence(evidenceId);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  },
+  protectedDisclosures: (status?: string) =>
+    hrmApi.get<{ items: unknown[] }>(
+      "/hrm/relations/protected-disclosures",
+      status ? { status } : {},
+    ),
+  protectedDisclosure: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/relations/protected-disclosures/${id}`),
+  transitionProtectedDisclosure: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(
+      `/hrm/relations/protected-disclosures/${id}/transition`,
+      body,
+    ),
 
   /** Admin config: org tree, legal entities, calendars, holidays, capabilities. */
   orgTree: () => hrmApi.get<unknown>("/hrm/admin/org-units/tree"),

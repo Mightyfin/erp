@@ -1271,13 +1271,62 @@ public sealed class RelationsRepository(HrmDbContext db) : IRelationsRepository
         return caseRecord;
     }
     public async Task<RelationsCase?> GetCaseAsync(Guid id, CancellationToken ct)
-        => await db.RelationsCases.FirstOrDefaultAsync(c => c.Id == id, ct);
+        => await db.RelationsCases.Include(c => c.SubjectWorker).FirstOrDefaultAsync(c => c.Id == id, ct);
     public async Task<RelationsCase> UpdateCaseAsync(RelationsCase caseRecord, CancellationToken ct)
     {
         db.Set<RelationsCase>().Update(caseRecord);
         await db.SaveChangesAsync(ct);
         return caseRecord;
     }
+    public async Task<int> CountCasesThisYearAsync(CancellationToken ct)
+    {
+        var start = new DateTimeOffset(DateTimeOffset.UtcNow.Year, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var createdAt = await db.RelationsCases.Select(x => x.CreatedAt).ToListAsync(ct);
+        return createdAt.Count(x => x >= start);
+    }
+    public async Task<RelationsCaseAccess?> GetAccessAsync(Guid caseId, string actorSubjectId, CancellationToken ct)
+        => await db.RelationsCaseAccessDeclarations.FirstOrDefaultAsync(x => x.CaseId == caseId && x.ActorSubjectId == actorSubjectId, ct);
+    public async Task<RelationsCaseAccess> CreateAccessAsync(RelationsCaseAccess access, CancellationToken ct)
+    {
+        var existing = await GetAccessAsync(access.CaseId, access.ActorSubjectId, ct);
+        if (existing is null) db.RelationsCaseAccessDeclarations.Add(access);
+        else { existing.Decision = access.Decision; existing.Notes = access.Notes; access = existing; }
+        await db.SaveChangesAsync(ct); return access;
+    }
+    public Task<List<RelationsCaseAccess>> ListAccessAsync(Guid caseId, CancellationToken ct)
+        => db.RelationsCaseAccessDeclarations.Where(x => x.CaseId == caseId).ToListAsync(ct);
+    public async Task<RelationsCaseEvent> CreateEventAsync(RelationsCaseEvent entry, CancellationToken ct)
+    { db.RelationsCaseEvents.Add(entry); await db.SaveChangesAsync(ct); return entry; }
+    public async Task<List<RelationsCaseEvent>> ListEventsAsync(Guid caseId, CancellationToken ct)
+        => (await db.RelationsCaseEvents.Where(x => x.CaseId == caseId).ToListAsync(ct)).OrderBy(x => x.CreatedAt).ToList();
+    public async Task<RelationsCaseAction> CreateActionAsync(RelationsCaseAction action, CancellationToken ct)
+    { db.RelationsCaseActions.Add(action); await db.SaveChangesAsync(ct); return action; }
+    public Task<RelationsCaseAction?> GetActionAsync(Guid id, CancellationToken ct)
+        => db.RelationsCaseActions.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<RelationsCaseAction> UpdateActionAsync(RelationsCaseAction action, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return action; }
+    public Task<List<RelationsCaseAction>> ListActionsAsync(Guid caseId, CancellationToken ct)
+        => db.RelationsCaseActions.Where(x => x.CaseId == caseId).ToListAsync(ct);
+    public async Task<RelationsEvidence> CreateEvidenceAsync(RelationsEvidence evidence, CancellationToken ct)
+    { db.RelationsEvidence.Add(evidence); await db.SaveChangesAsync(ct); return evidence; }
+    public Task<RelationsEvidence?> GetEvidenceAsync(Guid id, CancellationToken ct)
+        => db.RelationsEvidence.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<List<RelationsEvidence>> ListEvidenceAsync(Guid caseId, CancellationToken ct)
+        => (await db.RelationsEvidence.Where(x => x.CaseId == caseId).ToListAsync(ct)).OrderByDescending(x => x.CreatedAt).ToList();
+    public async Task<(List<ProtectedDisclosure> Items, int Total)> ListProtectedDisclosuresAsync(string? status, CancellationToken ct)
+    {
+        var q = db.ProtectedDisclosures.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        var items = await q.ToListAsync(ct); return (items.OrderByDescending(x => x.CreatedAt).ToList(), items.Count);
+    }
+    public Task<ProtectedDisclosure?> GetProtectedDisclosureAsync(Guid id, CancellationToken ct)
+        => db.ProtectedDisclosures.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<ProtectedDisclosure> UpdateProtectedDisclosureAsync(ProtectedDisclosure disclosure, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return disclosure; }
+    public async Task<ProtectedDisclosureEvent> CreateProtectedDisclosureEventAsync(ProtectedDisclosureEvent entry, CancellationToken ct)
+    { db.ProtectedDisclosureEvents.Add(entry); await db.SaveChangesAsync(ct); return entry; }
+    public async Task<List<ProtectedDisclosureEvent>> ListProtectedDisclosureEventsAsync(Guid disclosureId, CancellationToken ct)
+        => (await db.ProtectedDisclosureEvents.Where(x => x.DisclosureId == disclosureId).ToListAsync(ct)).OrderBy(x => x.CreatedAt).ToList();
 }
 
 public sealed class DocumentsRepository(HrmDbContext db) : IDocumentsRepository

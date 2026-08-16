@@ -64,9 +64,29 @@ public interface IRelationsService
     Task<Paged<RelationsCaseDto>> ListCasesAsync(string? category, CancellationToken ct);
     Task<RelationsCaseDto> CreateCaseAsync(RelationsCaseCreate request, CancellationToken ct);
     Task<RelationsCaseDto> UpdateCaseAsync(Guid caseId, RelationsCaseUpdate request, CancellationToken ct);
+    Task<RelationsCaseDetailDto> GetCaseAsync(Guid caseId, string actorSubjectId, CancellationToken ct);
+    Task<RelationsAccessDto> DeclareAccessAsync(Guid caseId, RelationsAccessDeclarationRequest request, string actorSubjectId, CancellationToken ct);
+    Task<RelationsCaseDto> AssignCaseAsync(Guid caseId, RelationsCaseAssignRequest request, string actorSubjectId, CancellationToken ct);
+    Task<RelationsCaseDetailDto> TransitionCaseAsync(Guid caseId, RelationsCaseTransitionRequest request, string actorSubjectId, CancellationToken ct);
+    Task<RelationsActionDto> AddActionAsync(Guid caseId, RelationsActionCreateRequest request, string actorSubjectId, CancellationToken ct);
+    Task<RelationsActionDto> UpdateActionAsync(Guid caseId, Guid actionId, RelationsActionUpdateRequest request, string actorSubjectId, CancellationToken ct);
+    Task<RelationsEvidenceDto> AddEvidenceAsync(Guid caseId, string title, string evidenceType, string fileName, string contentType, long sizeBytes, string storagePath, string actorSubjectId, CancellationToken ct);
+    Task<(RelationsEvidence Evidence, Stream Stream)> GetEvidenceAsync(Guid evidenceId, string actorSubjectId, CancellationToken ct);
+    Task<Paged<ProtectedDisclosureInvestigationDto>> ListProtectedDisclosuresAsync(string? status, CancellationToken ct);
+    Task<ProtectedDisclosureInvestigationDto> GetProtectedDisclosureAsync(Guid id, string actorSubjectId, CancellationToken ct);
+    Task<ProtectedDisclosureInvestigationDto> UpdateProtectedDisclosureAsync(Guid id, ProtectedDisclosureUpdateRequest request, string actorSubjectId, CancellationToken ct);
 }
 public sealed record RelationsCaseUpdate(string? Status, string? Severity, string? Summary, string? Description, string? Outcome = null);
-public sealed record RelationsCaseDto(Guid Id, Guid? SubjectWorkerId, string CaseType, string Category, string Severity, string Summary, string Status, DateTimeOffset CreatedAt);
+public sealed record RelationsCaseDto(Guid Id, Guid? SubjectWorkerId, string CaseType, string Category, string Severity, string Summary, string Status, DateTimeOffset CreatedAt,
+    string? Reference = null, string Confidentiality = "restricted", string? OwnerSubjectId = null, string? DueDate = null);
+public sealed record RelationsAccessDto(Guid Id, Guid CaseId, string ActorSubjectId, string Decision, string? Notes, DateTimeOffset CreatedAt);
+public sealed record RelationsEventDto(Guid Id, string Action, string ActorSubjectId, string? FromStatus, string? ToStatus, string? Notes, DateTimeOffset CreatedAt);
+public sealed record RelationsActionDto(Guid Id, string ActionType, string Title, string Status, string? OwnerSubjectId, string? DueDate, string? Notes, DateTimeOffset? CompletedAt);
+public sealed record RelationsEvidenceDto(Guid Id, string Title, string EvidenceType, string FileName, string ContentType, long SizeBytes, string Classification, string AddedBySubjectId, DateTimeOffset CreatedAt);
+public sealed record RelationsCaseDetailDto(RelationsCaseDto Case, string Description, string? Findings, string? Outcome, string? RaisedBy,
+    List<RelationsActionDto> Actions, List<RelationsEvidenceDto> Evidence, List<RelationsEventDto> History, List<RelationsAccessDto> AccessDeclarations);
+public sealed record ProtectedDisclosureInvestigationDto(Guid Id, string CaseReference, string Category, string Severity, string Status,
+    string? Description, string? TriageNotes, string? Outcome, string? AssignedToSubjectId, DateTimeOffset CreatedAt, List<RelationsEventDto> History);
 
 /// <summary>Documents & reports (M8).</summary>
 public interface IDocumentsService
@@ -170,6 +190,24 @@ public interface IRelationsRepository
     Task<RelationsCase> CreateCaseAsync(RelationsCase caseRecord, CancellationToken ct);
     Task<RelationsCase?> GetCaseAsync(Guid id, CancellationToken ct);
     Task<RelationsCase> UpdateCaseAsync(RelationsCase caseRecord, CancellationToken ct);
+    Task<int> CountCasesThisYearAsync(CancellationToken ct);
+    Task<RelationsCaseAccess?> GetAccessAsync(Guid caseId, string actorSubjectId, CancellationToken ct);
+    Task<RelationsCaseAccess> CreateAccessAsync(RelationsCaseAccess access, CancellationToken ct);
+    Task<List<RelationsCaseAccess>> ListAccessAsync(Guid caseId, CancellationToken ct);
+    Task<RelationsCaseEvent> CreateEventAsync(RelationsCaseEvent entry, CancellationToken ct);
+    Task<List<RelationsCaseEvent>> ListEventsAsync(Guid caseId, CancellationToken ct);
+    Task<RelationsCaseAction> CreateActionAsync(RelationsCaseAction action, CancellationToken ct);
+    Task<RelationsCaseAction?> GetActionAsync(Guid id, CancellationToken ct);
+    Task<RelationsCaseAction> UpdateActionAsync(RelationsCaseAction action, CancellationToken ct);
+    Task<List<RelationsCaseAction>> ListActionsAsync(Guid caseId, CancellationToken ct);
+    Task<RelationsEvidence> CreateEvidenceAsync(RelationsEvidence evidence, CancellationToken ct);
+    Task<RelationsEvidence?> GetEvidenceAsync(Guid id, CancellationToken ct);
+    Task<List<RelationsEvidence>> ListEvidenceAsync(Guid caseId, CancellationToken ct);
+    Task<(List<ProtectedDisclosure> Items, int Total)> ListProtectedDisclosuresAsync(string? status, CancellationToken ct);
+    Task<ProtectedDisclosure?> GetProtectedDisclosureAsync(Guid id, CancellationToken ct);
+    Task<ProtectedDisclosure> UpdateProtectedDisclosureAsync(ProtectedDisclosure disclosure, CancellationToken ct);
+    Task<ProtectedDisclosureEvent> CreateProtectedDisclosureEventAsync(ProtectedDisclosureEvent entry, CancellationToken ct);
+    Task<List<ProtectedDisclosureEvent>> ListProtectedDisclosureEventsAsync(Guid disclosureId, CancellationToken ct);
 }
 
 public interface IDocumentsRepository
@@ -290,6 +328,7 @@ public sealed class PreboardingTask : Entity
 
 public sealed class RelationsCase : Entity
 {
+    public string? Reference { get; set; }
     public Guid? SubjectWorkerId { get; set; }
     public Worker? SubjectWorker { get; set; }
     public string CaseType { get; set; } = null!;      // disciplinary | grievance | misconduct | investigation
@@ -299,5 +338,71 @@ public sealed class RelationsCase : Entity
     public string Description { get; set; } = null!;
     public string Status { get; set; } = "open";        // open | in-progress | resolved | closed
     public string Classification { get; set; } = "restricted";
+    public string Confidentiality { get; set; } = "restricted";
+    public string? OwnerSubjectId { get; set; }
+    public string? RaisedBy { get; set; }
+    public DateOnly? DueDate { get; set; }
+    public string? Findings { get; set; }
     public string? Outcome { get; set; }               // filled on resolved/closed
+    public DateTimeOffset? ClosedAt { get; set; }
+    public ICollection<RelationsCaseAction> Actions { get; set; } = new List<RelationsCaseAction>();
+    public ICollection<RelationsEvidence> Evidence { get; set; } = new List<RelationsEvidence>();
+}
+
+public sealed class RelationsCaseAccess : Entity
+{
+    public Guid CaseId { get; set; }
+    public RelationsCase? Case { get; set; }
+    public string ActorSubjectId { get; set; } = null!;
+    public string Decision { get; set; } = null!; // no-conflict | conflict
+    public string? Notes { get; set; }
+}
+
+public sealed class RelationsCaseEvent : Entity
+{
+    public Guid CaseId { get; set; }
+    public RelationsCase? Case { get; set; }
+    public string Action { get; set; } = null!;
+    public string ActorSubjectId { get; set; } = null!;
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public string? Notes { get; set; }
+}
+
+public sealed class RelationsCaseAction : Entity
+{
+    public Guid CaseId { get; set; }
+    public RelationsCase? Case { get; set; }
+    public string ActionType { get; set; } = "investigation";
+    public string Title { get; set; } = null!;
+    public string Status { get; set; } = "pending";
+    public string? OwnerSubjectId { get; set; }
+    public DateOnly? DueDate { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+}
+
+public sealed class RelationsEvidence : Entity
+{
+    public Guid CaseId { get; set; }
+    public RelationsCase? Case { get; set; }
+    public string Title { get; set; } = null!;
+    public string EvidenceType { get; set; } = "document";
+    public string FileName { get; set; } = null!;
+    public string ContentType { get; set; } = null!;
+    public long SizeBytes { get; set; }
+    public string StoragePath { get; set; } = null!;
+    public string Classification { get; set; } = "restricted";
+    public string AddedBySubjectId { get; set; } = null!;
+}
+
+public sealed class ProtectedDisclosureEvent : Entity
+{
+    public Guid DisclosureId { get; set; }
+    public ProtectedDisclosure? Disclosure { get; set; }
+    public string Action { get; set; } = null!;
+    public string ActorSubjectId { get; set; } = null!;
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public string? Notes { get; set; }
 }

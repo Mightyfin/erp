@@ -92,7 +92,9 @@ public class ProtectedDisclosure : Entity
     public string Status { get; set; } = "new";        // new | triage | investigating | resolved | dismissed
     public string? TriageNotes { get; set; }           // restricted: investigator workspace only
     public Guid? AssignedToId { get; set; }            // investigator worker id; conflict-safe assignment
+    public string? AssignedToSubjectId { get; set; }
     public string? Outcome { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
 }
 
 /// <summary>HRM-006: Employee document in the digital file.</summary>

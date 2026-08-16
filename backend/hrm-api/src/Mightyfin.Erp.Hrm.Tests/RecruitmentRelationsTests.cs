@@ -241,6 +241,68 @@ public class RecruitmentRelationsTests
     }
 
     [Fact]
+    public async Task M30_RestrictedCase_RequiresDeclarationAndAuditsInvestigationToClosure()
+    {
+        var (_, _, svc, ctx) = Build();
+        await SeedOrgAsync(ctx);
+        var created = await svc.CreateCaseAsync(new RelationsCaseCreate(null, "grievance", "conduct", "high",
+            "Neutral triage label", "Detailed allegation", OwnerSubjectId: "investigator-1", DueDate: "2026-08-31"), CancellationToken.None);
+
+        var queue = await svc.ListCasesAsync(null, CancellationToken.None);
+        Assert.Equal("Restricted case", queue.Items.Single().Summary);
+        var blocked = await Assert.ThrowsAsync<DomainException>(() => svc.GetCaseAsync(created.Id, "investigator-1", CancellationToken.None));
+        Assert.Equal("case-access-declaration-required", blocked.Code);
+
+        await svc.DeclareAccessAsync(created.Id, new RelationsAccessDeclarationRequest("no-conflict", "Checked parties"), "investigator-1", CancellationToken.None);
+        var detail = await svc.GetCaseAsync(created.Id, "investigator-1", CancellationToken.None);
+        Assert.Equal("Detailed allegation", detail.Description);
+        Assert.Contains(detail.History, x => x.Action == "viewed");
+
+        detail = await svc.TransitionCaseAsync(created.Id, new RelationsCaseTransitionRequest("triage"), "investigator-1", CancellationToken.None);
+        detail = await svc.TransitionCaseAsync(created.Id, new RelationsCaseTransitionRequest("investigating"), "investigator-1", CancellationToken.None);
+        var action = await svc.AddActionAsync(created.Id, new RelationsActionCreateRequest("interview", "Interview witness"), "investigator-1", CancellationToken.None);
+        var openAction = await Assert.ThrowsAsync<DomainException>(() => svc.TransitionCaseAsync(created.Id,
+            new RelationsCaseTransitionRequest("resolved", Findings: "Allegation substantiated", Outcome: "Corrective action"), "investigator-1", CancellationToken.None));
+        Assert.Equal("case-actions-open", openAction.Code);
+        await svc.UpdateActionAsync(created.Id, action.Id, new RelationsActionUpdateRequest("completed", "Interview recorded"), "investigator-1", CancellationToken.None);
+        detail = await svc.TransitionCaseAsync(created.Id,
+            new RelationsCaseTransitionRequest("resolved", Findings: "Allegation substantiated", Outcome: "Corrective action"), "investigator-1", CancellationToken.None);
+        detail = await svc.TransitionCaseAsync(created.Id, new RelationsCaseTransitionRequest("closed", Outcome: "Corrective action"), "investigator-1", CancellationToken.None);
+        Assert.Equal("closed", detail.Case.Status);
+        Assert.True(detail.History.Count >= 8);
+    }
+
+    [Fact]
+    public async Task M30_ConflictDeclaration_DeniesRestrictedDetail()
+    {
+        var (_, _, svc, ctx) = Build();
+        await SeedOrgAsync(ctx);
+        var created = await svc.CreateCaseAsync(new RelationsCaseCreate(null, "misconduct", "conduct", "medium", "Triage", "Restricted facts"), CancellationToken.None);
+        await svc.DeclareAccessAsync(created.Id, new RelationsAccessDeclarationRequest("conflict", "I manage one of the parties"), "investigator-2", CancellationToken.None);
+        var denied = await Assert.ThrowsAsync<DomainException>(() => svc.GetCaseAsync(created.Id, "investigator-2", CancellationToken.None));
+        Assert.Equal("case-conflict-declared", denied.Code);
+    }
+
+    [Fact]
+    public async Task M30_ProtectedDisclosure_RemainsSeparateAndHasOwnAuditWorkflow()
+    {
+        var (_, experience, relations, ctx) = Build();
+        var submitted = await experience.SubmitDisclosureAsync(new ProtectedDisclosureCreate("financial-misconduct", "high", "Anonymous report details"), CancellationToken.None);
+        var disclosure = await ctx.ProtectedDisclosures.SingleAsync(x => x.CaseReference == submitted.CaseReference);
+        Assert.Empty(await ctx.RelationsCases.ToListAsync());
+
+        var queue = await relations.ListProtectedDisclosuresAsync(null, CancellationToken.None);
+        Assert.Null(queue.Items.Single().Description);
+        var detail = await relations.GetProtectedDisclosureAsync(disclosure.Id, "investigator-3", CancellationToken.None);
+        Assert.Equal("Anonymous report details", detail.Description);
+        detail = await relations.UpdateProtectedDisclosureAsync(disclosure.Id, new ProtectedDisclosureUpdateRequest("triage", "Initial risk assessment", AssignedToSubjectId: "investigator-3"), "investigator-3", CancellationToken.None);
+        detail = await relations.UpdateProtectedDisclosureAsync(disclosure.Id, new ProtectedDisclosureUpdateRequest("investigating", "Evidence review"), "investigator-3", CancellationToken.None);
+        detail = await relations.UpdateProtectedDisclosureAsync(disclosure.Id, new ProtectedDisclosureUpdateRequest("resolved", Outcome: "Controls remediated"), "investigator-3", CancellationToken.None);
+        Assert.Equal("resolved", detail.Status);
+        Assert.Contains(detail.History, x => x.Action == "status-changed");
+    }
+
+    [Fact]
     public async Task SpeakUp_IsAnonymousAndStatusLookupRequiresSecretAccessCode()
     {
         var ctx = NewContext();

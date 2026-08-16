@@ -212,6 +212,35 @@ export const hrmApi = {
     return handleResponse(res);
   },
 
+  async uploadRelationsEvidence(
+    caseId: string,
+    file: File,
+    title: string,
+    evidenceType: string,
+  ): Promise<unknown> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("title", title);
+    form.append("evidenceType", evidenceType);
+    const res = await fetch(`${BASE}/hrm/relations/cases/${caseId}/evidence`, {
+      method: "POST",
+      headers: headers(),
+      body: form,
+    });
+    return handleResponse(res);
+  },
+
+  async downloadRelationsEvidence(evidenceId: string): Promise<string> {
+    const res = await fetch(`${BASE}/hrm/relations/evidence/${evidenceId}/download`, {
+      headers: headers(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new ApiError(text || `HTTP ${res.status}`, res.status);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
+
   /** Stream a document by id and return a Blob URL caller must revoke. */
   async downloadDocument(documentId: string): Promise<string> {
     const res = await fetch(`${BASE}/hrm/documents/${documentId}/download`, {

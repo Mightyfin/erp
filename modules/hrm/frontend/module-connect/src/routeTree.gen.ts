@@ -69,6 +69,8 @@ import { Route as HrmRelationsCasesRouteImport } from './routes/hrm.relations.ca
 import { Route as HrmRelationsDisciplineRouteImport } from './routes/hrm.relations.discipline'
 import { Route as HrmRelationsEthicsRouteImport } from './routes/hrm.relations.ethics'
 import { Route as HrmRelationsLabourRouteImport } from './routes/hrm.relations.labour'
+import { Route as HrmRelationsOperationsRouteImport } from './routes/hrm.relations.operations'
+import { Route as HrmRelationsProtectedDisclosuresRouteImport } from './routes/hrm.relations.protected-disclosures'
 import { Route as HrmRelationsSafetyRouteImport } from './routes/hrm.relations.safety'
 import { Route as HrmReportsIndexRouteImport } from './routes/hrm.reports.index'
 import { Route as HrmReportsBuilderRouteImport } from './routes/hrm.reports.builder'
@@ -410,6 +412,17 @@ const HrmRelationsLabourRoute = HrmRelationsLabourRouteImport.update({
   path: '/hrm/relations/labour',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmRelationsOperationsRoute = HrmRelationsOperationsRouteImport.update({
+  id: '/hrm/relations/operations',
+  path: '/hrm/relations/operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmRelationsProtectedDisclosuresRoute =
+  HrmRelationsProtectedDisclosuresRouteImport.update({
+    id: '/hrm/relations/protected-disclosures',
+    path: '/hrm/relations/protected-disclosures',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const HrmRelationsSafetyRoute = HrmRelationsSafetyRouteImport.update({
   id: '/hrm/relations/safety',
   path: '/hrm/relations/safety',
@@ -628,6 +641,8 @@ export interface FileRoutesByFullPath {
   '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
   '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
   '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/operations': typeof HrmRelationsOperationsRoute
+  '/hrm/relations/protected-disclosures': typeof HrmRelationsProtectedDisclosuresRoute
   '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
   '/hrm/reports/builder': typeof HrmReportsBuilderRoute
   '/hrm/requests/$id': typeof HrmRequestsIdRoute
@@ -722,6 +737,8 @@ export interface FileRoutesByTo {
   '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
   '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
   '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/operations': typeof HrmRelationsOperationsRoute
+  '/hrm/relations/protected-disclosures': typeof HrmRelationsProtectedDisclosuresRoute
   '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
   '/hrm/reports/builder': typeof HrmReportsBuilderRoute
   '/hrm/requests/$id': typeof HrmRequestsIdRoute
@@ -817,6 +834,8 @@ export interface FileRoutesById {
   '/hrm/relations/discipline': typeof HrmRelationsDisciplineRoute
   '/hrm/relations/ethics': typeof HrmRelationsEthicsRoute
   '/hrm/relations/labour': typeof HrmRelationsLabourRoute
+  '/hrm/relations/operations': typeof HrmRelationsOperationsRoute
+  '/hrm/relations/protected-disclosures': typeof HrmRelationsProtectedDisclosuresRoute
   '/hrm/relations/safety': typeof HrmRelationsSafetyRoute
   '/hrm/reports/builder': typeof HrmReportsBuilderRoute
   '/hrm/requests/$id': typeof HrmRequestsIdRoute
@@ -913,6 +932,8 @@ export interface FileRouteTypes {
     | '/hrm/relations/discipline'
     | '/hrm/relations/ethics'
     | '/hrm/relations/labour'
+    | '/hrm/relations/operations'
+    | '/hrm/relations/protected-disclosures'
     | '/hrm/relations/safety'
     | '/hrm/reports/builder'
     | '/hrm/requests/$id'
@@ -1007,6 +1028,8 @@ export interface FileRouteTypes {
     | '/hrm/relations/discipline'
     | '/hrm/relations/ethics'
     | '/hrm/relations/labour'
+    | '/hrm/relations/operations'
+    | '/hrm/relations/protected-disclosures'
     | '/hrm/relations/safety'
     | '/hrm/reports/builder'
     | '/hrm/requests/$id'
@@ -1101,6 +1124,8 @@ export interface FileRouteTypes {
     | '/hrm/relations/discipline'
     | '/hrm/relations/ethics'
     | '/hrm/relations/labour'
+    | '/hrm/relations/operations'
+    | '/hrm/relations/protected-disclosures'
     | '/hrm/relations/safety'
     | '/hrm/reports/builder'
     | '/hrm/requests/$id'
@@ -1196,6 +1221,8 @@ export interface RootRouteChildren {
   HrmRelationsDisciplineRoute: typeof HrmRelationsDisciplineRoute
   HrmRelationsEthicsRoute: typeof HrmRelationsEthicsRoute
   HrmRelationsLabourRoute: typeof HrmRelationsLabourRoute
+  HrmRelationsOperationsRoute: typeof HrmRelationsOperationsRoute
+  HrmRelationsProtectedDisclosuresRoute: typeof HrmRelationsProtectedDisclosuresRoute
   HrmRelationsSafetyRoute: typeof HrmRelationsSafetyRoute
   HrmReportsBuilderRoute: typeof HrmReportsBuilderRoute
   HrmRequestsIdRoute: typeof HrmRequestsIdRoute
@@ -1649,6 +1676,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmRelationsLabourRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/relations/operations': {
+      id: '/hrm/relations/operations'
+      path: '/hrm/relations/operations'
+      fullPath: '/hrm/relations/operations'
+      preLoaderRoute: typeof HrmRelationsOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/relations/protected-disclosures': {
+      id: '/hrm/relations/protected-disclosures'
+      path: '/hrm/relations/protected-disclosures'
+      fullPath: '/hrm/relations/protected-disclosures'
+      preLoaderRoute: typeof HrmRelationsProtectedDisclosuresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/relations/safety': {
       id: '/hrm/relations/safety'
       path: '/hrm/relations/safety'
@@ -2067,6 +2108,8 @@ const rootRouteChildren: RootRouteChildren = {
   HrmRelationsDisciplineRoute: HrmRelationsDisciplineRoute,
   HrmRelationsEthicsRoute: HrmRelationsEthicsRoute,
   HrmRelationsLabourRoute: HrmRelationsLabourRoute,
+  HrmRelationsOperationsRoute: HrmRelationsOperationsRoute,
+  HrmRelationsProtectedDisclosuresRoute: HrmRelationsProtectedDisclosuresRoute,
   HrmRelationsSafetyRoute: HrmRelationsSafetyRoute,
   HrmReportsBuilderRoute: HrmReportsBuilderRoute,
   HrmRequestsIdRoute: HrmRequestsIdRoute,

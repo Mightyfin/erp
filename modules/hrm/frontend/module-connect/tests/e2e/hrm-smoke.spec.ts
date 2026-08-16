@@ -372,3 +372,227 @@ test("HR administrator can complete the M29 candidate-to-worker journey", async 
   await expect(page.getByText("Activate worker completed")).toBeVisible();
   expect(tasks.every((x) => x.status === "completed")).toBe(true);
 });
+
+test("HR investigator can complete a restricted M30 case with access, actions, evidence and audit", async ({
+  page,
+}) => {
+  const caseId = "019d0000-0000-7000-8000-000000000301";
+  const actionId = "019d0000-0000-7000-8000-000000000302";
+  const evidenceId = "019d0000-0000-7000-8000-000000000303";
+  let created = false;
+  let declared = false;
+  let assignedOwner = "";
+  let status = "open";
+  let actionStatus = "pending";
+  let hasAction = false;
+  let hasEvidence = false;
+  let auditEvents = 1;
+
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-investigator",
+        realm_access: { roles: ["investigator", "hr_admin"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+
+  const detail = () => ({
+    case: {
+      id: caseId,
+      reference: "ER-2026-00001",
+      caseType: "grievance",
+      status,
+      confidentiality: "restricted",
+    },
+    description: "Restricted allegation detail",
+    findings: status === "resolved" || status === "closed" ? "Concern substantiated" : null,
+    outcome: status === "resolved" || status === "closed" ? "Corrective action completed" : null,
+    actions: hasAction ? [{ id: actionId, title: "Interview witness", status: actionStatus }] : [],
+    evidence: hasEvidence
+      ? [
+          {
+            id: evidenceId,
+            title: "witness-note.txt",
+            fileName: "witness-note.txt",
+            classification: "restricted",
+          },
+        ]
+      : [],
+    history: Array.from({ length: auditEvents }, (_, index) => ({
+      id: `event-${index}`,
+      action: index === 0 ? "created" : "status-changed",
+    })),
+    access: declared ? [{ decision: "no-conflict" }] : [],
+  });
+
+  await page.route("**/api/hrm/relations/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    let body: unknown = {};
+    if (url.endsWith("/relations/cases") && method === "GET") {
+      body = {
+        items: created
+          ? [
+              {
+                id: caseId,
+                reference: "ER-2026-00001",
+                caseType: "grievance",
+                status,
+                summary: "Restricted case",
+              },
+            ]
+          : [],
+      };
+    } else if (url.endsWith("/relations/cases") && method === "POST") {
+      created = true;
+      body = { id: caseId, reference: "ER-2026-00001", status };
+    } else if (url.endsWith(`/cases/${caseId}/access-declarations`)) {
+      declared = true;
+      auditEvents += 1;
+      body = { decision: "no-conflict" };
+    } else if (url.endsWith(`/cases/${caseId}/assign`)) {
+      assignedOwner = (route.request().postDataJSON() as { ownerSubjectId: string }).ownerSubjectId;
+      auditEvents += 1;
+      body = { id: caseId, ownerSubjectId: assignedOwner };
+    } else if (url.endsWith(`/cases/${caseId}`) && method === "GET") {
+      body = detail();
+    } else if (url.endsWith(`/cases/${caseId}/actions`) && method === "POST") {
+      hasAction = true;
+      auditEvents += 1;
+      body = { id: actionId, title: "Interview witness", status: actionStatus };
+    } else if (url.endsWith(`/cases/${caseId}/actions/${actionId}`)) {
+      actionStatus = "completed";
+      auditEvents += 1;
+      body = { id: actionId, title: "Interview witness", status: actionStatus };
+    } else if (url.endsWith(`/cases/${caseId}/evidence`) && method === "POST") {
+      hasEvidence = true;
+      auditEvents += 1;
+      body = { id: evidenceId, title: "witness-note.txt" };
+    } else if (url.endsWith(`/cases/${caseId}/transition`)) {
+      status = (route.request().postDataJSON() as { status: string }).status;
+      auditEvents += 1;
+      body = detail();
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/hrm/relations/operations");
+  const operations = page.getByTestId("relations-operations");
+  await operations.getByLabel("Neutral summary").fill("Neutral triage label");
+  await operations.getByLabel("Allegation or concern").fill("Restricted allegation detail");
+  await operations.getByRole("button", { name: "Create restricted case" }).click();
+  await expect(operations.getByLabel("Restricted case").locator("option")).toHaveCount(2);
+  await operations.getByLabel("Restricted case").selectOption(caseId);
+  await operations.getByLabel("Investigator subject ID").fill("playwright-investigator");
+  await operations.getByRole("button", { name: "Assign", exact: true }).click();
+  await operations.getByRole("button", { name: "I have no conflict — open case" }).click();
+  await expect(operations).toContainText("Restricted allegation detail");
+  await operations.getByRole("button", { name: "Begin triage" }).click();
+  await operations.getByRole("button", { name: "Begin investigation" }).click();
+  await operations.getByLabel("Investigation action").fill("Interview witness");
+  await operations.getByRole("button", { name: "Add action" }).click();
+  await operations.getByRole("button", { name: "Mark complete" }).click();
+  await operations.getByLabel("Restricted evidence").setInputFiles({
+    name: "witness-note.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("note"),
+  });
+  await operations.getByRole("button", { name: "Upload evidence" }).click();
+  await expect(operations).toContainText("witness-note.txt · restricted");
+  await operations.getByLabel("Findings").fill("Concern substantiated");
+  await operations.getByLabel("Outcome").fill("Corrective action completed");
+  await operations.getByRole("button", { name: "Resolve case" }).click();
+  await operations.getByRole("button", { name: "Close case" }).click();
+  await expect(operations).toContainText("closed");
+  expect(declared).toBe(true);
+  expect(assignedOwner).toBe("playwright-investigator");
+  expect(actionStatus).toBe("completed");
+  expect(hasEvidence).toBe(true);
+});
+
+test("M30 protected disclosures stay in a separate redacted investigator queue", async ({
+  page,
+}) => {
+  const disclosureId = "019d0000-0000-7000-8000-000000000304";
+  let status = "new";
+  let views = 0;
+  let assignedTo = "";
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-investigator",
+        realm_access: { roles: ["investigator"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/relations/protected-disclosures**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    let body: unknown;
+    if (url.endsWith("/protected-disclosures") && method === "GET") {
+      body = {
+        items: [
+          {
+            id: disclosureId,
+            caseReference: "SD-20260816-TEST01",
+            category: "financial-misconduct",
+            severity: "high",
+            status,
+            description: null,
+          },
+        ],
+      };
+    } else {
+      if (method === "POST") {
+        const request = route.request().postDataJSON() as {
+          status: string;
+          assignedToSubjectId?: string;
+        };
+        status = request.status;
+        assignedTo = request.assignedToSubjectId ?? assignedTo;
+      } else views += 1;
+      body = {
+        id: disclosureId,
+        caseReference: "SD-20260816-TEST01",
+        category: "financial-misconduct",
+        severity: "high",
+        status,
+        description: "Anonymous protected narrative",
+        history: Array.from({ length: views + 1 }, (_, index) => ({ id: index, action: "viewed" })),
+      };
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/hrm/relations/protected-disclosures");
+  const workspace = page.getByTestId("protected-disclosures");
+  await expect(workspace).not.toContainText("Anonymous protected narrative");
+  await workspace.getByRole("button", { name: /SD-20260816-TEST01/ }).click();
+  await expect(workspace).toContainText("Anonymous protected narrative");
+  await workspace.getByLabel("Investigator subject ID").fill("playwright-investigator");
+  await workspace.getByRole("button", { name: "Triage" }).click();
+  await workspace.getByRole("button", { name: "Investigate" }).click();
+  await workspace.getByLabel("Outcome").fill("Controls remediated");
+  await workspace.getByRole("button", { name: "Resolve" }).click();
+  await expect(workspace).toContainText("resolved");
+  expect(assignedTo).toBe("playwright-investigator");
+});
