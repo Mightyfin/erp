@@ -88,6 +88,7 @@ builder.Services.AddScoped<IDocumentsRepository, DocumentsRepository>();
 builder.Services.AddScoped<IDocumentsService, DocumentsServiceImpl>();
 builder.Services.AddScoped<IDqService, DqServiceImpl>();
 builder.Services.AddScoped<IMasterDataService, MasterDataService>();
+builder.Services.AddScoped<IIntegrationOperationsService, IntegrationOperationsService>();
 builder.Services.AddScoped<IStatutoryExportService, StatutoryExportServiceImpl>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddScoped<IOutboxWriter, EfOutboxWriter>();

@@ -9,6 +9,7 @@ public static class HrmEventTypes
     public const string LeaveRequested = "hrm.leave.requested";
     public const string LeaveDecided = "hrm.leave.decided";
     public const string LeaveCancelled = "hrm.leave.cancelled";
+    public const string IntegrationReady = "hrm.integration.ready";
 }
 
 /// <summary>Adds an event to the current scoped DbContext. The surrounding

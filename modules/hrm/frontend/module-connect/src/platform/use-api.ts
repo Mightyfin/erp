@@ -542,6 +542,71 @@ export const realApi = {
     }>("/hrm/admin/notifications", params ?? {}),
   retryNotification: (id: string) =>
     hrmApi.post<unknown>(`/hrm/admin/notifications/${id}/retry`, null),
+  /** M33 external integration contracts, hand-offs, retry and reconciliation. */
+  integrationDashboard: () =>
+    hrmApi.get<{
+      contracts: Array<{
+        key: string;
+        name: string;
+        direction: string;
+        contractVersion: string;
+        transport: string;
+        owner: string;
+        retryStrategy: string;
+        reconciliationProcess: string;
+        status: string;
+        detail?: string | null;
+      }>;
+      operations: Array<{
+        id: string;
+        publicId: string;
+        integrationKey: string;
+        operationType: string;
+        status: string;
+        sourceReference?: string | null;
+        attemptCount: number;
+        externalReference?: string | null;
+        reconciliationOutcome?: string | null;
+        lastError?: string | null;
+        createdAt: string;
+      }>;
+      ready: number;
+      delivered: number;
+      failed: number;
+      reconciled: number;
+      activeWorkers: number;
+      linkedWorkers: number;
+      unlinkedWorkers: number;
+      documentStorageMode: string;
+    }>("/hrm/integrations"),
+  createFinancePosting: (runId: string) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/integrations/finance-postings", {
+      sourceId: runId,
+    }),
+  createPaymentHandoff: (runId: string) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/integrations/payment-handoffs", {
+      sourceId: runId,
+    }),
+  createStatutoryHandoff: (exportType: string, periodId: string) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/integrations/statutory-handoffs", {
+      exportType,
+      periodId,
+    }),
+  createIdentitySync: (mode: "delta" | "full") =>
+    hrmApi.post<Record<string, unknown>>("/hrm/integrations/identity-sync", { mode }),
+  retryIntegration: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/integrations/operations/${id}/retry`, null),
+  reconcileIntegration: (id: string, outcome: string, externalReference: string, note?: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/integrations/operations/${id}/reconcile`, {
+      outcome,
+      externalReference,
+      note,
+    }),
+  downloadIntegration: async (id: string, fileName: string) => {
+    const blob = await hrmApi.getBlob(`/hrm/integrations/operations/${id}/download`);
+    const url = URL.createObjectURL(blob);
+    downloadUrl(url, fileName);
+  },
 
   /* ------------------------------------------------------------------ */
   /* M19 organisation configuration CRUD (write surfaces)                */

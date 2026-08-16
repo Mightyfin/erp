@@ -98,6 +98,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<Payslip> Payslips => Set<Payslip>();
     public DbSet<PayslipAccessLog> PayslipAccessLogs => Set<PayslipAccessLog>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<IntegrationOperation> IntegrationOperations => Set<IntegrationOperation>();
 
     // Config & extras
     public DbSet<CapabilityConfig> CapabilityConfigs => Set<CapabilityConfig>();
@@ -194,6 +195,15 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e.HasIndex(x => x.PublicId).IsUnique();
             e.HasIndex(x => new { x.Status, x.AvailableAt, x.CreatedAt });
             e.Property(x => x.PayloadJson).HasColumnType("jsonb");
+            e.Property(x => x.LastError).HasMaxLength(2000);
+        });
+        ConfigureEntity<IntegrationOperation>(modelBuilder, "integration_operations", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.IntegrationKey, x.Status, x.CreatedAt });
+            // Payloads can be JSON or provider CSV files; ContentType controls
+            // interpretation, so the immutable source bytes are stored as text.
+            e.Property(x => x.PayloadJson).HasColumnType("text");
             e.Property(x => x.LastError).HasMaxLength(2000);
         });
         ConfigureEntity<CapabilityConfig>(modelBuilder, "capability_configs");

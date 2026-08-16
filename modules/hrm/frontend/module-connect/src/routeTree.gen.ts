@@ -26,6 +26,7 @@ import { Route as HrmAttendanceNewRouteImport } from './routes/hrm.attendance.ne
 import { Route as HrmConfigurationIndexRouteImport } from './routes/hrm.configuration.index'
 import { Route as HrmConfigurationBusinessRouteImport } from './routes/hrm.configuration.business'
 import { Route as HrmConfigurationComplianceRouteImport } from './routes/hrm.configuration.compliance'
+import { Route as HrmConfigurationIntegrationsRouteImport } from './routes/hrm.configuration.integrations'
 import { Route as HrmConfigurationOrganisationRouteImport } from './routes/hrm.configuration.organisation'
 import { Route as HrmConfigurationPayrollRouteImport } from './routes/hrm.configuration.payroll'
 import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.configuration.process'
@@ -192,6 +193,12 @@ const HrmConfigurationComplianceRoute =
   HrmConfigurationComplianceRouteImport.update({
     id: '/hrm/configuration/compliance',
     path: '/hrm/configuration/compliance',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmConfigurationIntegrationsRoute =
+  HrmConfigurationIntegrationsRouteImport.update({
+    id: '/hrm/configuration/integrations',
+    path: '/hrm/configuration/integrations',
     getParentRoute: () => rootRouteImport,
   } as any)
 const HrmConfigurationOrganisationRoute =
@@ -623,6 +630,7 @@ export interface FileRoutesByFullPath {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -722,6 +730,7 @@ export interface FileRoutesByTo {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -822,6 +831,7 @@ export interface FileRoutesById {
   '/hrm/attendance/new': typeof HrmAttendanceNewRoute
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
+  '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -923,6 +933,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1022,6 +1033,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1121,6 +1133,7 @@ export interface FileRouteTypes {
     | '/hrm/attendance/new'
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
+    | '/hrm/configuration/integrations'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1221,6 +1234,7 @@ export interface RootRouteChildren {
   HrmAttendanceNewRoute: typeof HrmAttendanceNewRoute
   HrmConfigurationBusinessRoute: typeof HrmConfigurationBusinessRoute
   HrmConfigurationComplianceRoute: typeof HrmConfigurationComplianceRoute
+  HrmConfigurationIntegrationsRoute: typeof HrmConfigurationIntegrationsRoute
   HrmConfigurationOrganisationRoute: typeof HrmConfigurationOrganisationRoute
   HrmConfigurationPayrollRoute: typeof HrmConfigurationPayrollRoute
   HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
@@ -1412,6 +1426,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/configuration/compliance'
       fullPath: '/hrm/configuration/compliance'
       preLoaderRoute: typeof HrmConfigurationComplianceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/integrations': {
+      id: '/hrm/configuration/integrations'
+      path: '/hrm/configuration/integrations'
+      fullPath: '/hrm/configuration/integrations'
+      preLoaderRoute: typeof HrmConfigurationIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/configuration/organisation': {
@@ -2132,6 +2153,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmAttendanceNewRoute: HrmAttendanceNewRoute,
   HrmConfigurationBusinessRoute: HrmConfigurationBusinessRoute,
   HrmConfigurationComplianceRoute: HrmConfigurationComplianceRoute,
+  HrmConfigurationIntegrationsRoute: HrmConfigurationIntegrationsRoute,
   HrmConfigurationOrganisationRoute: HrmConfigurationOrganisationRoute,
   HrmConfigurationPayrollRoute: HrmConfigurationPayrollRoute,
   HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,

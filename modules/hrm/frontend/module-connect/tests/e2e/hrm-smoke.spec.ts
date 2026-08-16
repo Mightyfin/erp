@@ -908,3 +908,111 @@ test("HR admin can preview, apply and recover M32 worker master-data operations"
   await expect(quality).toContainText("missing statutory id");
   await expect(quality).toContainText("2");
 });
+
+test("payroll administrator can prepare and reconcile an M33 finance hand-off", async ({
+  page,
+}) => {
+  const runId = "019d0000-0000-7000-8000-000000000331";
+  const operationId = "019d0000-0000-7000-8000-000000000332";
+  let operationCreated = false;
+  let operationStatus = "ready";
+  let externalReference = "";
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-payroll-admin",
+        preferred_username: "playwright.payroll.admin",
+        realm_access: { roles: ["hr_admin", "payroll"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({
+        accessToken: token,
+        idToken: token,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+  });
+  const operation = () => ({
+    id: operationId,
+    publicId: "int_playwright_finance",
+    integrationKey: "finance",
+    operationType: "payroll-journal",
+    status: operationStatus,
+    sourceReference: "August 2026",
+    attemptCount: 0,
+    externalReference: externalReference || null,
+    createdAt: "2026-08-16T13:00:00Z",
+  });
+  await page.route("**/api/hrm/integrations**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/finance-postings")) {
+      const body = route.request().postDataJSON() as { sourceId: string };
+      expect(body.sourceId).toBe(runId);
+      operationCreated = true;
+    } else if (path.endsWith(`/operations/${operationId}/reconcile`)) {
+      const body = route.request().postDataJSON() as { outcome: string; externalReference: string };
+      operationStatus = body.outcome === "matched" ? "reconciled" : "delivered";
+      externalReference = body.externalReference;
+    }
+    const body = path.endsWith("/integrations")
+      ? {
+          contracts: [
+            {
+              key: "finance",
+              name: "ERP finance journal",
+              direction: "outbound",
+              contractVersion: "1.0",
+              transport: "NATS/JetStream",
+              owner: "Finance operations",
+              retryStrategy: "Replay with idempotency key",
+              reconciliationProcess: "Match journal totals",
+              status: "available",
+            },
+          ],
+          operations: operationCreated ? [operation()] : [],
+          ready: operationCreated && operationStatus === "ready" ? 1 : 0,
+          delivered: 0,
+          failed: 0,
+          reconciled: operationStatus === "reconciled" ? 1 : 0,
+          activeWorkers: 10,
+          linkedWorkers: 9,
+          unlinkedWorkers: 1,
+          documentStorageMode: "object-storage",
+        }
+      : operation();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  await page.route("**/api/hrm/payroll/runs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{ id: runId, periodLabel: "August 2026", status: "released" }],
+        totalCount: 1,
+      }),
+    });
+  });
+  await page.route("**/api/hrm/payroll/pay-groups", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+
+  await page.goto("/hrm/configuration/integrations");
+  const workspace = page.getByTestId("integration-operations");
+  await expect(workspace).toContainText("ERP finance journal");
+  await expect(workspace).toContainText("9 of 10 active workers linked");
+  await workspace.getByLabel("Released payroll run").selectOption(runId);
+  await workspace.getByRole("button", { name: "Finance journal" }).click();
+  await expect(workspace).toContainText("payroll-journal");
+  await workspace.getByRole("button", { name: "Reconcile" }).click();
+  await page.getByLabel("External reference").fill("FIN-JV-2026-08-001");
+  await page.getByRole("button", { name: "Save outcome" }).click();
+  await expect(workspace).toContainText("reconciled");
+  await expect(workspace).toContainText("FIN-JV-2026-08-001");
+});

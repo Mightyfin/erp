@@ -344,8 +344,16 @@ export const configurationGroups: {
     description: "Integrations and data movement. Rarely changed after go-live.",
     items: [
       { label: "Import and export", detail: "CSV templates", to: "/hrm/configuration/technical" },
-      { label: "Payroll interface", detail: "Mock connector", to: "/hrm/configuration/technical" },
-      { label: "Identity provider", detail: "Not configured", to: "/hrm/configuration/technical" },
+      {
+        label: "Payroll interface",
+        detail: "Finance, banking and statutory hand-offs",
+        to: "/hrm/configuration/integrations",
+      },
+      {
+        label: "Identity provider",
+        detail: "Workforce link monitoring and sync",
+        to: "/hrm/configuration/integrations",
+      },
       {
         label: "Vendor and contract management",
         detail: "No vendors recorded",

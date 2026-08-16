@@ -41,6 +41,7 @@ public static class Routes
         RegisterDocuments(app);
         RegisterDq(app);
         RegisterMasterData(app);
+        RegisterIntegrations(app);
         RegisterStatutory(app);
         RegisterNotifications(app);
         RegisterMe(app);
@@ -1000,6 +1001,50 @@ public static class Routes
         // for the reports UI — totals visible without downloading a file.
         g.MapGet("/summary", async (Guid periodId, IStatutoryExportService svc, CancellationToken ct) =>
             Results.Ok(await svc.SummaryAsync(periodId, ct)));
+    }
+
+    public static void RegisterIntegrations(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/integrations").RequireAuthorization();
+        g.MapGet("/", async ([FromQuery] string? integrationKey, [FromQuery] string? status,
+            IIntegrationOperationsService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetDashboardAsync(integrationKey, status, ct)));
+        g.MapPost("/finance-postings", async (HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<IntegrationSourceRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateFinancePostingAsync(request.SourceId, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/payment-handoffs", async (HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<IntegrationSourceRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreatePaymentHandoffAsync(request.SourceId, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/statutory-handoffs", async (HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<StatutoryHandoffRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateStatutoryHandoffAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/identity-sync", async (HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<IdentitySyncRequest>(http, ct) ?? new IdentitySyncRequest();
+            return Results.Created("", await svc.CreateIdentitySyncAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/operations/{id:guid}/retry", async (Guid id, HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+            Results.Ok(await svc.RetryAsync(id, ResolveSubjectId(http) ?? "system", ct)));
+        g.MapPost("/operations/{id:guid}/reconcile", async (Guid id, HttpContext http, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<IntegrationReconciliationRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ReconcileAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapGet("/operations/{id:guid}/download", async (Guid id, IIntegrationOperationsService svc, CancellationToken ct) =>
+        {
+            var file = await svc.DownloadAsync(id, ct);
+            return Results.File(Encoding.UTF8.GetBytes(file.Payload), file.ContentType, file.FileName);
+        });
     }
 }
 
