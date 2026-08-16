@@ -126,12 +126,51 @@ public static class Routes
             var subject = ResolveSubjectId(http);
             return Results.Ok(await svc.MyLeaveAsync(subject ?? "", ct));
         });
+        g.MapPost("/leave", async (HttpContext http, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var worker = await workers.GetBySubjectAsync(subject, ct)
+                ?? throw new DomainException("worker-not-linked", "Your organisation identity is not linked to an HRM worker record.");
+            var request = await ReadBodyAsync<LeaveRequestCreate>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateLeaveAsync(request with { WorkerId = worker.Id }, ct));
+        });
         g.MapPost("/leave/{id:guid}/cancel", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var subject = ResolveSubjectId(http);
             if (string.IsNullOrEmpty(subject))
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(await svc.CancelLeaveAsync(id, subject, ct));
+        });
+
+        g.MapGet("/attendance/today", async (HttpContext http, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var worker = await RequireLinkedWorkerAsync(http, workers, ct);
+            return Results.Ok(await svc.GetTodayAsync(worker.Id, ct));
+        });
+        g.MapGet("/attendance", async (HttpContext http, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var worker = await RequireLinkedWorkerAsync(http, workers, ct);
+            return Results.Ok(await svc.ListAttendanceAsync(worker.Id, from, to, ct));
+        });
+        g.MapPost("/attendance/clock-in", async (HttpContext http, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var worker = await RequireLinkedWorkerAsync(http, workers, ct);
+            return Results.Ok(await svc.ClockInAsync(worker.Id, ct));
+        });
+        g.MapPost("/attendance/clock-out", async (HttpContext http, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var worker = await RequireLinkedWorkerAsync(http, workers, ct);
+            return Results.Ok(await svc.ClockOutAsync(worker.Id, ct));
+        });
+        g.MapPost("/attendance/corrections", async (HttpContext http, ITimeService svc, IWorkerService workers, CancellationToken ct) =>
+        {
+            var worker = await RequireLinkedWorkerAsync(http, workers, ct);
+            var request = await ReadBodyAsync<AttendanceCorrectionCreate>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateCorrectionAsync(request with { WorkerId = worker.Id }, ct));
         });
 
 
@@ -220,6 +259,16 @@ public static class Routes
             Results.Ok(await svc.MarkReadAsync(id, ResolveSubjectId(http) ?? "", ct)));
         g.MapPost("/notifications/read-all", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
             Results.Ok(new { markedRead = await svc.MarkAllReadAsync(ResolveSubjectId(http) ?? "", ct) }));
+    }
+
+    private static async Task<WorkerDto> RequireLinkedWorkerAsync(
+        HttpContext http, IWorkerService workers, CancellationToken ct)
+    {
+        var subject = ResolveSubjectId(http);
+        if (string.IsNullOrEmpty(subject))
+            throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+        return await workers.GetBySubjectAsync(subject, ct)
+            ?? throw new DomainException("worker-not-linked", "Your organisation identity is not linked to an HRM worker record.");
     }
 
     public static void RegisterWorkers(WebApplication app)

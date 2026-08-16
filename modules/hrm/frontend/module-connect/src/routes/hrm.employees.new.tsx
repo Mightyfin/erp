@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Info } from "lucide-react";
 import { feedback } from "@/platform/feedback";
 import { Button } from "@/components/ui/button";
@@ -40,19 +40,50 @@ function NewEmployee() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [entityId, setEntityId] = useState(entities[0].id);
-  const [branch, setBranch] = useState(entities[0].branches[0]);
+  const [entityId, setEntityId] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [jobTitle, setJobTitle] = useState("");
-  const [department, setDepartment] = useState("Operations");
-  const [managerId, setManagerId] = useState("w-1002");
+  const [orgUnitId, setOrgUnitId] = useState("");
+  const [managerId, setManagerId] = useState("");
   const [employmentType, setEmploymentType] = useState<string>("Permanent");
   const [startDate, setStartDate] = useState("2026-09-01");
   const [endDate, setEndDate] = useState("");
 
-  const entity = entities.find((e) => e.id === entityId)!;
-  // Real-backend placement reference data (used only when USE_REAL).
-  const orgUnitsState = useApi(() => realApi.orgUnits(), []);
-  const locationsState = useApi(() => realApi.locations(), []);
+  const references = useApi(async () => {
+    if (!USE_REAL) return { legalEntities: [], orgUnits: [], locations: [], workers: [] };
+    const [legalEntities, orgUnits, locations, workerPage] = await Promise.all([
+      realApi.legalEntities(),
+      realApi.orgUnits(),
+      realApi.locations(),
+      realApi.employees({ page: 1, pageSize: 500, status: "active" }),
+    ]);
+    return {
+      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []) as Record<string, unknown>[],
+      orgUnits: (Array.isArray(orgUnits) ? orgUnits : []) as Record<string, unknown>[],
+      locations: (Array.isArray(locations) ? locations : []) as Record<string, unknown>[],
+      workers: adaptWorkers(workerPage),
+    };
+  }, []);
+  const legalEntities = USE_REAL ? references.data?.legalEntities ?? [] : entities.map((e) => ({ id: e.id, registeredName: e.name, countryCode: e.country }));
+  const orgUnits = USE_REAL ? references.data?.orgUnits ?? [] : ["Operations", "Manufacturing", "Logistics", "Finance", "People"].map((name) => ({ id: name, name }));
+  const locations = USE_REAL ? references.data?.locations ?? [] : entities.flatMap((e) => e.branches.map((name) => ({ id: name, name, legalEntityId: e.id })));
+  const managerOptions = USE_REAL ? references.data?.workers ?? [] : employees;
+  const entity = legalEntities.find((e) => String(e.id) === entityId);
+  const entityLocations = locations.filter((l) => !entityId || String(l.legalEntityId ?? "") === entityId);
+  const entityUnits = orgUnits.filter((u) => !entityId || !u.legalEntityId || String(u.legalEntityId) === entityId);
+  const selectedLocation = locations.find((l) => String(l.id) === locationId);
+  const selectedUnit = orgUnits.find((u) => String(u.id) === orgUnitId);
+
+  useEffect(() => {
+    if (!entityId && legalEntities.length) setEntityId(String(legalEntities[0].id));
+  }, [entityId, legalEntities]);
+
+  useEffect(() => {
+    if (entityLocations.length && !entityLocations.some((l) => String(l.id) === locationId))
+      setLocationId(String(entityLocations[0].id));
+    if (entityUnits.length && !entityUnits.some((u) => String(u.id) === orgUnitId))
+      setOrgUnitId(String(entityUnits[0].id));
+  }, [entityId, entityLocations, entityUnits, locationId, orgUnitId]);
   const fullName = [firstName, lastName].filter(Boolean).join(" ");
   const needsEndDate = employmentType === "Fixed term" || employmentType === "Intern";
 
@@ -100,32 +131,32 @@ function NewEmployee() {
               value={entityId}
               onValueChange={(v) => {
                 setEntityId(v);
-                const e = entities.find((x) => x.id === v);
-                if (e) setBranch(e.branches[0]);
+                setLocationId("");
+                setOrgUnitId("");
               }}
             >
               <SelectTrigger id="entity" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {entities.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name} · {e.country}
+                {legalEntities.map((e) => (
+                  <SelectItem key={String(e.id)} value={String(e.id)}>
+                    {String(e.registeredName ?? e.name ?? e.id)} · {String(e.countryCode ?? e.country ?? "ZM")}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label htmlFor="branch">Branch</Label>
-            <Select value={branch} onValueChange={setBranch}>
+            <Label htmlFor="branch">Work location</Label>
+            <Select value={locationId} onValueChange={setLocationId}>
               <SelectTrigger id="branch" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {entity.branches.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
+                {entityLocations.map((location) => (
+                  <SelectItem key={String(location.id)} value={String(location.id)}>
+                    {String(location.name ?? location.code ?? location.id)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -133,14 +164,14 @@ function NewEmployee() {
           </div>
           <div>
             <Label htmlFor="dept">Department</Label>
-            <Select value={department} onValueChange={setDepartment}>
+            <Select value={orgUnitId} onValueChange={setOrgUnitId}>
               <SelectTrigger id="dept" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["Operations", "Manufacturing", "Logistics", "Finance", "People"].map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
+                {entityUnits.map((unit) => (
+                  <SelectItem key={String(unit.id)} value={String(unit.id)}>
+                    {String(unit.name ?? unit.code ?? unit.id)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -148,12 +179,13 @@ function NewEmployee() {
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="manager">Reports to</Label>
-            <Select value={managerId} onValueChange={setManagerId}>
+            <Select value={managerId || "none"} onValueChange={(value) => setManagerId(value === "none" ? "" : value)}>
               <SelectTrigger id="manager" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {employees.map((e) => (
+                <SelectItem value="none">No manager assigned</SelectItem>
+                {managerOptions.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
                     {e.fullName} — {e.jobTitle}
                   </SelectItem>
@@ -209,7 +241,7 @@ function NewEmployee() {
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
                 Contractors are engaged, not employed. Check the classification rules for{" "}
-                {entity.country} before continuing — misclassification carries real liability.
+                {String(entity?.countryCode ?? entity?.country ?? "Zambia")} before continuing — misclassification carries real liability.
               </span>
             </p>
           ) : null}
@@ -227,10 +259,10 @@ function NewEmployee() {
               ["Name", fullName || "Not given"],
               ["Job title", jobTitle || "Not given"],
               ["Employment type", employmentType],
-              ["Entity", entity.name],
-              ["Branch", branch],
-              ["Department", department],
-              ["Reports to", employees.find((e) => e.id === managerId)?.fullName ?? "—"],
+              ["Entity", String(entity?.registeredName ?? entity?.name ?? "Not selected")],
+              ["Work location", String(selectedLocation?.name ?? "Not selected")],
+              ["Department", String(selectedUnit?.name ?? "Not selected")],
+              ["Reports to", managerOptions.find((e) => e.id === managerId)?.fullName ?? "—"],
               ["Start date", startDate],
               ...(needsEndDate ? [["End date", endDate || "Not set"]] : []),
             ].map(([k, v]) => (
@@ -316,33 +348,23 @@ function NewEmployee() {
             setCreating(false);
             return;
           }
+          if (USE_REAL && (!entityId || !locationId || !orgUnitId)) {
+            feedback.blocked(
+              "Organisation placement is required.",
+              "Choose a legal entity, work location and department configured by HR administration.",
+            );
+            return;
+          }
+          if (needsEndDate && !endDate) {
+            feedback.blocked(
+              "An end date is required for this employment type.",
+              "Go back to Employment and enter the agreed final date.",
+            );
+            return;
+          }
           setCreating(true);
           try {
             if (USE_REAL) {
-              // The mock "Reports to" list uses mock ids (w-1002). In real mode,
-              // map by employee number to a real worker id where possible.
-              const realEmployees = (await realApi.employees()) as {
-                items?: Array<{ id?: unknown; employeeNo?: unknown }>;
-              };
-              const realList = Array.from(realEmployees.items ?? []);
-              const chosen = employees.find((e) => e.id === managerId);
-              const managerIdGuid = chosen
-                ? realList.find((r) => String(r.employeeNo) === chosen.id)
-                  ? String(realList.find((r) => String(r.employeeNo) === chosen.id)!.id)
-                  : null
-                : null;
-              const orgUnit = USE_REAL
-                ? (orgUnitsState.data as Array<Record<string, unknown>>)?.find(
-                    (o) =>
-                      String(o.name).toLowerCase() === department.toLowerCase() ||
-                      String(o.code ?? "").toLowerCase() === department.toLowerCase(),
-                  )?.id
-                : null;
-              const location = USE_REAL
-                ? (locationsState.data as Array<Record<string, unknown>>)?.find(
-                    (l) => String(l.name).toLowerCase() === branch.toLowerCase(),
-                  )?.id
-                : null;
               const created = await realApi.createWorker({
                 employeeNo: "",
                 firstName: firstName.trim(),
@@ -357,9 +379,9 @@ function NewEmployee() {
                 nhimaNumber: null,
                 nationality: "Zambian",
                 dateOfBirth: null,
-                orgUnitId: orgUnit ?? null,
-                locationId: location ?? null,
-                managerId: managerIdGuid ?? null,
+                orgUnitId,
+                locationId,
+                managerId: managerId || null,
                 grade: null,
                 jobTitle: jobTitle.trim() || null,
                 startDate,
@@ -368,10 +390,32 @@ function NewEmployee() {
                 emergencyContacts: [],
                 bankDetails: [],
               });
+              await realApi.createWorkerAssignment(String(created.id), {
+                workerId: created.id,
+                legalEntityId: entityId,
+                orgUnitId,
+                locationId,
+                managerId: managerId || null,
+                startDate,
+                endDate: needsEndDate ? endDate : null,
+                jobTitle: jobTitle.trim() || null,
+                grade: null,
+                contractType:
+                  employmentType === "Fixed term"
+                    ? "fixed-term"
+                    : employmentType === "Contractor"
+                      ? "contractor"
+                      : employmentType === "Intern"
+                        ? "intern"
+                        : employmentType === "Part time"
+                          ? "part-time"
+                          : "permanent",
+                workPattern: employmentType === "Part time" ? "part-time" : "full-time",
+              });
               setRef(String(created.employeeNo || created.id));
               return;
             }
-            const r = await api.submit("employee", { fullName, jobTitle, entityId, branch, startDate });
+            const r = await api.submit("employee", { fullName, jobTitle, entityId, locationId, startDate });
             setRef(`TMP-${r.id}`);
           } catch (err) {
             const msg = err instanceof ApiError ? err.message : String(err);

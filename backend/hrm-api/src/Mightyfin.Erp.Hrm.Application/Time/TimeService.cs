@@ -65,9 +65,25 @@ public sealed class TimeServiceImpl(
     IOutboxWriter? outbox = null,
     IUnitOfWork? unitOfWork = null) : ITimeService
 {
+    private bool IsEmployeeOnly =>
+        authz.IsRole("employee") && !authz.IsRole("hr_ops", "hr_admin", "manager", "payroll");
+
+    private async Task RequireWorkerScopeAsync(Guid workerId, CancellationToken ct)
+    {
+        if (!IsEmployeeOnly) return;
+        var worker = await workers.GetByIdAsync(workerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {workerId} does not exist.");
+        if (string.IsNullOrWhiteSpace(authz.CurrentSubjectId) ||
+            !string.Equals(worker.SubjectId, authz.CurrentSubjectId, StringComparison.Ordinal))
+            throw new DomainException("worker-access-denied", "Employees can access only their own time and leave records.");
+    }
+
     public async Task<Paged<LeaveRequestDto>> ListLeaveAsync(Guid? workerId, string? status, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        if (IsEmployeeOnly && workerId is null)
+            throw new DomainException("worker-access-denied", "Employees must use their own leave inbox.");
+        if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
         var (items, total) = await repo.ListLeaveRequestsAsync(workerId, status, ct);
         return new Paged<LeaveRequestDto>(items.Select(Map).ToList(), total, 1, 50);
     }
@@ -75,6 +91,7 @@ public sealed class TimeServiceImpl(
     public async Task<LeaveRequestDto> CreateLeaveAsync(LeaveRequestCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        await RequireWorkerScopeAsync(request.WorkerId, ct);
         var start = DateOnly.Parse(request.StartDate);
         var end = DateOnly.Parse(request.EndDate);
         if (end < start) throw new DomainException("leave-invalid-dates", "End date is before start date.");
@@ -130,6 +147,7 @@ public sealed class TimeServiceImpl(
     public async Task<List<LeaveBalanceDto>> GetBalancesAsync(Guid workerId, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        await RequireWorkerScopeAsync(workerId, ct);
         var ledger = await repo.GetLedgerAsync(workerId, ct);
         var types = await repo.GetLeaveTypesAsync(ct);
         return types.Select(t =>
@@ -150,6 +168,9 @@ public sealed class TimeServiceImpl(
     public async Task<Paged<AttendanceCorrectionDto>> ListCorrectionsAsync(Guid? workerId, string? status, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        if (IsEmployeeOnly && workerId is null)
+            throw new DomainException("worker-access-denied", "Employees must use their own attendance inbox.");
+        if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
         var (items, total) = await repo.ListCorrectionsAsync(workerId, status, ct);
         return new Paged<AttendanceCorrectionDto>(items.Select(c => new AttendanceCorrectionDto(
             c.Id, c.WorkerId, c.Worker?.FullName ?? "", c.WorkDate.ToString(), c.IssueType,
@@ -160,6 +181,7 @@ public sealed class TimeServiceImpl(
     public async Task<AttendanceCorrectionDto> CreateCorrectionAsync(AttendanceCorrectionCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        await RequireWorkerScopeAsync(request.WorkerId, ct);
         var c = new AttendanceCorrection
         {
             WorkerId = request.WorkerId,
@@ -184,24 +206,28 @@ public sealed class TimeServiceImpl(
     public async Task<PunchResultDto> ClockInAsync(Guid workerId, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        await RequireWorkerScopeAsync(workerId, ct);
         return await GetOrCreatePunchAsync(workerId, DateOnly.FromDateTime(DateTime.UtcNow), clockIn: true, ct);
     }
 
     public async Task<PunchResultDto> ClockOutAsync(Guid workerId, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        await RequireWorkerScopeAsync(workerId, ct);
         return await GetOrCreatePunchAsync(workerId, DateOnly.FromDateTime(DateTime.UtcNow), clockIn: false, ct);
     }
 
     public async Task<PunchResultDto> GetTodayAsync(Guid workerId, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        await RequireWorkerScopeAsync(workerId, ct);
         return await GetOrCreatePunchAsync(workerId, DateOnly.FromDateTime(DateTime.UtcNow), clockIn: null, ct);
     }
 
     public async Task<List<AttendanceRecordDto>> ListAttendanceAsync(Guid workerId, string? from, string? to, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee", "payroll");
+        await RequireWorkerScopeAsync(workerId, ct);
         var f = from is null ? (DateOnly?)null : DateOnly.Parse(from);
         var t = to is null ? (DateOnly?)null : DateOnly.Parse(to);
         var items = await repo.ListAttendanceAsync(workerId, f, t, ct);
@@ -211,6 +237,7 @@ public sealed class TimeServiceImpl(
     public async Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        await RequireWorkerScopeAsync(workerId, ct);
         var start = from is null ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-7)) : DateOnly.Parse(from);
         var end = to is null ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)) : DateOnly.Parse(to);
         if (end < start) throw new DomainException("roster-invalid-dates", "End date is before start date.");

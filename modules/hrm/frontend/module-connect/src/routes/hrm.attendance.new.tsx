@@ -35,8 +35,6 @@ const issues = [
 ] as const;
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
-const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
-
 const issueToBackend: Record<string, string> = {
   "Missing punch": "missed-punch",
   "Wrong time recorded": "wrong-time",
@@ -138,15 +136,15 @@ function NewCorrection() {
   return (
     <AuthGate>
       <AppShell>
-      <PageHeader eyebrow="Attendance" title="Raise a correction" description="Four short steps. Your draft saves as you go." />
+      <PageHeader eyebrow="Attendance" title="Raise a correction" description="Four short steps. Review the recorded day before submitting." />
       <GuidedFlow
         flowId="attendance-new"
         steps={steps}
         submitLabel="Submit correction"
         onSubmit={async () => {
           if (USE_REAL) {
-            const r = await realApi.createCorrection({
-              workerId: DEFAULT_WORKER,
+            const r = await realApi.createMyCorrection({
+              workerId: "00000000-0000-0000-0000-000000000000",
               workDate: date,
               issueType: issueToBackend[issue] ?? "other",
               proposedClockIn: claimedIn || undefined,

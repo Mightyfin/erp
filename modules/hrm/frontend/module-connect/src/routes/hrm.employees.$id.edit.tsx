@@ -5,7 +5,7 @@ import { branchOptions, departmentOptions, gradeOptions, workLocationOptions } f
 import { EMPLOYMENT_TYPES } from "@/mock/types";
 import { api } from "@/mock/service";
 import { ApiError } from "@/platform/api-client";
-import { adaptWorkers, realApi } from "@/platform/use-api";
+import { adaptWorkerProfile, adaptWorkers, realApi } from "@/platform/use-api";
 import type { Employee } from "@/mock/types";
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
@@ -60,7 +60,10 @@ function EditEmployee() {
     [id],
   );
   const state = USE_REAL ? realState : useMock(() => api.employee(id), [id]);
-  const profileState = useMock(() => employeeProfileApi.profile(id), [id]);
+  const profileState = useMock(
+    () => (USE_REAL ? realApi.worker(id).then(adaptWorkerProfile) : employeeProfileApi.profile(id)),
+    [id],
+  );
 
   return (
     <AuthGate>
@@ -267,13 +270,27 @@ function EditEmployee() {
               ],
             },
           ];
+          const liveFields = new Set([
+            "fullName", "preferredName", "nationality", "dateOfBirth", "nationalId",
+            "passportNo", "email", "phone", "jobTitle", "grade", "tpin",
+            "napsaNumber", "nhimaNumber",
+          ]);
+          const visibleSections = USE_REAL
+            ? sections
+                .map((section) => ({
+                  ...section,
+                  description: "These fields are stored on the live worker record.",
+                  fields: section.fields?.filter((field) => liveFields.has(field.name)),
+                }))
+                .filter((section) => section.fields?.length)
+            : sections;
 
           return (
             <EditPage
               title={employee.fullName}
               reference={employee.employeeNo}
-              description="Changes are dated and go into the employee's history. Anything affecting pay is approved before it reaches a run."
-              sections={sections}
+              description={USE_REAL ? "Only fields backed by the live worker record are editable here." : "Changes are dated and go into the employee's history. Anything affecting pay is approved before it reaches a run."}
+              sections={visibleSections}
               initial={{
                 salutation: pr?.salutation ?? "Mr",
                 fullName: employee.fullName,
@@ -332,7 +349,7 @@ function EditEmployee() {
                 reason: "",
               }}
               saveLabel="Save the change"
-              footerNote="Nothing reaches payroll until the change is approved."
+              footerNote={USE_REAL ? "Saved changes are written to the live HRM worker record and audited by the API." : "Nothing reaches payroll until the change is approved."}
               onCancel={() => navigate({ to: "/hrm/employees/$id", params: { id } })}
               onSave={async (values, changed) => {
                 if (USE_REAL) {
@@ -345,10 +362,14 @@ function EditEmployee() {
                   }
                   if (changed.includes("email")) body.email = values.email || null;
                   if (changed.includes("phone")) body.phone = values.phone || null;
+                  if (changed.includes("preferredName")) body.preferredName = values.preferredName || null;
                   if (changed.includes("nationalId")) body.nrc = values.nationalId || null;
                   if (changed.includes("dateOfBirth")) body.dateOfBirth = values.dateOfBirth || null;
                   if (changed.includes("passportNo")) body.passportNo = values.passportNo || null;
                   if (changed.includes("nationality")) body.nationality = values.nationality || null;
+                  if (changed.includes("tpin")) body.tpin = values.tpin || null;
+                  if (changed.includes("napsaNumber")) body.napsaNumber = values.napsaNumber || null;
+                  if (changed.includes("nhimaNumber")) body.nhimaNumber = values.nhimaNumber || null;
                   if (changed.includes("jobTitle")) body.jobTitle = values.jobTitle || null;
                   if (changed.includes("grade")) body.grade = values.grade || null;
                   if (changed.includes("employmentType"))
@@ -362,6 +383,9 @@ function EditEmployee() {
                     if (Object.keys(body).length) {
                       await realApi.updateWorker(id, body);
                     }
+                    feedback.saved(`${employee.fullName} updated in the live HRM record.`);
+                    navigate({ to: "/hrm/employees/$id", params: { id } });
+                    return;
                   } catch (err) {
                     const msg = err instanceof ApiError ? err.message : String(err);
                     feedback.blocked("The change could not be saved.", msg);

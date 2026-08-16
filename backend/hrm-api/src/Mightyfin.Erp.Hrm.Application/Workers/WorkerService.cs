@@ -80,7 +80,9 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
             Nationality = request.Nationality ?? "Zambian",
             DateOfBirth = request.DateOfBirth,
             WorkerType = request.WorkerType,
-            Status = request.StartDate is not null ? "active" : "pre-hire",
+            Status = request.StartDate is not null && DateOnly.Parse(request.StartDate) <= DateOnly.FromDateTime(DateTime.UtcNow)
+                ? "active"
+                : "pre-hire",
             OrgUnitId = request.OrgUnitId,
             LocationId = request.LocationId,
             ManagerId = request.ManagerId,

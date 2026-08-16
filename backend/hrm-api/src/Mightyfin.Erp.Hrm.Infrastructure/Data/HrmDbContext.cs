@@ -456,6 +456,8 @@ public sealed class AuditInterceptor(IHttpContextAccessor http, ITenantAccessor 
 /// <summary>Role authorization implementation evaluated against the current principal.</summary>
 public sealed class AuthzServiceImpl(Microsoft.AspNetCore.Http.IHttpContextAccessor http, IConfiguration config) : IAuthzService
 {
+    public string CurrentSubjectId => GetCurrent().SubjectId;
+
     public void RequireAnyRole(params string[] roles)
     {
         var principal = GetCurrent();

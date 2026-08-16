@@ -15,7 +15,9 @@ export interface FlowStep {
 /**
  * Guided step flow for create/change actions:
  * purpose > essentials > policy > evidence > review > submit > next steps.
- * Progress autosaves as a draft (mock: session storage) and is resumable.
+ * The current step is remembered for this browser tab. Individual flows own
+ * their field state and must not claim server-side draft persistence unless
+ * they implement it explicitly.
  */
 export function GuidedFlow({
   flowId,
@@ -89,7 +91,7 @@ export function GuidedFlow({
           })}
         </ol>
         <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-          Saved as draft{savedAt ? ` at ${savedAt}` : ""}. You can leave and resume later.
+          Step remembered for this tab{savedAt ? ` at ${savedAt}` : ""}. Finish before closing it.
         </p>
       </nav>
 

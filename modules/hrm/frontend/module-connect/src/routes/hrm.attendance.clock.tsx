@@ -49,7 +49,7 @@ export const Route = createFileRoute("/hrm/attendance/clock")({
 const ME = "Chanda Mwansa-Chileshe";
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
-const DEFAULT_WORKER = "019ffa92-9fe5-7057-84b3-cb76b7449ba0";
+const DEFAULT_WORKER = "self";
 
 /** Backend "HH:mm" → minutes past midnight. */
 function hhmmToMinutes(t: unknown): number | null {
@@ -181,7 +181,7 @@ function TodayPanel({
       setBusy(true);
       if (USE_REAL) {
         if (state === "out") {
-          await realApi.clockIn(DEFAULT_WORKER);
+          await realApi.clockMyselfIn();
           setSegmentStart(now);
           setState("in");
           addPunch("in", now);
@@ -189,7 +189,7 @@ function TodayPanel({
           reload();
           return;
         }
-        await realApi.clockOut(DEFAULT_WORKER);
+        await realApi.clockMyselfOut();
         setWorkedAccum((w) => w + (now - segmentStart));
         setState("out");
         addPunch("out", now);
@@ -628,7 +628,7 @@ function ClockPage() {
   const today = useApi(
     async () =>
       USE_REAL
-        ? adaptToday(await realApi.attendanceToday(DEFAULT_WORKER), await mockToday)
+        ? adaptToday(await realApi.myAttendanceToday(), await mockToday)
         : await mockToday,
     [],
   );

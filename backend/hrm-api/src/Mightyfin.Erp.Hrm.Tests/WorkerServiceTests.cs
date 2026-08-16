@@ -13,6 +13,7 @@ namespace Mightyfin.Erp.Hrm.Tests;
 /// <summary>Permissive double for <see cref="IAuthzService"/> used by the service layer.</summary>
 internal sealed class PermissiveAuthz : IAuthzService
 {
+    public string CurrentSubjectId => "test-subject";
     // M25: configurable role set so tests can impersonate an employee-only
     // caller; defaults to all roles (permissive).
     private string[] _roles = ["hr_ops", "hr_admin", "payroll", "employee"];
@@ -91,6 +92,18 @@ public class WorkerServiceTests
         // TenantId is auto-populated by the DbContext on save.
         var worker = await ctx.Workers.FirstAsync();
         Assert.Equal("Zambian", worker.Nationality);
+    }
+
+    [Fact]
+    public async Task CreateWorker_WithFutureStartDate_RemainsPreHire()
+    {
+        var (service, _) = Build();
+        var future = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)).ToString("yyyy-MM-dd");
+        var worker = await service.CreateAsync(new WorkerCreateRequest(
+            EmployeeNo: "", FirstName: "Future", LastName: "Starter",
+            StartDate: future, WorkerType: "employee"), CancellationToken.None);
+
+        Assert.Equal("pre-hire", worker.Status);
     }
 
     [Fact]

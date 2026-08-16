@@ -43,8 +43,7 @@ test("login_required settles on a stable sign-in page and interactive login uses
   await expect(
     page.getByRole("button", { name: "Continue with organisation account" }),
   ).toBeVisible();
-  await page.waitForTimeout(1_000);
-  expect(silentAttempts).toBe(1);
+  await expect.poll(() => silentAttempts, { timeout: 5_000 }).toBe(1);
   await expect(page).toHaveURL(/\/sign-in$/);
 
   await page.getByRole("button", { name: "Continue with organisation account" }).click();
@@ -91,6 +90,36 @@ test("a shared IdP identity without an HRM workforce role is denied ERP entry", 
   await expect(page.getByTestId("hrm-access-denied")).toContainText("HRM access not assigned");
   await expect(page.getByTestId("hrm-access-denied")).toContainText("no ERP workforce role");
   await expect(page.getByText("Human Resources", { exact: true })).toHaveCount(0);
+});
+
+test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({
+      sub: "playwright-home-admin",
+      preferred_username: "playwright.hr.admin",
+      realm_access: { roles: ["hr_admin", "hr_ops"] },
+    }));
+    const token = `test.${payload}.signature`;
+    localStorage.setItem("erp.oidc.session", JSON.stringify({
+      accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000,
+    }));
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = { items: [] };
+    if (path.endsWith("/workflow/queue")) body = { items: [{ requestId: "live-approval", workflowType: "Live promotion", subjectName: "Mary Phiri", status: "submitted" }] };
+    else if (path.endsWith("/workers")) body = { items: [], totalCount: 37 };
+    else if (path.endsWith("/admin/legal-entities")) body = [{ id: "entity-live", name: "Live Zambia Entity" }];
+    else if (path.endsWith("/admin/locations")) body = [{ id: "location-live", name: "Live Lusaka Office", legalEntityId: "entity-live" }];
+    else if (path.endsWith("/me/notifications")) body = { unreadCount: 0, items: [] };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/hrm");
+  await expect(page.getByText("Live promotion decision")).toBeVisible();
+  await expect(page.getByText("37", { exact: true })).toBeVisible();
+  await expect(page.getByText("Attendance gap unresolved for 6 days")).toHaveCount(0);
+  await expect(page.getByText("Live Zambia Entity")).toBeVisible();
 });
 
 test("HR admin can inspect and retry a failed notification handoff without seeing payload data", async ({

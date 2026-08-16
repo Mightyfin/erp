@@ -715,10 +715,11 @@ function ScheduledChangeItem({
 
 async function loadOrganisation() {
   if (!USE_REAL) return adminConfigApi.organisation();
-  const [rawEntities, units, locations] = await Promise.all([
+  const [rawEntities, units, locations, workerPage] = await Promise.all([
     realApi.legalEntities(),
     realApi.orgUnits(),
     realApi.locations(),
+    realApi.employees({ page: 1, pageSize: 500, includeArchived: false }),
   ]);
   const entities = Array.isArray(rawEntities) ? rawEntities : (rawEntities as { items?: unknown[] }).items ?? [];
   const adaptedEntities = adaptEntities(entities);
@@ -726,6 +727,19 @@ async function loadOrganisation() {
   const locationsArr = Array.isArray(locations) ? locations : (locations as { items?: unknown[] }).items ?? [];
   const adaptedUnits = adaptUnits(unitsArr);
   const adaptedLocations = adaptLocations(locationsArr);
+  const workers = (workerPage.items ?? []) as Record<string, unknown>[];
+  const locationEntity = new Map(locationsArr.map((row) => {
+    const location = row as Record<string, unknown>;
+    return [String(location.id ?? ""), String(location.legalEntityId ?? "")];
+  }));
+  for (const unit of adaptedUnits)
+    unit.employees = workers.filter((worker) => String(worker.orgUnitId ?? "") === unit.id).length;
+  for (const location of adaptedLocations)
+    location.employees = workers.filter((worker) => String(worker.locationId ?? "") === location.id).length;
+  for (const entity of adaptedEntities) {
+    entity.branches = adaptedLocations.filter((location) => location.entityId === entity.id).length;
+    entity.employees = workers.filter((worker) => locationEntity.get(String(worker.locationId ?? "")) === entity.id).length;
+  }
   return {
     entities: adaptedEntities,
     units: adaptedUnits as OrgUnitConfig[],
@@ -854,7 +868,7 @@ function OrganisationConfig() {
         meta={
           <>
             <span className="rounded-full border bg-surface-muted px-2.5 py-0.5 text-xs text-muted-foreground">
-              3 entities · 6 work locations in force · 12 departments
+              Live tenant structure
             </span>
             <Link
               to="/hrm/people/org"
@@ -939,14 +953,14 @@ function OrganisationConfig() {
                   title="Legal entities"
                   description="Who employs people, under which registration and in which currency. An entity is never deleted once it has employed anyone."
                 >
-                  <EntityTable rows={data.entities} asAt={asAt} canAct={canAct} />
+                  <EntityTable rows={data.entities} asAt={asAt} canAct={canAct && !USE_REAL} />
                 </DetailSection>
 
                 <DetailSection
                   title="Branches and work locations"
                   description="Where employees are based. A location can exist in configuration before it opens and stays readable after it closes."
                 >
-                  <LocationTable rows={data.locations} asAt={asAt} canAct={canAct} />
+                  <LocationTable rows={data.locations} asAt={asAt} canAct={canAct && !USE_REAL} />
                   <NewLocationDialog
                     open={newLocation}
                     onOpenChange={setNewLocation}
@@ -996,12 +1010,12 @@ function OrganisationConfig() {
                               : canDeleteUnit(u),
                       },
                     ]}
-                    bulkActions={[
+                    bulkActions={USE_REAL ? [] : [
                       { label: "Export selection", onSelect: () => undefined },
                       { label: "Add to structure review", onSelect: () => undefined },
                     ]}
                     rowHref={(u) =>
-                      canDeleteUnit(u) ? (
+                      !USE_REAL && canDeleteUnit(u) ? (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1012,12 +1026,12 @@ function OrganisationConfig() {
                           Delete
                           <span className="sr-only"> {u.name}</span>
                         </Button>
-                      ) : (
+                      ) : !canDeleteUnit(u) ? (
                         <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
                           <Lock className="size-3.5 shrink-0" aria-hidden />
                           Close only
                         </span>
-                      )
+                      ) : null
                     }
                     emptyBody="No units match this view. Clear a filter, or move the as-at date."
                   />

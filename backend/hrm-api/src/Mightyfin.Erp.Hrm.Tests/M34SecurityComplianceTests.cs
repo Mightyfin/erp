@@ -138,6 +138,7 @@ public sealed class M34SecurityComplianceTests
 
     private sealed class ManagerAuthz : IAuthzService
     {
+        public string CurrentSubjectId => "manager-subject";
         public void RequireAnyRole(params string[] roles)
         {
             if (!roles.Contains("manager")) throw new DomainException("forbidden", "Manager access denied.");

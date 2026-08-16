@@ -23,8 +23,8 @@ const KEY = "erp.shell.state.v1";
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role>("hr_admin");
-  const [entityId, setEntityId] = useState(entities[0].id);
-  const [branch, setBranch] = useState(entities[0].branches[0]);
+  const [entityId, setEntityId] = useState("");
+  const [branch, setBranch] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [setupComplete, setSetupComplete] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -35,15 +35,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (raw) {
         const s = JSON.parse(raw);
         if (s.role && workspaces.some((w) => w.id === s.role)) setRole(s.role);
-        // Stored ids can outlive the data they point at — a renamed or removed
-        // entity must not be restored, or every consumer of useEntity() breaks.
-        const storedEntity = entities.find((e) => e.id === s.entityId);
-        if (storedEntity) {
-          setEntityId(storedEntity.id);
-          setBranch(
-            storedEntity.branches.includes(s.branch) ? s.branch : storedEntity.branches[0],
-          );
-        }
+        if (typeof s.entityId === "string") setEntityId(s.entityId);
+        if (typeof s.branch === "string") setBranch(s.branch);
         if (s.theme === "light" || s.theme === "dark") setTheme(s.theme);
         setSetupComplete(Boolean(s.setupComplete));
       }
@@ -66,8 +59,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       entityId,
       setEntityId: (id: string) => {
         setEntityId(id);
-        const e = entities.find((x) => x.id === id);
-        if (e) setBranch(e.branches[0]);
+        setBranch("");
       },
       branch,
       setBranch,

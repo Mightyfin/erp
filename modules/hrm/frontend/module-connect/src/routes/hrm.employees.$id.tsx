@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { adaptWorkers, realApi } from "@/platform/use-api";
+import { adaptWorkerProfile, adaptWorkers, realApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
 import { employeeProfileApi } from "@/mock/employeeprofile";
 import { balanceFor } from "@/mock/leavebalance";
@@ -310,6 +310,19 @@ function ProfileTabs({
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
+async function loadLiveProfile(id: string): Promise<EmployeeProfile | null> {
+  let raw: Record<string, unknown>;
+  try {
+    raw = (await realApi.worker(id)) as Record<string, unknown>;
+  } catch {
+    const page = await realApi.employees();
+    const match = page.items.find((item) => String((item as Record<string, unknown>).employeeNo) === id) as Record<string, unknown> | undefined;
+    if (!match) return null;
+    raw = (await realApi.worker(String(match.id))) as Record<string, unknown>;
+  }
+  return adaptWorkerProfile(raw);
+}
+
 function EmployeePage() {
   const { id } = Route.useParams();
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -328,8 +341,11 @@ function EmployeePage() {
     const workers = adaptWorkers(await realApi.employees());
     return workers.find((w) => w.employeeNo === id) ?? workers[0] ?? null;
   }, [id]);
-  const profileState = useMock(() => employeeProfileApi.profile(id), [id]);
-  const leaveSummary = balanceFor(id);
+  const profileState = useMock(
+    () => (USE_REAL ? loadLiveProfile(id) : employeeProfileApi.profile(id)),
+    [id],
+  );
+  const leaveSummary = USE_REAL ? null : balanceFor(id);
 
   // `/employees/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
@@ -348,7 +364,7 @@ function EmployeePage() {
               title={e.fullName}
               subtitle={`${e.jobTitle} · ${e.department}`}
               status={e.status}
-              owner={e.managerId ? "Mutale Kabwe (Manager)" : "HR operations"}
+              owner={e.managerId ? "Assigned manager" : "HR operations"}
               nextAction={
                 e.status === "Pre-hire"
                   ? `Complete onboarding before ${e.startDate}`
@@ -368,15 +384,15 @@ function EmployeePage() {
                   <Button variant="outline" size="sm" asChild>
                     <Link to="/hrm/leave/new">Request leave</Link>
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setConfirmEnd(true)}>
+                  {!USE_REAL ? <Button variant="outline" size="sm" onClick={() => setConfirmEnd(true)}>
                     End employment
-                  </Button>
+                  </Button> : null}
                 </>
               }
               summary={[
                 { label: "Employee number", value: e.employeeNo },
                 { label: "Employment type", value: e.employmentType },
-                { label: "Legal entity", value: entities.find((x) => x.id === e.entityId)?.name },
+                { label: "Legal entity", value: USE_REAL ? "Managed on assignment" : entities.find((x) => x.id === e.entityId)?.name },
                 { label: "Branch", value: e.branch },
                 { label: "Location", value: e.location },
                 { label: "Start date", value: e.startDate },
@@ -400,7 +416,7 @@ function EmployeePage() {
                   title="Employment history"
                   events={[
                     { id: "e1", at: `${e.startDate}T09:00:00Z`, actor: "HR operations", event: "Hired", after: e.jobTitle },
-                    { id: "e2", at: "2025-01-01T09:00:00Z", actor: "System", event: "Annual salary review applied", before: "Grade " + e.grade, after: "Grade " + e.grade, evidence: { label: "Review letter", href: "#" } },
+                    ...(!USE_REAL ? [{ id: "e2", at: "2025-01-01T09:00:00Z", actor: "System", event: "Annual salary review applied", before: "Grade " + e.grade, after: "Grade " + e.grade, evidence: { label: "Review letter", href: "#" } }] : []),
                     ...(e.futureEffective
                       ? [{ id: "e3", at: `${e.futureEffective.effectiveFrom}T09:00:00Z`, actor: "Mutale Kabwe", event: "Scheduled change (future-effective)", after: e.futureEffective.change }]
                       : []),

@@ -55,11 +55,43 @@ const ENABLED_PREFIXES = [
 /** Always reachable regardless of scope. */
 const ALWAYS = ["/hrm", "/hrm/setup", "/hrm/help", "/sign-in", "/speak-up"];
 
+const PRODUCTION = import.meta.env.VITE_USE_REAL_API === "true";
+const DEMO_ONLY_PREFIXES = [
+  "/hrm/setup",
+  "/hrm/configuration/business",
+  "/hrm/configuration/process",
+  "/hrm/reports/builder",
+  "/hrm/people/positions",
+  "/hrm/people/privacy",
+  "/hrm/people/org",
+  "/hrm/experience/knowledge",
+  "/hrm/experience/announcements",
+  "/hrm/lifecycle/movements",
+  "/hrm/lifecycle/offboarding",
+  "/hrm/lifecycle/assets",
+  "/hrm/lifecycle/journeys",
+  "/hrm/lifecycle/mobility",
+  "/hrm/lifecycle/alumni",
+  "/hrm/recruitment/requisitions",
+  "/hrm/relations/discipline",
+  "/hrm/relations/safety",
+  "/hrm/relations/ethics",
+  "/hrm/relations/labour",
+  "/hrm/time/timesheets",
+  "/hrm/time/toil",
+  "/hrm/time/utilisation",
+  "/hrm/time/travel",
+  "/hrm/time/expenses",
+];
+
 export function isSectionEnabled(id: string) {
   return ENABLED_SECTIONS.has(id);
 }
 
 export function isPathEnabled(pathname: string) {
+  if (PRODUCTION && /^\/hrm\/payroll\/runs\/[^/]+\/edit$/.test(pathname)) return false;
+  if (PRODUCTION && DEMO_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/")))
+    return false;
   if (ALWAYS.includes(pathname)) return true;
   return ENABLED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }

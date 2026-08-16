@@ -54,6 +54,7 @@ public interface IWorkerRepository
 /// <summary>Authorization: role requirement checks against the current principal.</summary>
 public interface IAuthzService
 {
+    string CurrentSubjectId { get; }
     void RequireAnyRole(params string[] roles);
     // M25: true when the current principal holds any of the given roles — used
     // by self-service ownership guards (an HR role can read broadly; an

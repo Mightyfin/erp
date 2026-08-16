@@ -189,7 +189,7 @@ function NewLeave() {
   return (
     <AuthGate>
       <AppShell>
-      <PageHeader eyebrow="Leave" title="Request leave" description="Five short steps. Your draft saves as you go." />
+      <PageHeader eyebrow="Leave" title="Request leave" description="Five short steps. Review the policy checks before submitting." />
       {submitError && (
         <p className="mx-6 -mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {submitError}
@@ -203,8 +203,8 @@ function NewLeave() {
           setSubmitError(null);
           try {
             if (USE_REAL) {
-              const created = await realApi.createLeaveRequest({
-                workerId: workerId ?? "",
+              const created = await realApi.createMyLeaveRequest({
+                workerId: workerId ?? "00000000-0000-0000-0000-000000000000",
                 leaveTypeCode: toCode(type, codes),
                 startDate: from,
                 endDate: to,

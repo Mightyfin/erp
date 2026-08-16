@@ -51,7 +51,8 @@ import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
-import { useAuth } from "@/platform/auth";
+import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
+import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { SignedInBadge } from "@/platform/components/AuthGate";
 import { modules } from "@/platform/modules";
 import { cn } from "@/lib/utils";
@@ -96,7 +97,7 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
 function Section({ section, onNavigate }: { section: NavSection; onNavigate?: () => void }) {
   const Icon = section.icon;
   const { role } = useApp();
-  const visible = (i: NavItem) => !i.roles || i.roles.includes(role);
+  const visible = (i: NavItem) => (!i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
   const items = section.items?.filter(visible);
   const groups = section.groups
     ?.map((g) => ({ ...g, items: g.items.filter(visible) }))
@@ -198,6 +199,11 @@ function RailContent({ onNavigate }: { onNavigate?: () => void }) {
 
 function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { role } = useApp();
+  const workerState = useApi(
+    () => USE_REAL ? realApi.employees({ page: 1, pageSize: 100 }) : Promise.resolve({ items: [] as unknown[], totalCount: 0 }),
+    [],
+  );
+  const searchableEmployees = USE_REAL ? adaptWorkers(workerState.data ?? { items: [] }) : employees;
   const sections = useVisibleSections(hrmModule, role);
   const links = sections
     .filter((s) => isSectionEnabled(s.id))
@@ -223,7 +229,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
           ))}
         </CommandGroup>
         <CommandGroup heading="People">
-          {employees.map((e) => (
+          {searchableEmployees.map((e) => (
             <CommandItem key={e.id} value={`${e.fullName} ${e.employeeNo} ${e.jobTitle}`} asChild>
               <Link to="/hrm/employees/$id" params={{ id: e.id }} onClick={() => onOpenChange(false)}>
                 <span className="flex min-w-0 flex-col">
@@ -237,7 +243,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
           ))}
         </CommandGroup>
 
-        <CommandGroup heading="Requests and cases">
+        {!USE_REAL ? <CommandGroup heading="Requests and cases">
           {leaveRequests.map((r) => (
             <CommandItem key={r.id} value={`${r.id} ${r.type} leave`} asChild>
               <Link to="/hrm/leave/$id" params={{ id: r.id }} onClick={() => onOpenChange(false)}>
@@ -263,9 +269,9 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
               </Link>
             </CommandItem>
           ))}
-        </CommandGroup>
+        </CommandGroup> : null}
 
-        <CommandGroup heading="Payslips">
+        {!USE_REAL ? <CommandGroup heading="Payslips">
           {derivePayslips().map((p) => (
             <CommandItem key={p.id} value={`${p.id} payslip ${p.period} ${p.employee}`} asChild>
               <Link to="/hrm/payslips/$id" params={{ id: p.id }} onClick={() => onOpenChange(false)}>
@@ -275,7 +281,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
               </Link>
             </CommandItem>
           ))}
-        </CommandGroup>
+        </CommandGroup> : null}
       </CommandList>
     </CommandDialog>
   );
@@ -344,13 +350,48 @@ function RealSignOut() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
-  const { worker: myWorker } = useAuth();
+  const { worker: myWorker, user } = useAuth();
+  const shellState = useApi(async () => {
+    if (!USE_REAL) return null;
+    const [legalEntities, locations, notificationInbox] = await Promise.all([
+      realApi.legalEntities(),
+      realApi.locations(),
+      realApi.myNotifications(),
+    ]);
+    return {
+      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []) as Record<string, unknown>[],
+      locations: (Array.isArray(locations) ? locations : []) as Record<string, unknown>[],
+      notificationInbox,
+    };
+  }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const entity = entities.find((e) => e.id === entityId) ?? entities[0];
+  const liveEntities = shellState.data?.legalEntities ?? [];
+  const liveLocations = shellState.data?.locations ?? [];
+  const entity = USE_REAL
+    ? liveEntities.find((e) => String(e.id) === entityId) ?? liveEntities[0]
+    : entities.find((e) => e.id === entityId) ?? entities[0];
+  const entityLocations = USE_REAL
+    ? liveLocations.filter((location) => !entity || String(location.legalEntityId ?? "") === String(entity.id))
+    : entity?.branches.map((name) => ({ id: name, name })) ?? [];
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   const inScope = isPathEnabled(pathname);
-  const unread = notifications.filter((n) => n.unread).length;
+  const liveNotifications = shellState.data?.notificationInbox.items ?? [];
+  const unread = USE_REAL
+    ? shellState.data?.notificationInbox.unreadCount ?? 0
+    : notifications.filter((n) => n.unread).length;
+
+  useEffect(() => {
+    if (!USE_REAL || !liveEntities.length) return;
+    if (!liveEntities.some((candidate) => String(candidate.id) === entityId))
+      setEntityId(String(liveEntities[0].id));
+  }, [entityId, liveEntities, setEntityId]);
+
+  useEffect(() => {
+    if (!USE_REAL || !entityLocations.length) return;
+    if (!entityLocations.some((candidate) => String(candidate.name ?? candidate.id) === branch))
+      setBranch(String(entityLocations[0].name ?? entityLocations[0].id));
+  }, [branch, entityLocations, setBranch]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -406,13 +447,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Workspace</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={role} onValueChange={(v) => setRole(v as Role)}>
+              {USE_REAL ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Assigned roles: {(user?.roles ?? []).filter((r) => HRM_STAFF_ROLES.includes(r as never)).join(", ") || "employee"}
+                </div>
+              ) : <DropdownMenuRadioGroup value={role} onValueChange={(v) => setRole(v as Role)}>
                 {workspaces.map((w) => (
                   <DropdownMenuRadioItem key={w.id} value={w.id}>
                     {w.label}
                   </DropdownMenuRadioItem>
                 ))}
-              </DropdownMenuRadioGroup>
+              </DropdownMenuRadioGroup>}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -420,7 +465,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
-                <span className="max-w-48 truncate">{entity.name}</span>
+                <span className="max-w-48 truncate">{String((entity as Record<string, unknown> | undefined)?.registeredName ?? (entity as Record<string, unknown> | undefined)?.name ?? "Organisation")}</span>
                 <span className="text-muted-foreground">· {branch}</span>
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
@@ -428,11 +473,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenuContent align="start" className="w-80">
               <DropdownMenuLabel>Legal entity</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
-                {entities.map((e) => (
-                  <DropdownMenuRadioItem key={e.id} value={e.id}>
+                {(USE_REAL ? liveEntities : entities).map((e) => (
+                  <DropdownMenuRadioItem key={String(e.id)} value={String(e.id)}>
                     <span className="min-w-0">
-                      <span className="block truncate">{e.name}</span>
-                      <span className="block text-xs text-muted-foreground">{e.country} · {e.legalId}</span>
+                      <span className="block truncate">{String((e as Record<string, unknown>).registeredName ?? (e as Record<string, unknown>).name ?? e.id)}</span>
+                      <span className="block text-xs text-muted-foreground">{String((e as Record<string, unknown>).countryCode ?? (e as Record<string, unknown>).country ?? "")}</span>
                     </span>
                   </DropdownMenuRadioItem>
                 ))}
@@ -440,11 +485,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Branch</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
-                {entity.branches.map((b) => (
-                  <DropdownMenuRadioItem key={b} value={b}>
-                    {b}
+                {entityLocations.map((location) => {
+                  const name = String(location.name ?? location.id);
+                  return <DropdownMenuRadioItem key={String(location.id)} value={name}>
+                    {name}
                   </DropdownMenuRadioItem>
-                ))}
+                })}
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -483,19 +529,23 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80">
                 <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                {notifications.map((n) => (
-                  <DropdownMenuItem key={n.id} asChild>
+                {(USE_REAL ? liveNotifications : notifications).map((n) => {
+                  const row = n as Record<string, unknown>;
+                  const target = String(row.actionUrl ?? row.to ?? "/hrm/self-service");
+                  return <DropdownMenuItem key={String(row.id)} asChild>
                     <Link
-                      to={n.to}
-                      params={n.params as never}
+                      to={target}
                       className="flex cursor-pointer flex-col items-start gap-0.5"
                     >
-                      <span className="text-sm font-medium">{n.title}</span>
-                      <span className="text-xs text-muted-foreground">{n.body}</span>
-                      <span className="text-[11px] text-muted-foreground">{n.at}</span>
+                      <span className="text-sm font-medium">{String(row.title ?? "HR update")}</span>
+                      <span className="text-xs text-muted-foreground">{String(row.status ?? row.body ?? "")}</span>
+                      <span className="text-[11px] text-muted-foreground">{row.createdAt ? new Date(String(row.createdAt)).toLocaleString() : String(row.at ?? "")}</span>
                     </Link>
                   </DropdownMenuItem>
-                ))}
+                })}
+                {USE_REAL && liveNotifications.length === 0 ? (
+                  <DropdownMenuItem disabled>No notifications</DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -529,9 +579,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     My profile{myWorker ? "" : USE_REAL ? " (not linked)" : ""}
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
+                {!USE_REAL ? <DropdownMenuItem asChild>
                   <Link to="/hrm/setup">Setup guide</Link>
-                </DropdownMenuItem>
+                </DropdownMenuItem> : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <RealSignOut />

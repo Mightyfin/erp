@@ -206,7 +206,7 @@ function NewRequest() {
         <PageHeader
           eyebrow="HR requests"
           title="Raise an HR request"
-          description="Four short steps. Your draft saves as you go."
+          description="Four short steps. Review the request before submitting it to HR."
         />
         <GuidedFlow
           flowId="request-new"

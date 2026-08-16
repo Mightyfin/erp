@@ -42,9 +42,10 @@ const SECTIONS = [
   { id: "numbering", label: "Numbering" },
   { id: "vendors", label: "Vendors" },
 ];
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 function TechnicalConfig() {
-  const [tab, setTab] = useState("integrations");
+  const [tab, setTab] = useState(USE_REAL ? "notifications" : "integrations");
   const integrations = useMock(() => configurationApi.integrations());
   const numbering = useMock(() => configurationApi.numberSeries());
   const vendors = useMock(() => configurationApi.vendors());
@@ -70,7 +71,7 @@ function TechnicalConfig() {
     <ConfigPage
       title="Technical settings"
       description="What HRM connects to, and what it hands over. Rarely changed after go-live."
-      sections={SECTIONS}
+      sections={USE_REAL ? SECTIONS.filter((section) => section.id === "notifications") : SECTIONS}
       active={tab}
       onSelect={setTab}
       notice={

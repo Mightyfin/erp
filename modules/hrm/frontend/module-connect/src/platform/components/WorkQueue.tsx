@@ -12,12 +12,11 @@ const bands = [
 
 /** Prioritised work queue: exceptions > approvals > tasks > deadlines > metrics. */
 export function WorkQueue({ items, metrics }: { items: WorkItem[]; metrics?: { label: string; value: string; hint: string }[] }) {
-  if (items.length === 0) {
-    return <EmptyState title="Nothing needs you right now" body="New exceptions, approvals and tasks for this workspace will appear here." />;
-  }
-
   return (
     <div className="space-y-8">
+      {items.length === 0 ? (
+        <EmptyState title="Nothing needs you right now" body="New exceptions, approvals and tasks for this workspace will appear here." />
+      ) : null}
       {bands.map((band) => {
         const list = items.filter((i) => i.band === band.id);
         if (!list.length) return null;

@@ -95,6 +95,8 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
   return rows.map((raw) => {
     const w = raw as Record<string, unknown>;
     const toText = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+    const status = toText(w.status).toLowerCase();
+    const workerType = toText(w.workerType).toLowerCase();
     return {
       id: toText(w.id),
       employeeNo: toText(w.employeeNo),
@@ -104,8 +106,9 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
       department: toText(w.orgUnitName),
       entityId: "",
       branch: toText(w.locationName),
-      employmentType: (toText(w.workerType) || "Permanent") as never,
-      status: toText(w.status) as never,
+      managerId: w.managerId ? toText(w.managerId) : undefined,
+      employmentType: (workerType === "contractor" ? "Contractor" : workerType === "intern" ? "Intern" : "Permanent") as never,
+      status: (status === "pre-hire" ? "Pre-hire" : status === "on-leave" ? "On leave" : status === "notice" ? "Notice period" : status === "terminated" || status === "archived" ? "Terminated" : "Active") as never,
       startDate: toText(w.startDate),
       endDate: w.endDate ? toText(w.endDate) : undefined,
       email: w.email ? toText(w.email) : undefined,
@@ -119,6 +122,29 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
         : "",
     };
   });
+}
+
+/** Maps only fields the live WorkerDto actually owns; unavailable profile fields remain blank. */
+export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeeprofile").EmployeeProfile {
+  const raw = (rawValue ?? {}) as Record<string, unknown>;
+  const emergency = Array.isArray(raw.emergencyContacts) ? raw.emergencyContacts as Record<string, unknown>[] : [];
+  const banks = Array.isArray(raw.bankDetails) ? raw.bankDetails as Record<string, unknown>[] : [];
+  const bank = banks.find((item) => Boolean(item.isPrimary)) ?? banks[0];
+  const text = (value: unknown) => value == null ? "" : String(value);
+  return {
+    employeeId: text(raw.id), salutation: "", gender: "", dateOfBirth: text(raw.dateOfBirth),
+    maritalStatus: "", nationality: text(raw.nationality), passportNo: text(raw.passportNo),
+    residentialAddress: "", emergency: emergency.map((item) => ({
+      id: text(item.id), name: text(item.fullName), relationship: text(item.relationship),
+      phone: text(item.phone), isPrimary: Boolean(item.isPrimary),
+    })),
+    noticePeriodDays: 0, reportsTo: text(raw.managerName), costCentre: "", payGroup: "",
+    shiftPattern: "", holidayCalendar: "", leavePolicy: "", attendanceDeviceId: "",
+    paymentMethod: text(bank?.paymentMethod), bankName: text(bank?.bankName),
+    bankBranch: text(bank?.branchCode), bankAccount: text(bank?.accountNumber),
+    tpin: text(raw.tpin), napsaNumber: text(raw.napsaNumber), nhimaNumber: text(raw.nhimaNumber),
+    education: [], previousEmployment: [], dependants: [],
+  };
 }
 
 /** Shortcut readers for the flagship backend surfaces used by pages. */
@@ -396,6 +422,15 @@ export const realApi = {
   /** Own payslips — empty list when the identity is not linked to a worker. */
   myPayslips: () => hrmApi.get<unknown>("/hrm/me/payslips"),
   myLeave: () => hrmApi.myLeave(),
+  createMyLeaveRequest: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/me/leave", body),
+  myAttendanceToday: () => hrmApi.get<unknown>("/hrm/me/attendance/today"),
+  myAttendance: (params?: Record<string, unknown>) =>
+    hrmApi.get<unknown>("/hrm/me/attendance", params ?? {}),
+  clockMyselfIn: () => hrmApi.post<unknown>("/hrm/me/attendance/clock-in", null),
+  clockMyselfOut: () => hrmApi.post<unknown>("/hrm/me/attendance/clock-out", null),
+  createMyCorrection: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/me/attendance/corrections", body),
   /** Full snapshot of one own payslip. */
   myPayslipById: (id: string) => hrmApi.get<unknown>(`/hrm/me/payslips/${id}`),
   myPayslipDownloadUrl: (id: string) =>
@@ -756,6 +791,8 @@ export const realApi = {
   /** Create a legal entity. */
   createLegalEntity: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/admin/legal-entities", body),
+  createWorkerAssignment: (workerId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/assignments`, body),
 
   /* ------------------------------------------------------------------ */
   /* M20 payroll setup configuration (pay groups, ZRA PAYE slabs,        */

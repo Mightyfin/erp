@@ -17,6 +17,17 @@ namespace Mightyfin.Erp.Hrm.Tests;
 /// correction and leave decisions) over EF InMemory with a fixed tenant.</summary>
 public class TimeServiceTests
 {
+    private sealed class EmployeeAuthz(string subject) : IAuthzService
+    {
+        public string CurrentSubjectId => subject;
+        public void RequireAnyRole(params string[] roles)
+        {
+            if (!roles.Contains("employee")) throw new DomainException("forbidden", "Employee access denied.");
+        }
+        public bool IsRole(params string[] roles) => roles.Contains("employee");
+        public bool CanAccessSensitive(string category) => false;
+    }
+
     /// <summary>No-op double for the workflow effect applier (leave decisions are
     /// applied directly by the time service; the workflow engine applies its own
     /// effects through this interface but tests run the direct service path).</summary>
@@ -26,14 +37,15 @@ public class TimeServiceTests
     }
 
     private static (TimeServiceImpl service, HrmDbContext ctx, Worker worker, WorkflowServiceImpl wf, WorkflowRepository wfRepo) Build(
-        string tenant = "test-tenant")
+        string tenant = "test-tenant", IAuthzService? authz = null)
     {
+        authz ??= new PermissiveAuthz();
         var ctx = TestDbContextFactory.Create(tenant);
         var wfRepo = new WorkflowRepository(ctx);
-        var wf = new WorkflowServiceImpl(wfRepo, new PermissiveAuthz(), new NoOpLeaveEffectApplier());
+        var wf = new WorkflowServiceImpl(wfRepo, authz, new NoOpLeaveEffectApplier());
         var repo = new TimeRepository(ctx);
         var workerRepo = new WorkerRepository(ctx);
-        var service = new TimeServiceImpl(repo, new PermissiveAuthz(), wf, workerRepo);
+        var service = new TimeServiceImpl(repo, authz, wf, workerRepo);
         var worker = new Worker
         {
             EmployeeNo = "EMP-TM-001", FirstName = "Time", LastName = "Worker",
@@ -60,6 +72,33 @@ public class TimeServiceTests
         });
         ctx.SaveChanges();
         return (service, ctx, worker, wf, wfRepo);
+    }
+
+    [Fact]
+    public async Task EmployeeCannotClockOrCorrectAnotherWorker()
+    {
+        var (service, ctx, worker, _, _) = Build(authz: new EmployeeAuthz("subject-001"));
+        var other = new Worker
+        {
+            EmployeeNo = "EMP-TM-OTHER", FirstName = "Other", LastName = "Worker",
+            WorkerType = "employee", Status = "active", Nationality = "ZM",
+            TenantId = "test-tenant", SubjectId = "subject-002",
+        };
+        ctx.Workers.Add(other);
+        ctx.SaveChanges();
+
+        var clock = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ClockInAsync(other.Id, CancellationToken.None));
+        Assert.Equal("worker-access-denied", clock.Code);
+
+        var correction = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateCorrectionAsync(new AttendanceCorrectionCreate(
+                other.Id, DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+                "missed-punch", "08:00", "17:00", null, "Reader failed"), CancellationToken.None));
+        Assert.Equal("worker-access-denied", correction.Code);
+
+        var own = await service.ClockInAsync(worker.Id, CancellationToken.None);
+        Assert.Equal("in", own.State);
     }
 
     [Fact]
