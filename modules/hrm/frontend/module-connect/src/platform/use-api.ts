@@ -388,11 +388,29 @@ export const realApi = {
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/candidates", body),
   advanceCandidate: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/recruitment/candidates/${id}/advance`, body),
+  candidateDetail: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/recruitment/candidates/${id}`),
+  createInterview: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/recruitment/candidates/${id}/interviews`, body),
+  decideInterview: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/recruitment/interviews/${id}/decision`, body),
   createOffer: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/offers", body),
+  recruitmentOffers: (status?: string) =>
+    hrmApi.get<{ items: unknown[] }>("/hrm/recruitment/offers", status ? { status } : {}),
+  approveOffer: (id: string) => hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/approve`, null),
   issueOffer: (id: string) => hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/issue`, null),
   acceptOffer: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/accept`, body),
+  declineOffer: (id: string) => hrmApi.post<unknown>(`/hrm/recruitment/offers/${id}/decline`, null),
+  preboardingCases: (status?: string) =>
+    hrmApi.get<{ items: unknown[] }>("/hrm/recruitment/preboarding", status ? { status } : {}),
+  updatePreboardingTask: (caseId: string, taskId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/recruitment/preboarding/${caseId}/tasks/${taskId}`, body),
+  activatePreboarding: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/recruitment/preboarding/${id}/activate`, null),
+  uploadCandidateDocument: (candidateId: string, file: File, category: string, title: string) =>
+    hrmApi.uploadCandidateDocument(candidateId, file, category, title),
 
   /** Relations: cases. */
   relationsCases: (params?: Record<string, unknown>) =>

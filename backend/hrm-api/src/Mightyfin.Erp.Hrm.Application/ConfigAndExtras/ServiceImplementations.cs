@@ -41,21 +41,29 @@ public sealed class RecruitmentServiceImpl(
     IAuthzService authz,
     IWorkerService workers,
     IWorkerLifecycleService lifecycle,
-    IConfigRepository config) : IRecruitmentService
+    IConfigRepository config,
+    IUnitOfWork? unitOfWork = null) : IRecruitmentService
 {
     public async Task<Paged<VacancyDto>> ListVacanciesAsync(string? status, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var (items, total) = await repo.ListVacanciesAsync(status, ct);
-        return new Paged<VacancyDto>(items.Select(v => new VacancyDto(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt)).ToList(), total, 1, 50);
+        var rows = new List<VacancyDto>();
+        foreach (var v in items)
+            rows.Add(new VacancyDto(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt, await repo.CountCandidatesForVacancyAsync(v.Id, ct)));
+        return new Paged<VacancyDto>(rows, total, 1, 50);
     }
 
     public async Task<VacancyDto> CreateVacancyAsync(VacancyCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        var v = new Vacancy { OrgUnitId = request.OrgUnitId, JobTitle = request.JobTitle, Grade = request.Grade, Description = request.Description, Status = request.Status == "published" ? "published" : "draft" };
+        if (await config.GetOrgUnitAsync(request.OrgUnitId, ct) is null)
+            throw new DomainException("org-unit-not-found", "The selected org unit does not exist.");
+        if (string.IsNullOrWhiteSpace(request.JobTitle)) throw new DomainException("job-title-required", "Job title is required.");
+        var v = new Vacancy { OrgUnitId = request.OrgUnitId, JobTitle = request.JobTitle.Trim(), Grade = request.Grade, Description = request.Description, Status = "draft" };
         var created = await repo.CreateVacancyAsync(v, ct);
-        return new VacancyDto(created.Id, created.JobTitle, created.Grade, created.Status, created.OrgUnit?.Name ?? "", created.CreatedAt);
+        if (request.Status == "published") return await PublishVacancyAsync(created.Id, ct);
+        return MapVacancy(created);
     }
 
     public async Task<VacancyDto> PublishVacancyAsync(Guid vacancyId, CancellationToken ct)
@@ -67,7 +75,7 @@ public sealed class RecruitmentServiceImpl(
             throw new DomainException("vacancy-invalid-transition", $"Vacancy {v.Status} cannot be published; only draft vacancies can.");
         v.Status = "published";
         var updated = await repo.UpdateVacancyAsync(v, ct);
-        return new VacancyDto(updated.Id, updated.JobTitle, updated.Grade, updated.Status, updated.OrgUnit?.Name ?? "", updated.CreatedAt);
+        return MapVacancy(updated);
     }
 
     public async Task<VacancyDto> CloseVacancyAsync(Guid vacancyId, CancellationToken ct)
@@ -79,39 +87,94 @@ public sealed class RecruitmentServiceImpl(
             throw new DomainException("vacancy-invalid-transition", $"Vacancy {v.Status} cannot be closed; only published vacancies can.");
         v.Status = "closed";
         var updated = await repo.UpdateVacancyAsync(v, ct);
-        return new VacancyDto(updated.Id, updated.JobTitle, updated.Grade, updated.Status, updated.OrgUnit?.Name ?? "", updated.CreatedAt);
+        return MapVacancy(updated);
     }
 
     public async Task<Paged<CandidateDto>> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var (items, total) = await repo.ListCandidatesAsync(vacancyId, stage, ct);
-        return new Paged<CandidateDto>(items.Select(c => new CandidateDto(c.Id, c.VacancyId, c.FullName, c.Email, c.Phone, c.Stage, c.Notes, c.CreatedAt)).ToList(), total, 1, 50);
+        return new Paged<CandidateDto>(items.Select(MapCandidate).ToList(), total, 1, 50);
     }
 
     public async Task<CandidateDto> CreateCandidateAsync(CandidateCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        var c = new Candidate { VacancyId = request.VacancyId, FullName = request.FullName, Email = request.Email, Phone = request.Phone, Source = request.Source, Notes = request.Notes, Stage = "screening" };
+        var vacancy = await repo.GetVacancyAsync(request.VacancyId, ct)
+            ?? throw new DomainException("vacancy-not-found", $"Vacancy {request.VacancyId} does not exist.");
+        if (vacancy.Status != "published") throw new DomainException("vacancy-not-open", "Applications can only be added to a published vacancy.");
+        if (string.IsNullOrWhiteSpace(request.FullName)) throw new DomainException("candidate-name-required", "Candidate name is required.");
+        var c = new Candidate { VacancyId = request.VacancyId, FullName = request.FullName.Trim(), Email = request.Email, Phone = request.Phone, Source = request.Source, Notes = request.Notes, Stage = "applied", StageChangedAt = DateTimeOffset.UtcNow };
         var created = await repo.CreateCandidateAsync(c, ct);
-        return new CandidateDto(created.Id, created.VacancyId, created.FullName, created.Email, created.Phone, created.Stage, created.Notes, created.CreatedAt);
+        await repo.CreateStageEventAsync(new CandidateStageEvent { CandidateId = created.Id, FromStage = "", ToStage = "applied", Notes = "Application received" }, ct);
+        return MapCandidate(created);
+    }
+
+    public async Task<CandidateDetailDto> GetCandidateAsync(Guid candidateId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var c = await repo.GetCandidateAsync(candidateId, ct) ?? throw new DomainException("candidate-not-found", $"Candidate {candidateId} does not exist.");
+        var vacancy = await repo.GetVacancyAsync(c.VacancyId, ct) ?? throw new DomainException("vacancy-not-found", "The candidate vacancy no longer exists.");
+        var interviews = await repo.ListInterviewsAsync(candidateId, ct);
+        var history = await repo.ListStageEventsAsync(candidateId, ct);
+        var docs = await repo.ListCandidateDocumentsAsync(candidateId, ct);
+        var offers = (await repo.ListOffersAsync(null, ct)).Items.Where(x => x.CandidateId == candidateId).ToList();
+        var preboarding = await repo.GetPreboardingForCandidateAsync(candidateId, ct);
+        return new CandidateDetailDto(MapCandidate(c), MapVacancy(vacancy), interviews.Select(MapInterview).ToList(),
+            offers.Select(MapOffer).ToList(), history.Select(x => new CandidateStageEventDto(x.Id, x.FromStage, x.ToStage, x.Score, x.Notes, x.CreatedAt)).ToList(),
+            docs.Select(MapDocument).ToList(), preboarding is null ? null : MapPreboarding(preboarding));
     }
 
     public async Task<CandidateDto> AdvanceCandidateAsync(Guid candidateId, CandidateAdvanceRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var c = await repo.GetCandidateAsync(candidateId, ct) ?? throw new DomainException("candidate-not-found", $"Candidate {candidateId} does not exist.");
-        if (!ValidStages.Contains(request.Stage))
-            throw new DomainException("candidate-invalid-stage", $"Stage '{request.Stage}' is not valid. Valid stages: {string.Join(", ", ValidStages)}.");
-        if (c.Stage == "hired" || c.Stage == "rejected")
+        var target = request.Stage.Trim().ToLowerInvariant();
+        if (c.Stage is "hired" or "rejected")
             throw new DomainException("candidate-terminal-stage", $"Candidate is already in terminal stage '{c.Stage}' and cannot be advanced.");
-        c.Stage = request.Stage;
+        if (!AllowedTransitions.TryGetValue(c.Stage, out var allowed) || !allowed.Contains(target))
+            throw new DomainException("candidate-invalid-transition", $"Candidate cannot move from '{c.Stage}' to '{target}'. Allowed: {string.Join(", ", allowed ?? [])}.");
+        var from = c.Stage;
+        c.Stage = target;
         if (request.Notes is not null) c.Notes = (c.Notes + " | " + request.Notes).TrimStart(' ', '|');
         c.StageScore = request.Score;
+        c.StageChangedAt = DateTimeOffset.UtcNow;
         var updated = await repo.CreateCandidateAsync(c, ct);
-        return new CandidateDto(updated.Id, updated.VacancyId, updated.FullName, updated.Email, updated.Phone, updated.Stage, updated.Notes, updated.CreatedAt);
+        await repo.CreateStageEventAsync(new CandidateStageEvent { CandidateId = c.Id, FromStage = from, ToStage = target, Score = request.Score, Notes = request.Notes }, ct);
+        return MapCandidate(updated);
     }
-    private static readonly HashSet<string> ValidStages = ["screening", "shortlisted", "interviewed", "offered", "hired", "rejected"];
+    private static readonly Dictionary<string, HashSet<string>> AllowedTransitions = new()
+    {
+        ["applied"] = ["screening", "rejected"], ["screening"] = ["shortlisted", "rejected"],
+        ["shortlisted"] = ["interviewing", "rejected"], ["interviewing"] = ["interviewed", "rejected"],
+        ["interviewed"] = ["offered", "rejected"], ["offered"] = ["rejected"], ["preboarding"] = ["hired", "rejected"]
+    };
+
+    public async Task<InterviewDto> CreateInterviewAsync(Guid candidateId, InterviewCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var c = await repo.GetCandidateAsync(candidateId, ct) ?? throw new DomainException("candidate-not-found", $"Candidate {candidateId} does not exist.");
+        if (c.Stage != "shortlisted" && c.Stage != "interviewing") throw new DomainException("candidate-not-shortlisted", "Interviews can only be scheduled for shortlisted candidates.");
+        if (!DateTimeOffset.TryParse(request.ScheduledAt, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var scheduled))
+            throw new DomainException("interview-date-invalid", "ScheduledAt must be a valid ISO date and time.");
+        var interview = await repo.CreateInterviewAsync(new CandidateInterview { CandidateId = candidateId, ScheduledAt = scheduled, InterviewType = request.InterviewType, InterviewerName = request.InterviewerName, Notes = request.Notes }, ct);
+        if (c.Stage == "shortlisted") await AdvanceCandidateAsync(candidateId, new CandidateAdvanceRequest("interviewing", Notes: "Interview scheduled"), ct);
+        return MapInterview(interview);
+    }
+
+    public async Task<InterviewDto> DecideInterviewAsync(Guid interviewId, InterviewDecisionRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (request.OverallScore is < 1 or > 5) throw new DomainException("interview-score-invalid", "Interview score must be between 1 and 5.");
+        if (request.Recommendation is not ("hire" or "hold" or "reject")) throw new DomainException("interview-recommendation-invalid", "Recommendation must be hire, hold, or reject.");
+        var interview = await repo.GetInterviewAsync(interviewId, ct) ?? throw new DomainException("interview-not-found", $"Interview {interviewId} does not exist.");
+        if (interview.Status != "scheduled") throw new DomainException("interview-decided", "This interview already has a decision.");
+        interview.Status = "completed"; interview.OverallScore = request.OverallScore; interview.Recommendation = request.Recommendation; interview.Notes = request.Notes;
+        await repo.UpdateInterviewAsync(interview, ct);
+        var candidate = await repo.GetCandidateAsync(interview.CandidateId, ct);
+        if (candidate?.Stage == "interviewing") await AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest("interviewed", request.OverallScore.ToString(CultureInfo.InvariantCulture), request.Notes), ct);
+        return MapInterview(interview);
+    }
 
     /// <summary>Pick a work location for onboarding: prefer the first active
     /// location of the org unit, else the tenant's first active location.</summary>
@@ -128,9 +191,21 @@ public sealed class RecruitmentServiceImpl(
             ?? throw new DomainException("candidate-not-found", $"Candidate {request.CandidateId} does not exist.");
         if (c.Stage != "offered")
             throw new DomainException("candidate-not-offered", "An offer can only be created for a candidate in the 'offered' stage.");
-        var o = new Offer { CandidateId = request.CandidateId, BaseSalary = request.BaseSalary, ContractType = request.ContractType, ProbationMonths = request.ProbationMonths, NoticeDays = request.NoticeDays, StartDate = request.StartDate, Notes = request.Notes, Status = "draft" };
+        if (request.BaseSalary <= 0) throw new DomainException("offer-salary-invalid", "Base salary must be greater than zero.");
+        var o = new Offer { CandidateId = request.CandidateId, BaseSalary = request.BaseSalary, ContractType = request.ContractType, ProbationMonths = request.ProbationMonths, NoticeDays = request.NoticeDays, StartDate = request.StartDate, Notes = request.Notes, ExpiresOn = request.ExpiresOn, Status = "draft" };
         var created = await repo.CreateOfferAsync(o, ct);
-        return new OfferDto(created.Id, created.CandidateId, created.BaseSalary, created.ContractType, created.Status, created.CreatedAt);
+        return MapOffer(created);
+    }
+
+    public async Task<Paged<OfferDto>> ListOffersAsync(string? status, CancellationToken ct)
+    { authz.RequireAnyRole("hr_ops", "hr_admin"); var (items, total) = await repo.ListOffersAsync(status, ct); return new Paged<OfferDto>(items.Select(MapOffer).ToList(), total, 1, 50); }
+
+    public async Task<OfferDto> ApproveOfferAsync(Guid offerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var o = await repo.GetOfferAsync(offerId, ct) ?? throw new DomainException("offer-not-found", $"Offer {offerId} does not exist.");
+        if (o.Status != "draft") throw new DomainException("offer-not-draft", "Only a draft offer can be approved.");
+        o.Status = "approved"; o.ApprovedAt = DateTimeOffset.UtcNow; await repo.UpdateOfferAsync(o, ct); return MapOffer(o);
     }
 
     public async Task<OfferDto> IssueOfferAsync(Guid offerId, CancellationToken ct)
@@ -138,14 +213,22 @@ public sealed class RecruitmentServiceImpl(
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var o = await repo.GetOfferAsync(offerId, ct)
             ?? throw new DomainException("offer-not-found", $"Offer {offerId} does not exist.");
-        if (o.Status != "draft")
-            throw new DomainException("offer-not-draft", $"Only draft offers can be issued; this offer is '{o.Status}'.");
+        if (o.Status != "approved")
+            throw new DomainException("offer-not-approved", $"Only approved offers can be issued; this offer is '{o.Status}'.");
         var c = await repo.GetCandidateAsync(o.CandidateId, ct);
         if (c is null || c.Stage != "offered")
             throw new DomainException("candidate-stage-mismatch", "The candidate is no longer in the 'offered' stage.");
-        o.Status = "issued";
+        o.Status = "issued"; o.IssuedAt = DateTimeOffset.UtcNow;
         var updated = await repo.UpdateOfferAsync(o, ct);
-        return new OfferDto(updated.Id, updated.CandidateId, updated.BaseSalary, updated.ContractType, updated.Status, updated.CreatedAt);
+        return MapOffer(updated);
+    }
+
+    public async Task<OfferDto> DeclineOfferAsync(Guid offerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var o = await repo.GetOfferAsync(offerId, ct) ?? throw new DomainException("offer-not-found", $"Offer {offerId} does not exist.");
+        if (o.Status != "issued") throw new DomainException("offer-not-issued", "Only an issued offer can be declined.");
+        o.Status = "declined"; o.RespondedAt = DateTimeOffset.UtcNow; await repo.UpdateOfferAsync(o, ct); return MapOffer(o);
     }
 
     /// <summary>Accept an issued offer and convert the candidate into a preboarding
@@ -154,6 +237,9 @@ public sealed class RecruitmentServiceImpl(
     public async Task<OfferAcceptResultDto> AcceptOfferAsync(Guid offerId, OfferAcceptRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        OfferAcceptResultDto? result = null;
+        async Task Convert(CancellationToken token)
+        {
         var offer = await repo.GetOfferAsync(offerId, ct)
             ?? throw new DomainException("offer-not-found", $"Offer {offerId} does not exist.");
         if (offer.Status != "issued")
@@ -162,6 +248,7 @@ public sealed class RecruitmentServiceImpl(
             ?? throw new DomainException("candidate-not-found", $"Candidate for offer {offerId} no longer exists.");
         if (candidate.Stage != "offered")
             throw new DomainException("candidate-stage-mismatch", "Candidate stage no longer matches the offer.");
+        if (candidate.WorkerId.HasValue) throw new DomainException("candidate-already-converted", "This candidate is already linked to a worker.");
 
         var vacancy = await repo.GetVacancyAsync(candidate.VacancyId, ct);
         var orgUnitId = vacancy?.OrgUnitId
@@ -183,7 +270,7 @@ public sealed class RecruitmentServiceImpl(
             LocationId: locationId,
             JobTitle: vacancy?.JobTitle,
             Grade: vacancy?.Grade,
-            StartDate: request.StartDate ?? offer.StartDate,
+            StartDate: null,
             WorkerType: "employee");
         var worker = await workers.CreateAsync(workerReq, ct);
 
@@ -195,14 +282,96 @@ public sealed class RecruitmentServiceImpl(
             ContractType: offer.ContractType, ProbationMonths: offer.ProbationMonths,
             NoticeDays: offer.NoticeDays), ct);
 
-        offer.Status = "accepted";
+        await workers.UpdateAsync(worker.Id, new WorkerUpdateRequest(Status: "pre-hire"), ct);
+
+        offer.Status = "accepted"; offer.RespondedAt = DateTimeOffset.UtcNow;
         await repo.UpdateOfferAsync(offer, ct);
-        candidate.Stage = "hired";
+        candidate.Stage = "preboarding"; candidate.WorkerId = worker.Id;
         candidate.StageChangedAt = DateTimeOffset.UtcNow;
         candidate.Notes = (candidate.Notes + " | Converted to worker " + worker.Id.ToString("N")[..6]).TrimStart(' ', '|');
         await repo.CreateCandidateAsync(candidate, ct);
-        return new OfferAcceptResultDto(offer.Id, worker.Id, worker.EmployeeNo, assignment.Id, "preboarding");
+        await repo.CreateStageEventAsync(new CandidateStageEvent { CandidateId = candidate.Id, FromStage = "offered", ToStage = "preboarding", Notes = "Offer accepted and worker record created" }, ct);
+        var due = DateOnly.Parse(startDate);
+        var preboarding = new PreboardingCase { CandidateId = candidate.Id, WorkerId = worker.Id, AssignmentId = assignment.Id, StartDate = due, Status = "preboarding" };
+        foreach (var item in DefaultTasks)
+            preboarding.Tasks.Add(new PreboardingTask { Code = item.Code, Title = item.Title, Required = true, DueDate = due, Owner = item.Owner });
+        await repo.CreatePreboardingAsync(preboarding, ct);
+        result = new OfferAcceptResultDto(offer.Id, worker.Id, worker.EmployeeNo, assignment.Id, "preboarding");
+        }
+        if (unitOfWork is null) await Convert(ct); else await unitOfWork.ExecuteAsync(Convert, ct);
+        return result!;
     }
+
+    public async Task<Paged<PreboardingCaseDto>> ListPreboardingAsync(string? status, CancellationToken ct)
+    { authz.RequireAnyRole("hr_ops", "hr_admin", "manager"); var (items, total) = await repo.ListPreboardingAsync(status, ct); return new Paged<PreboardingCaseDto>(items.Select(MapPreboarding).ToList(), total, 1, 50); }
+
+    public async Task<PreboardingCaseDto> GetPreboardingAsync(Guid caseId, CancellationToken ct)
+    { authz.RequireAnyRole("hr_ops", "hr_admin", "manager"); return MapPreboarding(await repo.GetPreboardingAsync(caseId, ct) ?? throw new DomainException("preboarding-not-found", $"Preboarding case {caseId} does not exist.")); }
+
+    public async Task<PreboardingTaskDto> AddPreboardingTaskAsync(Guid caseId, PreboardingTaskCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var record = await repo.GetPreboardingAsync(caseId, ct) ?? throw new DomainException("preboarding-not-found", $"Preboarding case {caseId} does not exist.");
+        if (record.Status != "preboarding") throw new DomainException("preboarding-closed", "Tasks cannot be added after activation.");
+        var task = await repo.CreatePreboardingTaskAsync(new PreboardingTask { PreboardingCaseId = caseId, Code = $"custom-{Guid.NewGuid():N}"[..15], Title = request.Title.Trim(), Required = request.Required, DueDate = string.IsNullOrWhiteSpace(request.DueDate) ? null : DateOnly.Parse(request.DueDate), Owner = request.Owner }, ct);
+        return MapTask(task);
+    }
+
+    public async Task<PreboardingTaskDto> UpdatePreboardingTaskAsync(Guid caseId, Guid taskId, PreboardingTaskUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var task = await repo.GetPreboardingTaskAsync(taskId, ct) ?? throw new DomainException("preboarding-task-not-found", $"Task {taskId} does not exist.");
+        if (task.PreboardingCaseId != caseId) throw new DomainException("preboarding-task-not-found", "Task does not belong to this preboarding case.");
+        if (request.Status is not ("pending" or "completed" or "blocked")) throw new DomainException("preboarding-task-status-invalid", "Status must be pending, completed, or blocked.");
+        task.Status = request.Status; task.Notes = request.Notes; task.CompletedAt = request.Status == "completed" ? DateTimeOffset.UtcNow : null;
+        return MapTask(await repo.UpdatePreboardingTaskAsync(task, ct));
+    }
+
+    public async Task<PreboardingCaseDto> ActivatePreboardingAsync(Guid caseId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var record = await repo.GetPreboardingAsync(caseId, ct) ?? throw new DomainException("preboarding-not-found", $"Preboarding case {caseId} does not exist.");
+        if (record.Status == "active") return MapPreboarding(record);
+        var incomplete = record.Tasks.Where(x => x.Required && x.Status != "completed").Select(x => x.Title).ToList();
+        if (incomplete.Count > 0) throw new DomainException("preboarding-incomplete", $"Complete required tasks before activation: {string.Join(", ", incomplete)}.");
+        await workers.UpdateAsync(record.WorkerId, new WorkerUpdateRequest(Status: "active"), ct);
+        var candidate = await repo.GetCandidateAsync(record.CandidateId, ct) ?? throw new DomainException("candidate-not-found", "Candidate no longer exists.");
+        candidate.Stage = "hired"; candidate.StageChangedAt = DateTimeOffset.UtcNow; await repo.CreateCandidateAsync(candidate, ct);
+        await repo.CreateStageEventAsync(new CandidateStageEvent { CandidateId = candidate.Id, FromStage = "preboarding", ToStage = "hired", Notes = "Required preboarding tasks completed; worker activated" }, ct);
+        record.Status = "active"; record.ActivatedAt = DateTimeOffset.UtcNow; await repo.UpdatePreboardingAsync(record, ct);
+        return MapPreboarding(record);
+    }
+
+    public async Task<CandidateDocumentDto> AddCandidateDocumentAsync(Guid candidateId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        _ = await repo.GetCandidateAsync(candidateId, ct) ?? throw new DomainException("candidate-not-found", $"Candidate {candidateId} does not exist.");
+        if (sizeBytes > 10 * 1024 * 1024) throw new DomainException("document-too-large", "Candidate documents cannot exceed 10 MB.");
+        return MapDocument(await repo.CreateCandidateDocumentAsync(new CandidateDocument { CandidateId = candidateId, Category = category, Title = title, FileName = fileName, ContentType = contentType, SizeBytes = sizeBytes, StoragePath = storagePath }, ct));
+    }
+
+    public async Task<(CandidateDocument Document, Stream Stream)> GetCandidateDocumentAsync(Guid documentId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var doc = await repo.GetCandidateDocumentAsync(documentId, ct) ?? throw new DomainException("candidate-document-not-found", $"Document {documentId} does not exist.");
+        if (!File.Exists(doc.StoragePath)) throw new DomainException("document-file-missing", "The document file is unavailable.");
+        return (doc, File.OpenRead(doc.StoragePath));
+    }
+
+    private static readonly (string Code, string Title, string Owner)[] DefaultTasks =
+    [
+        ("signed-contract", "Collect signed employment contract", "HR"), ("identity", "Verify identity document", "HR"),
+        ("statutory", "Capture statutory identifiers", "Payroll"), ("bank", "Capture payment details", "Payroll"),
+        ("induction", "Schedule induction and equipment", "Hiring manager")
+    ];
+    private static VacancyDto MapVacancy(Vacancy v) => new(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt);
+    private static CandidateDto MapCandidate(Candidate c) => new(c.Id, c.VacancyId, c.FullName, c.Email, c.Phone, c.Stage, c.Notes, c.CreatedAt, c.WorkerId);
+    private static OfferDto MapOffer(Offer o) => new(o.Id, o.CandidateId, o.BaseSalary, o.ContractType, o.Status, o.CreatedAt, o.Candidate?.FullName, o.Candidate?.Vacancy?.JobTitle, o.StartDate, o.ExpiresOn, o.ApprovedAt, o.IssuedAt, o.RespondedAt);
+    private static InterviewDto MapInterview(CandidateInterview x) => new(x.Id, x.CandidateId, x.ScheduledAt.ToString("O"), x.InterviewType, x.InterviewerName, x.Status, x.OverallScore, x.Recommendation, x.Notes, x.CreatedAt);
+    private static CandidateDocumentDto MapDocument(CandidateDocument x) => new(x.Id, x.CandidateId, x.Category, x.Title, x.FileName, x.ContentType, x.SizeBytes, x.CreatedAt);
+    private static PreboardingTaskDto MapTask(PreboardingTask x) => new(x.Id, x.Code, x.Title, x.Required, x.Status, x.DueDate?.ToString("yyyy-MM-dd"), x.Owner, x.Notes, x.CompletedAt);
+    private static PreboardingCaseDto MapPreboarding(PreboardingCase x) => new(x.Id, x.CandidateId, x.Candidate?.FullName ?? "", x.WorkerId, x.Worker?.EmployeeNo ?? "", x.AssignmentId,
+        x.Candidate?.Vacancy?.JobTitle ?? x.Worker?.JobTitle ?? "", x.Status, x.StartDate.ToString("yyyy-MM-dd"), x.Tasks.Count(t => t.Status == "completed"), x.Tasks.Count, x.Tasks.Select(MapTask).ToList(), x.CreatedAt);
 }
 
 public sealed class RelationsServiceImpl(IRelationsRepository repo, IAuthzService authz) : IRelationsService

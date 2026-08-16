@@ -20,6 +20,7 @@ export const ENABLED_SECTIONS = new Set([
   "lifecycle", // M22 onboarding — statutory readiness feeds the payroll record
   "experience", // M22 HR requests — the admin inbox lands on approvals
   "reports", // M23 statutory filings — PAYE returns and remittances
+  "recruitment", // M29 candidate-to-worker workflow is operational
   "configuration",
 ]);
 
@@ -37,6 +38,7 @@ const ENABLED_PREFIXES = [
   "/hrm/requests",
   "/hrm/lifecycle/onboarding",
   "/hrm/reports", // M23 statutory filings
+  "/hrm/recruitment", // M29 vacancy, candidate, offer and preboarding operations
   "/hrm/configuration",
   "/hrm/setup",
   "/hrm/help",
@@ -58,7 +60,6 @@ export function isPathEnabled(pathname: string) {
 /** Shown on the Coming soon screen so the roadmap is explicit, not a dead end. */
 export const COMING_SOON_AREAS = [
   "Lifecycle — onboarding, movements, offboarding, assets",
-  "Recruitment — requisitions, vacancies, candidates, offers",
   "Talent — goals, reviews, learning, succession",
   "Employee experience — requests, letters, knowledge, engagement",
   "Relations and safety — cases, discipline, health and safety, ethics",

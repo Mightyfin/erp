@@ -77,6 +77,7 @@ export const hrmModule: ModuleDefinition = {
       icon: Briefcase,
       roles: ["hr_ops", "hr_admin", "manager"],
       items: [
+        { label: "Hiring operations", to: "/hrm/recruitment/operations" },
         { label: "Requisitions", to: "/hrm/recruitment/requisitions" },
         { label: "Vacancies", to: "/hrm/recruitment/vacancies" },
         { label: "Candidates", to: "/hrm/recruitment/candidates" },

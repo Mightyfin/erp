@@ -19,14 +19,38 @@ public interface IRecruitmentService
     Task<VacancyDto> CloseVacancyAsync(Guid vacancyId, CancellationToken ct);
     Task<Paged<CandidateDto>> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct);
     Task<CandidateDto> CreateCandidateAsync(CandidateCreate request, CancellationToken ct);
+    Task<CandidateDetailDto> GetCandidateAsync(Guid candidateId, CancellationToken ct);
     Task<CandidateDto> AdvanceCandidateAsync(Guid candidateId, CandidateAdvanceRequest request, CancellationToken ct);
+    Task<InterviewDto> CreateInterviewAsync(Guid candidateId, InterviewCreateRequest request, CancellationToken ct);
+    Task<InterviewDto> DecideInterviewAsync(Guid interviewId, InterviewDecisionRequest request, CancellationToken ct);
     Task<OfferDto> CreateOfferAsync(OfferCreate request, CancellationToken ct);
+    Task<Paged<OfferDto>> ListOffersAsync(string? status, CancellationToken ct);
+    Task<OfferDto> ApproveOfferAsync(Guid offerId, CancellationToken ct);
     Task<OfferDto> IssueOfferAsync(Guid offerId, CancellationToken ct);
+    Task<OfferDto> DeclineOfferAsync(Guid offerId, CancellationToken ct);
     Task<OfferAcceptResultDto> AcceptOfferAsync(Guid offerId, OfferAcceptRequest request, CancellationToken ct);
+    Task<Paged<PreboardingCaseDto>> ListPreboardingAsync(string? status, CancellationToken ct);
+    Task<PreboardingCaseDto> GetPreboardingAsync(Guid caseId, CancellationToken ct);
+    Task<PreboardingTaskDto> AddPreboardingTaskAsync(Guid caseId, PreboardingTaskCreateRequest request, CancellationToken ct);
+    Task<PreboardingTaskDto> UpdatePreboardingTaskAsync(Guid caseId, Guid taskId, PreboardingTaskUpdateRequest request, CancellationToken ct);
+    Task<PreboardingCaseDto> ActivatePreboardingAsync(Guid caseId, CancellationToken ct);
+    Task<CandidateDocumentDto> AddCandidateDocumentAsync(Guid candidateId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
+    Task<(CandidateDocument Document, Stream Stream)> GetCandidateDocumentAsync(Guid documentId, CancellationToken ct);
 }
-public sealed record VacancyDto(Guid Id, string JobTitle, string? Grade, string Status, string OrgUnitName, DateTimeOffset CreatedAt);
-public sealed record CandidateDto(Guid Id, Guid VacancyId, string FullName, string? Email, string? Phone, string Stage, string? Notes, DateTimeOffset CreatedAt);
-public sealed record OfferDto(Guid Id, Guid CandidateId, decimal BaseSalary, string ContractType, string Status, DateTimeOffset CreatedAt);
+public sealed record VacancyDto(Guid Id, string JobTitle, string? Grade, string Status, string OrgUnitName, DateTimeOffset CreatedAt, int CandidateCount = 0);
+public sealed record CandidateDto(Guid Id, Guid VacancyId, string FullName, string? Email, string? Phone, string Stage, string? Notes, DateTimeOffset CreatedAt, Guid? WorkerId = null);
+public sealed record OfferDto(Guid Id, Guid CandidateId, decimal BaseSalary, string ContractType, string Status, DateTimeOffset CreatedAt,
+    string? CandidateName = null, string? JobTitle = null, string? StartDate = null, string? ExpiresOn = null,
+    DateTimeOffset? ApprovedAt = null, DateTimeOffset? IssuedAt = null, DateTimeOffset? RespondedAt = null);
+public sealed record InterviewDto(Guid Id, Guid CandidateId, string ScheduledAt, string InterviewType, string? InterviewerName,
+    string Status, int? OverallScore, string? Recommendation, string? Notes, DateTimeOffset CreatedAt);
+public sealed record CandidateStageEventDto(Guid Id, string FromStage, string ToStage, string? Score, string? Notes, DateTimeOffset CreatedAt);
+public sealed record CandidateDocumentDto(Guid Id, Guid CandidateId, string Category, string Title, string FileName, string ContentType, long SizeBytes, DateTimeOffset CreatedAt);
+public sealed record PreboardingTaskDto(Guid Id, string Code, string Title, bool Required, string Status, string? DueDate, string? Owner, string? Notes, DateTimeOffset? CompletedAt);
+public sealed record PreboardingCaseDto(Guid Id, Guid CandidateId, string CandidateName, Guid WorkerId, string EmployeeNo, Guid AssignmentId,
+    string JobTitle, string Status, string StartDate, int CompletedTasks, int TotalTasks, List<PreboardingTaskDto> Tasks, DateTimeOffset CreatedAt);
+public sealed record CandidateDetailDto(CandidateDto Candidate, VacancyDto Vacancy, List<InterviewDto> Interviews,
+    List<OfferDto> Offers, List<CandidateStageEventDto> History, List<CandidateDocumentDto> Documents, PreboardingCaseDto? Preboarding);
 /// <summary>M7: result of accepting an offer — the candidate is converted into a
 /// preboarding worker record with an initial assignment (ties to M2 onboarding).</summary>
 public sealed record OfferAcceptResultDto(Guid OfferId, Guid WorkerId, string EmployeeNo, Guid AssignmentId, string Status);
@@ -116,9 +140,27 @@ public interface IRecruitmentRepository
     Task<(List<Candidate> Items, int Total)> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct);
     Task<Candidate> CreateCandidateAsync(Candidate candidate, CancellationToken ct);
     Task<Candidate?> GetCandidateAsync(Guid id, CancellationToken ct);
+    Task<List<CandidateStageEvent>> ListStageEventsAsync(Guid candidateId, CancellationToken ct);
+    Task<CandidateStageEvent> CreateStageEventAsync(CandidateStageEvent entry, CancellationToken ct);
+    Task<List<CandidateInterview>> ListInterviewsAsync(Guid candidateId, CancellationToken ct);
+    Task<CandidateInterview> CreateInterviewAsync(CandidateInterview interview, CancellationToken ct);
+    Task<CandidateInterview?> GetInterviewAsync(Guid id, CancellationToken ct);
+    Task<CandidateInterview> UpdateInterviewAsync(CandidateInterview interview, CancellationToken ct);
     Task<Offer> CreateOfferAsync(Offer offer, CancellationToken ct);
     Task<Offer?> GetOfferAsync(Guid id, CancellationToken ct);
     Task<Offer> UpdateOfferAsync(Offer offer, CancellationToken ct);
+    Task<(List<Offer> Items, int Total)> ListOffersAsync(string? status, CancellationToken ct);
+    Task<PreboardingCase?> GetPreboardingAsync(Guid id, CancellationToken ct);
+    Task<PreboardingCase?> GetPreboardingForCandidateAsync(Guid candidateId, CancellationToken ct);
+    Task<(List<PreboardingCase> Items, int Total)> ListPreboardingAsync(string? status, CancellationToken ct);
+    Task<PreboardingCase> CreatePreboardingAsync(PreboardingCase record, CancellationToken ct);
+    Task<PreboardingCase> UpdatePreboardingAsync(PreboardingCase record, CancellationToken ct);
+    Task<PreboardingTask?> GetPreboardingTaskAsync(Guid id, CancellationToken ct);
+    Task<PreboardingTask> CreatePreboardingTaskAsync(PreboardingTask task, CancellationToken ct);
+    Task<PreboardingTask> UpdatePreboardingTaskAsync(PreboardingTask task, CancellationToken ct);
+    Task<List<CandidateDocument>> ListCandidateDocumentsAsync(Guid candidateId, CancellationToken ct);
+    Task<CandidateDocument> CreateCandidateDocumentAsync(CandidateDocument document, CancellationToken ct);
+    Task<CandidateDocument?> GetCandidateDocumentAsync(Guid id, CancellationToken ct);
     Task<int> CountCandidatesForVacancyAsync(Guid vacancyId, CancellationToken ct);
 }
 
@@ -160,9 +202,10 @@ public sealed class Candidate : Entity
     public string? Phone { get; set; }
     public string? Source { get; set; }
     public string? Notes { get; set; }
-    public string Stage { get; set; } = "screening"; // screening | shortlisted | interviewed | offered | hired | rejected
+    public string Stage { get; set; } = "applied"; // applied | screening | shortlisted | interviewing | interviewed | offered | preboarding | hired | rejected
     public string? StageScore { get; set; }          // interview scorecard score
     public DateTimeOffset? StageChangedAt { get; set; }
+    public Guid? WorkerId { get; set; }
     public ICollection<Offer> Offers { get; set; } = new List<Offer>();
 }
 
@@ -177,6 +220,72 @@ public sealed class Offer : Entity
     public string? StartDate { get; set; }
     public string? Notes { get; set; }
     public string Status { get; set; } = "draft"; // draft | approved | issued | accepted | declined
+    public string? ExpiresOn { get; set; }
+    public DateTimeOffset? ApprovedAt { get; set; }
+    public DateTimeOffset? IssuedAt { get; set; }
+    public DateTimeOffset? RespondedAt { get; set; }
+}
+
+public sealed class CandidateStageEvent : Entity
+{
+    public Guid CandidateId { get; set; }
+    public Candidate? Candidate { get; set; }
+    public string FromStage { get; set; } = null!;
+    public string ToStage { get; set; } = null!;
+    public string? Score { get; set; }
+    public string? Notes { get; set; }
+}
+
+public sealed class CandidateInterview : Entity
+{
+    public Guid CandidateId { get; set; }
+    public Candidate? Candidate { get; set; }
+    public DateTimeOffset ScheduledAt { get; set; }
+    public string InterviewType { get; set; } = "panel";
+    public string? InterviewerName { get; set; }
+    public string Status { get; set; } = "scheduled";
+    public int? OverallScore { get; set; }
+    public string? Recommendation { get; set; }
+    public string? Notes { get; set; }
+}
+
+public sealed class CandidateDocument : Entity
+{
+    public Guid CandidateId { get; set; }
+    public Candidate? Candidate { get; set; }
+    public string Category { get; set; } = null!;
+    public string Title { get; set; } = null!;
+    public string FileName { get; set; } = null!;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public string StoragePath { get; set; } = null!;
+}
+
+public sealed class PreboardingCase : Entity
+{
+    public Guid CandidateId { get; set; }
+    public Candidate? Candidate { get; set; }
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public Guid AssignmentId { get; set; }
+    public string Status { get; set; } = "preboarding";
+    public DateOnly StartDate { get; set; }
+    public DateTimeOffset? ActivatedAt { get; set; }
+    public ICollection<PreboardingTask> Tasks { get; set; } = new List<PreboardingTask>();
+}
+
+public sealed class PreboardingTask : Entity
+{
+    public Guid PreboardingCaseId { get; set; }
+    public PreboardingCase? PreboardingCase { get; set; }
+    public string Code { get; set; } = null!;
+    public string Title { get; set; } = null!;
+    public bool Required { get; set; } = true;
+    public string Status { get; set; } = "pending";
+    public DateOnly? DueDate { get; set; }
+    public string? Owner { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
 }
 
 public sealed class RelationsCase : Entity

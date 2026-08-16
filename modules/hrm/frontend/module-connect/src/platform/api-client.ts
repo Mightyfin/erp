@@ -45,8 +45,21 @@ export interface SelfProfileUpdate {
   nhimaNumber?: string;
   nationality?: string;
   dateOfBirth?: string;
-  emergencyContacts?: { relationship: string; fullName: string; phone?: string; isPrimary: boolean }[];
-  bankDetails?: { bankName: string; branchCode: string; accountNumber: string; accountName: string; isPrimary: boolean; paymentMethod?: string; mobileMoneyNumber?: string }[];
+  emergencyContacts?: {
+    relationship: string;
+    fullName: string;
+    phone?: string;
+    isPrimary: boolean;
+  }[];
+  bankDetails?: {
+    bankName: string;
+    branchCode: string;
+    accountNumber: string;
+    accountName: string;
+    isPrimary: boolean;
+    paymentMethod?: string;
+    mobileMoneyNumber?: string;
+  }[];
 }
 
 /** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
@@ -181,6 +194,24 @@ export const hrmApi = {
     return handleResponse(res);
   },
 
+  async uploadCandidateDocument(
+    candidateId: string,
+    file: File,
+    category: string,
+    title: string,
+  ): Promise<unknown> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("category", category);
+    form.append("title", title);
+    const res = await fetch(`${BASE}/hrm/recruitment/candidates/${candidateId}/documents`, {
+      method: "POST",
+      headers: headers(),
+      body: form,
+    });
+    return handleResponse(res);
+  },
+
   /** Stream a document by id and return a Blob URL caller must revoke. */
   async downloadDocument(documentId: string): Promise<string> {
     const res = await fetch(`${BASE}/hrm/documents/${documentId}/download`, {
@@ -217,9 +248,7 @@ export const hrmApi = {
    * signed-in identity is not linked to an HRM worker yet.
    */
   myProfile: () =>
-    hrmApi.get<{ linked: boolean; worker: LinkedWorker | null; subject: string }>(
-      "/hrm/me",
-    ),
+    hrmApi.get<{ linked: boolean; worker: LinkedWorker | null; subject: string }>("/hrm/me"),
 
   // M15 self-service: update the worker record linked to the caller's token
   // subject. PUT /hrm/me/profile — the backend re-reads the subject from the
@@ -367,4 +396,3 @@ export interface LeaveRequestLine {
   status: string;
   requestedDays: number;
 }
-

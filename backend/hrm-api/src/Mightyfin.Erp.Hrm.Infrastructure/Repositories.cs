@@ -1190,7 +1190,19 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
         return candidate;
     }
     public async Task<Candidate?> GetCandidateAsync(Guid id, CancellationToken ct)
-        => await db.Candidates.FirstOrDefaultAsync(c => c.Id == id, ct);
+        => await db.Candidates.Include(c => c.Vacancy).FirstOrDefaultAsync(c => c.Id == id, ct);
+    public async Task<List<CandidateStageEvent>> ListStageEventsAsync(Guid candidateId, CancellationToken ct)
+        => (await db.CandidateStageEvents.Where(x => x.CandidateId == candidateId).ToListAsync(ct)).OrderBy(x => x.CreatedAt).ToList();
+    public async Task<CandidateStageEvent> CreateStageEventAsync(CandidateStageEvent entry, CancellationToken ct)
+    { db.CandidateStageEvents.Add(entry); await db.SaveChangesAsync(ct); return entry; }
+    public async Task<List<CandidateInterview>> ListInterviewsAsync(Guid candidateId, CancellationToken ct)
+        => await db.CandidateInterviews.Where(x => x.CandidateId == candidateId).OrderBy(x => x.ScheduledAt).ToListAsync(ct);
+    public async Task<CandidateInterview> CreateInterviewAsync(CandidateInterview interview, CancellationToken ct)
+    { db.CandidateInterviews.Add(interview); await db.SaveChangesAsync(ct); return interview; }
+    public async Task<CandidateInterview?> GetInterviewAsync(Guid id, CancellationToken ct)
+        => await db.CandidateInterviews.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<CandidateInterview> UpdateInterviewAsync(CandidateInterview interview, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return interview; }
     public async Task<Offer> CreateOfferAsync(Offer offer, CancellationToken ct)
     {
         db.Set<Offer>().Add(offer);
@@ -1205,6 +1217,40 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
         await db.SaveChangesAsync(ct);
         return offer;
     }
+    public async Task<(List<Offer> Items, int Total)> ListOffersAsync(string? status, CancellationToken ct)
+    {
+        var q = db.Offers.Include(x => x.Candidate)!.ThenInclude(x => x!.Vacancy).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        var items = (await q.ToListAsync(ct)).OrderByDescending(x => x.CreatedAt).ToList();
+        return (items, items.Count);
+    }
+    public async Task<PreboardingCase?> GetPreboardingAsync(Guid id, CancellationToken ct)
+        => await db.PreboardingCases.Include(x => x.Tasks).Include(x => x.Candidate).Include(x => x.Worker).FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<PreboardingCase?> GetPreboardingForCandidateAsync(Guid candidateId, CancellationToken ct)
+        => await db.PreboardingCases.Include(x => x.Tasks).Include(x => x.Candidate).Include(x => x.Worker).FirstOrDefaultAsync(x => x.CandidateId == candidateId, ct);
+    public async Task<(List<PreboardingCase> Items, int Total)> ListPreboardingAsync(string? status, CancellationToken ct)
+    {
+        var q = db.PreboardingCases.Include(x => x.Tasks).Include(x => x.Candidate).Include(x => x.Worker).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        var items = (await q.ToListAsync(ct)).OrderByDescending(x => x.CreatedAt).ToList();
+        return (items, items.Count);
+    }
+    public async Task<PreboardingCase> CreatePreboardingAsync(PreboardingCase record, CancellationToken ct)
+    { db.PreboardingCases.Add(record); await db.SaveChangesAsync(ct); return record; }
+    public async Task<PreboardingCase> UpdatePreboardingAsync(PreboardingCase record, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return record; }
+    public async Task<PreboardingTask?> GetPreboardingTaskAsync(Guid id, CancellationToken ct)
+        => await db.PreboardingTasks.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<PreboardingTask> CreatePreboardingTaskAsync(PreboardingTask task, CancellationToken ct)
+    { db.PreboardingTasks.Add(task); await db.SaveChangesAsync(ct); return task; }
+    public async Task<PreboardingTask> UpdatePreboardingTaskAsync(PreboardingTask task, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return task; }
+    public async Task<List<CandidateDocument>> ListCandidateDocumentsAsync(Guid candidateId, CancellationToken ct)
+        => (await db.CandidateDocuments.Where(x => x.CandidateId == candidateId).ToListAsync(ct)).OrderByDescending(x => x.CreatedAt).ToList();
+    public async Task<CandidateDocument> CreateCandidateDocumentAsync(CandidateDocument document, CancellationToken ct)
+    { db.CandidateDocuments.Add(document); await db.SaveChangesAsync(ct); return document; }
+    public async Task<CandidateDocument?> GetCandidateDocumentAsync(Guid id, CancellationToken ct)
+        => await db.CandidateDocuments.FirstOrDefaultAsync(x => x.Id == id, ct);
     public async Task<int> CountCandidatesForVacancyAsync(Guid vacancyId, CancellationToken ct)
         => await db.Candidates.CountAsync(c => c.VacancyId == vacancyId, ct);
 }

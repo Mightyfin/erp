@@ -104,6 +104,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<Vacancy> Vacancies => Set<Vacancy>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Offer> Offers => Set<Offer>();
+    public DbSet<CandidateStageEvent> CandidateStageEvents => Set<CandidateStageEvent>();
+    public DbSet<CandidateInterview> CandidateInterviews => Set<CandidateInterview>();
+    public DbSet<CandidateDocument> CandidateDocuments => Set<CandidateDocument>();
+    public DbSet<PreboardingCase> PreboardingCases => Set<PreboardingCase>();
+    public DbSet<PreboardingTask> PreboardingTasks => Set<PreboardingTask>();
     public DbSet<RelationsCase> RelationsCases => Set<RelationsCase>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -174,6 +179,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<Vacancy>(modelBuilder, "vacancies");
         ConfigureEntity<Candidate>(modelBuilder, "candidates");
         ConfigureEntity<Offer>(modelBuilder, "offers");
+        ConfigureEntity<CandidateStageEvent>(modelBuilder, "candidate_stage_events");
+        ConfigureEntity<CandidateInterview>(modelBuilder, "candidate_interviews");
+        ConfigureEntity<CandidateDocument>(modelBuilder, "candidate_documents");
+        ConfigureEntity<PreboardingCase>(modelBuilder, "preboarding_cases", e => e.HasIndex(x => new { x.TenantId, x.CandidateId }).IsUnique());
+        ConfigureEntity<PreboardingTask>(modelBuilder, "preboarding_tasks");
         ConfigureEntity<RelationsCase>(modelBuilder, "relations_cases");
 
         // Relationships
@@ -219,6 +229,12 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<Vacancy>().HasOne(x => x.OrgUnit).WithMany().HasForeignKey(x => x.OrgUnitId);
         modelBuilder.Entity<Vacancy>().HasMany(x => x.Candidates).WithOne(x => x.Vacancy).HasForeignKey(x => x.VacancyId);
         modelBuilder.Entity<Candidate>().HasMany(x => x.Offers).WithOne(x => x.Candidate).HasForeignKey(x => x.CandidateId);
+        modelBuilder.Entity<Candidate>().HasMany<CandidateStageEvent>().WithOne(x => x.Candidate).HasForeignKey(x => x.CandidateId);
+        modelBuilder.Entity<Candidate>().HasMany<CandidateInterview>().WithOne(x => x.Candidate).HasForeignKey(x => x.CandidateId);
+        modelBuilder.Entity<Candidate>().HasMany<CandidateDocument>().WithOne(x => x.Candidate).HasForeignKey(x => x.CandidateId);
+        modelBuilder.Entity<PreboardingCase>().HasOne(x => x.Candidate).WithOne().HasForeignKey<PreboardingCase>(x => x.CandidateId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PreboardingCase>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PreboardingCase>().HasMany(x => x.Tasks).WithOne(x => x.PreboardingCase).HasForeignKey(x => x.PreboardingCaseId);
         modelBuilder.Entity<RelationsCase>().HasOne(x => x.SubjectWorker).WithMany().HasForeignKey(x => x.SubjectWorkerId).OnDelete(DeleteBehavior.SetNull);
 
         base.OnModelCreating(modelBuilder);

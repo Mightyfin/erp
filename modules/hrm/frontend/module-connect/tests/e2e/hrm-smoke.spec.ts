@@ -226,3 +226,149 @@ test("HR administrator can import attendance and reconcile the M28 batch", async
   await expect(result).toContainText('"rejectedCount": 1');
   expect(submittedRows).toHaveLength(2);
 });
+
+test("HR administrator can complete the M29 candidate-to-worker journey", async ({ page }) => {
+  const vacancyId = "019d0000-0000-7000-8000-000000000291";
+  const candidateId = "019d0000-0000-7000-8000-000000000292";
+  const interviewId = "019d0000-0000-7000-8000-000000000293";
+  const offerId = "019d0000-0000-7000-8000-000000000294";
+  const caseId = "019d0000-0000-7000-8000-000000000295";
+  let vacancyStatus = "draft";
+  let offerStatus = "draft";
+  let accepted = false;
+  const tasks = [
+    {
+      id: "019d0000-0000-7000-8000-000000000296",
+      title: "Verify identity document",
+      required: true,
+      status: "pending",
+    },
+    {
+      id: "019d0000-0000-7000-8000-000000000297",
+      title: "Collect signed contract",
+      required: true,
+      status: "pending",
+    },
+  ];
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-recruiter",
+        realm_access: { roles: ["hr_admin", "hr_ops"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }),
+    );
+  });
+  await page.route("**/api/hrm/admin/org-units/tree", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: "019d0000-0000-7000-8000-000000000290", name: "Operations", children: [] },
+      ]),
+    }),
+  );
+  await page.route("**/api/hrm/recruitment/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    let body: unknown = {};
+    if (url.includes("/vacancies") && method === "GET")
+      body = {
+        items: vacancyStatus
+          ? [{ id: vacancyId, jobTitle: "Operations Analyst", status: vacancyStatus }]
+          : [],
+      };
+    else if (url.endsWith("/vacancies") && method === "POST")
+      body = { id: vacancyId, jobTitle: "Operations Analyst", status: "draft" };
+    else if (url.endsWith(`/vacancies/${vacancyId}/publish`)) {
+      vacancyStatus = "published";
+      body = { id: vacancyId, status: vacancyStatus };
+    } else if (url.endsWith("/candidates") && method === "POST")
+      body = { id: candidateId, vacancyId, fullName: "Mary Phiri", stage: "applied" };
+    else if (url.endsWith(`/candidates/${candidateId}/interviews`))
+      body = { id: interviewId, candidateId, status: "scheduled" };
+    else if (url.endsWith(`/interviews/${interviewId}/decision`))
+      body = { id: interviewId, status: "completed", recommendation: "hire" };
+    else if (url.endsWith(`/candidates/${candidateId}/advance`)) body = { id: candidateId };
+    else if (url.endsWith("/offers") && method === "GET")
+      body = {
+        items: offerStatus
+          ? [{ id: offerId, candidateId, candidateName: "Mary Phiri", status: offerStatus }]
+          : [],
+      };
+    else if (url.endsWith("/offers") && method === "POST")
+      body = { id: offerId, candidateId, status: "draft" };
+    else if (url.endsWith(`/offers/${offerId}/approve`)) {
+      offerStatus = "approved";
+      body = { id: offerId, status: offerStatus };
+    } else if (url.endsWith(`/offers/${offerId}/issue`)) {
+      offerStatus = "issued";
+      body = { id: offerId, status: offerStatus };
+    } else if (url.endsWith(`/offers/${offerId}/accept`)) {
+      offerStatus = "accepted";
+      accepted = true;
+      body = { offerId, workerId: "worker-m29", status: "preboarding" };
+    } else if (url.includes("/preboarding") && method === "GET")
+      body = {
+        items: accepted
+          ? [
+              {
+                id: caseId,
+                candidateId,
+                candidateName: "Mary Phiri",
+                employeeNo: "EMP-029",
+                status: tasks.every((x) => x.status === "completed") ? "ready" : "preboarding",
+                completedTasks: tasks.filter((x) => x.status === "completed").length,
+                totalTasks: tasks.length,
+                tasks,
+              },
+            ]
+          : [],
+      };
+    else if (url.includes(`/preboarding/${caseId}/tasks/`) && method === "PATCH") {
+      const task = tasks.find((x) => url.endsWith(x.id));
+      if (task) task.status = "completed";
+      body = task ?? {};
+    } else if (url.endsWith(`/preboarding/${caseId}/activate`))
+      body = { id: caseId, status: "active" };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/hrm/recruitment/operations");
+  const operations = page.getByTestId("recruitment-operations");
+  await operations.getByLabel("Org unit").selectOption({ label: "Operations" });
+  await operations.getByLabel("Job title").fill("Operations Analyst");
+  await operations.getByRole("button", { name: "Create draft" }).click();
+  await operations.getByRole("button", { name: "Publish" }).click();
+  await operations.getByLabel("Candidate name").fill("Mary Phiri");
+  await operations.getByLabel("Candidate email").fill("mary@example.com");
+  await operations.getByRole("button", { name: "Record application" }).click();
+  await operations.getByRole("button", { name: "Screen" }).click();
+  await operations.getByRole("button", { name: "Shortlist" }).click();
+  await operations.getByRole("button", { name: "Schedule interview" }).click();
+  await operations.getByRole("button", { name: "Record decision" }).click();
+  await operations.getByRole("button", { name: "Move to offer" }).click();
+  await operations.getByRole("button", { name: "Create offer" }).click();
+  await operations.getByRole("button", { name: "Approve" }).click();
+  await operations.getByRole("button", { name: "Issue", exact: true }).click();
+  await operations.getByRole("button", { name: "Accept and preboard" }).click();
+  await expect(operations).toContainText("Mary Phiri");
+  for (const task of tasks) {
+    await operations
+      .locator("li")
+      .filter({ hasText: task.title })
+      .getByRole("button", { name: "Mark complete" })
+      .click();
+  }
+  await operations.getByRole("button", { name: "Activate worker" }).click();
+  await expect(page.getByText("Activate worker completed")).toBeVisible();
+  expect(tasks.every((x) => x.status === "completed")).toBe(true);
+});

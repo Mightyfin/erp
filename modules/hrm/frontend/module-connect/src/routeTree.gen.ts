@@ -61,6 +61,7 @@ import { Route as HrmPeoplePrivacyRouteImport } from './routes/hrm.people.privac
 import { Route as HrmRecruitmentIndexRouteImport } from './routes/hrm.recruitment.index'
 import { Route as HrmRecruitmentCandidatesRouteImport } from './routes/hrm.recruitment.candidates'
 import { Route as HrmRecruitmentOffersRouteImport } from './routes/hrm.recruitment.offers'
+import { Route as HrmRecruitmentOperationsRouteImport } from './routes/hrm.recruitment.operations'
 import { Route as HrmRecruitmentRequisitionsRouteImport } from './routes/hrm.recruitment.requisitions'
 import { Route as HrmRecruitmentVacanciesRouteImport } from './routes/hrm.recruitment.vacancies'
 import { Route as HrmRelationsIndexRouteImport } from './routes/hrm.relations.index'
@@ -367,6 +368,12 @@ const HrmRecruitmentOffersRoute = HrmRecruitmentOffersRouteImport.update({
   path: '/hrm/recruitment/offers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmRecruitmentOperationsRoute =
+  HrmRecruitmentOperationsRouteImport.update({
+    id: '/hrm/recruitment/operations',
+    path: '/hrm/recruitment/operations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const HrmRecruitmentRequisitionsRoute =
   HrmRecruitmentRequisitionsRouteImport.update({
     id: '/hrm/recruitment/requisitions',
@@ -614,6 +621,7 @@ export interface FileRoutesByFullPath {
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
   '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
   '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
   '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
@@ -707,6 +715,7 @@ export interface FileRoutesByTo {
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
   '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
   '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
   '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
@@ -801,6 +810,7 @@ export interface FileRoutesById {
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
+  '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
   '/hrm/recruitment/requisitions': typeof HrmRecruitmentRequisitionsRouteWithChildren
   '/hrm/recruitment/vacancies': typeof HrmRecruitmentVacanciesRoute
   '/hrm/relations/cases': typeof HrmRelationsCasesRouteWithChildren
@@ -896,6 +906,7 @@ export interface FileRouteTypes {
     | '/hrm/people/privacy'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/operations'
     | '/hrm/recruitment/requisitions'
     | '/hrm/recruitment/vacancies'
     | '/hrm/relations/cases'
@@ -989,6 +1000,7 @@ export interface FileRouteTypes {
     | '/hrm/people/privacy'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/operations'
     | '/hrm/recruitment/requisitions'
     | '/hrm/recruitment/vacancies'
     | '/hrm/relations/cases'
@@ -1082,6 +1094,7 @@ export interface FileRouteTypes {
     | '/hrm/people/privacy'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
+    | '/hrm/recruitment/operations'
     | '/hrm/recruitment/requisitions'
     | '/hrm/recruitment/vacancies'
     | '/hrm/relations/cases'
@@ -1176,6 +1189,7 @@ export interface RootRouteChildren {
   HrmPeoplePrivacyRoute: typeof HrmPeoplePrivacyRoute
   HrmRecruitmentCandidatesRoute: typeof HrmRecruitmentCandidatesRouteWithChildren
   HrmRecruitmentOffersRoute: typeof HrmRecruitmentOffersRoute
+  HrmRecruitmentOperationsRoute: typeof HrmRecruitmentOperationsRoute
   HrmRecruitmentRequisitionsRoute: typeof HrmRecruitmentRequisitionsRouteWithChildren
   HrmRecruitmentVacanciesRoute: typeof HrmRecruitmentVacanciesRoute
   HrmRelationsCasesRoute: typeof HrmRelationsCasesRouteWithChildren
@@ -1577,6 +1591,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/recruitment/offers'
       fullPath: '/hrm/recruitment/offers'
       preLoaderRoute: typeof HrmRecruitmentOffersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/recruitment/operations': {
+      id: '/hrm/recruitment/operations'
+      path: '/hrm/recruitment/operations'
+      fullPath: '/hrm/recruitment/operations'
+      preLoaderRoute: typeof HrmRecruitmentOperationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/recruitment/requisitions': {
@@ -2039,6 +2060,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmPeoplePrivacyRoute: HrmPeoplePrivacyRoute,
   HrmRecruitmentCandidatesRoute: HrmRecruitmentCandidatesRouteWithChildren,
   HrmRecruitmentOffersRoute: HrmRecruitmentOffersRoute,
+  HrmRecruitmentOperationsRoute: HrmRecruitmentOperationsRoute,
   HrmRecruitmentRequisitionsRoute: HrmRecruitmentRequisitionsRouteWithChildren,
   HrmRecruitmentVacanciesRoute: HrmRecruitmentVacanciesRoute,
   HrmRelationsCasesRoute: HrmRelationsCasesRouteWithChildren,

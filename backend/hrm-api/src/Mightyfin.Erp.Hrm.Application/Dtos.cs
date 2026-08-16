@@ -205,8 +205,12 @@ public sealed record PayGroupDto(Guid Id, string Code, string Name, string Frequ
 
 public sealed record VacancyCreate(Guid OrgUnitId, string JobTitle, string Grade, string? Description, string Status = "draft");
 public sealed record CandidateCreate(Guid VacancyId, string FullName, string? Email = null, string? Phone = null, string? Source = null, string? Notes = null);
-public sealed record CandidateAdvanceRequest(string Stage, string? Score = null, string? Notes = null); // stage: screening | shortlisted | interviewed | offered | hired | rejected
-public sealed record OfferCreate(Guid CandidateId, decimal BaseSalary, string? StartDate = null, string ContractType = "permanent", int ProbationMonths = 3, int NoticeDays = 30, string? Notes = null);
+public sealed record CandidateAdvanceRequest(string Stage, string? Score = null, string? Notes = null);
+public sealed record InterviewCreateRequest(string ScheduledAt, string InterviewType, string? InterviewerName = null, string? Notes = null);
+public sealed record InterviewDecisionRequest(int OverallScore, string Recommendation, string? Notes = null);
+public sealed record OfferCreate(Guid CandidateId, decimal BaseSalary, string? StartDate = null, string ContractType = "permanent", int ProbationMonths = 3, int NoticeDays = 30, string? Notes = null, string? ExpiresOn = null);
+public sealed record PreboardingTaskCreateRequest(string Title, bool Required = true, string? DueDate = null, string? Owner = null);
+public sealed record PreboardingTaskUpdateRequest(string Status, string? Notes = null);
 
 // ===================== Relations (M7) =====================
 

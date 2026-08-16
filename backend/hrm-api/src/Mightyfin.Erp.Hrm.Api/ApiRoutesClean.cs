@@ -706,12 +706,24 @@ public static class Routes
             var request = await ReadBodyAsync<CandidateCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateCandidateAsync(request, ct));
         });
+        g.MapGet("/candidates/{id:guid}", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.GetCandidateAsync(id, ct));
         g.MapPost("/candidates/{id:guid}/advance", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<CandidateAdvanceRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            await svc.AdvanceCandidateAsync(id, request, ct);
-            return Results.Ok();
+            return Results.Ok(await svc.AdvanceCandidateAsync(id, request, ct));
         });
+        g.MapPost("/candidates/{id:guid}/interviews", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<InterviewCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateInterviewAsync(id, request, ct));
+        });
+        g.MapPost("/interviews/{id:guid}/decision", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<InterviewDecisionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideInterviewAsync(id, request, ct));
+        });
+        g.MapGet("/offers", async ([FromQuery] string? status, IRecruitmentService svc, CancellationToken ct) => await svc.ListOffersAsync(status, ct));
         g.MapPost("/offers", async (HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<OfferCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -728,6 +740,38 @@ public static class Routes
         });
         g.MapPost("/offers/{id:guid}/issue", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
             await svc.IssueOfferAsync(id, ct));
+        g.MapPost("/offers/{id:guid}/approve", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.ApproveOfferAsync(id, ct));
+        g.MapPost("/offers/{id:guid}/decline", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+            await svc.DeclineOfferAsync(id, ct));
+        g.MapGet("/preboarding", async ([FromQuery] string? status, IRecruitmentService svc, CancellationToken ct) => await svc.ListPreboardingAsync(status, ct));
+        g.MapGet("/preboarding/{id:guid}", async (Guid id, IRecruitmentService svc, CancellationToken ct) => await svc.GetPreboardingAsync(id, ct));
+        g.MapPost("/preboarding/{id:guid}/tasks", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PreboardingTaskCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.AddPreboardingTaskAsync(id, request, ct));
+        });
+        g.MapPatch("/preboarding/{caseId:guid}/tasks/{taskId:guid}", async (Guid caseId, Guid taskId, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PreboardingTaskUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdatePreboardingTaskAsync(caseId, taskId, request, ct));
+        });
+        g.MapPost("/preboarding/{id:guid}/activate", async (Guid id, IRecruitmentService svc, CancellationToken ct) => await svc.ActivatePreboardingAsync(id, ct));
+        g.MapPost("/candidates/{id:guid}/documents", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.FirstOrDefault() ?? throw new DomainException("bad-request", "No candidate document was uploaded.");
+            if (file.Length == 0) throw new DomainException("bad-request", "Uploaded file is empty.");
+            var storageDir = Path.Combine(Path.GetTempPath(), "erp-candidate-docs"); Directory.CreateDirectory(storageDir);
+            var storagePath = Path.Combine(storageDir, $"{Guid.NewGuid():N}-{Path.GetFileName(file.FileName)}");
+            await using (var fs = File.Create(storagePath)) await file.CopyToAsync(fs, ct);
+            return Results.Created("", await svc.AddCandidateDocumentAsync(id, form["category"].ToString(), form["title"].ToString(), file.FileName, file.ContentType ?? "application/octet-stream", file.Length, storagePath, ct));
+        }).DisableAntiforgery();
+        g.MapGet("/candidate-documents/{id:guid}/download", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var (doc, stream) = await svc.GetCandidateDocumentAsync(id, ct);
+            return Results.File(stream, doc.ContentType, doc.FileName);
+        });
     }
 
     public static void RegisterRelations(WebApplication app)

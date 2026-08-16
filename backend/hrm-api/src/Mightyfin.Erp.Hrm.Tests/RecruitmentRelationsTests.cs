@@ -103,9 +103,9 @@ public class RecruitmentRelationsTests
             new CandidateAdvanceRequest(Stage: "offered", Score: "8/10"), CancellationToken.None);
         Assert.Equal("offered", advanced.Stage);
 
-        // Hired is terminal: no further advances allowed.
+        // Rejected is terminal: no further advances allowed.
         await svc.AdvanceCandidateAsync(candidate.Id,
-            new CandidateAdvanceRequest(Stage: "hired"), CancellationToken.None);
+            new CandidateAdvanceRequest(Stage: "rejected"), CancellationToken.None);
         await Assert.ThrowsAsync<DomainException>(() => svc.AdvanceCandidateAsync(candidate.Id,
             new CandidateAdvanceRequest(Stage: "screening"), CancellationToken.None));
 
@@ -131,8 +131,10 @@ public class RecruitmentRelationsTests
             new OfferCreate(CandidateId: candidate.Id, BaseSalary: 50000, ContractType: "permanent"),
             CancellationToken.None));
 
-        var offered = await svc.AdvanceCandidateAsync(candidate.Id,
-            new CandidateAdvanceRequest(Stage: "offered"), CancellationToken.None);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest(Stage: "shortlisted"), CancellationToken.None);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest(Stage: "interviewing"), CancellationToken.None);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest(Stage: "interviewed"), CancellationToken.None);
+        var offered = await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest(Stage: "offered"), CancellationToken.None);
         var offer = await svc.CreateOfferAsync(
             new OfferCreate(CandidateId: candidate.Id, BaseSalary: 50000, ContractType: "permanent"),
             CancellationToken.None);
@@ -166,18 +168,47 @@ public class RecruitmentRelationsTests
         Assert.Equal("PD-2026-001", result.EmployeeNo);
 
         var worker = await ctx.Workers.FirstAsync(w => w.Id == result.WorkerId);
-        Assert.Equal("active", worker.Status);
+        Assert.Equal("pre-hire", worker.Status);
         Assert.Equal("Software Engineer", worker.JobTitle);
 
         var assignment = await ctx.Set<Assignment>().FirstAsync(a => a.Id == result.AssignmentId);
         Assert.Equal("permanent", assignment.ContractType);
         Assert.Equal(3, assignment.ProbationMonths);
 
-        // The pipeline is marked hired / accepted, so the flow cannot be repeated.
+        // Acceptance creates a preboarding case and keeps the worker inactive.
         var candidateAfter = await ctx.Set<Candidate>().FirstAsync(c => c.Id == candidate.Id);
-        Assert.Equal("hired", candidateAfter.Stage);
+        Assert.Equal("preboarding", candidateAfter.Stage);
+        var preboarding = await ctx.PreboardingCases.Include(x => x.Tasks).SingleAsync(x => x.CandidateId == candidate.Id);
+        Assert.Equal(5, preboarding.Tasks.Count);
         await Assert.ThrowsAsync<DomainException>(() => svc.AcceptOfferAsync(offer.Id,
             new OfferAcceptRequest(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task M29_FullJourney_InterviewOfferPreboardingActivatesWorker()
+    {
+        var (svc, _, _, ctx) = Build();
+        await SeedOrgAsync(ctx);
+        var vacancy = await SeedVacancyAsync(ctx, "published");
+        var candidate = await svc.CreateCandidateAsync(new CandidateCreate(vacancy.Id, "Mary Phiri", "mary@example.com"), CancellationToken.None);
+        Assert.Equal("applied", candidate.Stage);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest("screening"), CancellationToken.None);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest("shortlisted"), CancellationToken.None);
+        var interview = await svc.CreateInterviewAsync(candidate.Id, new InterviewCreateRequest("2026-08-20T09:00:00Z", "panel", "Hiring panel"), CancellationToken.None);
+        await svc.DecideInterviewAsync(interview.Id, new InterviewDecisionRequest(4, "hire", "Strong evidence"), CancellationToken.None);
+        await svc.AdvanceCandidateAsync(candidate.Id, new CandidateAdvanceRequest("offered"), CancellationToken.None);
+        var offer = await svc.CreateOfferAsync(new OfferCreate(candidate.Id, 120000, "2026-09-01", ExpiresOn: "2026-08-25"), CancellationToken.None);
+        offer = await svc.ApproveOfferAsync(offer.Id, CancellationToken.None);
+        offer = await svc.IssueOfferAsync(offer.Id, CancellationToken.None);
+        var accepted = await svc.AcceptOfferAsync(offer.Id, new OfferAcceptRequest(StartDate: "2026-09-01"), CancellationToken.None);
+        var preboarding = (await svc.ListPreboardingAsync("preboarding", CancellationToken.None)).Items.Single(x => x.WorkerId == accepted.WorkerId);
+        foreach (var task in preboarding.Tasks)
+            await svc.UpdatePreboardingTaskAsync(preboarding.Id, task.Id, new PreboardingTaskUpdateRequest("completed"), CancellationToken.None);
+        var activated = await svc.ActivatePreboardingAsync(preboarding.Id, CancellationToken.None);
+        Assert.Equal("active", activated.Status);
+        Assert.Equal("active", (await ctx.Workers.SingleAsync(x => x.Id == accepted.WorkerId)).Status);
+        Assert.Equal("hired", (await ctx.Candidates.SingleAsync(x => x.Id == candidate.Id)).Stage);
+        Assert.Equal(8, await ctx.CandidateStageEvents.CountAsync(x => x.CandidateId == candidate.Id));
     }
 
     [Fact]
