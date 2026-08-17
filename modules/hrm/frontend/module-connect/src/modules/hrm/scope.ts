@@ -61,7 +61,6 @@ const DEMO_ONLY_PREFIXES = [
   "/hrm/configuration/business",
   "/hrm/configuration/process",
   "/hrm/reports/builder",
-  "/hrm/people/org",
   "/hrm/experience/knowledge",
   "/hrm/experience/announcements",
   "/hrm/lifecycle/movements",
