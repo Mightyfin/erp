@@ -4,6 +4,16 @@ import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,6 +32,102 @@ import { useMock } from "@/platform/use-mock";
 import { feedback } from "@/platform/feedback";
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+function CreateOrgUnitDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  units,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: () => void;
+  units: OrgUnit[];
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [kind, setKind] = useState<"Entity" | "Branch" | "Department" | "Team">("Department");
+  const [parentId, setParentId] = useState<string>("none");
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create organisation unit</DialogTitle>
+          <DialogDescription>
+            The new unit appears under the selected parent and rolls its headcount up to it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="org-name">Name</Label>
+            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Credit department" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="org-code">Code</Label>
+            <Input id="org-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. CRED" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Kind</Label>
+            <Select value={kind} onValueChange={(v) => setKind(v as OrgUnit["kind"])}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Kind" /></SelectTrigger>
+              <SelectContent>
+                {( ["Entity", "Branch", "Department", "Team"] as const ).map((k) => (
+                  <SelectItem key={k} value={k}>{k}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Parent unit</Label>
+            <Select value={parentId} onValueChange={setParentId}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="No parent (root)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No parent (root)</SelectItem>
+                {units.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.kind} — {u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!name.trim() || !code.trim()) {
+                feedback.blocked("Missing details", "Name and code are required.");
+                return;
+              }
+              try {
+                await realApi.createOrgUnit({
+                  code: code.trim(),
+                  name: name.trim(),
+                  unitType: kind,
+                  parentId: parentId === "none" ? null : parentId,
+                  effectiveFrom: new Date().toISOString().slice(0, 10),
+                });
+                feedback.submitted("Organisation unit", "The unit now appears in the structure.");
+                onCreated();
+                onOpenChange(false);
+                setName("");
+                setCode("");
+              } catch (err) {
+                feedback.blocked("Could not create unit", err instanceof Error ? err.message : "Unknown error");
+              }
+            }}
+          >
+            Create unit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export const Route = createFileRoute("/hrm/people/org")({
   head: () => ({
@@ -373,14 +479,16 @@ function UnitPanel({ unit, units }: { unit: OrgUnit; units: OrgUnit[] }) {
 }
 
 function OrgStructurePage() {
-  const state = useApi(
-    async (): Promise<OrgUnit[]> =>
-      USE_REAL ? adaptOrgUnits(await realApi.orgUnitsTree()) : ([] as OrgUnit[]),
-    [USE_REAL],
-  );
   const demo = useMock(() => import("@/mock/structure").then((m) => m.orgUnits));
   const [entityId, setEntityId] = useState("all");
   const [selectedId, setSelectedId] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [tick, setTick] = useState(0);
+  const state = useApi(
+    async (): Promise<OrgUnit[]> =>
+      USE_REAL ? adaptOrgUnits(await realApi.orgUnitsTree()) : ([] as OrgUnit[]),
+    [USE_REAL, tick],
+  );
 
   return (
     <AuthGate>
@@ -389,16 +497,24 @@ function OrgStructurePage() {
         eyebrow="People"
         title="Organisation structure"
         description="Entity, branch, department and team, with the headcount and lead of each unit. Numbers roll up: a unit shows everything beneath it, so an entity total includes every branch and team below."
-        primaryAction={<Button
-            onClick={() =>
-              feedback.note(
-                "Export is not generated in this build.",
-                "It would produce the structure as it stands today, with an effective date on it.",
-              )
-            }
-          >
-            Export structure
-          </Button>}
+        primaryAction={
+          <>
+            <Button variant="outline" onClick={() => setCreateOpen(true)}>
+              New unit
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                feedback.note(
+                  "Export is not generated in this build.",
+                  "It would produce the structure as it stands today, with an effective date on it.",
+                )
+              }
+            >
+              Export structure
+            </Button>
+          </>
+        }
         meta={
           <Select value={entityId} onValueChange={setEntityId}>
             <SelectTrigger className="w-auto min-w-56" aria-label="Filter by legal entity">
@@ -461,6 +577,14 @@ function OrgStructurePage() {
           );
         }}
       </Async>
+      {USE_REAL && (
+        <CreateOrgUnitDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          units={state.data ?? []}
+          onCreated={() => setTick((t) => t + 1)}
+        />
+      )}
     </AppShell>
       </AuthGate>
   );
