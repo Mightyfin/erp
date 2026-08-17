@@ -290,6 +290,9 @@ export const realApi = {
   /** Upload a document for a worker. */
   uploadDocument: (workerId: string, file: File, category: string, title: string) =>
     hrmApi.uploadDocument(workerId, file, category, title),
+  /** Bulk import employees from a CSV file (POST /hrm/workers/import). */
+  workersImport: (file: File) =>
+    hrmApi.uploadWorkersCsv(file),
   /** Org units (config) — used for department placement selects. */
   orgUnits: () => hrmApi.get<unknown[]>("/hrm/admin/org-units"),
   /** Recursive org-unit tree — used by the people structure page. */

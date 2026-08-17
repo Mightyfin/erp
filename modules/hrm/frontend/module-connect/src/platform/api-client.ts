@@ -194,6 +194,20 @@ export const hrmApi = {
     return handleResponse(res);
   },
 
+  /** Bulk import employees from a CSV file. POST /hrm/workers/import (multipart). */
+  async uploadWorkersCsv(
+    file: File,
+  ): Promise<{ created: number; skipped: number; errors: Array<{ row: number; detail: string }> }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/hrm/workers/import`, {
+      method: "POST",
+      headers: headers(),
+      body: form,
+    });
+    return handleResponse(res);
+  },
+
   async uploadCandidateDocument(
     candidateId: string,
     file: File,

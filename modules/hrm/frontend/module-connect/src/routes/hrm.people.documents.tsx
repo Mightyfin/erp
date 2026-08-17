@@ -11,6 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { employees } from "@/mock/data";
 import { documentsApi } from "@/mock/documents";
 import type { Classification, EmployeeDocument } from "@/mock/documents";
@@ -61,7 +62,7 @@ function adaptDocuments(raw: unknown): EmployeeDocument[] {
   }>;
   return items.map((d, i) => ({
     id: d.id ?? `doc-${i}`,
-    employeeId: REAL_WORKER_ID,
+    employeeId: REAL_WORKER_ID, // overwritten by the page with the selected worker
     name: d.title || d.fileName || "Untitled document",
     category: d.category ?? "General",
     classification: ((d.classification === "restricted"
@@ -137,9 +138,26 @@ function ExpiryCell({ d }: { d: EmployeeDocument }) {
 }
 
 function DocumentsPage() {
+  const workers = useApi(() => (USE_REAL ? realApi.employees({ pageSize: 200 }) : Promise.resolve(null)), []);
+  const employeeOptions: Array<{ id: string; fullName: string }> = USE_REAL
+    ? Array.from((workers.data as { items?: Array<{ id: string; fullName: string }> } | null)?.items ?? []).map((w) => ({
+        id: String(w.id ?? ""),
+        fullName: String(w.fullName ?? "Unknown"),
+      }))
+    : [];
+  const defaultWorkerId = employeeOptions.length > 0 ? employeeOptions[0].id : REAL_WORKER_ID;
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
+  const workerId = (selectedWorkerId ?? defaultWorkerId) as string;
+  const workerName = employeeOptions.find((w) => w.id === workerId)?.fullName ?? REAL_WORKER_NAME;
   const mockDocs = useMock(() => documentsApi.all());
-  const realDocs = useApi(() =>
-    realApi.workerDocuments(REAL_WORKER_ID).then((raw) => adaptDocuments(raw)),
+  const realDocs = useApi(
+    () =>
+      realApi
+        .workerDocuments(workerId)
+        .then((raw) =>
+          adaptDocuments(raw).map((d) => ({ ...d, employeeId: workerId, employeeName: workerName })),
+        ),
+    [workerId, workerName],
   );
   const docs = USE_REAL ? realDocs : mockDocs;
   const templates = useMock(() => documentsApi.templates());
@@ -147,14 +165,38 @@ function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
-  /** Upload a file to the real backend for the demo worker, then reload. */
+  /** Categories the backend accepts for worker documents (see document schema). */
+  const docCategories = [
+    { value: "contract", label: "Contract" },
+    { value: "id", label: "Identity document" },
+    { value: "qualification", label: "Qualification" },
+    { value: "medical", label: "Medical" },
+    { value: "certificate", label: "Certificate" },
+    { value: "letter", label: "Letter" },
+    { value: "evidence", label: "Evidence" },
+  ];
+
+  /** Guess the category from the file name, falling back to the first valid one. */
+  const guessCategory = (fileName: string): string => {
+    const n = fileName.toLowerCase();
+    if (n.includes("contract")) return "contract";
+    if (n.includes("nrc") || n.includes("id") || n.includes("passport")) return "id";
+    if (n.includes("degree") || n.includes("cert")) return "qualification";
+    if (n.includes("medical") || n.includes("health")) return "medical";
+    if (n.includes("letter")) return "letter";
+    if (n.includes("evidence")) return "evidence";
+    return docCategories[0].value;
+  };
+
+  /** Upload a file to the real backend for the selected worker, then reload. */
   const onUpload = async (file: File) => {
     if (!USE_REAL || !file) return;
+    const category = guessCategory(file.name);
     setUploading(true);
     try {
-      await realApi.uploadDocument(REAL_WORKER_ID, file, file.name.includes("contract") ? "Contract" : "General", file.name);
+      await realApi.uploadDocument(workerId, file, category, file.name);
       docs.reload();
-      feedback.saved(`${file.name} added to ${REAL_WORKER_NAME}'s file.`);
+      feedback.saved(`${file.name} added to ${workerName}'s file as ${category}.`);
       feedback.note("It is retained under the document schedule — nothing here is silently deleted.");
     } catch (err) {
       feedback.blocked("The file could not be uploaded.", String(err));
@@ -218,6 +260,42 @@ function DocumentsPage() {
         }
       />
 
+      {/* HR-filed documents belong to one employee at a time — pick the file owner first. */}
+      {USE_REAL && (
+        <div className="mt-4 flex items-center gap-3">
+          <label htmlFor="documents-worker-select" className="text-sm font-medium">
+            Employee file
+          </label>
+          <Select
+            value={workerId}
+            onValueChange={(next) => {
+              setSelectedWorkerId(next);
+              docs.reload();
+            }}
+          >
+            <SelectTrigger id="documents-worker-select" className="w-64">
+              <SelectValue placeholder="Select an employee" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72 overflow-auto">
+              {employeeOptions.length > 0 ? (
+                employeeOptions.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.fullName}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value={REAL_WORKER_ID}>{REAL_WORKER_NAME} (demo)</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          {employeeOptions.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No workers on the roster yet — import or add employees first, then their files appear here.
+            </p>
+          )}
+        </div>
+      )}
+
       <Async state={docs} rows={5}>
         {(rows) => {
           const expiring = rows.filter((d) => d.expires && daysUntil(d.expires) <= 60);
@@ -280,7 +358,7 @@ function DocumentsPage() {
                 activeView={view}
                 onViewChange={setView}
                 searchPlaceholder="Search document, employee or category"
-                searchFields={(d) => `${d.id} ${d.name} ${d.category} ${USE_REAL && d.employeeId === REAL_WORKER_ID ? REAL_WORKER_NAME : name(d.employeeId)}`}
+                searchFields={(d) => `${d.id} ${d.name} ${d.category} ${USE_REAL ? (d.employeeName ?? workerName) : name(d.employeeId)}`}
                 filters={[
                   {
                     id: "classification",
@@ -309,7 +387,7 @@ function DocumentsPage() {
                       </span>
                     ),
                   },
-                  { id: "employee", header: "Employee", cell: (d) => <span className="block max-w-48 truncate">{USE_REAL && d.employeeId === REAL_WORKER_ID ? REAL_WORKER_NAME : name(d.employeeId)}</span> },
+                  { id: "employee", header: "Employee", cell: (d) => <span className="block max-w-48 truncate">{USE_REAL ? (d.employeeName ?? workerName) : name(d.employeeId)}</span> },
                   { id: "category", header: "Category", cell: (d) => d.category },
                   { id: "classification", header: "Classification", cell: (d) => <ClassificationTag value={d.classification} /> },
                   { id: "signature", header: "Signature", cell: (d) => <SignatureCell d={d} /> },
