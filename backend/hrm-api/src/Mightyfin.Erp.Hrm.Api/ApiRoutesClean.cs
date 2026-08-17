@@ -312,6 +312,15 @@ public static class Routes
             return Results.Ok();
         });
 
+        // M27 P0 UX audit: admin identity-linking — ends the circular
+        // dead-end where My HR / My documents / self-leave 422-ed because
+        // there was no way to bind a worker to an account.
+        g.MapPut("/{id:guid}/account-link", async (Guid id, HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<WorkerAccountLinkRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.LinkAccountAsync(id, request, ct));
+        });
+
         // M2 lifecycle surface
         RegisterWorkerLifecycleRoutes(g);
     }

@@ -28,6 +28,29 @@ interface Row {
   status: string;
   opened: string;
   to: string;
+  // M27 P0 UX audit: workflow items carry a subject worker id so HR can act
+  // on them from this page instead of being routed into a dead-end detail.
+  subjectWorkerId?: string;
+}
+
+function decide(row: Row, action: "approve" | "reject", opts: { onDone: () => void; setBusy: (v: boolean) => void }): void {
+  if (!row.subjectWorkerId) {
+    // eslint-disable-next-line no-console
+    console.warn("Workflow row has no subject worker id; cannot decide inline.");
+    window.location.assign(row.to.replace("$id", row.id));
+    return;
+  }
+  opts.setBusy(true);
+  realApi
+    .workflowDecide(row.id, action)
+    .then(() => {
+      opts.setBusy(false);
+      opts.onDone();
+    })
+    .catch(() => {
+      opts.setBusy(false);
+      opts.onDone();
+    });
 }
 
 const approvedStatuses: Record<string, string> = {
@@ -49,8 +72,13 @@ function labelStatus(raw: string): string {
   return approvedStatuses[String(raw ?? "").toLowerCase()] ?? String(raw ?? "").replace(/^(.)/, (c) => c.toUpperCase());
 }
 
+// M27 P0 UX audit: the backend returns statuses in lowercase ("pending",
+// "submitted", "in review"...), so this predicate compared against mixed-case
+// literals matched nothing and the Approvals page was always empty even when
+// the dashboard count said otherwise.
 function isDecidable(status: string): boolean {
-  return status === "Pending" || status === "Submitted" || status === "In review" || status === "Returned" || status === "Open" || status === "In progress" || status === "Awaiting employee";
+  const s = String(status ?? "").toLowerCase();
+  return s === "pending" || s === "submitted" || s === "in review" || s === "returned" || s === "open" || s === "in progress" || s === "awaiting employee";
 }
 
 async function loadQueue(): Promise<Row[]> {
@@ -107,6 +135,7 @@ async function loadQueue(): Promise<Row[]> {
         status: labelStatus(String(x.status ?? "")),
         opened: typeof x.dueAt === "string" ? String(x.dueAt).slice(0, 10) : "—",
         to: "/hrm/approvals/$id",
+        subjectWorkerId: typeof x.subjectWorkerId === "string" ? String(x.subjectWorkerId) : undefined,
       };
     }),
   ];
@@ -114,7 +143,9 @@ async function loadQueue(): Promise<Row[]> {
 }
 
 function Approvals() {
-  const state = useApi(loadQueue, []);
+  const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
+  const state = useApi(() => loadQueue(), [tick]);
   const [view, setView] = useState("all");
 
   return (
@@ -162,6 +193,33 @@ function Approvals() {
               },
               { id: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
               { id: "opened", header: "Opened", cell: (r) => r.opened },
+              {
+                id: "actions",
+                header: "Decide",
+                cell: (r) =>
+                  r.kind === "Workflow" ? (
+                    <span className="flex items-center gap-1">
+                      <button
+                        disabled={busy === r.id}
+                        className="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                        onClick={() => decide(r, "approve", { onDone: () => setTick((t) => t + 1), setBusy: (v) => setBusy(v ? r.id : null) })}
+                      >
+                        {busy === r.id ? "…" : "Approve"}
+                      </button>
+                      <button
+                        disabled={busy === r.id}
+                        className="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        onClick={() => decide(r, "reject", { onDone: () => setTick((t) => t + 1), setBusy: (v) => setBusy(v ? r.id : null) })}
+                      >
+                        {busy === r.id ? "…" : "Reject"}
+                      </button>
+                    </span>
+                  ) : (
+                    <Link to={r.to} params={{ id: r.id }} className="text-xs text-primary underline underline-offset-2">
+                      Open →
+                    </Link>
+                  ),
+              },
             ]}
             emptyBody="Nothing is waiting on a decision right now."
           />

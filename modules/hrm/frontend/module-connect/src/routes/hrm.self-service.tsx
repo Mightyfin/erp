@@ -36,11 +36,17 @@ function SelfService() {
         <Async state={overview} rows={6}>
           {(data) => {
             const notifications = data.notifications.items as Row[];
-            const leave = data.leave as { requests?: unknown[]; linked?: boolean };
+            // M27 P0 UX audit: documents + letters now return linked-worker
+            // envelopes { workerId, workerName, employeeNo, linked, items } so
+            // unlinked identities get a friendly state instead of a 422.
+            const documents = (data.documents as { linked?: boolean; items?: unknown[] } | null) ?? {};
+            const letters = (data.letters as { linked?: boolean; items?: unknown[] } | null) ?? {};
+            const leave = (data.leave as { requests?: unknown[]; linked?: boolean } | null) ?? {};
+            const linked = Boolean(documents.linked ?? leave.linked ?? letters.linked);
             const cards = [
               {
                 label: "HR requests",
-                value: data.requests.items.length,
+                value: Array.isArray(data.requests?.items) ? data.requests.items.length : 0,
                 to: "/hrm/requests",
                 icon: Mail,
               },
@@ -52,31 +58,44 @@ function SelfService() {
               },
               {
                 label: "Payslips",
-                value: data.payslips.items.length,
+                value: Array.isArray(data.payslips?.items) ? data.payslips.items.length : 0,
                 to: "/hrm/payslips",
                 icon: WalletCards,
               },
               {
                 label: "Documents",
-                value: data.documents.items.length,
+                value: Array.isArray(documents.items) ? documents.items.length : 0,
                 to: "/hrm/my-documents",
                 icon: FileText,
               },
               {
                 label: "Letters",
-                value: data.letters.items.length,
+                value: Array.isArray(letters.items) ? letters.items.length : 0,
                 to: "/hrm/experience/letters",
                 icon: FileText,
               },
               {
                 label: "Profile",
-                value: leave.linked ? "Linked" : "Not linked",
+                value: linked ? "Linked" : "Not linked",
                 to: "/hrm/my-profile",
                 icon: UserRound,
               },
             ];
             return (
               <div className="space-y-6" data-testid="employee-self-service">
+                {!linked ? (
+                  <Card className="border-warning bg-warning/10">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-semibold">Account not linked</CardTitle>
+                      <CardDescription>
+                        This identity is not connected to any worker record, so personal HR surfaces
+                        (leave, documents, letters, payslips) are empty. An HR administrator can link
+                        it from the employee's profile page — Employees → open the record → Account
+                        → Link account. Until then only HR requests can be raised from here.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                ) : null}
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {cards.map((card) => (
                     <Link

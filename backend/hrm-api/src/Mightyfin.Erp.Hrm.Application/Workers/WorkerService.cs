@@ -17,6 +17,10 @@ public interface IWorkerService
     // PUT /hrm/me/profile. Only employee-owned fields are accepted; admin-only
     // fields (status, grade, title, org, manager, dates) are never mutable here.
     Task<WorkerDto> UpdateOwnProfileAsync(WorkerSubjectUpdateRequest request, CancellationToken ct);
+    // M27 P0 UX audit: admin identity-linking (PUT /workers/{id}/account-link)
+    // — without this endpoint My HR / My documents / self-leave were a
+    // circular dead end for every unlinked worker.
+    Task<WorkerDto> LinkAccountAsync(Guid workerId, WorkerAccountLinkRequest request, CancellationToken ct);
     Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<AssignmentDto> CreateAssignmentAsync(AssignmentCreateRequest request, CancellationToken ct);
     Task<Paged<MovementDto>> ListMovementsAsync(Guid workerId, CancellationToken ct);
@@ -127,6 +131,25 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         if (request.JobTitle is not null) worker.JobTitle = request.JobTitle;
         if (request.Status is not null) worker.Status = request.Status;
         if (request.EndDate is not null) worker.EndDate = DateOnly.Parse(request.EndDate);
+        // M27 P0 UX audit: the profile page's Link account action arrives here
+        // (PUT /workers/{id}), so the admin update honours SubjectId with the
+        // same single-link rule as LinkAccountAsync.
+        if (request.SubjectId is not null)
+        {
+            var subject = request.SubjectId.Trim();
+            if (subject.Length > 0)
+            {
+                var existing = await repo.FindBySubjectIdAsync(subject, ct);
+                if (existing is not null && existing.Id != worker.Id)
+                    throw new DomainException("subject-already-linked",
+                        $"This identity is already linked to another worker record ({existing.EmployeeNo}).");
+                worker.SubjectId = subject;
+            }
+            else
+            {
+                worker.SubjectId = null;
+            }
+        }
         if (request.EmergencyContacts is not null)
         {
             worker.EmergencyContacts.Clear();
@@ -194,6 +217,28 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         if (pendingEmergency.Count > 0)
             await repo.AddEmergencyContactsAsync(pendingEmergency, ct);
         return Map(worker, true);
+    }
+
+    // M27 P0 UX audit: admin identity-linking (PUT /workers/{id}/account-link).
+    // hr_admin only: binds the worker to the identity's Keycloak subject so
+    // My HR / My documents / self-leave resolve instead of 422-ing.
+    public async Task<WorkerDto> LinkAccountAsync(Guid workerId, WorkerAccountLinkRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var worker = await repo.GetByIdAsync(workerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {workerId} does not exist.");
+        var subject = request.SubjectId?.Trim();
+        if (string.IsNullOrWhiteSpace(subject))
+            throw new DomainException("subject-required", "A subject id (from the identity provider) is required.");
+        // Never allow two workers on one identity — that breaks self-service
+        // isolation, so confirm the subject is free first.
+        var existing = await repo.FindBySubjectIdAsync(subject, ct);
+        if (existing is not null && existing.Id != worker.Id)
+            throw new DomainException("subject-already-linked",
+                $"That identity is already linked to {existing.FullName} ({existing.EmployeeNo}). Unlink it first.");
+        worker.SubjectId = subject;
+        var updated = await repo.UpdateAsync(worker, ct);
+        return Map(updated, true);
     }
 
     public async Task<Paged<AssignmentDto>> ListAssignmentsAsync(Guid workerId, CancellationToken ct)

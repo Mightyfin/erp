@@ -541,15 +541,34 @@ export const realApi = {
     hrmApi.post<Record<string, unknown>>("/hrm/me/requests", body),
   addMyRequestMessage: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/me/requests/${id}/messages`, body),
-  myLetters: (status?: string) =>
-    hrmApi.get<{ items: unknown[] }>("/hrm/me/letters", status ? { status } : {}),
+  // M27 P0 UX audit: /hrm/me/letters now returns a linked-worker envelope
+  // { workerId, workerName, employeeNo, linked, items } so unlinked identities
+  // get linked:false instead of HTTP 422.
+  myLetters: () =>
+    hrmApi.get<{
+      workerId: string;
+      workerName: string | null;
+      employeeNo: string | null;
+      linked: boolean;
+      items: unknown[];
+    }>("/hrm/me/letters"),
   createMyLetter: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/me/letters", body),
   downloadMyLetter: async (id: string, fileName: string) => {
     const url = await hrmApi.downloadMyLetter(id);
     downloadUrl(url, fileName);
   },
-  myDocuments: () => hrmApi.get<{ items: unknown[] }>("/hrm/me/documents"),
+  // M27 P0 UX audit: /hrm/me/documents now returns a linked-worker envelope
+  // { workerId, workerName, employeeNo, linked, items } so unlinked identities
+  // get linked:false instead of HTTP 422.
+  myDocuments: () =>
+    hrmApi.get<{
+      workerId: string;
+      workerName: string | null;
+      employeeNo: string | null;
+      linked: boolean;
+      items: unknown[];
+    }>("/hrm/me/documents"),
   uploadMyDocument: (file: File, category: string, title: string) =>
     hrmApi.uploadMyDocument(file, category, title),
   downloadMyDocument: async (id: string, fileName: string) => {

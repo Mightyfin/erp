@@ -36,6 +36,9 @@ public sealed record WorkerSubjectUpdateRequest(
     List<EmergencyContactCreate>? EmergencyContacts = null,
     List<WorkerBankDetailCreate>? BankDetails = null);
 public sealed record WorkerBankDetailCreate(string BankName, string BranchCode, string AccountNumber, string AccountName, bool IsPrimary, string PaymentMethod = "bank", string? MobileMoneyNumber = null);
+// M27 P0 UX audit: admin binding of a worker record to the identity provider
+// subject so self-service surfaces resolve (PUT /workers/{id}/account-link).
+public sealed record WorkerAccountLinkRequest(string SubjectId);
 
 public sealed record WorkerUpdateRequest(
     string? FirstName = null, string? MiddleName = null, string? LastName = null,
@@ -44,7 +47,7 @@ public sealed record WorkerUpdateRequest(
     string? NapsaNumber = null, string? NhimaNumber = null, string? Nationality = null,
     string? DateOfBirth = null, Guid? OrgUnitId = null, Guid? LocationId = null,
     Guid? ManagerId = null, string? Grade = null, string? JobTitle = null,
-    string? Status = null, string? EndDate = null,
+    string? Status = null, string? EndDate = null, string? SubjectId = null,
     List<EmergencyContactCreate>? EmergencyContacts = null,
     List<WorkerBankDetailCreate>? BankDetails = null);
 

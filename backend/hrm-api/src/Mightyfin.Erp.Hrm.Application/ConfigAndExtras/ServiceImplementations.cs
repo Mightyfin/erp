@@ -615,12 +615,19 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
         return (doc, new FileStream(doc.StoragePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan));
     }
 
-    public async Task<Paged<WorkerDocumentDto>> ListMyDocumentsAsync(string subjectId, CancellationToken ct)
+    // M27 P0 UX audit: an unlinked identity must NOT crash the self-service
+    // widget with a 422 — return a linked:false envelope (matches the
+    // GET /hrm/me/leave pattern) so the UI can show "Account not linked".
+    public async Task<MyDocumentsDto> ListMyDocumentsAsync(string subjectId, CancellationToken ct)
     {
-        var own = await RequireOwnWorkerAsync(subjectId, ct);
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        if (string.IsNullOrWhiteSpace(subjectId)) throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        if (workers is null) throw new DomainException("worker-resolution-unavailable", "Worker identity resolution is unavailable.");
+        var own = await workers.GetBySubjectAsync(subjectId, ct);
+        if (own is null) return new MyDocumentsDto(Guid.Empty, "", null, false, []);
         var (items, _) = await repo.ListDocumentsAsync(own.Id, ct);
         var visible = items.Where(x => x.Classification != "restricted").ToList();
-        return new Paged<WorkerDocumentDto>(visible.Select(MapDocument).ToList(), visible.Count, 1, 50);
+        return new MyDocumentsDto(own.Id, own.FullName, own.EmployeeNo, true, visible.Select(MapDocument).ToList());
     }
 
     public async Task<WorkerDocumentDto> UploadMyDocumentAsync(string subjectId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct)
@@ -696,6 +703,13 @@ public sealed class DocumentsServiceImpl(IDocumentsRepository repo, IConfigRepos
         return new ReportDto(query.ReportType, now.ToString("o"), summary, rows);
     }
 }
+
+// M27 P0 UX audit: linked-worker envelope for the personal documents inbox
+// (replaces Paged<WorkerDocumentDto>, which 422-ed for unlinked identities).
+public sealed record MyDocumentsDto(
+    Guid WorkerId, string WorkerName, string? EmployeeNo, bool Linked,
+    List<WorkerDocumentDto> Items);
+
 
 /// <summary>Data-quality engine (M8): completeness of the statutory identity
 /// pack, duplicate identity detection, and expiring documents.</summary>

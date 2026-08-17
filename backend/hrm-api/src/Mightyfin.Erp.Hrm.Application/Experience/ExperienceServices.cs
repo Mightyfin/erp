@@ -28,7 +28,7 @@ public interface IExperienceService
     Task<Paged<HrLetterDto>> ListLettersAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<HrLetterDto> CreateLetterAsync(Guid workerId, HrLetterCreate request, CancellationToken ct);
     Task<HrLetterDto> ApproveLetterAsync(Guid id, CancellationToken ct);
-    Task<Paged<HrLetterDto>> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct);
+    Task<MyLettersDto> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct);
     Task<HrLetterDto> CreateMyLetterAsync(string subjectId, HrLetterCreate request, CancellationToken ct);
     Task<HrLetterDto> GetMyLetterAsync(Guid id, string subjectId, CancellationToken ct);
 
@@ -41,6 +41,11 @@ public sealed record HrRequestDto(Guid Id, Guid? WorkerId, string WorkerName, st
 public sealed record HrRequestMessageDto(Guid Id, string From, string Body, bool IsInternalNote, DateTimeOffset CreatedAt);
 public sealed record HrLetterDto(Guid Id, Guid WorkerId, string WorkerName, string LetterType, string Status, string Addressee, string Purpose, string? VerificationCode, string? TemplateBody, DateTimeOffset CreatedAt);
 public sealed record ProtectedDisclosureDto(string CaseReference, string AccessCode, string Status);
+// M27 P0 UX audit: linked-worker envelope for the personal letters inbox
+// (replaces Paged<HrLetterDto>, which 422-ed for unlinked identities).
+public sealed record MyLettersDto(
+    Guid WorkerId, string WorkerName, string? EmployeeNo, bool Linked,
+    List<HrLetterDto> Items);
 
 public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzService authz, IWorkflowService workflow, ILetterTemplates templates, IMergeDataProvider merge, Workers.IWorkerService? workers = null, IOutboxWriter? outbox = null, IUnitOfWork? unitOfWork = null) : IExperienceService
 {
@@ -208,11 +213,21 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
         return MapLetter(updated);
     }
 
-    public async Task<Paged<HrLetterDto>> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct)
+    // M27 P0 UX audit: mirror the M25 subject-keyed inbox pattern — an
+    // unlinked identity must never 422 the self-service widget; return an
+    // envelope carrying Linked:false so the UI shows "Account not linked".
+    public async Task<MyLettersDto> GetMyLettersAsync(string subjectId, string? status, CancellationToken ct)
     {
-        var own = await RequireOwnWorkerAsync(subjectId, ct);
-        var (items, total) = await repo.ListLettersAsync(own.Id, status, ct);
-        return new Paged<HrLetterDto>(items.Select(MapLetter).ToList(), total, 1, 50);
+        authz.RequireAnyRole("employee", "manager", "hr_ops", "hr_admin", "payroll");
+        if (!string.IsNullOrEmpty(subjectId))
+        {
+            if (workers is null) return new MyLettersDto(Guid.Empty, "", null, false, []);
+            var own = await workers.GetBySubjectAsync(subjectId, ct);
+            if (own is null) return new MyLettersDto(Guid.Empty, "", null, false, []);
+            var (items, total) = await repo.ListLettersAsync(own.Id, status, ct);
+            return new MyLettersDto(own.Id, own.FullName, own.EmployeeNo, true, items.Select(MapLetter).ToList());
+        }
+        return new MyLettersDto(Guid.Empty, "", null, false, []);
     }
 
     public async Task<HrLetterDto> CreateMyLetterAsync(string subjectId, HrLetterCreate request, CancellationToken ct)

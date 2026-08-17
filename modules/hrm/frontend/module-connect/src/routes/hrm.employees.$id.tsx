@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { KeyRound, Link2, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { adaptWorkerProfile, adaptWorkers, realApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
@@ -20,6 +21,12 @@ import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 import { feedback } from "@/platform/feedback";
 import { useMock } from "@/platform/use-mock";
+import { useRoleGate } from "@/platform/app-context";
+import type { Role } from "@/mock/types";
+
+// Managers, HR operations, HR administrators and payroll officers can act on
+// a person's record (same approver audience as the Approvals surface).
+const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 
 export const Route = createFileRoute("/hrm/employees/$id")({
   head: () => ({
@@ -326,6 +333,17 @@ async function loadLiveProfile(id: string): Promise<EmployeeProfile | null> {
 function EmployeePage() {
   const { id } = Route.useParams();
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // M27 P0 UX audit: HR admins can link a worker record to an authentication
+  // identity from the profile page — the self-service surfaces (leave,
+  // documents, letters, payslips) only work once a link exists.
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSubject, setLinkSubject] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [subjectId, setSubjectId] = useState<string | null>(null);
+  const hrAdmin = useRoleGate()(APPROVER_ROLES);
+  useEffect(() => {
+    setSubjectId(null);
+  }, [id]);
   // Real backend: the employee list keeps the real worker GUID as the row id,
   // so detail/edit links resolve directly. Falls back to mock when off.
   const state = useMock(async () => {
@@ -333,8 +351,13 @@ function EmployeePage() {
     try {
       // Try the GUID directly first, then fall back to a list scan by employee
       // number (hand-typed URLs like /hrm/employees/SMK001).
-      const direct = adaptWorkers([await realApi.worker(id)])[0];
-      if (direct) return direct;
+      const direct = await realApi.worker(id);
+      const w = adaptWorkers([direct])[0];
+      if (w) {
+        const d = direct as Record<string, unknown>;
+        setSubjectId(typeof d.subjectId === "string" ? String(d.subjectId) : null);
+        return w;
+      }
     } catch {
       /* not a GUID — scan the list by employee number instead */
     }
@@ -455,6 +478,74 @@ function EmployeePage() {
                 }
               </Async>
 
+              {USE_REAL && hrAdmin ? (
+                <DetailSection title="Account linking" description="Self-service works only when the worker record is linked to an identity.">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {subjectId ? (
+                      <span className="flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-xs font-mono">
+                        <Link2 className="size-3.5 text-muted-foreground" aria-hidden />
+                        Linked to identity {subjectId.slice(0, 8)}…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 rounded border border-warning bg-warning/10 px-2 py-1 text-xs">
+                        <Unlink className="size-3.5" aria-hidden />
+                        Not linked — leave, documents, letters and payslips are unavailable for this person.
+                      </span>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={linkBusy}
+                      onClick={() => {
+                        setLinkSubject(subjectId ?? "");
+                        setLinkOpen(true);
+                      }}
+                    >
+                      <KeyRound className="size-4" aria-hidden />
+                      {subjectId ? "Change account" : "Link account"}
+                    </Button>
+                  </div>
+                </DetailSection>
+              ) : null}
+
+              <ConfirmDialog
+                open={linkOpen}
+                onOpenChange={setLinkOpen}
+                title={subjectId ? `Change the linked identity for ${e.fullName}?` : `Link an identity to ${e.fullName}?`}
+                consequence="The worker's self-service surfaces (leave, documents, letters, payslips) will attach to this identity. An identity can only be linked to one worker record."
+                detail={
+                  <ul className="list-inside list-disc space-y-1">
+                    <li>Paste the Keycloak identity id (the token "sub" claim) of the user.</li>
+                    <li>If the identity is already linked elsewhere, linking here will transfer it.</li>
+                    <li>Unlinking is done by clearing the field in the edit form.</li>
+                  </ul>
+                }
+                confirmLabel="Save link"
+                onConfirm={() => {
+                  const value = linkSubject.trim();
+                  if (!value) {
+                    feedback.blocked("Identity id is empty.", 'Paste the identity id (the token "sub" claim) to continue.');
+                    return;
+                  }
+                  setLinkBusy(true);
+                  realApi
+                    .updateWorker(e.id, { subjectId: value })
+                    .then(() => {
+                      setLinkBusy(false);
+                      setLinkOpen(false);
+                      setSubjectId(value);
+                      feedback.submitted(
+                        `Identity linked to ${e.fullName}.`,
+                        "The account is now connected to this worker record. Self-service surfaces will show their own data on the next visit.",
+                      );
+                    })
+                    .catch((err) => {
+                      setLinkBusy(false);
+                      const apiErr = err as { message?: string };
+                      feedback.blocked("Link failed.", String(apiErr?.message ?? "The identity could not be linked — it may already belong to another worker or not exist."));
+                    });
+                }}
+              />
               <ConfirmDialog
                 open={confirmEnd}
                 onOpenChange={setConfirmEnd}

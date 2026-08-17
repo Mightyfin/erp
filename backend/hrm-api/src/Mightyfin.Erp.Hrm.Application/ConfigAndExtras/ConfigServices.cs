@@ -94,7 +94,7 @@ public interface IDocumentsService
     Task<Paged<WorkerDocumentDto>> ListDocumentsAsync(Guid workerId, CancellationToken ct);
     Task<WorkerDocumentDto> UploadDocumentAsync(Guid workerId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
     Task<(WorkerDocument Document, Stream Stream)> GetDocumentStreamAsync(Guid documentId, CancellationToken ct);
-    Task<Paged<WorkerDocumentDto>> ListMyDocumentsAsync(string subjectId, CancellationToken ct);
+    Task<MyDocumentsDto> ListMyDocumentsAsync(string subjectId, CancellationToken ct);
     Task<WorkerDocumentDto> UploadMyDocumentAsync(string subjectId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
     Task<(WorkerDocument Document, Stream Stream)> GetMyDocumentStreamAsync(Guid documentId, string subjectId, CancellationToken ct);
     Task<ReportDto> GetReportAsync(ReportQuery query, CancellationToken ct);

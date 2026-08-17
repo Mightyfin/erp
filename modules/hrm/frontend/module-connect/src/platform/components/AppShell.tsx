@@ -348,15 +348,30 @@ function RealSignOut() {
   );
 }
 
+// M27 P0 UX audit: same open-for-decision predicate used by the Approvals
+// page — the shell badge must agree with the page it points to.
+const OPEN_STATUSES = new Set(["pending", "submitted", "open", "in progress", "in-review", "in progress", "returned", "awaiting employee"]);
+
+function countOpen(items: unknown[]): number {
+  return items.filter((raw) => {
+    const x = raw as Record<string, unknown>;
+    const s = String(x?.status ?? "").toLowerCase();
+    return OPEN_STATUSES.has(s);
+  }).length;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
-    const [legalEntities, locations, notificationInbox] = await Promise.all([
+    const [legalEntities, locations, notificationInbox, queue, leave, corrections] = await Promise.all([
       realApi.legalEntities(),
       realApi.locations(),
       realApi.myNotifications(),
+      realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
+      realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
+      realApi.timeCorrections({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
     ]);
     return {
       legalEntities: (Array.isArray(legalEntities) ? legalEntities : []).map((raw) => {
@@ -368,12 +383,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? "") };
       }),
       notificationInbox,
+      // M27 P0 UX audit: the approvals badge was a hardcoded mock "3". The
+      // shell now counts everything still open for a decision, matching the
+      // same is-decidable predicate the Approvals page uses.
+      pendingDecisions:
+        countOpen(Array.isArray(queue?.items) ? queue.items : []) +
+        countOpen(Array.isArray(leave?.items) ? leave.items : []) +
+        countOpen(Array.isArray(corrections?.items) ? corrections.items : []),
     };
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
+  const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
     : entities.find((e) => e.id === entityId) ?? entities[0];
@@ -517,7 +540,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button asChild variant="ghost" size="icon" className="relative" aria-label="Tasks and approvals">
                 <Link to="/hrm/approvals">
                   <CheckSquare className="size-5" aria-hidden />
-                  <span className="absolute right-1 top-1 rounded-full bg-warning px-1 text-[10px] font-semibold text-warning-foreground">3</span>
+                  {Number(pendingDecisions) > 0 ? (
+                    <span className="absolute right-1 top-1 rounded-full bg-warning px-1 text-[10px] font-semibold text-warning-foreground">
+                      {pendingDecisions}
+                    </span>
+                  ) : null}
                 </Link>
               </Button>
             ) : null}
