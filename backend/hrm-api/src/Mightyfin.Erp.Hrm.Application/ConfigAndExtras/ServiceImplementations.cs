@@ -90,6 +90,33 @@ public sealed class RecruitmentServiceImpl(
         return MapVacancy(updated);
     }
 
+    public async Task<VacancyDto> UpdateVacancyAsync(Guid vacancyId, VacancyUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var v = await repo.GetVacancyAsync(vacancyId, ct)
+            ?? throw new DomainException("vacancy-not-found", $"Vacancy {vacancyId} does not exist.");
+        if (request.JobTitle is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.JobTitle)) throw new DomainException("job-title-required", "Job title is required.");
+            v.JobTitle = request.JobTitle.Trim();
+        }
+        if (request.Grade is not null) v.Grade = request.Grade.Trim();
+        if (request.Description is not null) v.Description = request.Description.Trim();
+        if (request.Status is not null)
+        {
+            var next = request.Status.Trim().ToLowerInvariant();
+            if (next is "published" or "closed" or "cancelled" or "draft")
+            {
+                if (next == "published" && v.Status != "draft")
+                    throw new DomainException("vacancy-invalid-transition", $"Vacancy {v.Status} cannot be published; only draft vacancies can.");
+                if (next == "closed" && v.Status != "published")
+                    throw new DomainException("vacancy-invalid-transition", $"Vacancy {v.Status} cannot be closed; only published vacancies can.");
+                v.Status = next;
+            }
+        }
+        var updated = await repo.UpdateVacancyAsync(v, ct);
+        return MapVacancy(updated);
+    }
     public async Task<Paged<CandidateDto>> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");

@@ -827,6 +827,46 @@ public static class Routes
         });
 
         g.MapGet("/capabilities", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListCapabilitiesAsync(ct));
+        // ---------- M28: jobs catalogue, tenant roles, retention rules ----------
+        g.MapGet("/jobs", async ([FromQuery] bool includeInactive, IJobsAdminService svc, CancellationToken ct) =>
+            await svc.ListJobsAsync(includeInactive, ct));
+        g.MapPost("/jobs", async (HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<JobCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateJobAsync(request, ct));
+        });
+        g.MapPatch("/jobs/{id:guid}", async (Guid id, HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<JobUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateJobAsync(id, request, ct));
+        });
+        g.MapPost("/jobs/{id:guid}/close", async (Guid id, IJobsAdminService svc, CancellationToken ct) =>
+            Results.Ok(await svc.CloseJobAsync(id, ct)));
+
+        g.MapGet("/roles", async (IJobsAdminService svc, CancellationToken ct) => await svc.ListRolesAsync(ct));
+        g.MapPatch("/roles/{roleKey}", async (string roleKey, HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RoleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateRoleAsync(roleKey, request, ct));
+        });
+
+        g.MapGet("/retention-rules", async (IJobsAdminService svc, CancellationToken ct) => await svc.ListRetentionRulesAsync(ct));
+        g.MapPost("/retention-rules", async (HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<DataRetentionCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateRetentionRuleAsync(request, ct));
+        });
+        g.MapPatch("/retention-rules/{id:guid}", async (Guid id, HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<DataRetentionUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateRetentionRuleAsync(id, request, ct));
+        });
+        g.MapDelete("/retention-rules/{id:guid}", async (Guid id, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteRetentionRuleAsync(id, ct);
+            return Results.Ok();
+        });
+
         g.MapPatch("/capabilities/{featureKey}", async (string featureKey, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<CapabilityUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -873,6 +913,11 @@ public static class Routes
         {
             var request = await ReadBodyAsync<OfferCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateOfferAsync(request, ct));
+        });
+                g.MapPatch("/vacancies/{id:guid}", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<VacancyUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateVacancyAsync(id, request, ct));
         });
         g.MapPost("/vacancies/{id:guid}/publish", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
             await svc.PublishVacancyAsync(id, ct));

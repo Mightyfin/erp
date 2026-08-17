@@ -676,6 +676,24 @@ export const realApi = {
   legalEntities: () => hrmApi.get<unknown[]>("/hrm/admin/legal-entities"),
   calendars: () => hrmApi.get<unknown[]>("/hrm/admin/calendars"),
   capabilities: () => hrmApi.get<unknown[]>("/hrm/admin/capabilities"),
+  // ---------- M28 CRUD audit: jobs catalogue, roles, retention rules ----------
+  jobs: (params?: { includeInactive?: boolean }) =>
+    hrmApi.get<unknown[]>("/hrm/admin/jobs", params ?? {}),
+  createJob: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/jobs", body),
+  updateJob: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/jobs/${id}`, body),
+  closeJob: (id: string) => hrmApi.post<unknown>(`/hrm/admin/jobs/${id}/close`, null),
+  roles: () => hrmApi.get<unknown[]>("/hrm/admin/roles"),
+  updateRole: (roleKey: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/admin/roles/${roleKey}`, body),
+  retentionRules: () => hrmApi.get<unknown[]>("/hrm/admin/retention-rules"),
+  createRetentionRule: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/admin/retention-rules", body),
+  updateRetentionRule: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/admin/retention-rules/${id}`, body),
+  deleteRetentionRule: (id: string) => hrmApi.delete<unknown>(`/hrm/admin/retention-rules/${id}`),
+  updateVacancy: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/recruitment/vacancies/${id}`, body),
+
   /** M26 operational outbox status. Payloads and recipient addresses are never returned. */
   notificationDeliveries: (params?: { eventType?: string; status?: string; limit?: number }) =>
     hrmApi.get<{

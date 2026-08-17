@@ -15,6 +15,7 @@ public interface IRecruitmentService
 {
     Task<Paged<VacancyDto>> ListVacanciesAsync(string? status, CancellationToken ct);
     Task<VacancyDto> CreateVacancyAsync(VacancyCreate request, CancellationToken ct);
+    Task<VacancyDto> UpdateVacancyAsync(Guid vacancyId, VacancyUpdateRequest request, CancellationToken ct);
     Task<VacancyDto> PublishVacancyAsync(Guid vacancyId, CancellationToken ct);
     Task<VacancyDto> CloseVacancyAsync(Guid vacancyId, CancellationToken ct);
     Task<Paged<CandidateDto>> ListCandidatesAsync(Guid vacancyId, string? stage, CancellationToken ct);
@@ -152,6 +153,20 @@ public interface IConfigRepository
     Task<LeaveType> CreateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct);
     Task<LeaveType> UpdateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct);
     Task<CapabilityConfig> UpdateCapabilityAsync(CapabilityConfig capability, CancellationToken ct);
+
+    // M28: jobs, tenant roles, retention rules
+    Task<List<Job>> ListJobsAsync(CancellationToken ct);
+    Task<Job?> GetJobAsync(Guid id, CancellationToken ct);
+    Task<Job> CreateJobAsync(Job job, CancellationToken ct);
+    Task<Job> UpdateJobAsync(Job job, CancellationToken ct);
+    Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct);
+    Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct);
+    Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct);
+    Task<RetentionRule> CreateRetentionRuleAsync(RetentionRule rule, CancellationToken ct);
+    Task<RetentionRule?> GetRetentionRuleAsync(Guid id, CancellationToken ct);
+    Task<RetentionRule> UpdateRetentionRuleAsync(RetentionRule rule, CancellationToken ct);
+    Task<TenantRoleAssignment> CreateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct);
+    Task DeleteRetentionRuleAsync(Guid id, CancellationToken ct);
 }
 
 public interface IRecruitmentRepository

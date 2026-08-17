@@ -210,6 +210,7 @@ public sealed record PayGroupDto(Guid Id, string Code, string Name, string Frequ
 // ===================== Recruitment (M7) =====================
 
 public sealed record VacancyCreate(Guid OrgUnitId, string JobTitle, string Grade, string? Description, string Status = "draft");
+public sealed record VacancyUpdateRequest(string? JobTitle = null, string? Grade = null, string? Description = null, string? Status = null);
 public sealed record CandidateCreate(Guid VacancyId, string FullName, string? Email = null, string? Phone = null, string? Source = null, string? Notes = null);
 public sealed record CandidateAdvanceRequest(string Stage, string? Score = null, string? Notes = null);
 public sealed record InterviewCreateRequest(string ScheduledAt, string InterviewType, string? InterviewerName = null, string? Notes = null);
@@ -402,3 +403,15 @@ public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDa
 /// <summary>Decision on a leave request or attendance correction (submitted via
 /// /time/leave/{id}/decide or /time/corrections/{id}/decide).</summary>
 public sealed record TimeDecisionRequest(string Action, string? Reason = null);
+
+// ===================== M28: jobs, roles, retention =====================
+public sealed record JobCreateRequest(string Code, string Title, Guid? OrgUnitId = null, string? Grade = null);
+public sealed record JobUpdateRequest(string? Title = null, Guid? OrgUnitId = null, string? Grade = null);
+public sealed record JobDto(Guid Id, string Code, string Title, Guid? OrgUnitId, string? OrgUnitName, string? Grade, string Status);
+
+public sealed record TenantRoleDto(Guid Id, string RoleKey, string RoleName, string Category, bool Active);
+public sealed record RoleUpdateRequest(bool Active);
+
+public sealed record DataRetentionCreateRequest(string RecordType, int RetentionMonths, string? Description = null);
+public sealed record DataRetentionUpdateRequest(int? RetentionMonths = null, string? Description = null, bool? Active = null);
+public sealed record DataRetentionDto(Guid Id, string RecordType, string? Description, int RetentionMonths, bool Active);

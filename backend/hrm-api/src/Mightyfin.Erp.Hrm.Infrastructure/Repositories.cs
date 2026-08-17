@@ -1151,8 +1151,31 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
     { await db.SaveChangesAsync(ct); return leaveType; }
     public async Task<CapabilityConfig> UpdateCapabilityAsync(CapabilityConfig capability, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return capability; }
-}
+    public async Task<TenantRoleAssignment> CreateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct)
+    { db.TenantRoleAssignments.Add(row); await db.SaveChangesAsync(ct); return row; }
 
+    // M28: jobs, tenant roles, retention rules
+    public async Task<List<Job>> ListJobsAsync(CancellationToken ct) => await db.Jobs.ToListAsync(ct);
+    public async Task<Job?> GetJobAsync(Guid id, CancellationToken ct) => await db.Jobs.FirstOrDefaultAsync(j => j.Id == id, ct);
+    public async Task<Job> CreateJobAsync(Job job, CancellationToken ct)
+    { db.Jobs.Add(job); await db.SaveChangesAsync(ct); return job; }
+    public async Task<Job> UpdateJobAsync(Job job, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return job; }
+    public async Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct) => await db.TenantRoleAssignments.ToListAsync(ct);
+    public async Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return row; }
+    public async Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct) => await db.RetentionRules.ToListAsync(ct);
+    public async Task<RetentionRule?> GetRetentionRuleAsync(Guid id, CancellationToken ct) => await db.RetentionRules.FirstOrDefaultAsync(r => r.Id == id, ct);
+    public async Task<RetentionRule> CreateRetentionRuleAsync(RetentionRule rule, CancellationToken ct)
+    { db.RetentionRules.Add(rule); await db.SaveChangesAsync(ct); return rule; }
+    public async Task<RetentionRule> UpdateRetentionRuleAsync(RetentionRule rule, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return rule; }
+    public async Task DeleteRetentionRuleAsync(Guid id, CancellationToken ct)
+    {
+        var rule = await db.RetentionRules.FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (rule is not null) { db.RetentionRules.Remove(rule); await db.SaveChangesAsync(ct); }
+    }
+}
 public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentRepository
 {
     public async Task<(List<Vacancy> Items, int Total)> ListVacanciesAsync(string? status, CancellationToken ct)

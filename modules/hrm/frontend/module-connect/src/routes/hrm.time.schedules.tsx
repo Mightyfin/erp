@@ -38,6 +38,8 @@ import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { Input } from "@/components/ui/input";
+import { feedback } from "@/platform/feedback";
 import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/time/schedules")({
@@ -586,6 +588,232 @@ function CoverageSection({ days }: { days: CoverageDay[] }) {
   );
 }
 
+interface ShiftCatalogRow {
+  id: string;
+  code: string;
+  name: string;
+  start: string;
+  end: string;
+  active: boolean;
+}
+
+interface WorkerRef {
+  id: string;
+  name: string;
+  employeeNo: string;
+}
+
+function CreateShiftDialog({
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("08:00");
+  const [end, setEnd] = useState("17:00");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create shift</DialogTitle>
+          <DialogDescription>
+            A shift is a named block of working time. Give it a code and hours; assign it to a
+            worker afterwards.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-2">
+            <Label htmlFor="shift-code">Code</Label>
+            <Input id="shift-code" placeholder="e.g. DAY-1" value={code} onChange={(e) => setCode(e.target.value)} />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="shift-name">Name</Label>
+            <Input id="shift-name" placeholder="e.g. Day shift — Lusaka" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="shift-start">Start time</Label>
+              <Input id="shift-start" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="shift-end">End time</Label>
+              <Input id="shift-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!code.trim() || !name.trim()) {
+                feedback.blocked("Code and name are required", "Every shift needs both a code and a name.");
+                return;
+              }
+              setSaving(true);
+              try {
+                await realApi.createShift({
+                  code: code.trim(),
+                  name: name.trim(),
+                  startTime: start,
+                  endTime: end,
+                });
+                feedback.submitted(
+                  "Shift created",
+                  `${name.trim()} (${code.trim()}) is now in the catalogue. Assign it to a worker next.`,
+                );
+                setCode("");
+                setName("");
+                onSaved();
+                onOpenChange(false);
+              } catch (err) {
+                feedback.blocked(
+                  "Could not create the shift",
+                  err instanceof Error ? err.message : "Unknown error",
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Create shift"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AssignShiftDialog({
+  open,
+  onOpenChange,
+  shifts,
+  workers,
+  initialShiftId,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  shifts: ShiftCatalogRow[];
+  workers: WorkerRef[];
+  initialShiftId?: string;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [shiftId, setShiftId] = useState(initialShiftId ?? "");
+  const [workerId, setWorkerId] = useState("");
+  const [from, setFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState("");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Assign shift to worker</DialogTitle>
+          <DialogDescription>
+            Put a named shift on a worker's schedule. The assignment starts on the effective date
+            and (optionally) runs until an end date.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-2">
+            <Label>Worker</Label>
+            <Select value={workerId || undefined} onValueChange={setWorkerId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pick a worker" />
+              </SelectTrigger>
+              <SelectContent>
+                {workers.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.employeeNo ? `${w.employeeNo} — ` : ""}
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label>Shift</Label>
+            <Select value={shiftId || undefined} onValueChange={setShiftId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pick a shift" />
+              </SelectTrigger>
+              <SelectContent>
+                {shifts.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name} ({s.code}) · {s.start}–{s.end}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="assign-from">Effective from</Label>
+              <Input id="assign-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="assign-to">Effective to (optional)</Label>
+              <Input id="assign-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!workerId || !shiftId) {
+                feedback.blocked("Pick a worker and a shift", "Both are required before the assignment can be saved.");
+                return;
+              }
+              setSaving(true);
+              try {
+                await realApi.assignShift(workerId, {
+                  shiftId,
+                  effectiveFrom: from,
+                  effectiveTo: to || null,
+                });
+                const shift = shifts.find((s) => s.id === shiftId);
+                const worker = workers.find((w) => w.id === workerId);
+                feedback.submitted(
+                  "Shift assigned",
+                  `${worker?.name ?? "The worker"} now carries ${shift?.name ?? "the shift"} from ${from}.`,
+                );
+                setWorkerId("");
+                setShiftId("");
+                setTo("");
+                onSaved();
+                onOpenChange(false);
+              } catch (err) {
+                feedback.blocked(
+                  "Could not assign the shift",
+                  err instanceof Error ? err.message : "Unknown error",
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Assign shift"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ------------------------------------------------------------------ page */
 
 function SchedulePage() {
@@ -601,6 +829,31 @@ function SchedulePage() {
   const [changeOpen, setChangeOpen] = useState(false);
   const [changeShiftId, setChangeShiftId] = useState<string | undefined>(undefined);
   const [pickup, setPickup] = useState<OpenShift | null>(null);
+  const [createShiftOpen, setCreateShiftOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignShiftId, setAssignShiftId] = useState<string | undefined>(undefined);
+  const [tick, setTick] = useState(0);
+  const shiftsState = useApi(
+    async () => {
+      const [shifts, workers] = await Promise.all([realApi.shifts(), realApi.employees({ page: 1, pageSize: 200 })]);
+      return {
+        shifts: ((shifts ?? []) as Record<string, unknown>[]).map((s) => ({
+          id: String(s.id ?? ""),
+          code: String(s.code ?? ""),
+          name: String(s.name ?? ""),
+          start: String(s.startTime ?? ""),
+          end: String(s.endTime ?? ""),
+          active: Boolean(s.isActive ?? true),
+        })),
+        workers: (((workers as { items?: Record<string, unknown>[] } | undefined)?.items ?? []) as Record<string, unknown>[]).map((w) => ({
+          id: String(w.id ?? ""),
+          name: String(w.name ?? String(w.fullName ?? "")),
+          employeeNo: String(w.employeeNo ?? ""),
+        })),
+      };
+    },
+    [tick],
+  );
 
   const openChange = (id?: string) => {
     setChangeShiftId(id);
@@ -615,7 +868,15 @@ function SchedulePage() {
         title="My schedule"
         description="The next 14 days as they stand today. Anything you want changed goes to your manager — the shift stays yours until they decide."
         primaryAction={
-          <Button onClick={() => openChange(undefined)}>Request a shift change</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => openChange(undefined)}>Request a shift change</Button>
+            {USE_REAL ? (
+              <>
+                <Button variant="outline" onClick={() => setAssignOpen(true)}>Assign shift</Button>
+                <Button variant="outline" onClick={() => setCreateShiftOpen(true)}>Create shift</Button>
+              </>
+            ) : null}
+          </div>
         }
         meta={
           <>
@@ -731,6 +992,78 @@ function SchedulePage() {
           if (!o) setPickup(null);
         }}
       />
+
+      {USE_REAL ? (
+        <>
+          <section aria-label="Shift definitions" className="space-y-3 pt-6">
+            <div>
+              <h2 className="text-sm font-semibold">Shift definitions</h2>
+              <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+                The shift catalogue: every named shift with its start and end time. Create a shift
+                here, then assign it to a worker to put it on their schedule.
+              </p>
+            </div>
+            <Async state={shiftsState} rows={3}>
+              {({ shifts, workers }: { shifts: ShiftCatalogRow[]; workers: WorkerRef[] }) => (
+                <>
+                  <ul className="divide-y rounded-lg border bg-surface">
+                    {shifts.map((s) => (
+                      <li key={s.id} className="flex flex-wrap items-center gap-4 p-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{s.name}</span>
+                            <span className="font-mono text-xs text-muted-foreground">{s.code}</span>
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${s.active ? "border-success/40 bg-success-soft text-success" : "border-muted bg-muted text-muted-foreground"}`}>{s.active ? "Active" : "Inactive"}</span>
+                          </div>
+                          <p className="text-sm">
+                            <span className="tabular">
+                              {s.start}–{s.end}
+                            </span>
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setAssignShiftId(s.id);
+                            setAssignOpen(true);
+                            void workers;
+                          }}
+                        >
+                          Assign to worker
+                        </Button>
+                      </li>
+                    ))}
+                    {shifts.length === 0 ? (
+                      <li className="p-8 text-center text-sm text-muted-foreground">
+                        No shifts defined yet. Create the first one above.
+                      </li>
+                    ) : null}
+                  </ul>
+                  <CreateShiftDialog
+                    open={createShiftOpen}
+                    onOpenChange={setCreateShiftOpen}
+                    onSaved={() => setTick((t) => t + 1)}
+                  />
+                  <AssignShiftDialog
+                    open={assignOpen}
+                    onOpenChange={(o) => {
+                      if (!o) {
+                        setAssignOpen(false);
+                        setAssignShiftId(undefined);
+                      }
+                    }}
+                    shifts={shifts}
+                    workers={workers}
+                    initialShiftId={assignShiftId}
+                    onSaved={() => setTick((t) => t + 1)}
+                  />
+                </>
+              )}
+            </Async>
+          </section>
+        </>
+      ) : null}
     </AppShell>
       </AuthGate>
   );

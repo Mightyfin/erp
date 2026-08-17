@@ -15,7 +15,10 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { realApi } from "@/platform/use-api";
+import { feedback } from "@/platform/feedback";
 
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 export const Route = createFileRoute("/hrm/recruitment/requisitions/new")({
   head: () => ({
     meta: [
@@ -41,6 +44,16 @@ const employmentTypes = ["Permanent", "Fixed term", "Contractor", "Intern", "Par
 function NewRequisition() {
   const navigate = useNavigate();
   const [ref, setRef] = useState<string | null>(null);
+  const [unitMap, setUnitMap] = useState<Record<string, string>>({});
+  if (USE_REAL && Object.keys(unitMap).length === 0) {
+    realApi.orgUnits().then((units) => {
+      const map: Record<string, string> = {};
+      for (const u of (units ?? []) as Record<string, unknown>[]) {
+        map[String(u.name ?? "").toLowerCase()] = String(u.id ?? "");
+      }
+      setUnitMap(map);
+    }).catch(() => undefined);
+  }
 
   const [reason, setReason] = useState<RequisitionReason>("Replacement");
   const [replacementFor, setReplacementFor] = useState("");
@@ -432,6 +445,21 @@ function NewRequisition() {
         steps={steps}
         submitLabel="Submit requisition"
         onSubmit={async () => {
+          if (USE_REAL) {
+            const vacancy = await realApi.createVacancy({
+              jobTitle: jobTitle.trim(),
+              grade: grade.trim() || null,
+              orgUnitId: unitMap[department.toLowerCase()] || null,
+              description: justification.trim() || `${reason} requisition for ${department}`,
+            });
+            setRef(String((vacancy as Record<string, unknown>).id ?? "draft"));
+            feedback.submitted(
+              "Requisition submitted",
+              `The vacancy for ${jobTitle.trim()} is now in draft. Publish it from the requisitions list when approved.`,
+            );
+            navigate({ to: "/hrm/recruitment/requisitions" }).catch(() => undefined);
+            return;
+          }
           const r = await recruitmentApi.submitRequisition({
             reason,
             replacementFor,

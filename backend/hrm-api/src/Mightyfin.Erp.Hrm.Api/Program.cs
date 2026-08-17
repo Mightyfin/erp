@@ -81,6 +81,7 @@ builder.Services.AddScoped<IPayslipDocumentService, PayslipDocumentServiceImpl>(
 builder.Services.AddScoped<IConfigRepository, ConfigRepository>();
 builder.Services.AddScoped<IConfigService, ConfigServiceImpl>();
 builder.Services.AddScoped<IConfigAdminService, ConfigAdminServiceImpl>();
+builder.Services.AddScoped<IJobsAdminService, JobsAdminServiceImpl>();
 builder.Services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
 builder.Services.AddScoped<IRecruitmentService, RecruitmentServiceImpl>();
 builder.Services.AddScoped<IRelationsRepository, RelationsRepository>();
@@ -327,6 +328,35 @@ Routes.HrmPrefix = $"/api/v{versioning.CurrentVersion}/hrm";
 Routes.RegisterAll(app);
 Routes.HrmPrefix = "/api/hrm"; // legacy prefix, kept for existing clients
 Routes.RegisterAll(app);
+
+// M28: seed tenant role assignments for the known HRM roles if this tenant has none yet.
+{
+    try
+    {
+        using var seedScope = app.Services.CreateScope();
+        var seedRepo = seedScope.ServiceProvider.GetRequiredService<IConfigRepository>();
+        if (!(await seedRepo.ListRoleAssignmentsAsync(CancellationToken.None)).Any())
+        {
+            foreach (var key in new (string Key, string Name, string Cat)[]
+            {
+                ("employee", "Employee", "hrm"),
+                ("manager", "Manager", "hrm"),
+                ("hr_ops", "HR Operations", "hrm"),
+                ("payroll", "Payroll", "payroll"),
+                ("finance_approver", "Finance Approver", "payroll"),
+                ("hr_admin", "HR Administrator", "system"),
+                ("investigator", "Relations Investigator", "hrm"),
+            })
+            {
+                await seedRepo.CreateRoleAssignmentAsync(new TenantRoleAssignment { RoleKey = key.Key, RoleName = key.Name, Category = key.Cat, Active = true }, CancellationToken.None);
+            }
+        }
+    }
+    catch (Exception)
+    {
+        // Seeding failures must never crash startup; roles can be created later.
+    }
+}
 
 app.Run();
 

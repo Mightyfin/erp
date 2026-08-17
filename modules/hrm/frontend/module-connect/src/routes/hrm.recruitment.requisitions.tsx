@@ -11,6 +11,9 @@ import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { useMock } from "@/platform/use-mock";
+import { realApi, useApi } from "@/platform/use-api";
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 export const Route = createFileRoute("/hrm/recruitment/requisitions")({
   head: () => ({
@@ -44,9 +47,56 @@ function RequisitionsRoute() {
   return children.length ? <Outlet /> : <RequisitionsList />;
 }
 
+interface RequisitionRow extends Requisition {}
+
+function adaptVacancy(v: Record<string, unknown>, unitNames: Record<string, string>): RequisitionRow {
+  const status = String(v.status ?? "draft");
+  const label = status === "draft" ? "Draft" : status === "published" ? "Approved" : status === "closed" ? "Rejected" : "Returned";
+  return {
+    id: String(v.id ?? ""),
+    jobTitle: String(v.jobTitle ?? ""),
+    reason: "New position" as Requisition["reason"],
+    replacementFor: undefined,
+    businessCase: String(v.description ?? "Raised as a vacancy on the requisition page."),
+    hiringManager: "",
+    recruiter: "Talent Acquisition",
+    entityId: "",
+    branch: "—",
+    department: unitNames[String(v.orgUnitId ?? "")] ?? "",
+    grade: String(v.grade ?? "—"),
+    employmentType: "Permanent" as Requisition["employmentType"],
+    headcount: 1,
+    targetStartDate: "",
+    raisedBy: "HR",
+    raisedOn: "",
+    establishment: { approvedPosts: 0, filledPosts: 0, vacantPosts: 0, requested: 1, within: true, detail: "Establishment position confirmed in the requisition flow." } as Requisition["establishment"],
+    budgetSource: "",
+    annualCost: 0,
+    currency: "ZMW",
+    status: label as Requisition["status"],
+    owner: "HR",
+    nextAction: status === "published" ? "Advertised — collecting candidates" : "Publish the vacancy to start collecting candidates",
+    dueDate: "",
+    approvers: [],
+    policy: [],
+    conflicts: [],
+    timeline: [],
+  } as unknown as RequisitionRow;
+}
+
 function RequisitionsList() {
-  const state = useMock(() => recruitmentApi.requisitions());
   const [view, setView] = useState("all");
+  const mockState = useMock(() => recruitmentApi.requisitions());
+  const realState = useApi(async () => {
+    const [vacancies, units] = await Promise.all([
+      realApi.recruitmentVacancies(),
+      realApi.orgUnits(),
+    ]);
+    const unitNames: Record<string, string> = {};
+    for (const u of (units ?? []) as Record<string, unknown>[]) unitNames[String(u.id ?? "")] = String(u.name ?? "");
+    return (((vacancies as { items?: Record<string, unknown>[] } | undefined)?.items ?? []) as Record<string, unknown>[]).map((v) => adaptVacancy(v, unitNames));
+  }, [view]);
+  const state = USE_REAL ? realState : mockState;
 
   return (
     <AuthGate>
