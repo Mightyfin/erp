@@ -291,6 +291,15 @@ public static class Routes
             return Results.Created($"{HrmPrefix}/workers/{created.Id}", created);
         });
 
+        g.MapPost("/import", async (HttpContext http, IWorkerImportService svc, CancellationToken ct) =>
+        {
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.FirstOrDefault() ?? throw new DomainException("bad-request", "No CSV file was uploaded.");
+            if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                throw new DomainException("bad-request", "The uploaded file must be a CSV file.");
+            await using var stream = file.OpenReadStream();
+            return Results.Ok(await svc.ImportCsvAsync(stream, ct));
+        }).DisableAntiforgery();
         g.MapPut("/{id:guid}", async (Guid id, HttpContext http, IWorkerService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<WorkerUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

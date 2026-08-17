@@ -12,6 +12,8 @@ export type Classification = "General" | "Confidential" | "Restricted";
 export interface EmployeeDocument {
   id: string;
   employeeId: string;
+  /** Resolved display name of the employee the document belongs to (real mode). */
+  employeeName?: string;
   name: string;
   category: string;
   classification: Classification;

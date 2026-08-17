@@ -63,6 +63,7 @@ builder.Services.AddSingleton<IIdProvider, IdProvider>();
 // ---------- Services ----------
 builder.Services.AddScoped<IWorkerRepository, WorkerRepository>();
 builder.Services.AddScoped<IWorkerService, WorkerServiceImpl>();
+builder.Services.AddScoped<IWorkerImportService, WorkerImportService>();
 builder.Services.AddScoped<IWorkerResolver, WorkerResolver>();
 builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();
 builder.Services.AddScoped<ITimeRepository, TimeRepository>();
