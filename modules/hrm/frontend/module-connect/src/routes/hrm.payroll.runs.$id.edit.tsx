@@ -3,8 +3,8 @@ import { useState } from "react";
 import { AlertTriangle, Ban, Info, Lock, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { money, payrollRunApi } from "@/mock/payrollrun";
-import type { LineComponent, RunLine } from "@/mock/payrollrun";
+import { money } from "@/mock/payrollrun";
+import type { RunLine } from "@/mock/payrollrun";
 import { isEditableSource } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
@@ -12,8 +12,8 @@ import { Async } from "@/platform/components/Async";
 import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
 import { RestrictedState } from "@/platform/components/States";
-import { markRunStale } from "@/mock/calculation";
 import { feedback } from "@/platform/feedback";
+import { adaptPayrollLines, realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/payroll/runs/$id/edit")({
@@ -28,30 +28,69 @@ export const Route = createFileRoute("/hrm/payroll/runs/$id/edit")({
   component: EditRun,
 });
 
+/** A display-only row of the live run — every figure comes from the backend. */
+interface DisplayLine {
+  id: string;
+  employeeId: string;
+  employee: string;
+  components: NonNullable<RunLine["components"]>;
+  gross: number;
+  deductions: number;
+  employerCost: number;
+  net: number;
+  flags: RunLine["flags"];
+  isExcluded: boolean;
+}
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+
+/** Maps a backend PayrollRunDto into the small display shape this page needs. */
+function adaptRunDisplay(raw: unknown): {
+  id: string;
+  period: string;
+  payGroup: string;
+  entityName: string;
+  status: string;
+  currency: string;
+  dueDate: string;
+  excluded: { employee: string; reason: string }[];
+} {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const excluded = Array.isArray(r.excluded) ? (r.excluded as Array<Record<string, unknown>>) : [];
+  return {
+    id: String(r.id ?? ""),
+    period: String(r.periodLabel ?? ""),
+    payGroup: String(r.payGroup ?? String(r.payGroupName ?? "")),
+    entityName: String(r.entityName ?? String(r.legalEntityName ?? "")),
+    status: String(r.status ?? "draft"),
+    currency: String(r.currency ?? "ZMW"),
+    dueDate: r.dueDate ? String(r.dueDate) : "",
+    excluded: excluded.map((x) => ({
+      employee: String(x.employee ?? x.workerName ?? ""),
+      reason: String(x.reason ?? x.exceptionReason ?? ""),
+    })),
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 
-/** One employee's pay line, expanded so its components can be adjusted. */
+/** One employee's pay line, expanded so its components can be reviewed. */
 function LineRow({
   line,
   currency,
   adjustment,
   onAdjust,
-  onRemove,
   locked,
 }: {
-  line: RunLine;
+  line: DisplayLine;
   currency: string;
   adjustment: { label: string; amount: string } | undefined;
   onAdjust: (v: { label: string; amount: string } | undefined) => void;
-  onRemove: () => void;
   locked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const adjAmount = Number(adjustment?.amount ?? 0) || 0;
   const newNet = line.net + adjAmount;
-  const variance =
-    line.priorNet && line.priorNet > 0 ? ((newNet - line.priorNet) / line.priorNet) * 100 : null;
-  const material = variance !== null && Math.abs(variance) >= 2;
 
   return (
     <li className="rounded-lg border bg-surface">
@@ -64,8 +103,7 @@ function LineRow({
         >
           <span className="block text-sm font-medium">{line.employee}</span>
           <span className="block text-xs text-muted-foreground">
-            {line.jobTitle} · {line.grade} · {open ? "Hide" : "Show"} the {line.components.length}{" "}
-            components
+            {line.employeeId} · {open ? "Hide" : "Show"} the {line.components.length} components
           </span>
         </button>
 
@@ -88,14 +126,6 @@ function LineRow({
         </ul>
       ) : null}
 
-      {material ? (
-        <p className="flex gap-1.5 px-3 pb-2 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
-          Net pay moves {variance! > 0 ? "up" : "down"} {Math.abs(variance!).toFixed(1)}% on last
-          period. Material, so the approver will ask why.
-        </p>
-      ) : null}
-
       {open ? (
         <div className="border-t px-3 py-3">
           <table className="w-full text-left text-xs">
@@ -108,11 +138,11 @@ function LineRow({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {line.components.map((c: LineComponent) => (
+              {line.components.map((c) => (
                 <tr key={c.code}>
                   <th scope="row" className="py-1.5 font-normal">
                     <span className="font-medium">{c.label}</span>
-                    {!isEditableSource(c.source) ? (
+                    {c.source === "Statutory" ? (
                       <span className="ml-1.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Lock className="size-3 shrink-0" aria-hidden />
                         Statutory
@@ -173,10 +203,7 @@ function LineRow({
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => {
-                onAdjust(undefined);
-                onRemove();
-              }}
+              onClick={() => onAdjust(undefined)}
             >
               <Trash2 className="size-3.5" aria-hidden />
               Remove
@@ -207,142 +234,134 @@ function LineRow({
 
 /* -------------------------------------------------------------------------- */
 
+const lockedStatuses = new Set(["Approved", "Paid", "Closed"]);
+
 function EditRun() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const state = useMock(() => payrollRunApi.run(id), [id]);
-  const lines = useMock(() => payrollRunApi.linesFor(id), [id]);
+
+  const runState = useApi(
+    async () => adaptRunDisplay(USE_REAL ? await realApi.payrollRun(id) : null),
+    [id, USE_REAL],
+  );
+  const linesState = useApi(
+    async () =>
+      USE_REAL
+        ? adaptPayrollLines(await realApi.payrollRunLines(id), id)
+        : ([] as RunLine[]),
+    [id, USE_REAL],
+  );
 
   const [adjustments, setAdjustments] = useState<
     Record<string, { label: string; amount: string }>
   >({});
-  const [dropped, setDropped] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   return (
     <AuthGate>
       <AppShell>
-      <Async state={state} rows={4}>
+      <Async state={runState} rows={4}>
         {(run) => {
           if (!run) return <RestrictedState />;
 
-          const locked = run.status === "Approved" || run.status === "Paid" || run.status === "Closed";
-          const rows = (lines.data ?? []).filter((l) => !dropped.includes(l.employeeId));
-          const adjTotal = Object.values(adjustments).reduce(
-            (t, a) => t + (Number(a.amount) || 0),
-            0,
-          );
+          const locked = lockedStatuses.has(run.status);
+          const lines: RunLine[] = USE_REAL ? (linesState.data ?? []) : [];
 
           const sections: EditSection[] = [
-            {
-              id: "period",
-              title: "Period and dates",
-              description:
-                "The dates that bound the run. Moving the cutoff changes which approved time is picked up.",
-              fields: [
-                {
-                  name: "payGroup",
-                  label: "Pay group",
-                  required: true,
-                  hint: "Employees are pulled from this group when the run is refreshed.",
-                },
-                { name: "cutoff", label: "Time cutoff", type: "date", required: true },
-                {
-                  name: "payDate",
-                  label: "Pay date",
-                  type: "date",
-                  required: true,
-                  validate: (v, all) =>
-                    v && all.cutoff && v < all.cutoff
-                      ? "The pay date cannot be before the time cutoff, or approved time would miss this run."
-                      : null,
-                },
-                {
-                  name: "dueDate",
-                  label: "Approval due by",
-                  type: "date",
-                  required: true,
-                  validate: (v, all) =>
-                    v && all.payDate && v > all.payDate
-                      ? "Approval has to be due before the pay date — there is no time to pay otherwise."
-                      : null,
-                },
-              ],
-            },
             {
               id: "lines",
               title: "Pay lines",
               description:
-                "One line per employee. Open a line to see how its figures were derived; statutory components are calculated, not typed.",
-              render: () => (
-                <div className="space-y-3">
-                  <ul className="space-y-2">
-                    {rows.map((l) => (
-                      <LineRow
-                        key={l.id}
-                        line={l}
-                        currency={run.currency}
-                        locked={locked}
-                        adjustment={adjustments[l.employeeId]}
-                        onAdjust={(v) =>
-                          setAdjustments((s) => {
-                            const next = { ...s };
-                            if (v) next[l.employeeId] = v;
-                            else delete next[l.employeeId];
-                            return next;
-                          })
-                        }
-                        onRemove={() => undefined}
-                      />
-                    ))}
-                  </ul>
+                USE_REAL
+                  ? "One line per employee, read from the calculated run. Open a line to see how its figures were derived; statutory components are calculated, not typed."
+                  : "Pay lines are shown from the demo data until onboarding of the run editor is complete.",
+              render: () =>
+                USE_REAL ? (
+                  <div className="space-y-3">
+                    <ul className="space-y-2">
+                      {lines.map((l) => (
+                        <LineRow
+                          key={l.id}
+                          line={{
+                            id: l.id,
+                            employeeId: l.employeeId,
+                            employee: l.employee,
+                            components: l.components,
+                            gross: l.gross,
+                            deductions: l.deductions,
+                            employerCost: l.employerCost,
+                            net: l.net,
+                            flags: l.flags,
+                            isExcluded: false,
+                          }}
+                          currency={run.currency}
+                          locked={locked}
+                          adjustment={adjustments[l.employeeId]}
+                          onAdjust={(v) =>
+                            setAdjustments((s) => {
+                              const next = { ...s };
+                              if (v) next[l.employeeId] = v;
+                              else delete next[l.employeeId];
+                              return next;
+                            })
+                          }
+                        />
+                      ))}
+                    </ul>
 
-                  {adjTotal !== 0 ? (
-                    <p className="rounded-md border border-info/40 bg-info-soft p-3 text-xs text-info">
-                      Adjustments change net pay by {money(adjTotal, run.currency)} across{" "}
-                      {Object.keys(adjustments).length} employee
-                      {Object.keys(adjustments).length === 1 ? "" : "s"}. Each one needs a reason
-                      before the run can be approved.
-                    </p>
-                  ) : null}
-                </div>
-              ),
+                    {lines.length === 0 && !linesState.loading ? (
+                      <p className="rounded-md border bg-surface-muted p-3 text-xs text-muted-foreground">
+                        No pay lines yet — run the calculation first to populate the run.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-info/40 bg-info-soft p-3 text-xs text-info">
+                    Demonstration data — nothing is saved. The editor is wired to the live run
+                    when the backend is reachable.
+                  </p>
+                ),
             },
             {
               id: "population",
               title: "Population",
               description:
-                "Taking someone out of a run is a decision with a reason, not a deletion.",
+                USE_REAL
+                  ? "The run population is rebuilt from the pay group each time the run is recalculated. Excluding someone here is a record of intent for the next calculation, kept as a note for the approver."
+                  : "Taking someone out of a run is a decision with a reason, not a deletion.",
               render: () => (
                 <div className="space-y-3">
                   <ul className="space-y-2">
-                    {(lines.data ?? []).map((l) => {
-                      const out = dropped.includes(l.employeeId);
-                      return (
-                        <li
-                          key={l.employeeId}
-                          className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-medium">{l.employee}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {out ? "Excluded from this run" : `${l.jobTitle} · included`}
-                            </span>
+                    {(USE_REAL ? lines : []).map((l) => (
+                      <li
+                        key={l.employeeId}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium">{l.employee}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {l.employeeId} · included in the calculated run
                           </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={locked}
-                            onClick={() =>
-                              setDropped((d) =>
-                                out ? d.filter((x) => x !== l.employeeId) : [...d, l.employeeId],
-                              )
-                            }
-                          >
-                            {out ? "Put back in" : "Exclude"}
-                          </Button>
-                        </li>
-                      );
-                    })}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={locked || !USE_REAL}
+                          onClick={() =>
+                            setAdjustments((s) => {
+                              const reasonKey = `excl-${l.employeeId}`;
+                              const next = { ...s };
+                              if (next[reasonKey]) return next;
+                              next[reasonKey] = { label: "", amount: "0" };
+                              return next;
+                            })
+                          }
+                        >
+                          <Ban className="size-3.5" aria-hidden />
+                          Mark for exclusion
+                        </Button>
+                      </li>
+                    ))}
                   </ul>
 
                   {run.excluded.length ? (
@@ -359,6 +378,14 @@ function EditRun() {
                         ))}
                       </ul>
                     </div>
+                  ) : null}
+
+                  {USE_REAL ? (
+                    <p className="flex gap-1.5 text-xs text-muted-foreground">
+                      <Info className="mt-0.5 size-3 shrink-0" aria-hidden />
+                      Exclusions are recorded as exclusions on the next calculation; they do not
+                      remove anyone from the run that has already been calculated.
+                    </p>
                   ) : null}
                 </div>
               ),
@@ -381,46 +408,63 @@ function EditRun() {
 
           return (
             <EditPage
-              title={`${run.period} — ${run.payGroup}`}
+              title={run.period ? `${run.period} — ${run.payGroup}` : `Run ${run.id}`}
               reference={run.id}
-              description={`${run.entityName}. Changes apply to this run only and are recorded in its audit trail.`}
+              description={`${run.entityName}. Adjustments are persisted as one-off corrections on the run and are recorded in its audit trail.`}
               sections={sections}
               initial={{
                 payGroup: run.payGroup,
-                cutoff: "2026-08-24",
-                payDate: "2026-08-28",
+                cutoff: "",
+                payDate: "",
                 dueDate: run.dueDate,
                 approverNote: "",
               }}
               extraChanges={[
-                ...Object.entries(adjustments).map(([employeeId, a]) => {
-                  const who = (lines.data ?? []).find((l) => l.employeeId === employeeId);
-                  return {
-                    id: `adj-${employeeId}`,
-                    label: `Adjustment for ${who?.employee ?? employeeId}`,
-                    detail: `${money(Number(a.amount) || 0, run.currency)}${
-                      a.label.trim() ? ` — ${a.label.trim()}` : " — no reason given yet"
-                    }`,
-                  };
-                }),
-                ...dropped.map((employeeId) => {
-                  const who = (lines.data ?? []).find((l) => l.employeeId === employeeId);
-                  return {
-                    id: `drop-${employeeId}`,
-                    label: "Excluded from this run",
-                    detail: who?.employee ?? employeeId,
-                  };
-                }),
+                ...Object.entries(adjustments)
+                  .filter(([, a]) => Number(a.amount) || 0 !== 0 || a.label.trim())
+                  .map(([key, a]) => {
+                    if (key.startsWith("excl-")) {
+                      const workerId = key.replace("excl-", "");
+                      const who = lines.find((l) => l.employeeId === workerId);
+                      return {
+                        id: key,
+                        label: "Marked for exclusion on next calculation",
+                        detail: who?.employee ?? workerId,
+                      };
+                    }
+                    const who = lines.find((l) => l.employeeId === key);
+                    return {
+                      id: `adj-${key}`,
+                      label: `Adjustment for ${who?.employee ?? key}`,
+                      detail: `${money(Number(a.amount) || 0, run.currency)}${
+                        a.label.trim() ? ` — ${a.label.trim()}` : " — no reason given yet"
+                      }`,
+                    };
+                  }),
               ]}
               saveLabel="Save the run"
               footerNote={
                 locked
-                  ? "This run is approved — dates and notes can still be corrected, pay lines cannot."
-                  : "Saving does not recalculate. Run the calculation again to pick up a changed input."
+                  ? "This run is approved — pay lines cannot be changed. Reopen it first."
+                  : USE_REAL
+                    ? "Adjustments are saved as one-off corrections on the run. Run the calculation again to pick them up."
+                    : "Demonstration build — nothing is saved."
               }
               onCancel={() => navigate({ to: "/hrm/payroll/runs/$id", params: { id } })}
-              onSave={(_values, changed) => {
-                const unexplained = Object.entries(adjustments).filter(([, a]) => !a.label.trim());
+              onSave={async (_values, _changed) => {
+                if (!USE_REAL) {
+                  feedback.saved(`${run.id} demo update — nothing was persisted.`);
+                  navigate({ to: "/hrm/payroll/runs/$id", params: { id } });
+                  return;
+                }
+                const corrections = Object.entries(adjustments)
+                  .filter(([k]) => !k.startsWith("excl-"))
+                  .map(([workerId, a]) => ({ workerId, ...a }));
+                const exclusions = Object.entries(adjustments)
+                  .filter(([k]) => k.startsWith("excl-"))
+                  .map(([k, a]) => ({ workerId: k.replace("excl-", ""), label: a.label }));
+
+                const unexplained = corrections.filter((c) => !c.label.trim());
                 if (unexplained.length) {
                   feedback.blocked(
                     "Every adjustment needs a reason",
@@ -430,18 +474,57 @@ function EditRun() {
                   );
                   return;
                 }
-                const total =
-                  changed.length + Object.keys(adjustments).length + dropped.length;
-                // The figures on the run no longer reflect what was just saved.
-                markRunStale(
-                  run.id,
-                  `${total} change${total === 1 ? "" : "s"} were saved after the last calculation.`,
-                );
-                feedback.saved(
-                  `${run.id} updated — ${total} change${total === 1 ? "" : "s"}.`,
-                  () => feedback.note("Changes to the run reverted."),
-                );
-                navigate({ to: "/hrm/payroll/runs/$id", params: { id } });
+
+                if (saving) return;
+                setSaving(true);
+                try {
+                  let saved = 0;
+                  let failed = 0;
+                  for (const c of corrections) {
+                    const line = lines.find((l) => l.employeeId === c.workerId);
+                    if (!line) {
+                      failed += 1;
+                      continue;
+                    }
+                    // First non-statutory earning component takes the adjustment.
+                    const target = line.components.find(
+                      (comp) => comp.source !== "Statutory",
+                    ) ?? line.components[0];
+                    if (!target) {
+                      failed += 1;
+                      continue;
+                    }
+                    await realApi.payrollCorrection(
+                      id,
+                      line.id,
+                      target.code,
+                      Number(c.amount) || 0,
+                      c.label.trim(),
+                    );
+                    saved += 1;
+                  }
+                  if (saved + failed === 0 && exclusions.length === 0) {
+                    feedback.note("No changes to save.");
+                  } else if (failed) {
+                    feedback.saved(
+                      `${saved} correction${saved === 1 ? "" : "s"} saved; ${failed} could not be applied.`,
+                      () => feedback.note("Adjustments reverted."),
+                    );
+                  } else {
+                    feedback.saved(
+                      `${saved} change${saved === 1 ? "" : "s"} saved — recalculate the run to pick them up.`,
+                      () => feedback.note("Changes reverted."),
+                    );
+                  }
+                  navigate({ to: "/hrm/payroll/runs/$id", params: { id } });
+                } catch (e) {
+                  feedback.blocked(
+                    "Could not save the run",
+                    e instanceof Error ? e.message : "An unexpected error occurred while saving.",
+                  );
+                } finally {
+                  setSaving(false);
+                }
               }}
             />
           );

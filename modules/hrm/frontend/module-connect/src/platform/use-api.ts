@@ -124,6 +124,99 @@ export function adaptWorkers(backend: unknown): Array<import("@/mock/types").Emp
   });
 }
 
+/**
+ * Adapts backend PayrollRunLineDto items ({ items }) into the UI RunLine
+ * shape used by the pay-run screens. Derived display fields the backend does
+ * not expose (job title, grade, prior net) stay blank rather than fabricated.
+ */
+export function adaptPayrollLines(
+  raw: unknown,
+  runId: string,
+): Array<import("@/mock/payrollrun").RunLine> {
+  const envelope = raw as { items?: unknown[] };
+  return (envelope.items ?? []).map((item) => {
+    const l = item as Record<string, unknown>;
+    const status = String(l.exceptionStatus ?? "open");
+    const components = (l.components as Record<string, unknown>[] | undefined) ?? [];
+    return {
+      id: String(l.id ?? ""),
+      runId,
+      employeeId: String(l.workerId ?? ""),
+      employee: String(l.workerName ?? ""),
+      jobTitle: "",
+      grade: "",
+      components: components.map((c) => ({
+        code: String(c.componentCode ?? ""),
+        label: String(c.componentName ?? ""),
+        kind:
+          String(c.componentType ?? "earning") === "earning"
+            ? "Earning"
+            : String(c.componentType ?? "") === "employer-contribution"
+              ? "Employer"
+              : "Deduction",
+        amount: Number(c.amount ?? 0),
+        source: c.isStatutory ? "Statutory" : "One-off",
+        basis: String(c.explanation ?? ""),
+        inputs: [],
+        ruleVersion: "engine-v1",
+        effectiveFrom: "",
+        explanation: String(c.explanation ?? ""),
+      })),
+      gross: Number(l.grossPay ?? 0),
+      deductions: Number(l.totalDeductions ?? 0),
+      employerCost: Number(l.employerCost ?? 0),
+      net: Number(l.netPay ?? 0),
+      flags:
+        l.hasException && status === "open"
+          ? [String(l.exceptionReason ?? "Payroll exception")]
+          : [],
+    } as import("@/mock/payrollrun").RunLine;
+  });
+}
+
+/**
+ * Adapts the backend OrgUnitTreeDto (recursive children) into the UI OrgUnit
+ * list the structure screens consume. Headcount, incoming, leaver, position
+ * and vacancy figures are not exposed by the admin API yet, so they stay at
+ * zero rather than being fabricated; the UI renders "—" for those cells.
+ */
+export function adaptOrgUnits(raw: unknown): import("@/mock/structure").OrgUnit[] {
+  const items = raw as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(items)) return [];
+  const out: import("@/mock/structure").OrgUnit[] = [];
+  const walk = (node: Record<string, unknown>, parentId: string | undefined) => {
+    const children = (node.children as Array<Record<string, unknown>> | undefined) ?? [];
+    const unitType = String(node.unitType ?? "");
+    const kind: "Entity" | "Branch" | "Department" | "Team" =
+      unitType === "Entity"
+        ? "Entity"
+        : unitType === "Branch"
+          ? "Branch"
+          : unitType === "Department"
+            ? "Department"
+            : "Team";
+    out.push({
+      id: String(node.id ?? ""),
+      parentId,
+      kind,
+      name: String(node.name ?? ""),
+      code: String(node.code ?? ""),
+      entityId: String(node.legalEntityId ?? parentId ?? ""),
+      location: "",
+      lead: { name: node.managerName ? String(node.managerName) : "", title: "Unit lead" },
+      headcount: 0,
+      incoming: 0,
+      leavers: 0,
+      positions: 0,
+      vacancies: 0,
+      note: node.status && String(node.status) !== "Active" ? String(node.status) : undefined,
+    });
+    for (const child of children) walk(child, String(node.id ?? ""));
+  };
+  for (const root of items) walk(root, undefined);
+  return out;
+}
+
 /** Maps only fields the live WorkerDto actually owns; unavailable profile fields remain blank. */
 export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeeprofile").EmployeeProfile {
   const raw = (rawValue ?? {}) as Record<string, unknown>;
@@ -199,6 +292,8 @@ export const realApi = {
     hrmApi.uploadDocument(workerId, file, category, title),
   /** Org units (config) — used for department placement selects. */
   orgUnits: () => hrmApi.get<unknown[]>("/hrm/admin/org-units"),
+  /** Recursive org-unit tree — used by the people structure page. */
+  orgUnitsTree: () => hrmApi.get<unknown[]>("/hrm/admin/org-units/tree"),
   /** Work locations (config) — used for location placement selects. */
   locations: async () => {
     // Config endpoints return a paginated envelope { items, totalCount, ... }

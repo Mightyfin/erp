@@ -12,14 +12,16 @@ import {
 } from "@/components/ui/select";
 import { entities } from "@/mock/data";
 import type { OrgUnit } from "@/mock/structure";
-import { structureApi } from "@/mock/structure";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { EmptyState } from "@/platform/components/States";
+import { adaptOrgUnits, realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 import { feedback } from "@/platform/feedback";
+
+const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 export const Route = createFileRoute("/hrm/people/org")({
   head: () => ({
@@ -371,7 +373,12 @@ function UnitPanel({ unit, units }: { unit: OrgUnit; units: OrgUnit[] }) {
 }
 
 function OrgStructurePage() {
-  const state = useMock(() => structureApi.orgUnits());
+  const state = useApi(
+    async (): Promise<OrgUnit[]> =>
+      USE_REAL ? adaptOrgUnits(await realApi.orgUnitsTree()) : ([] as OrgUnit[]),
+    [USE_REAL],
+  );
+  const demo = useMock(() => import("@/mock/structure").then((m) => m.orgUnits));
   const [entityId, setEntityId] = useState("all");
   const [selectedId, setSelectedId] = useState("");
 
@@ -399,18 +406,30 @@ function OrgStructurePage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Entity: all</SelectItem>
-              {entities.map((e) => (
-                <SelectItem key={e.id} value={e.id}>
-                  {e.name}
-                </SelectItem>
-              ))}
+              {USE_REAL
+                ? Array.from(new Set(state.data?.map((u) => `${u.entityId}|${u.name}`) ?? []))
+                    .sort()
+                    .map((key) => {
+                      const [eid, ...rest] = key.split("|");
+                      return (
+                        <SelectItem key={eid} value={eid}>
+                          {rest.join("|") || eid}
+                        </SelectItem>
+                      );
+                    })
+                : entities.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
             </SelectContent>
           </Select>
         }
       />
       <Async state={state} rows={5}>
         {(units) => {
-          const scoped = entityId === "all" ? units : units.filter((u) => u.entityId === entityId);
+          const live = USE_REAL ? units : demo.data ?? [];
+          const scoped = entityId === "all" ? live : live.filter((u) => u.entityId === entityId);
           const roots = buildTree(scoped);
           const selected = scoped.find((u) => u.id === selectedId) ?? scoped[0];
 
@@ -418,7 +437,11 @@ function OrgStructurePage() {
             return (
               <EmptyState
                 title="No organisation units in scope"
-                body="No units are visible for this entity with your current access. Choose another entity, or ask your HR administrator about your entity permissions."
+                body={
+                  USE_REAL
+                    ? "No units are visible for this entity with your current access. Choose another entity, or ask your HR administrator about your entity permissions."
+                    : "The backend is not reachable in this build, so no units are available. Connect the live HRM API to see the organisation tree."
+                }
               />
             );
           }
