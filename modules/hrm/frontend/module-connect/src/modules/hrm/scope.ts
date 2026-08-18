@@ -26,6 +26,7 @@ export const ENABLED_SECTIONS = new Set([
   "performance", // M36 performance cycles, goals and assessments
   "offboarding", // M37 exit requests, checklists and exit interviews
   "configuration",
+  "organization", // M39 org chart + reporting lines (nested under People)
 ]);
 
 /** Route prefixes included in this release. */
@@ -47,6 +48,8 @@ const ENABLED_PREFIXES = [
   "/hrm/my-performance", // M36 self-service performance
   "/hrm/offboarding", // M37 offboarding & exit management
   "/hrm/my-offboarding", // M37 self-service resignation
+  "/hrm/org-chart", // M39 organization chart
+  "/hrm/reporting", // M39 reporting lines
   "/hrm/my-documents",
   "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",

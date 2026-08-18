@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Mightyfin.Erp.Hrm.Application;
 using Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
 using Mightyfin.Erp.Hrm.Application.Experience;
+using Mightyfin.Erp.Hrm.Application.Organization;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Workers;
@@ -1580,6 +1581,19 @@ public static void RegisterRequisitions(WebApplication app)
     // Offer letter generation (M38)
     app.MapGet($"{HrmPrefix}/offers/{{id:guid}}/letter", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
         Results.Ok(await svc.GetOfferLetterAsync(id, ct))).RequireAuthorization();
+    // M39: organization chart + reporting lines.
+    app.MapGet($"{HrmPrefix}/org-chart", async (IChartService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetOrgChartAsync(ct))).RequireAuthorization();
+    var reportingLines = app.MapGroup($"{HrmPrefix}/reporting-lines").RequireAuthorization();
+    reportingLines.MapGet("/", async (Guid? orgUnitId, string? search, IChartService svc, CancellationToken ct) =>
+        Results.Ok(await svc.ListReportingLinesAsync(orgUnitId, search, ct)));
+    reportingLines.MapPost("/", async (HttpContext http, IChartService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<ReportingLineUpdateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        await svc.UpdateReportingLinesAsync(request, ct);
+        return Results.Ok();
+    });
 }
 }
 
@@ -1597,6 +1611,3 @@ public sealed class ApiVersioning
 {
     public int CurrentVersion { get; set; }
 }
-
-
-

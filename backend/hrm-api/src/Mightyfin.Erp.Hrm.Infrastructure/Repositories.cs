@@ -7,6 +7,7 @@ using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
+using Mightyfin.Erp.Hrm.Application.Organization;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -1739,4 +1740,63 @@ public sealed class OffboardingRepository(HrmDbContext db) : IOffboardingReposit
         => await db.Workers.FirstOrDefaultAsync(w => w.Id == workerId, ct);
     public async Task<Worker?> FindWorkerBySubjectIdAsync(string subjectId, CancellationToken ct)
         => await db.Workers.FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
+}
+
+// ===================== M39 Organization chart & reporting lines =====================
+
+public sealed class OrganizationRepository(HrmDbContext db) : IOrganizationRepository
+{
+    public async Task<List<OrgUnit>> ListActiveUnitsAsync(CancellationToken ct)
+        => await db.OrgUnits
+            .Where(u => u.Status != "closed")
+            .Include(u => u.LegalEntity)
+            .ToListAsync(ct);
+
+    /// <summary>Current effective-dated assignments with the worker, their unit
+    /// and the manager worker loaded. Optional org-unit filter scopes the query.
+    /// Note: Assignment carries ManagerId only (no navigation), so the manager
+    /// worker is joined in memory.</summary>
+    public async Task<List<(Assignment Assignment, Worker Worker, OrgUnit Unit, Worker? Manager)>>
+        ListCurrentAssignmentsAsync(Guid? orgUnitId, CancellationToken ct)
+    {
+        IQueryable<Assignment> q = db.Assignments
+            .Where(a => a.Status == "current")
+            .Include(a => a.Worker)
+            .Include(a => a.OrgUnit);
+        if (orgUnitId.HasValue)
+            q = q.Where(a => a.OrgUnitId == orgUnitId.Value);
+        var rows = await q.ToListAsync(ct);
+        var valid = rows
+            .Where(a => a.Worker != null && a.OrgUnit != null)
+            .Select(a => (Assignment: a, Worker: a.Worker!, Unit: a.OrgUnit!))
+            .ToList();
+        var managerIds = valid.Select(v => v.Assignment.ManagerId).OfType<Guid>().ToList();
+        var managers = managerIds.Count != 0
+            ? await db.Workers.Where(w => managerIds.Contains(w.Id)).ToListAsync(ct)
+            : new List<Worker>();
+        var managersById = managers.ToDictionary(w => w.Id);
+        return valid.Select(v => (v.Assignment, v.Worker, v.Unit,
+            v.Assignment.ManagerId.HasValue && managersById.TryGetValue(v.Assignment.ManagerId.Value, out var m) ? m : null)).ToList();
+    }
+
+    public async Task<Assignment?> GetCurrentAssignmentAsync(Guid workerId, CancellationToken ct)
+        => await db.Assignments
+            .FirstOrDefaultAsync(a => a.WorkerId == workerId && a.Status == "current", ct);
+
+    public async Task<Worker?> GetWorkerAsync(Guid workerId, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.Id == workerId, ct);
+
+    public async Task UpdateAssignmentManagerAsync(Assignment assignment, Guid? managerId, CancellationToken ct)
+    {
+        if (db.Entry(assignment).State == EntityState.Detached)
+            db.Assignments.Update(assignment);
+        // Keep the denormalized Worker.ManagerId in sync with the assignment.
+        var worker = await db.Workers.FirstOrDefaultAsync(w => w.Id == assignment.WorkerId, ct);
+        if (worker != null && worker.ManagerId != managerId)
+            worker.ManagerId = managerId;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<Worker>> ListWorkersAsync(List<Guid> ids, CancellationToken ct)
+        => await db.Workers.Where(w => ids.Contains(w.Id)).ToListAsync(ct);
 }

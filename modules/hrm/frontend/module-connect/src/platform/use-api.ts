@@ -693,6 +693,13 @@ export const realApi = {
     hrmApi.patch<unknown>(`/hrm/recruitment/preboarding/${caseId}/tasks/${taskId}`, body),
   activatePreboarding: (id: string) =>
     hrmApi.post<unknown>(`/hrm/recruitment/preboarding/${id}/activate`, null),
+  /** M39: organization chart + reporting lines. */
+  orgChart: () =>
+    hrmApi.get<{ asAt: string; roots: unknown[] }>("/hrm/org-chart"),
+  reportingLines: (params?: Record<string, unknown>) =>
+    hrmApi.get<{ items: unknown[]; total: number }>("/hrm/reporting-lines", params ?? {}),
+  updateReportingLines: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/reporting-lines", body),
   uploadCandidateDocument: (candidateId: string, file: File, category: string, title: string) =>
     hrmApi.uploadCandidateDocument(candidateId, file, category, title),
 

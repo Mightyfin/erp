@@ -52,6 +52,16 @@ export const hrmModule: ModuleDefinition = {
           to: "/hrm/people/org",
           roles: ["hr_ops", "hr_admin", "manager"],
         },
+        {
+          label: "Organization chart",
+          to: "/hrm/org-chart",
+          roles: ["hr_ops", "hr_admin"],
+        },
+        {
+          label: "Reporting lines",
+          to: "/hrm/reporting",
+          roles: ["hr_ops", "hr_admin"],
+        },
         { label: "My documents", to: "/hrm/my-documents" },
         {
           label: "Employee documents",

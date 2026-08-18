@@ -20,6 +20,8 @@ import { Route as HrmMyOffboardingRouteImport } from './routes/hrm.my-offboardin
 import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
 import { Route as HrmMyPreferencesRouteImport } from './routes/hrm.my-preferences'
 import { Route as HrmMyProfileRouteImport } from './routes/hrm.my-profile'
+import { Route as HrmOrgChartRouteImport } from './routes/hrm.org-chart'
+import { Route as HrmReportingRouteImport } from './routes/hrm.reporting'
 import { Route as HrmSelfServiceRouteImport } from './routes/hrm.self-service'
 import { Route as HrmSetupRouteImport } from './routes/hrm.setup'
 import { Route as HrmAttendanceIndexRouteImport } from './routes/hrm.attendance.index'
@@ -169,6 +171,16 @@ const HrmMyPreferencesRoute = HrmMyPreferencesRouteImport.update({
 const HrmMyProfileRoute = HrmMyProfileRouteImport.update({
   id: '/hrm/my-profile',
   path: '/hrm/my-profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmOrgChartRoute = HrmOrgChartRouteImport.update({
+  id: '/hrm/org-chart',
+  path: '/hrm/org-chart',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmReportingRoute = HrmReportingRouteImport.update({
+  id: '/hrm/reporting',
+  path: '/hrm/reporting',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmSelfServiceRoute = HrmSelfServiceRouteImport.update({
@@ -673,6 +685,8 @@ export interface FileRoutesByFullPath {
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
+  '/hrm/org-chart': typeof HrmOrgChartRoute
+  '/hrm/reporting': typeof HrmReportingRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm/': typeof HrmIndexRoute
@@ -781,6 +795,8 @@ export interface FileRoutesByTo {
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
+  '/hrm/org-chart': typeof HrmOrgChartRoute
+  '/hrm/reporting': typeof HrmReportingRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm': typeof HrmIndexRoute
@@ -890,6 +906,8 @@ export interface FileRoutesById {
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
+  '/hrm/org-chart': typeof HrmOrgChartRoute
+  '/hrm/reporting': typeof HrmReportingRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
   '/hrm/': typeof HrmIndexRoute
@@ -1000,6 +1018,8 @@ export interface FileRouteTypes {
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
+    | '/hrm/org-chart'
+    | '/hrm/reporting'
     | '/hrm/self-service'
     | '/hrm/setup'
     | '/hrm/'
@@ -1108,6 +1128,8 @@ export interface FileRouteTypes {
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
+    | '/hrm/org-chart'
+    | '/hrm/reporting'
     | '/hrm/self-service'
     | '/hrm/setup'
     | '/hrm'
@@ -1216,6 +1238,8 @@ export interface FileRouteTypes {
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
+    | '/hrm/org-chart'
+    | '/hrm/reporting'
     | '/hrm/self-service'
     | '/hrm/setup'
     | '/hrm/'
@@ -1325,6 +1349,8 @@ export interface RootRouteChildren {
   HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
   HrmMyPreferencesRoute: typeof HrmMyPreferencesRoute
   HrmMyProfileRoute: typeof HrmMyProfileRoute
+  HrmOrgChartRoute: typeof HrmOrgChartRoute
+  HrmReportingRoute: typeof HrmReportingRoute
   HrmSelfServiceRoute: typeof HrmSelfServiceRoute
   HrmSetupRoute: typeof HrmSetupRoute
   HrmIndexRoute: typeof HrmIndexRoute
@@ -1488,6 +1514,20 @@ declare module '@tanstack/react-router' {
       path: '/hrm/my-profile'
       fullPath: '/hrm/my-profile'
       preLoaderRoute: typeof HrmMyProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/org-chart': {
+      id: '/hrm/org-chart'
+      path: '/hrm/org-chart'
+      fullPath: '/hrm/org-chart'
+      preLoaderRoute: typeof HrmOrgChartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/reporting': {
+      id: '/hrm/reporting'
+      path: '/hrm/reporting'
+      fullPath: '/hrm/reporting'
+      preLoaderRoute: typeof HrmReportingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/self-service': {
@@ -2308,6 +2348,8 @@ const rootRouteChildren: RootRouteChildren = {
   HrmMyPerformanceRoute: HrmMyPerformanceRoute,
   HrmMyPreferencesRoute: HrmMyPreferencesRoute,
   HrmMyProfileRoute: HrmMyProfileRoute,
+  HrmOrgChartRoute: HrmOrgChartRoute,
+  HrmReportingRoute: HrmReportingRoute,
   HrmSelfServiceRoute: HrmSelfServiceRoute,
   HrmSetupRoute: HrmSetupRoute,
   HrmIndexRoute: HrmIndexRoute,

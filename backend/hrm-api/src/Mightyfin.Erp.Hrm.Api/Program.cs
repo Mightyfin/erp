@@ -85,6 +85,8 @@ builder.Services.AddScoped<IExperienceService, ExperienceServiceImpl>();
 builder.Services.AddScoped<IPerformanceRepository, PerformanceRepository>();
 builder.Services.AddScoped<IPerformanceService, PerformanceServiceImpl>();
 builder.Services.AddScoped<IOffboardingRepository, OffboardingRepository>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Organization.IOrganizationRepository, OrganizationRepository>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Organization.IChartService, Mightyfin.Erp.Hrm.Application.Organization.ChartServiceImpl>();
 builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
