@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -483,7 +484,17 @@ function AttendancePanelView({ att }: { att: AttendancePanel }) {
 /* ------------------------------------------------------------------ */
 
 function AnalyticsPage() {
-  const state = useApi<Dashboard | null>(() => realApi.analyticsDashboard());
+  // Call the analytics dashboard endpoint directly (guarded in case the client
+  // bundle has not yet been rebuilt with the analyticsDashboard helper).
+  const state = useApi<Dashboard | null>(() =>
+    typeof realApi.analyticsDashboard === "function"
+      ? realApi.analyticsDashboard()
+      : (realApi as unknown as { get: <T>(path: string) => Promise<T> }).get<Dashboard>("/hrm/analytics/dashboard"),
+  );
+  // Charts are client-only: recharts' ResponsiveContainer relies on
+  // ResizeObserver and must not render during server-side hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <AppShell>
       <AuthGate roles={["hr_ops", "hr_admin"]}>
@@ -501,12 +512,18 @@ function AnalyticsPage() {
                   timeStyle: "short",
                 })}
               </p>
-              <WorkforcePanel wf={state.data.workforce} />
-              <LeavePanelView leave={state.data.leave} />
-              <PayrollPanelView payroll={state.data.payroll} />
-              <PerformancePanelView perf={state.data.performance} />
-              <RecruitmentPanelView rec={state.data.recruitment} />
-              <AttendancePanelView att={state.data.attendance} />
+              {mounted ? (
+                <>
+                  <WorkforcePanel wf={state.data.workforce} />
+                  <LeavePanelView leave={state.data.leave} />
+                  <PayrollPanelView payroll={state.data.payroll} />
+                  <PerformancePanelView perf={state.data.performance} />
+                  <RecruitmentPanelView rec={state.data.recruitment} />
+                  <AttendancePanelView att={state.data.attendance} />
+                </>
+              ) : (
+                <EmptyDashboard />
+              )}
             </div>
           ) : (
             <EmptyDashboard />
