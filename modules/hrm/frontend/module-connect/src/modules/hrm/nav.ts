@@ -62,6 +62,14 @@ export const hrmModule: ModuleDefinition = {
           to: "/hrm/reporting",
           roles: ["hr_ops", "hr_admin"],
         },
+        // M40: HR analytics dashboard — workforce, leave, payroll, performance,
+        // recruitment and attendance panels in one screen.
+        {
+          label: "Analytics",
+          to: "/hrm/analytics",
+          icon: BarChart3,
+          roles: ["hr_ops", "hr_admin"],
+        },
         { label: "My documents", to: "/hrm/my-documents" },
         {
           label: "Employee documents",

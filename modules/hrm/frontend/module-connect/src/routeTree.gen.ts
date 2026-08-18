@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpeakUpRouteImport } from './routes/speak-up'
 import { Route as HrmIndexRouteImport } from './routes/hrm.index'
+import { Route as HrmAnalyticsRouteImport } from './routes/hrm.analytics'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
@@ -136,6 +137,11 @@ const SpeakUpRoute = SpeakUpRouteImport.update({
 const HrmIndexRoute = HrmIndexRouteImport.update({
   id: '/hrm/',
   path: '/hrm/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmAnalyticsRoute = HrmAnalyticsRouteImport.update({
+  id: '/hrm/analytics',
+  path: '/hrm/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmApprovalsRoute = HrmApprovalsRouteImport.update({
@@ -678,6 +684,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
+  '/hrm/analytics': typeof HrmAnalyticsRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
@@ -788,6 +795,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
+  '/hrm/analytics': typeof HrmAnalyticsRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
@@ -899,6 +907,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/speak-up': typeof SpeakUpRoute
+  '/hrm/analytics': typeof HrmAnalyticsRoute
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
@@ -1011,6 +1020,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/speak-up'
+    | '/hrm/analytics'
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
@@ -1121,6 +1131,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/speak-up'
+    | '/hrm/analytics'
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
@@ -1231,6 +1242,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/speak-up'
+    | '/hrm/analytics'
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
@@ -1342,6 +1354,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SignInRoute: typeof SignInRoute
   SpeakUpRoute: typeof SpeakUpRoute
+  HrmAnalyticsRoute: typeof HrmAnalyticsRoute
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmHelpRoute: typeof HrmHelpRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
@@ -1465,6 +1478,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm'
       fullPath: '/hrm/'
       preLoaderRoute: typeof HrmIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/analytics': {
+      id: '/hrm/analytics'
+      path: '/hrm/analytics'
+      fullPath: '/hrm/analytics'
+      preLoaderRoute: typeof HrmAnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/approvals': {
@@ -2341,6 +2361,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SignInRoute: SignInRoute,
   SpeakUpRoute: SpeakUpRoute,
+  HrmAnalyticsRoute: HrmAnalyticsRoute,
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmHelpRoute: HrmHelpRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,

@@ -50,6 +50,7 @@ const ENABLED_PREFIXES = [
   "/hrm/my-offboarding", // M37 self-service resignation
   "/hrm/org-chart", // M39 organization chart
   "/hrm/reporting", // M39 reporting lines
+  "/hrm/analytics", // M40 HR analytics dashboard
   "/hrm/my-documents",
   "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",

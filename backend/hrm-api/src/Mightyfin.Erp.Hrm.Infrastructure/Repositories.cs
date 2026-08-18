@@ -8,6 +8,7 @@ using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
 using Mightyfin.Erp.Hrm.Application.Organization;
+using Mightyfin.Erp.Hrm.Application.Analytics;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -1799,4 +1800,155 @@ public sealed class OrganizationRepository(HrmDbContext db) : IOrganizationRepos
 
     public async Task<List<Worker>> ListWorkersAsync(List<Guid> ids, CancellationToken ct)
         => await db.Workers.Where(w => ids.Contains(w.Id)).ToListAsync(ct);
+}
+
+
+// ===================== M40: HR Analytics repository =====================
+public sealed class AnalyticsRepository(HrmDbContext db) : IAnalyticsRepository
+{
+    public async Task<(int Active, int PreHire, int Archived)> WorkerCountsAsync(CancellationToken ct)
+    {
+        // Materialize first: compound predicates combining string equality,
+        // boolean negation and the DateTime-based global tenant filter are
+        // unreliable on the SQLite test provider — the data volume is tiny.
+        var all = await db.Set<Worker>().ToListAsync(ct);
+        int active = all.Count(w => w.Status == "active" && !w.IsArchived);
+        int preHire = all.Count(w => w.Status == "pre-hire" && !w.IsArchived);
+        int archived = all.Count(w => w.IsArchived);
+        return (active, preHire, archived);
+    }
+
+    public async Task<List<(string Month, int Joined, int Left)>> HeadcountMonthlyTrendAsync(int months, CancellationToken ct)
+    {
+        // Materialize then filter/group client-side: compound DateTimeOffset
+        // predicates (null coalescing, negated booleans, status ORs) are
+        // unreliable on the SQLite test provider and the row counts are tiny.
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now.AddMonths(-months).UtcDateTime;
+        var all = await db.Set<Worker>().ToListAsync(ct);
+        var joinedRows = all.Where(w => !w.IsArchived
+            && (w.Status == "active" || w.Status == "pre-hire")
+            && w.CreatedAt >= cutoff).Select(w => w.CreatedAt).ToList();
+        var leftRows = all.Where(w => w.IsArchived
+            && (w.UpdatedAt ?? w.CreatedAt) >= cutoff)
+            .Select(w => w.UpdatedAt ?? w.CreatedAt).ToList();
+        var activeCount = all.Count(w => w.Status == "active" && !w.IsArchived);
+        var result = new List<(string Month, int Joined, int Left)>();
+        for (int i = months - 1; i >= 0; i--)
+        {
+            var d = now.AddMonths(-i);
+            var label = d.ToString("yyyy-MM");
+            int j = joinedRows.Count(t => t.Year == d.Year && t.Month == d.Month);
+            int l = leftRows.Count(t => t.Year == d.Year && t.Month == d.Month);
+            result.Add((label, j, l));
+        }
+        return result;
+    }
+
+    public async Task<List<(string LeaveType, double RequestedDays, double ApprovedDays, int Requests, int Approved)>> LeaveByTypeAsync(CancellationToken ct)
+    {
+        // Materialize first: conditional aggregates inside GroupBy projections
+        // and compound string predicates are not reliably translatable on the
+        // SQLite test provider; leave request volumes are tiny.
+        var rows = await db.LeaveRequests.ToListAsync(ct);
+        var filtered = rows.Where(l => l.Status != "draft" && l.Status != "cancelled").ToList();
+        return filtered.GroupBy(l => l.LeaveTypeCode)
+            .Select(g => (g.Key,
+                Requested: g.Sum(l => (double)l.RequestedDays),
+                ApprovedDays: g.Where(l => l.Status == "approved").Sum(l => (double)l.RequestedDays),
+                Requests: g.Count(),
+                Approved: g.Count(l => l.Status == "approved")))
+            .ToList();
+    }
+
+    public async Task<int> LeaveTotalRequestsAsync(CancellationToken ct)
+    {
+        var rows = await db.LeaveRequests.ToListAsync(ct);
+        return rows.Count(l => l.Status != "draft" && l.Status != "cancelled");
+    }
+
+    public async Task<List<(string PeriodLabel, string Status, decimal Gross, decimal Deductions, decimal Net, decimal EmployerCost, int EmployeeCount, DateTime? PayDate)>> PayrollRunsAsync(int count, CancellationToken ct)
+    {
+        // Materialize with the PayPeriod navigation included, then order and
+        // project client-side — SQLite cannot translate ordering on a
+        // DateTimeOffset navigation target followed by projection.
+        var rows = await db.Set<PayrollRun>().Include(r => r.PayPeriod)
+            .Take(200).ToListAsync(ct);
+        return rows.OrderByDescending(r => r.PayPeriod?.StartDate ?? DateOnly.MinValue)
+            .Take(count)
+            .Select(r => (r.PayPeriod?.PeriodLabel ?? "", r.Status, r.TotalGross, r.TotalDeductions, r.TotalNet, r.TotalEmployerCost, r.EmployeeCount, r.PayPeriod?.PayDate.ToDateTime(TimeOnly.MinValue)))
+            .ToList();
+    }
+
+    public async Task<List<(string Rating, int Count)>> PerformanceByRatingAsync(CancellationToken ct)
+    {
+        var rows = await db.Set<PerformanceAssessment>().ToListAsync(ct);
+        return rows.Where(a => a.FinalRating != null && a.FinalizedAt != null)
+            .GroupBy(a => a.FinalRating!)
+            .Select(g => (g.Key, g.Count()))
+            .ToList();
+    }
+
+    public async Task<(int Cycles, int Assessments, int Finalized)> PerformanceCycleStatsAsync(CancellationToken ct)
+    {
+        var cycles = await db.Set<PerformanceCycle>().CountAsync(ct);
+        var assessments = await db.Set<PerformanceAssessment>().CountAsync(ct);
+        var finalized = await db.Set<PerformanceAssessment>().CountAsync(a => a.FinalizedAt != null, ct);
+        return (cycles, assessments, finalized);
+    }
+
+        public async Task<(int OpenRequisitions, int OpenVacancies, int CandidatesInPipeline, int OffersPending, int Hired)> RecruitmentCountsAsync(CancellationToken ct)
+    {
+        var openReq = await db.Set<Requisition>().CountAsync(r => r.Status == "submitted" || r.Status == "approved", ct);
+        var openVac = await db.Set<Vacancy>().CountAsync(v => v.Status == "published", ct);
+        // Current stage per candidate: latest stage event wins (by CreatedAt),
+        // falling back to Candidate.Stage when no events exist. Materialize
+        // first — SQLite cannot translate an ORDER BY on a DateTimeOffset
+        // column inside a scalar subquery projection.
+        var events = await db.Set<CandidateStageEvent>().ToListAsync(ct);
+        var latestByCandidate = new Dictionary<Guid, string>();
+        foreach (var e in events.OrderBy(e => e.CreatedAt))
+            latestByCandidate[e.CandidateId] = e.ToStage;
+        var candidates = await db.Set<Candidate>().ToListAsync(ct);
+        var terminal = new HashSet<string>(["hired", "rejected", "withdrawn"], StringComparer.OrdinalIgnoreCase);
+        int inPipeline = candidates.Count(c => !terminal.Contains(latestByCandidate.GetValueOrDefault(c.Id, c.Stage)));
+        var pendingOffers = await db.Set<Offer>().CountAsync(o => o.Status == "issued" || o.Status == "approved", ct);
+        var hired = await db.Set<Offer>().CountAsync(o => o.Status == "accepted", ct);
+        return (openReq, openVac, inPipeline, pendingOffers, hired);
+    }
+    public async Task<List<(string Stage, int Count)>> CandidateStageFunnelAsync(CancellationToken ct)
+    {
+        // Group candidates by their current stage (latest event wins, else stage field).
+        var events = await db.Set<CandidateStageEvent>().ToListAsync(ct);
+        var latestByCandidate = new Dictionary<Guid, string>();
+        foreach (var e in events.OrderBy(e => e.CreatedAt))
+            latestByCandidate[e.CandidateId] = e.ToStage;
+        var candidates = await db.Set<Candidate>().ToListAsync(ct);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in candidates)
+        {
+            var stage = latestByCandidate.GetValueOrDefault(c.Id, c.Stage);
+            if (counts.TryGetValue(stage, out var v)) counts[stage] = v + 1; else counts[stage] = 1;
+        }
+        return counts.Select(kvp => (kvp.Key, kvp.Value)).ToList();
+    }
+
+    public async Task<List<(string DerivedStatus, int Days)>> AttendanceByStatusAsync(int days, CancellationToken ct)
+    {
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-days));
+        var rows = await db.Set<AttendanceRecord>().ToListAsync(ct);
+        return rows.Where(a => a.WorkDate >= cutoff)
+            .GroupBy(a => a.DerivedStatus)
+            .Select(g => (g.Key, g.Count()))
+            .ToList();
+    }
+
+    public async Task<List<(decimal? TotalHours, decimal? OvertimeHours)>> AttendanceHoursAsync(int days, CancellationToken ct)
+    {
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-days));
+        var rows = await db.Set<AttendanceRecord>().ToListAsync(ct);
+        return rows.Where(a => a.WorkDate >= cutoff)
+            .Select(r => ((decimal?)r.TotalHours, (decimal?)r.OvertimeHours))
+            .ToList();
+    }
 }

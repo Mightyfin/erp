@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Mightyfin.Erp.Hrm.Application;
 using Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
 using Mightyfin.Erp.Hrm.Application.Experience;
+using Mightyfin.Erp.Hrm.Application.Analytics;
 using Mightyfin.Erp.Hrm.Application.Organization;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
@@ -1594,6 +1595,10 @@ public static void RegisterRequisitions(WebApplication app)
         await svc.UpdateReportingLinesAsync(request, ct);
         return Results.Ok();
     });
+    // M40: HR analytics dashboard — workforce, leave, payroll cost, performance,
+    // recruitment and attendance panels in a single call for HR/HRM users.
+    app.MapGet($"{HrmPrefix}/analytics/dashboard", async (IAnalyticsService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetDashboardAsync(ct))).RequireAuthorization();
 }
 }
 

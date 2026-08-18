@@ -700,6 +700,10 @@ export const realApi = {
     hrmApi.get<{ items: unknown[]; total: number }>("/hrm/reporting-lines", params ?? {}),
   updateReportingLines: (body: Record<string, unknown>) =>
     hrmApi.post<unknown>("/hrm/reporting-lines", body),
+  /** M40: HR analytics dashboard — workforce, leave, payroll cost, performance,
+   * recruitment and attendance panels in a single call. */
+  analyticsDashboard: () =>
+    hrmApi.get<Record<string, unknown>>("/hrm/analytics/dashboard"),
   uploadCandidateDocument: (candidateId: string, file: File, category: string, title: string) =>
     hrmApi.uploadCandidateDocument(candidateId, file, category, title),
 
