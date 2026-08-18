@@ -234,6 +234,89 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         db.WorkerBankDetails.Remove(detail);
         await db.SaveChangesAsync(ct);
     }
+
+    // M33: history child records. Queries go through the worker relation so the
+    // global tenant filter on Worker keeps the read tenant-safe.
+    public async Task<List<WorkerEducation>> ListEducationAsync(Guid workerId, CancellationToken ct)
+        => await db.WorkerEducations.Where(e => e.WorkerId == workerId).OrderByDescending(e => e.EndYear).ToListAsync(ct);
+
+    public async Task<WorkerEducation?> GetByIdEducationAsync(Guid id, CancellationToken ct)
+        => await db.WorkerEducations.FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public async Task<WorkerEducation> AddEducationAsync(WorkerEducation education, CancellationToken ct)
+    {
+        db.WorkerEducations.Add(education);
+        await db.SaveChangesAsync(ct);
+        return education;
+    }
+
+    public async Task UpdateEducationAsync(WorkerEducation education, CancellationToken ct)
+    {
+        db.WorkerEducations.Update(education);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteEducationAsync(Guid id, CancellationToken ct)
+    {
+        var record = await db.WorkerEducations.FirstOrDefaultAsync(e => e.Id == id, ct)
+            ?? throw new DomainException("education-not-found", $"Education record {id} does not exist.");
+        db.WorkerEducations.Remove(record);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<ExternalWorkHistory>> ListExternalWorkHistoryAsync(Guid workerId, CancellationToken ct)
+        => await db.ExternalWorkHistory.Where(e => e.WorkerId == workerId).OrderByDescending(e => e.EndDate).ToListAsync(ct);
+
+    public async Task<ExternalWorkHistory?> GetByIdExternalWorkHistoryAsync(Guid id, CancellationToken ct)
+        => await db.ExternalWorkHistory.FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public async Task<ExternalWorkHistory> AddExternalWorkHistoryAsync(ExternalWorkHistory record, CancellationToken ct)
+    {
+        db.ExternalWorkHistory.Add(record);
+        await db.SaveChangesAsync(ct);
+        return record;
+    }
+
+    public async Task UpdateExternalWorkHistoryAsync(ExternalWorkHistory record, CancellationToken ct)
+    {
+        db.ExternalWorkHistory.Update(record);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteExternalWorkHistoryAsync(Guid id, CancellationToken ct)
+    {
+        var record = await db.ExternalWorkHistory.FirstOrDefaultAsync(e => e.Id == id, ct)
+            ?? throw new DomainException("external-work-history-not-found", $"Work history record {id} does not exist.");
+        db.ExternalWorkHistory.Remove(record);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<InternalWorkHistory>> ListInternalWorkHistoryAsync(Guid workerId, CancellationToken ct)
+        => await db.InternalWorkHistory.Where(e => e.WorkerId == workerId).OrderByDescending(e => e.EndDate).ToListAsync(ct);
+
+    public async Task<InternalWorkHistory?> GetByIdInternalWorkHistoryAsync(Guid id, CancellationToken ct)
+        => await db.InternalWorkHistory.FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public async Task<InternalWorkHistory> AddInternalWorkHistoryAsync(InternalWorkHistory record, CancellationToken ct)
+    {
+        db.InternalWorkHistory.Add(record);
+        await db.SaveChangesAsync(ct);
+        return record;
+    }
+
+    public async Task UpdateInternalWorkHistoryAsync(InternalWorkHistory record, CancellationToken ct)
+    {
+        db.InternalWorkHistory.Update(record);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteInternalWorkHistoryAsync(Guid id, CancellationToken ct)
+    {
+        var record = await db.InternalWorkHistory.FirstOrDefaultAsync(e => e.Id == id, ct)
+            ?? throw new DomainException("internal-work-history-not-found", $"Internal work history record {id} does not exist.");
+        db.InternalWorkHistory.Remove(record);
+        await db.SaveChangesAsync(ct);
+    }
 }
 
 // ===================== Time =====================

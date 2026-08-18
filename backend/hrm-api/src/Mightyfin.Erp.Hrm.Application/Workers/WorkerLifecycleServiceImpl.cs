@@ -329,6 +329,189 @@ public sealed class WorkerLifecycleServiceImpl(
         await repo.DeleteBankDetailAsync(bankId, ct);
     }
 
+    // ================= M33: worker history (education / external / internal) =================
+
+    public async Task<List<WorkerEducationDto>> ListEducationAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        return (await repo.ListEducationAsync(workerId, ct)).Select(e => new WorkerEducationDto(e.Id, e.Institution, e.Qualification, e.FieldOfStudy, e.Grade, e.StartYear, e.EndYear)).ToList();
+    }
+
+    public async Task<WorkerEducationDto> AddEducationAsync(Guid workerId, EducationRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        if (string.IsNullOrWhiteSpace(request.Institution) || string.IsNullOrWhiteSpace(request.Qualification))
+            throw new DomainException("validation-failed", "Institution and qualification are required.");
+        if (request.StartYear.HasValue && request.EndYear.HasValue && request.EndYear.Value < request.StartYear.Value)
+            throw new DomainException("validation-failed", "The end year must not be before the start year.");
+        var record = new WorkerEducation
+        {
+            WorkerId = workerId, Institution = request.Institution.Trim(), Qualification = request.Qualification.Trim(),
+            FieldOfStudy = request.FieldOfStudy?.Trim(), Grade = request.Grade?.Trim(),
+            StartYear = request.StartYear, EndYear = request.EndYear,
+        };
+        var created = await repo.AddEducationAsync(record, ct);
+        return new WorkerEducationDto(created.Id, created.Institution, created.Qualification, created.FieldOfStudy, created.Grade, created.StartYear, created.EndYear);
+    }
+
+    public async Task<WorkerEducationDto> UpdateEducationAsync(Guid workerId, Guid recordId, EducationRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdEducationAsync(recordId, ct)
+            ?? throw new DomainException("education-not-found", $"Education record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("education-not-found", $"Education record {recordId} does not belong to worker {workerId}.");
+        if (request.Institution is not null) record.Institution = request.Institution.Trim();
+        if (request.Qualification is not null) record.Qualification = request.Qualification.Trim();
+        if (request.FieldOfStudy is not null) record.FieldOfStudy = request.FieldOfStudy.Trim();
+        if (request.Grade is not null) record.Grade = request.Grade.Trim();
+        record.StartYear = request.StartYear ?? record.StartYear;
+        record.EndYear = request.EndYear ?? record.EndYear;
+        if (record.StartYear.HasValue && record.EndYear.HasValue && record.EndYear.Value < record.StartYear.Value)
+            throw new DomainException("validation-failed", "The end year must not be before the start year.");
+        await repo.UpdateEducationAsync(record, ct);
+        return new WorkerEducationDto(record.Id, record.Institution, record.Qualification, record.FieldOfStudy, record.Grade, record.StartYear, record.EndYear);
+    }
+
+    public async Task DeleteEducationAsync(Guid workerId, Guid recordId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdEducationAsync(recordId, ct)
+            ?? throw new DomainException("education-not-found", $"Education record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("education-not-found", $"Education record {recordId} does not belong to worker {workerId}.");
+        await repo.DeleteEducationAsync(recordId, ct);
+    }
+
+    public async Task<List<ExternalWorkHistoryDto>> ListExternalWorkHistoryAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        return (await repo.ListExternalWorkHistoryAsync(workerId, ct)).Select(e => new ExternalWorkHistoryDto(e.Id, e.Company, e.Role, e.StartDate, e.EndDate, e.Responsibilities)).ToList();
+    }
+
+    public async Task<ExternalWorkHistoryDto> AddExternalWorkHistoryAsync(Guid workerId, ExternalWorkHistoryRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        if (string.IsNullOrWhiteSpace(request.Company))
+            throw new DomainException("validation-failed", "Company name is required.");
+        if (IsInvalidDateRange(request.StartDate, request.EndDate))
+            throw new DomainException("validation-failed", "The end date must not be before the start date.");
+        var record = new ExternalWorkHistory
+        {
+            WorkerId = workerId, Company = request.Company.Trim(), Role = request.Role?.Trim(),
+            StartDate = NormalizeDate(request.StartDate), EndDate = NormalizeDate(request.EndDate),
+            Responsibilities = request.Responsibilities?.Trim(),
+        };
+        var created = await repo.AddExternalWorkHistoryAsync(record, ct);
+        return new ExternalWorkHistoryDto(created.Id, created.Company, created.Role, created.StartDate, created.EndDate, created.Responsibilities);
+    }
+
+    public async Task<ExternalWorkHistoryDto> UpdateExternalWorkHistoryAsync(Guid workerId, Guid recordId, ExternalWorkHistoryRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdExternalWorkHistoryAsync(recordId, ct)
+            ?? throw new DomainException("external-work-history-not-found", $"Work history record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("external-work-history-not-found", $"Work history record {recordId} does not belong to worker {workerId}.");
+        if (request.Company is not null) record.Company = request.Company.Trim();
+        if (request.Role is not null) record.Role = request.Role.Trim();
+        if (request.StartDate is not null) record.StartDate = NormalizeDate(request.StartDate);
+        if (request.EndDate is not null) record.EndDate = NormalizeDate(request.EndDate);
+        if (request.Responsibilities is not null) record.Responsibilities = request.Responsibilities.Trim();
+        if (IsInvalidDateRange(record.StartDate, record.EndDate))
+            throw new DomainException("validation-failed", "The end date must not be before the start date.");
+        await repo.UpdateExternalWorkHistoryAsync(record, ct);
+        return new ExternalWorkHistoryDto(record.Id, record.Company, record.Role, record.StartDate, record.EndDate, record.Responsibilities);
+    }
+
+    public async Task DeleteExternalWorkHistoryAsync(Guid workerId, Guid recordId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdExternalWorkHistoryAsync(recordId, ct)
+            ?? throw new DomainException("external-work-history-not-found", $"Work history record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("external-work-history-not-found", $"Work history record {recordId} does not belong to worker {workerId}.");
+        await repo.DeleteExternalWorkHistoryAsync(recordId, ct);
+    }
+
+    public async Task<List<InternalWorkHistoryDto>> ListInternalWorkHistoryAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        return (await repo.ListInternalWorkHistoryAsync(workerId, ct)).Select(e => new InternalWorkHistoryDto(e.Id, e.OrgUnitName, e.Role, e.Grade, e.StartDate, e.EndDate, e.Reason)).ToList();
+    }
+
+    public async Task<InternalWorkHistoryDto> AddInternalWorkHistoryAsync(Guid workerId, InternalWorkHistoryRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        await RequireWorkerExistsAsync(workerId, ct);
+        if (string.IsNullOrWhiteSpace(request.OrgUnitName))
+            throw new DomainException("validation-failed", "Department / org unit name is required.");
+        if (IsInvalidDateRange(request.StartDate, request.EndDate))
+            throw new DomainException("validation-failed", "The end date must not be before the start date.");
+        var record = new InternalWorkHistory
+        {
+            WorkerId = workerId, OrgUnitName = request.OrgUnitName.Trim(), Role = request.Role?.Trim(),
+            Grade = request.Grade?.Trim(), StartDate = NormalizeDate(request.StartDate),
+            EndDate = NormalizeDate(request.EndDate), Reason = request.Reason?.Trim(),
+        };
+        var created = await repo.AddInternalWorkHistoryAsync(record, ct);
+        return new InternalWorkHistoryDto(created.Id, created.OrgUnitName, created.Role, created.Grade, created.StartDate, created.EndDate, created.Reason);
+    }
+
+    public async Task<InternalWorkHistoryDto> UpdateInternalWorkHistoryAsync(Guid workerId, Guid recordId, InternalWorkHistoryRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdInternalWorkHistoryAsync(recordId, ct)
+            ?? throw new DomainException("internal-work-history-not-found", $"Internal work history record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("internal-work-history-not-found", $"Internal work history record {recordId} does not belong to worker {workerId}.");
+        if (request.OrgUnitName is not null) record.OrgUnitName = request.OrgUnitName.Trim();
+        if (request.Role is not null) record.Role = request.Role.Trim();
+        if (request.Grade is not null) record.Grade = request.Grade.Trim();
+        if (request.StartDate is not null) record.StartDate = NormalizeDate(request.StartDate);
+        if (request.EndDate is not null) record.EndDate = NormalizeDate(request.EndDate);
+        if (request.Reason is not null) record.Reason = request.Reason.Trim();
+        if (IsInvalidDateRange(record.StartDate, record.EndDate))
+            throw new DomainException("validation-failed", "The end date must not be before the start date.");
+        await repo.UpdateInternalWorkHistoryAsync(record, ct);
+        return new InternalWorkHistoryDto(record.Id, record.OrgUnitName, record.Role, record.Grade, record.StartDate, record.EndDate, record.Reason);
+    }
+
+    public async Task DeleteInternalWorkHistoryAsync(Guid workerId, Guid recordId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "employee");
+        var record = await repo.GetByIdInternalWorkHistoryAsync(recordId, ct)
+            ?? throw new DomainException("internal-work-history-not-found", $"Internal work history record {recordId} does not exist.");
+        if (record.WorkerId != workerId)
+            throw new DomainException("internal-work-history-not-found", $"Internal work history record {recordId} does not belong to worker {workerId}.");
+        await repo.DeleteInternalWorkHistoryAsync(recordId, ct);
+    }
+
+    /// <summary>Accepts "YYYY-MM-DD" ISO dates or year-only "YYYY" strings; returns
+    /// null for blanks. Dates are stored normalised so range checks stay simple.</summary>
+    private static string? NormalizeDate(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        if (value.Length == 4 && int.TryParse(value, out var year))
+            return $"{year:D4}";
+        if (DateOnly.TryParse(value, out var date))
+            return date.ToString("yyyy-MM-dd");
+        // Pass through unparseable values; downstream checks may complain.
+        return value;
+    }
+
+    private static bool IsInvalidDateRange(string? start, string? end)
+    {
+        if (string.IsNullOrWhiteSpace(start) || string.IsNullOrWhiteSpace(end)) return false;
+        return string.CompareOrdinal(end, start) < 0;
+    }
+
     // ================= Onboarding / offboarding =================
 
     /// <summary>Onboarding readiness: an active assignment with a filled statutory

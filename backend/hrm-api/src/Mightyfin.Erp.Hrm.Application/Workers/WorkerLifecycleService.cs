@@ -36,4 +36,17 @@ public interface IWorkerLifecycleService
     // Onboarding / offboarding
     Task<OnboardingPlanDto> GetOnboardingAsync(Guid workerId, CancellationToken ct);
     Task<OffboardingResultDto> OffboardAsync(Guid workerId, CancellationToken ct);
+    // M33: worker history child records (education, external & internal work history)
+    Task<List<WorkerEducationDto>> ListEducationAsync(Guid workerId, CancellationToken ct);
+    Task<WorkerEducationDto> AddEducationAsync(Guid workerId, EducationRequest request, CancellationToken ct);
+    Task<WorkerEducationDto> UpdateEducationAsync(Guid workerId, Guid recordId, EducationRequest request, CancellationToken ct);
+    Task DeleteEducationAsync(Guid workerId, Guid recordId, CancellationToken ct);
+    Task<List<ExternalWorkHistoryDto>> ListExternalWorkHistoryAsync(Guid workerId, CancellationToken ct);
+    Task<ExternalWorkHistoryDto> AddExternalWorkHistoryAsync(Guid workerId, ExternalWorkHistoryRequest request, CancellationToken ct);
+    Task<ExternalWorkHistoryDto> UpdateExternalWorkHistoryAsync(Guid workerId, Guid recordId, ExternalWorkHistoryRequest request, CancellationToken ct);
+    Task DeleteExternalWorkHistoryAsync(Guid workerId, Guid recordId, CancellationToken ct);
+    Task<List<InternalWorkHistoryDto>> ListInternalWorkHistoryAsync(Guid workerId, CancellationToken ct);
+    Task<InternalWorkHistoryDto> AddInternalWorkHistoryAsync(Guid workerId, InternalWorkHistoryRequest request, CancellationToken ct);
+    Task<InternalWorkHistoryDto> UpdateInternalWorkHistoryAsync(Guid workerId, Guid recordId, InternalWorkHistoryRequest request, CancellationToken ct);
+    Task DeleteInternalWorkHistoryAsync(Guid workerId, Guid recordId, CancellationToken ct);
 }

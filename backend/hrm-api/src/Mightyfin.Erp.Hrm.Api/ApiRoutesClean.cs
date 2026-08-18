@@ -427,6 +427,64 @@ public static class Routes
                 return Results.Conflict(new ApiError("offboarding-blocked", "Offboarding blocked by open clearance items.", result.OpenItems));
             return Results.Ok(result);
         });
+        // ===================== M33: worker history child records =====================
+
+        g.MapGet("/{workerId:guid}/education", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListEducationAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/education", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<EducationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.AddEducationAsync(workerId, request, ct);
+            return Results.Created("", created);
+        g.MapPatch("/{workerId:guid}/education/{recordId:guid}", async (Guid workerId, Guid recordId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<EducationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateEducationAsync(workerId, recordId, request, ct));
+        });
+        g.MapDelete("/{workerId:guid}/education/{recordId:guid}", async (Guid workerId, Guid recordId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteEducationAsync(workerId, recordId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/external-work-history", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListExternalWorkHistoryAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/external-work-history", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ExternalWorkHistoryRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.AddExternalWorkHistoryAsync(workerId, request, ct);
+            return Results.Created("", created);
+        });
+        g.MapPatch("/{workerId:guid}/external-work-history/{recordId:guid}", async (Guid workerId, Guid recordId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ExternalWorkHistoryRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateExternalWorkHistoryAsync(workerId, recordId, request, ct));
+        });
+        g.MapDelete("/{workerId:guid}/external-work-history/{recordId:guid}", async (Guid workerId, Guid recordId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteExternalWorkHistoryAsync(workerId, recordId, ct);
+            return Results.Ok();
+        });
+
+        g.MapGet("/{workerId:guid}/internal-work-history", async (Guid workerId, IWorkerLifecycleService svc, CancellationToken ct)
+            => await svc.ListInternalWorkHistoryAsync(workerId, ct));
+        g.MapPost("/{workerId:guid}/internal-work-history", async (Guid workerId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<InternalWorkHistoryRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.AddInternalWorkHistoryAsync(workerId, request, ct);
+            return Results.Created("", created);
+        });
+        g.MapPatch("/{workerId:guid}/internal-work-history/{recordId:guid}", async (Guid workerId, Guid recordId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<InternalWorkHistoryRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateInternalWorkHistoryAsync(workerId, recordId, request, ct));
+        });
+        g.MapDelete("/{workerId:guid}/internal-work-history/{recordId:guid}", async (Guid workerId, Guid recordId, IWorkerLifecycleService svc, CancellationToken ct) =>
+        {
+            await svc.DeleteInternalWorkHistoryAsync(workerId, recordId, ct);
+            return Results.Ok();
+        });
+        });
     }
 
     private static List<string> ValidateWorkerCreate(WorkerCreateRequest request)
@@ -1248,6 +1306,7 @@ public static class Routes
             return Results.File(bytes, "text/csv; charset=utf-8", $"{typeKey}-export.csv");
         });
     }
+
 }
 
 // Route-local binding types.

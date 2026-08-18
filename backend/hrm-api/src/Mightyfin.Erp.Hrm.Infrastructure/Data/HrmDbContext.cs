@@ -71,6 +71,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<Movement> Movements => Set<Movement>();
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<WorkerBankDetail> WorkerBankDetails => Set<WorkerBankDetail>();
+    public DbSet<WorkerEducation> WorkerEducations => Set<WorkerEducation>();
+    public DbSet<ExternalWorkHistory> ExternalWorkHistory => Set<ExternalWorkHistory>();
+    public DbSet<InternalWorkHistory> InternalWorkHistory => Set<InternalWorkHistory>();
     public DbSet<WorkerDocument> WorkerDocuments => Set<WorkerDocument>();
     public DbSet<MasterDataBatch> MasterDataBatches => Set<MasterDataBatch>();
 
@@ -170,6 +173,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<Movement>(modelBuilder, "movements");
         ConfigureEntity<EmergencyContact>(modelBuilder, "emergency_contacts");
         ConfigureEntity<WorkerBankDetail>(modelBuilder, "worker_bank_details");
+        ConfigureEntity<WorkerEducation>(modelBuilder, "education");
+        ConfigureEntity<ExternalWorkHistory>(modelBuilder, "external_work_history");
+        ConfigureEntity<InternalWorkHistory>(modelBuilder, "internal_work_history");
         ConfigureEntity<WorkerDocument>(modelBuilder, "worker_documents");
         ConfigureEntity<MasterDataBatch>(modelBuilder, "master_data_batches", e =>
         {
@@ -268,6 +274,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<Worker>().HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Worker>().HasMany(x => x.EmergencyContacts).WithOne(x => x.Worker).HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<Worker>().HasMany(x => x.BankDetails).WithOne(x => x.Worker).HasForeignKey(x => x.WorkerId);
+        modelBuilder.Entity<Worker>().HasMany(x => x.Education).WithOne(x => x.Worker).HasForeignKey(x => x.WorkerId);
+        modelBuilder.Entity<Worker>().HasMany(x => x.ExternalWorkHistory).WithOne(x => x.Worker).HasForeignKey(x => x.WorkerId);
+        modelBuilder.Entity<Worker>().HasMany(x => x.InternalWorkHistory).WithOne(x => x.Worker).HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<Assignment>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<Assignment>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId);
         modelBuilder.Entity<Assignment>().HasOne(x => x.OrgUnit).WithMany().HasForeignKey(x => x.OrgUnitId);

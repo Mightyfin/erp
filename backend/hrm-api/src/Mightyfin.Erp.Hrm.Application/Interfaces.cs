@@ -52,6 +52,23 @@ public interface IWorkerRepository
     Task<WorkerBankDetail> AddBankDetailAsync(WorkerBankDetail detail, CancellationToken ct);
     Task UpdateBankDetailAsync(WorkerBankDetail detail, CancellationToken ct);
     Task DeleteBankDetailAsync(Guid id, CancellationToken ct);
+
+    // M33 history child records (education, external & internal work history)
+    Task<List<WorkerEducation>> ListEducationAsync(Guid workerId, CancellationToken ct);
+    Task<WorkerEducation> AddEducationAsync(WorkerEducation education, CancellationToken ct);
+    Task UpdateEducationAsync(WorkerEducation education, CancellationToken ct);
+    Task DeleteEducationAsync(Guid id, CancellationToken ct);
+    Task<WorkerEducation?> GetByIdEducationAsync(Guid id, CancellationToken ct);
+    Task<List<ExternalWorkHistory>> ListExternalWorkHistoryAsync(Guid workerId, CancellationToken ct);
+    Task<ExternalWorkHistory> AddExternalWorkHistoryAsync(ExternalWorkHistory record, CancellationToken ct);
+    Task UpdateExternalWorkHistoryAsync(ExternalWorkHistory record, CancellationToken ct);
+    Task DeleteExternalWorkHistoryAsync(Guid id, CancellationToken ct);
+    Task<ExternalWorkHistory?> GetByIdExternalWorkHistoryAsync(Guid id, CancellationToken ct);
+    Task<List<InternalWorkHistory>> ListInternalWorkHistoryAsync(Guid workerId, CancellationToken ct);
+    Task<InternalWorkHistory> AddInternalWorkHistoryAsync(InternalWorkHistory record, CancellationToken ct);
+    Task UpdateInternalWorkHistoryAsync(InternalWorkHistory record, CancellationToken ct);
+    Task DeleteInternalWorkHistoryAsync(Guid id, CancellationToken ct);
+    Task<InternalWorkHistory?> GetByIdInternalWorkHistoryAsync(Guid id, CancellationToken ct);
 }
 
 /// <summary>Authorization: role requirement checks against the current principal.</summary>

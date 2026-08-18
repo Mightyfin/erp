@@ -42,6 +42,47 @@ public class Worker : Entity
     public DateOnly? EndDate { get; set; }
     public ICollection<EmergencyContact> EmergencyContacts { get; set; } = new List<EmergencyContact>();
     public ICollection<WorkerBankDetail> BankDetails { get; set; } = new List<WorkerBankDetail>();
+    public ICollection<WorkerEducation> Education { get; set; } = new List<WorkerEducation>();
+    public ICollection<ExternalWorkHistory> ExternalWorkHistory { get; set; } = new List<ExternalWorkHistory>();
+    public ICollection<InternalWorkHistory> InternalWorkHistory { get; set; } = new List<InternalWorkHistory>();
+}
+
+/// <summary>M33: Education record for a worker.</summary>
+public class WorkerEducation : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public string Institution { get; set; } = null!;     // school / university name
+    public string Qualification { get; set; } = null!;   // e.g. Bachelor of Commerce
+    public string? FieldOfStudy { get; set; }
+    public string? Grade { get; set; }                   // result / class / GPA
+    public int? StartYear { get; set; }
+    public int? EndYear { get; set; }
+}
+
+/// <summary>M33: External (previous employer) work history for a worker.</summary>
+public class ExternalWorkHistory : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public string Company { get; set; } = null!;
+    public string? Role { get; set; }
+    public string? StartDate { get; set; }               // ISO date, may be year-only
+    public string? EndDate { get; set; }
+    public string? Responsibilities { get; set; }
+}
+
+/// <summary>M33: Internal work history — moves within this organisation.</summary>
+public class InternalWorkHistory : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public string OrgUnitName { get; set; } = null!;
+    public string? Role { get; set; }
+    public string? Grade { get; set; }
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? Reason { get; set; }                  // transfer | promotion | secondment | ...
 }
 
 /// <summary>HRM-016: An employment/assignment record. A worker can hold multiple

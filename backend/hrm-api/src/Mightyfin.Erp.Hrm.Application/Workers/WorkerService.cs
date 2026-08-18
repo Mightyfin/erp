@@ -359,6 +359,9 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         includeSensitive && w.BankDetails.Count > 0
             ? w.BankDetails.Select(b => new WorkerBankDetailDto(b.Id, b.BankName, b.BranchCode, b.AccountNumber, b.AccountName, b.PaymentMethod, b.MobileMoneyNumber, b.IsPrimary)).ToList()
             : null,
+        w.Education.Select(e => new WorkerEducationDto(e.Id, e.Institution, e.Qualification, e.FieldOfStudy, e.Grade, e.StartYear, e.EndYear)).ToList(),
+        w.ExternalWorkHistory.Select(e => new ExternalWorkHistoryDto(e.Id, e.Company, e.Role, e.StartDate, e.EndDate, e.Responsibilities)).ToList(),
+        w.InternalWorkHistory.Select(e => new InternalWorkHistoryDto(e.Id, e.OrgUnitName, e.Role, e.Grade, e.StartDate, e.EndDate, e.Reason)).ToList(),
         w.CreatedAt, w.UpdatedAt);
 
     private static string? Mask(string? value, bool includeSensitive)

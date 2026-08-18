@@ -60,10 +60,19 @@ public sealed record WorkerDto(
     Guid? ManagerId, string? ManagerName, string? Grade, string? JobTitle,
     string? StartDate, string? EndDate,
     List<EmergencyContactDto> EmergencyContacts, List<WorkerBankDetailDto> BankDetails,
+    List<WorkerEducationDto> Education, List<ExternalWorkHistoryDto> ExternalWorkHistory, List<InternalWorkHistoryDto> InternalWorkHistory,
     DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt);
 
 public sealed record EmergencyContactDto(Guid Id, string Relationship, string FullName, string? Phone, bool IsPrimary);
 public sealed record WorkerBankDetailDto(Guid Id, string BankName, string BranchCode, string AccountNumber, string AccountName, string PaymentMethod, string? MobileMoneyNumber, bool IsPrimary);
+
+// M33: worker history child records — education, previous employers, and moves within this organisation.
+public sealed record WorkerEducationDto(Guid Id, string Institution, string Qualification, string? FieldOfStudy, string? Grade, int? StartYear, int? EndYear);
+public sealed record ExternalWorkHistoryDto(Guid Id, string Company, string? Role, string? StartDate, string? EndDate, string? Responsibilities);
+public sealed record InternalWorkHistoryDto(Guid Id, string OrgUnitName, string? Role, string? Grade, string? StartDate, string? EndDate, string? Reason);
+public sealed record EducationRequest(string Institution, string Qualification, string? FieldOfStudy = null, string? Grade = null, int? StartYear = null, int? EndYear = null);
+public sealed record ExternalWorkHistoryRequest(string Company, string? Role = null, string? StartDate = null, string? EndDate = null, string? Responsibilities = null);
+public sealed record InternalWorkHistoryRequest(string OrgUnitName, string? Role = null, string? Grade = null, string? StartDate = null, string? EndDate = null, string? Reason = null);
 
 // ===================== Assignments & Movements =====================
 
