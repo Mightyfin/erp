@@ -24,7 +24,7 @@ public class PerformanceGoal : Entity
 {
     public Guid CycleId { get; set; }
     public PerformanceCycle? Cycle { get; set; }
-    public Guid WorkerId { get; set; }
+    public Guid? WorkerId { get; set; }
     public Worker? Worker { get; set; }
     public string Category { get; set; } = "business";    // business | development | behavioural
     public string Title { get; set; } = null!;

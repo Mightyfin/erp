@@ -47,7 +47,7 @@ public sealed record PerformanceCycleDto(
     int GoalCount, int AssessmentCount, DateTimeOffset CreatedAt);
 
 public sealed record PerformanceGoalDto(
-    Guid Id, Guid CycleId, Guid WorkerId, string? WorkerName, string Category,
+    Guid Id, Guid CycleId, Guid? WorkerId, string? WorkerName, string Category,
     string Title, string? Description, decimal? Weight, string MeasurementType,
     string? TargetValue, string? ActualValue, int SortOrder);
 
@@ -84,7 +84,7 @@ public sealed record PerformanceCycleUpdate(
     DateOnly? SelfAssessmentDeadline, DateOnly? ManagerAssessmentDeadline, DateOnly? ReviewMeetingDeadline);
 
 public sealed record PerformanceGoalCreate(
-    Guid WorkerId, string Category, string Title, string? Description,
+    Guid? WorkerId, string Category, string Title, string? Description,
     decimal? Weight, string MeasurementType, string? TargetValue, int SortOrder);
 
 public sealed record PerformanceGoalUpdate(
