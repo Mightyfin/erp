@@ -21,7 +21,8 @@ import {
   GraduationCap,
   Users,
 } from "lucide-react";
-import { realApi, useApi } from "@/platform/use-api";
+import { useApi } from "@/platform/use-api";
+import { getSession } from "@/platform/oidc";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
@@ -484,12 +485,21 @@ function AttendancePanelView({ att }: { att: AttendancePanel }) {
 /* ------------------------------------------------------------------ */
 
 function AnalyticsPage() {
-  // Call the analytics dashboard endpoint directly (guarded in case the client
-  // bundle has not yet been rebuilt with the analyticsDashboard helper).
-  const state = useApi<Dashboard | null>(() =>
-    typeof realApi.analyticsDashboard === "function"
-      ? realApi.analyticsDashboard()
-      : (realApi as unknown as { get: <T>(path: string) => Promise<T> }).get<Dashboard>("/hrm/analytics/dashboard"),
+  // Self-contained fetcher: avoids coupling to the `realApi` helper object,
+  // whose export layout has been known to shift between client bundles after
+  // build (code-splitting placed `realApi` in a chunk the route does not
+  // import, producing runtime `undefined.get` crashes).
+  const state = useApi<Dashboard | null>(
+    async () => {
+      const apiBase = (import.meta.env.VITE_HRM_API_BASE as string | undefined) ?? "/api";
+      const token = getSession()?.accessToken;
+      const res = await fetch(`${apiBase}/hrm/analytics/dashboard`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as Dashboard;
+    },
+    [],
   );
   // Charts are client-only: recharts' ResponsiveContainer relies on
   // ResizeObserver and must not render during server-side hydration.
