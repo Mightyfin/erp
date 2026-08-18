@@ -22,6 +22,9 @@ public interface IWorkerRepository
     Task AddEmergencyContactsAsync(IEnumerable<EmergencyContact> contacts, CancellationToken ct);
     Task AddBankDetailsAsync(IEnumerable<WorkerBankDetail> details, CancellationToken ct);
     Task<bool> ExistsAsync(string employeeNo, CancellationToken ct);
+    // M31 import/export: natural-key lookup used by Update-mode matching
+    // (employee number first, then NRC, then NAPSA number).
+    Task<Worker?> FindByNaturalKeyAsync(string employeeNo, string? nrc, string? napsaNumber, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
     Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<Assignment> CreateAssignmentAsync(Assignment assignment, CancellationToken ct);

@@ -290,9 +290,15 @@ export const realApi = {
   /** Upload a document for a worker. */
   uploadDocument: (workerId: string, file: File, category: string, title: string) =>
     hrmApi.uploadDocument(workerId, file, category, title),
-  /** Bulk import employees from a CSV file (POST /hrm/workers/import). */
-  workersImport: (file: File) =>
-    hrmApi.uploadWorkersCsv(file),
+  /** M31 shared import/export tool — all list pages reuse this surface. */
+  importSchemas: () =>
+    hrmApi.get<Array<{ typeKey: string; displayName: string; fields: Array<{ key: string; label: string; required: boolean; naturalKey: boolean; example?: string; formatNote?: string }> }>>("/hrm/import/schemas"),
+  importPreview: (typeKey: string, fileName: string, mode: string, rows: Array<Record<string, string>>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/import/${typeKey}/preview`, { fileName, mode, rows }),
+  importApply: (typeKey: string, previewId: string, rowIndexes: number[]) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/import/${typeKey}/apply`, { previewId, rowIndexes }),
+  importExportBlob: (typeKey: string, filter?: string) =>
+    hrmApi.getBlob(`/hrm/import/${typeKey}/export`, filter !== undefined ? { filter } : undefined),
   /** Org units (config) — used for department placement selects. */
   orgUnits: () => hrmApi.get<unknown[]>("/hrm/admin/org-units"),
   /** Recursive org-unit tree — used by the people structure page. */

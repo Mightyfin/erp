@@ -105,6 +105,21 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
     public async Task<bool> ExistsAsync(string employeeNo, CancellationToken ct)
         => await db.Workers.AnyAsync(w => w.EmployeeNo == employeeNo, ct);
 
+    // M31: natural-key lookup used by Update-mode import matching — employee
+    // number first, then NRC, then NAPSA number. Null keys are ignored and
+    // archived workers are excluded.
+    public async Task<Worker?> FindByNaturalKeyAsync(string employeeNo, string? nrc, string? napsaNumber, CancellationToken ct)
+    {
+        Worker? match = null;
+        if (!string.IsNullOrWhiteSpace(employeeNo))
+            match = await db.Workers.FirstOrDefaultAsync(w => w.EmployeeNo == employeeNo && !w.IsArchived, ct);
+        if (match is null && !string.IsNullOrWhiteSpace(nrc))
+            match = await db.Workers.FirstOrDefaultAsync(w => w.Nrc != null && w.Nrc == nrc && !w.IsArchived, ct);
+        if (match is null && !string.IsNullOrWhiteSpace(napsaNumber))
+            match = await db.Workers.FirstOrDefaultAsync(w => w.NapsaNumber != null && w.NapsaNumber == napsaNumber && !w.IsArchived, ct);
+        return match;
+    }
+
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {
         var items = await db.Assignments.Include(a => a.OrgUnit).Include(a => a.Location)

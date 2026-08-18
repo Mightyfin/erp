@@ -40,6 +40,9 @@ import { api } from "@/mock/service";
 import type { Employee } from "@/mock/types";
 import { useMock } from "@/platform/use-mock";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
+import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
+import { Download, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/hrm/employees/")({
   head: () => ({
@@ -70,7 +73,6 @@ function EmployeesPage() {
   const [archived, setArchived] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<EmployeeRow | null>(null);
   const [archiving, setArchiving] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
 
   // Mock-mode view chip (demo behaviour only — real mode uses the backend).
   const [view, setView] = useState("all");
@@ -300,9 +302,8 @@ function EmployeesPage() {
           }
           primaryAction={
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setImportOpen(true)}>
-                Import employees
-              </Button>
+              <ImportTool onDone={() => state.reload()} />
+              <ExportButton />
               <Button asChild>
                 <Link to="/hrm/employees/new">
                   <UserPlus className="mr-1 size-4" aria-hidden />
@@ -355,15 +356,6 @@ function EmployeesPage() {
           )}
         </Async>
 
-        <ImportDialog
-          open={importOpen}
-          onClose={() => setImportOpen(false)}
-          onImported={(created) => {
-            feedback.saved(`Imported ${created} employee${created === 1 ? "" : "s"}.`);
-            state.reload();
-          }}
-        />
-
         {archiveTarget && (
           <ArchiveDialog
             row={archiveTarget}
@@ -405,175 +397,34 @@ function labelize(status: string | undefined) {
   return status ? (map[status] ?? status) : "Active";
 }
 
-/**
- * CSV bulk import of employees (POST /hrm/workers/import).
- *
- * HR picks a CSV, previews what will be created / skipped, and confirms.
- * Row-level errors are shown in place so bad rows never silently fail the
- * whole batch, and a downloadable template keeps the header format obvious.
- */
-const CSV_HEADER = "employeeNo,firstName,lastName,middleName,email,phone,nrc,tpin,napsaNumber,nhimaNumber,grade,jobTitle,startDate,workerType,orgUnitName";
-const CSV_SAMPLE =
-  CSV_HEADER +
-  "\n,Mary,Bwalya,,mary@example.com,0971234567,,,,,,Grade 5,Accounts Officer,2026-08-17,employee,Finance" +
-  "\n,John,Phiri,,john@example.com,0961234567,,,,,,Grade 3,Sales Officer,2026-08-17,employee,Sales";
-
-function downloadTemplate() {
-  const blob = new Blob([CSV_SAMPLE], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "employee-import-template.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+/** M31 — shared import tool wired to /hrm/import/workers. */
+function ImportTool({ onDone }: { onDone?: () => void }) {
+  return <ImportDialog typeKey="workers" onDone={onDone} />;
 }
 
-function ImportDialog({
-  open,
-  onClose,
-  onImported,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onImported: (created: number) => void;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<{
-    rows: Array<Record<string, string>>;
-    header: string[];
-  } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-
-  // Client-side preview only (parse the same header shape the backend uses)
-  // so HR can see each row before submitting — the backend is the source of
-  // truth for validation and reports per-row errors back after import.
-  const onPickFile = (picked: File | undefined) => {
-    setImportError(null);
-    if (!picked) {
-      setFile(null);
-      setPreview(null);
-      return;
-    }
-    setFile(picked);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      const [headLine, ...lines] = text.split(/\r?\n/).filter((l) => l.trim() !== "");
-      if (!headLine) return;
-      const header = headLine.split(",").map((h) => h.trim());
-      const rows = lines.map((l) => {
-        const cells = l.split(",");
-        const row: Record<string, string> = {};
-        header.forEach((h, i) => {
-          row[h] = (cells[i] ?? "").trim();
-        });
-        return row;
-      });
-      setPreview({ rows, header });
-    };
-    reader.readAsText(picked);
-  };
-
-  const onImport = async () => {
-    if (!file) return;
-    setBusy(true);
-    setImportError(null);
-    try {
-      const result = await realApi.workersImport(file);
-      const errors = result.errors ?? [];
-      if (errors.length > 0) {
-        setImportError(
-          `Imported ${result.created ?? 0} rows, skipped ${errors.length}. First issues:\n` +
-            errors
-              .slice(0, 5)
-              .map((e) => `Row ${e.row}: ${e.detail}`)
-              .join("\n"),
-        );
-      } else {
-        feedback.saved(`Imported ${result.created ?? 0} employee${result.created === 1 ? "" : "s"}.`);
-        onImported(result.created ?? 0);
-        setFile(null);
-        setPreview(null);
-        onClose();
-      }
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Import failed — check the file and try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+/** M31 — export the roster as a server-generated CSV (round-trips into the importer). */
+function ExportButton() {
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Import employees</DialogTitle>
-          <DialogDescription>
-            Upload a CSV to create several workers in one step. Rows are validated against your existing
-            departments, and only bad rows are skipped — the rest are always created.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-sm font-medium">CSV file</span>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="mt-1 block w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              onChange={(e) => onPickFile(e.target.files?.[0])}
-            />
-          </label>
-
-          <Button type="button" variant="ghost" size="sm" onClick={downloadTemplate}>
-            Download sample template
-          </Button>
-
-          {preview && (
-            <div className="max-h-56 overflow-auto rounded-md border">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-muted/60">
-                  <tr>
-                    {preview.header.map((h) => (
-                      <th key={h} className="px-2 py-1 text-left font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.map((row, i) => (
-                    <tr key={i} className="border-t">
-                      {preview.header.map((h) => (
-                        <td key={h} className="max-w-24 truncate px-2 py-1">
-                          {row[h] || <span className="text-muted-foreground">—</span>}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {importError && (
-            <p className="whitespace-pre-wrap rounded-md bg-destructive/10 p-2 text-xs text-destructive">
-              {importError}
-            </p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button onClick={onImport} disabled={busy || !file || (preview?.rows.length ?? 0) === 0}>
-            {busy ? "Importing…" : `Import ${preview?.rows.length ?? 0} row${(preview?.rows.length ?? 0) === 1 ? "" : "s"}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Button
+      variant="outline"
+      onClick={async () => {
+        try {
+          const blob = await realApi.importExportBlob("workers");
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+          toast.success("Employee export downloaded.");
+        } catch {
+          toast.error("Export is not available yet — the server refused the request.");
+        }
+      }}
+      className="gap-2"
+    >
+      <Download className="h-4 w-4" /> Export
+    </Button>
   );
 }
 

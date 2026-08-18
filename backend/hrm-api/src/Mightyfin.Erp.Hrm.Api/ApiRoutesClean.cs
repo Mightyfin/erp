@@ -13,7 +13,7 @@ using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Application.Payroll;
-
+using Mightyfin.Erp.Hrm.Application.Shared;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
 // Minimal-API routes grouped by the frontend client interfaces (PeopleClient,
@@ -47,6 +47,7 @@ public static class Routes
         RegisterStatutory(app);
         RegisterNotifications(app);
         RegisterMe(app);
+        RegisterImportExport(app);
     }
 
     public static void RegisterNotifications(WebApplication app)
@@ -1217,11 +1218,45 @@ public static class Routes
             return Results.Created("", await svc.RecordSignoffAsync(roleKey, request, ResolveSubjectId(http) ?? "system", ct));
         });
     }
+
+    // M31: shared import/export tool — one flow every CRUD page reuses.
+    // Schemas register what fields each type accepts; preview resolves the
+    // map-columns result to per-row statuses and apply persists only what HR
+    // approved. Export returns round-trip-safe CSV.
+    public static void RegisterImportExport(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/import").RequireAuthorization();
+        g.MapGet("/schemas", (IImportExportService svc) => Results.Ok(svc.ListSchemas()));
+        g.MapPost("/{typeKey}/preview", async (string typeKey, HttpContext http,
+            IImportExportService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ImportPreviewRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.PreviewAsync(typeKey, request.FileName, request.Mode, request.Rows, ct));
+        });
+        g.MapPost("/{typeKey}/apply", async (string typeKey, HttpContext http,
+            IImportExportService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ImportApplyRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ApplyAsync(request.PreviewId, request.RowIndexes, ct));
+        });
+        g.MapGet("/{typeKey}/export", async (string typeKey, string? filter,
+            IImportExportService svc, CancellationToken ct) =>
+        {
+            var bytes = await svc.ExportAsync(typeKey, filter, ct);
+            return Results.File(bytes, "text/csv; charset=utf-8", $"{typeKey}-export.csv");
+        });
+    }
 }
 
 // Route-local binding types.
 public sealed record PayrollRunApprovalNote(string? Note);
 public sealed record StatutoryExportQuery(string ExportType, Guid PeriodId);
+// M31 import/export: the UI sends client-mapped rows (file column → canonical
+// field key already resolved by the Map Columns step) plus the desired mode.
+public sealed record ImportPreviewRequest(string FileName, string Mode, List<Dictionary<string, string>> Rows);
+public sealed record ImportApplyRequest(Guid PreviewId, List<int> RowIndexes);
 /// <summary>Current API version resolved from the URL path by Program.cs.</summary>
 public sealed class ApiVersioning
 {
