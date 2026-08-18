@@ -22,7 +22,10 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         if (!string.IsNullOrWhiteSpace(filters.Search))
         {
             var s = filters.Search.Trim().ToLower();
-            q = q.Where(w => w.FullName.ToLower().Contains(s) || w.EmployeeNo.ToLower().Contains(s)
+            // FullName is a computed (unmapped) property — EF cannot translate
+            // it to SQL, so match on the underlying columns instead.
+            q = q.Where(w => w.FirstName.ToLower().Contains(s) || w.LastName.ToLower().Contains(s)
+                || w.EmployeeNo.ToLower().Contains(s)
                 || (w.Nrc != null && w.Nrc.ToLower().Contains(s))
                 || (w.Email != null && w.Email.ToLower().Contains(s)));
         }
