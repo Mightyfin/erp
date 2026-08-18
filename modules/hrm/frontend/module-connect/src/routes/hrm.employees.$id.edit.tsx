@@ -601,6 +601,17 @@ function HistorySection({ workerId }: { workerId: string }) {
     "internal-work-history": {},
   });
 
+  async function refresh() {
+    const [ed, ext, inn] = await Promise.all([
+      realApi.education(workerId).catch(() => []),
+      realApi.externalWorkHistory(workerId).catch(() => []),
+      realApi.internalWorkHistory(workerId).catch(() => []),
+    ]);
+    setEducation(Array.isArray(ed) ? ed : []);
+    setExternal(Array.isArray(ext) ? ext : []);
+    setInternal(Array.isArray(inn) ? inn : []);
+  }
+
   useEffect(() => {
     let alive = true;
     Promise.all([
@@ -640,6 +651,7 @@ function HistorySection({ workerId }: { workerId: string }) {
         else if (kind === "external-work-history")
           await realApi.updateExternalWorkHistory(workerId, String(row.id), body);
         else await realApi.updateInternalWorkHistory(workerId, String(row.id), body);
+        await refresh();
         feedback.saved("History record updated on the live HRM record.");
       } else {
         const created =
@@ -649,6 +661,7 @@ function HistorySection({ workerId }: { workerId: string }) {
               ? await realApi.addExternalWorkHistory(workerId, body)
               : await realApi.addInternalWorkHistory(workerId, body);
         row.id = String((created as Record<string, unknown>).id ?? "");
+        await refresh();
         feedback.saved(
           "History record added to the live HRM record.",
           async () => {
@@ -672,6 +685,7 @@ function HistorySection({ workerId }: { workerId: string }) {
       setAdding(null);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : String(err);
+      await refresh();
       feedback.blocked("The history record could not be saved.", msg);
     }
   }
@@ -682,9 +696,7 @@ function HistorySection({ workerId }: { workerId: string }) {
       else if (kind === "external-work-history")
         await realApi.removeExternalWorkHistory(workerId, String(row.id));
       else await realApi.removeInternalWorkHistory(workerId, String(row.id));
-      setEducation((s) => s.filter((r) => r.id !== row.id));
-      setExternal((s) => s.filter((r) => r.id !== row.id));
-      setInternal((s) => s.filter((r) => r.id !== row.id));
+      await refresh();
       feedback.removed("History record removed from the live HRM record.");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : String(err);
