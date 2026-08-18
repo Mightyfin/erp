@@ -237,7 +237,7 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
       const headersClean = headers.map((h) => (h ?? "").trim());
       if (headersClean.length === 0) throw new Error("No header row found — the first row must name the columns.");
       setFileName(file.name);
-      setFileColumns(headersClean.map((name) => ({ name,       sample: String(rows.find((r) => r[headersClean.indexOf(name)] ?? "") ?? "") })));
+      setFileColumns(headersClean.map((name) => ({ name,       sample: String(rows[0]?.[headersClean.indexOf(name)] ?? "") })));
       setFileRows(rows);
       if (!schema) setMapping(autoMap(headersClean, DEMO_SCHEMA.fields));
       else setMapping(autoMap(headersClean, schema.fields));
