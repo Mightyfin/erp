@@ -24,6 +24,7 @@ export const ENABLED_SECTIONS = new Set([
   "recruitment", // M29 candidate-to-worker workflow is operational
   "relations", // M30 restricted case and protected-disclosure operations
   "performance", // M36 performance cycles, goals and assessments
+  "offboarding", // M37 exit requests, checklists and exit interviews
   "configuration",
 ]);
 
@@ -44,6 +45,8 @@ const ENABLED_PREFIXES = [
   "/hrm/my-preferences", // M35 employee notification preferences
   "/hrm/performance", // M36 performance management
   "/hrm/my-performance", // M36 self-service performance
+  "/hrm/offboarding", // M37 offboarding & exit management
+  "/hrm/my-offboarding", // M37 self-service resignation
   "/hrm/my-documents",
   "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",
@@ -68,7 +71,7 @@ const DEMO_ONLY_PREFIXES = [
   "/hrm/experience/knowledge",
   "/hrm/experience/announcements",
   "/hrm/lifecycle/movements",
-  "/hrm/lifecycle/offboarding",
+
   "/hrm/lifecycle/assets",
   "/hrm/lifecycle/journeys",
   "/hrm/lifecycle/mobility",

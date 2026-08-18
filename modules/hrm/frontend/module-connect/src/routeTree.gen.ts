@@ -16,6 +16,7 @@ import { Route as HrmIndexRouteImport } from './routes/hrm.index'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
+import { Route as HrmMyOffboardingRouteImport } from './routes/hrm.my-offboarding'
 import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
 import { Route as HrmMyPreferencesRouteImport } from './routes/hrm.my-preferences'
 import { Route as HrmMyProfileRouteImport } from './routes/hrm.my-profile'
@@ -53,6 +54,8 @@ import { Route as HrmLifecycleMobilityRouteImport } from './routes/hrm.lifecycle
 import { Route as HrmLifecycleMovementsRouteImport } from './routes/hrm.lifecycle.movements'
 import { Route as HrmLifecycleOffboardingRouteImport } from './routes/hrm.lifecycle.offboarding'
 import { Route as HrmLifecycleOnboardingRouteImport } from './routes/hrm.lifecycle.onboarding'
+import { Route as HrmOffboardingIndexRouteImport } from './routes/hrm.offboarding.index'
+import { Route as HrmOffboardingIdRouteImport } from './routes/hrm.offboarding.$id'
 import { Route as HrmPayCompensationRouteImport } from './routes/hrm.pay.compensation'
 import { Route as HrmPayrollIndexRouteImport } from './routes/hrm.payroll.index'
 import { Route as HrmPayrollExceptionsRouteImport } from './routes/hrm.payroll.exceptions'
@@ -146,6 +149,11 @@ const HrmHelpRoute = HrmHelpRouteImport.update({
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
   id: '/hrm/my-documents',
   path: '/hrm/my-documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmMyOffboardingRoute = HrmMyOffboardingRouteImport.update({
+  id: '/hrm/my-offboarding',
+  path: '/hrm/my-offboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmMyPerformanceRoute = HrmMyPerformanceRouteImport.update({
@@ -337,6 +345,16 @@ const HrmLifecycleOffboardingRoute = HrmLifecycleOffboardingRouteImport.update({
 const HrmLifecycleOnboardingRoute = HrmLifecycleOnboardingRouteImport.update({
   id: '/hrm/lifecycle/onboarding',
   path: '/hrm/lifecycle/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmOffboardingIndexRoute = HrmOffboardingIndexRouteImport.update({
+  id: '/hrm/offboarding/',
+  path: '/hrm/offboarding/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmOffboardingIdRoute = HrmOffboardingIdRouteImport.update({
+  id: '/hrm/offboarding/$id',
+  path: '/hrm/offboarding/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmPayCompensationRoute = HrmPayCompensationRouteImport.update({
@@ -651,6 +669,7 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
@@ -684,6 +703,7 @@ export interface FileRoutesByFullPath {
   '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
   '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
   '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
@@ -726,6 +746,7 @@ export interface FileRoutesByFullPath {
   '/hrm/employees/': typeof HrmEmployeesIndexRoute
   '/hrm/leave/': typeof HrmLeaveIndexRoute
   '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
+  '/hrm/offboarding/': typeof HrmOffboardingIndexRoute
   '/hrm/payroll/': typeof HrmPayrollIndexRoute
   '/hrm/payslips/': typeof HrmPayslipsIndexRoute
   '/hrm/performance/': typeof HrmPerformanceIndexRoute
@@ -756,6 +777,7 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
@@ -789,6 +811,7 @@ export interface FileRoutesByTo {
   '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
   '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
   '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
@@ -831,6 +854,7 @@ export interface FileRoutesByTo {
   '/hrm/employees': typeof HrmEmployeesIndexRoute
   '/hrm/leave': typeof HrmLeaveIndexRoute
   '/hrm/lifecycle': typeof HrmLifecycleIndexRoute
+  '/hrm/offboarding': typeof HrmOffboardingIndexRoute
   '/hrm/payroll': typeof HrmPayrollIndexRoute
   '/hrm/payslips': typeof HrmPayslipsIndexRoute
   '/hrm/performance': typeof HrmPerformanceIndexRoute
@@ -862,6 +886,7 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
@@ -895,6 +920,7 @@ export interface FileRoutesById {
   '/hrm/lifecycle/movements': typeof HrmLifecycleMovementsRouteWithChildren
   '/hrm/lifecycle/offboarding': typeof HrmLifecycleOffboardingRouteWithChildren
   '/hrm/lifecycle/onboarding': typeof HrmLifecycleOnboardingRouteWithChildren
+  '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
@@ -937,6 +963,7 @@ export interface FileRoutesById {
   '/hrm/employees/': typeof HrmEmployeesIndexRoute
   '/hrm/leave/': typeof HrmLeaveIndexRoute
   '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
+  '/hrm/offboarding/': typeof HrmOffboardingIndexRoute
   '/hrm/payroll/': typeof HrmPayrollIndexRoute
   '/hrm/payslips/': typeof HrmPayslipsIndexRoute
   '/hrm/performance/': typeof HrmPerformanceIndexRoute
@@ -969,6 +996,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-offboarding'
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
@@ -1002,6 +1030,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle/movements'
     | '/hrm/lifecycle/offboarding'
     | '/hrm/lifecycle/onboarding'
+    | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/runs'
@@ -1044,6 +1073,7 @@ export interface FileRouteTypes {
     | '/hrm/employees/'
     | '/hrm/leave/'
     | '/hrm/lifecycle/'
+    | '/hrm/offboarding/'
     | '/hrm/payroll/'
     | '/hrm/payslips/'
     | '/hrm/performance/'
@@ -1074,6 +1104,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-offboarding'
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
@@ -1107,6 +1138,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle/movements'
     | '/hrm/lifecycle/offboarding'
     | '/hrm/lifecycle/onboarding'
+    | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/runs'
@@ -1149,6 +1181,7 @@ export interface FileRouteTypes {
     | '/hrm/employees'
     | '/hrm/leave'
     | '/hrm/lifecycle'
+    | '/hrm/offboarding'
     | '/hrm/payroll'
     | '/hrm/payslips'
     | '/hrm/performance'
@@ -1179,6 +1212,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-offboarding'
     | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
@@ -1212,6 +1246,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle/movements'
     | '/hrm/lifecycle/offboarding'
     | '/hrm/lifecycle/onboarding'
+    | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/runs'
@@ -1254,6 +1289,7 @@ export interface FileRouteTypes {
     | '/hrm/employees/'
     | '/hrm/leave/'
     | '/hrm/lifecycle/'
+    | '/hrm/offboarding/'
     | '/hrm/payroll/'
     | '/hrm/payslips/'
     | '/hrm/performance/'
@@ -1285,6 +1321,7 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmHelpRoute: typeof HrmHelpRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
+  HrmMyOffboardingRoute: typeof HrmMyOffboardingRoute
   HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
   HrmMyPreferencesRoute: typeof HrmMyPreferencesRoute
   HrmMyProfileRoute: typeof HrmMyProfileRoute
@@ -1318,6 +1355,7 @@ export interface RootRouteChildren {
   HrmLifecycleMovementsRoute: typeof HrmLifecycleMovementsRouteWithChildren
   HrmLifecycleOffboardingRoute: typeof HrmLifecycleOffboardingRouteWithChildren
   HrmLifecycleOnboardingRoute: typeof HrmLifecycleOnboardingRouteWithChildren
+  HrmOffboardingIdRoute: typeof HrmOffboardingIdRoute
   HrmPayCompensationRoute: typeof HrmPayCompensationRoute
   HrmPayrollExceptionsRoute: typeof HrmPayrollExceptionsRoute
   HrmPayrollRunsRoute: typeof HrmPayrollRunsRouteWithChildren
@@ -1360,6 +1398,7 @@ export interface RootRouteChildren {
   HrmEmployeesIndexRoute: typeof HrmEmployeesIndexRoute
   HrmLeaveIndexRoute: typeof HrmLeaveIndexRoute
   HrmLifecycleIndexRoute: typeof HrmLifecycleIndexRoute
+  HrmOffboardingIndexRoute: typeof HrmOffboardingIndexRoute
   HrmPayrollIndexRoute: typeof HrmPayrollIndexRoute
   HrmPayslipsIndexRoute: typeof HrmPayslipsIndexRoute
   HrmPerformanceIndexRoute: typeof HrmPerformanceIndexRoute
@@ -1421,6 +1460,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/my-documents'
       fullPath: '/hrm/my-documents'
       preLoaderRoute: typeof HrmMyDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/my-offboarding': {
+      id: '/hrm/my-offboarding'
+      path: '/hrm/my-offboarding'
+      fullPath: '/hrm/my-offboarding'
+      preLoaderRoute: typeof HrmMyOffboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-performance': {
@@ -1680,6 +1726,20 @@ declare module '@tanstack/react-router' {
       path: '/hrm/lifecycle/onboarding'
       fullPath: '/hrm/lifecycle/onboarding'
       preLoaderRoute: typeof HrmLifecycleOnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/offboarding/': {
+      id: '/hrm/offboarding/'
+      path: '/hrm/offboarding'
+      fullPath: '/hrm/offboarding/'
+      preLoaderRoute: typeof HrmOffboardingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/offboarding/$id': {
+      id: '/hrm/offboarding/$id'
+      path: '/hrm/offboarding/$id'
+      fullPath: '/hrm/offboarding/$id'
+      preLoaderRoute: typeof HrmOffboardingIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/pay/compensation': {
@@ -2244,6 +2304,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmHelpRoute: HrmHelpRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
+  HrmMyOffboardingRoute: HrmMyOffboardingRoute,
   HrmMyPerformanceRoute: HrmMyPerformanceRoute,
   HrmMyPreferencesRoute: HrmMyPreferencesRoute,
   HrmMyProfileRoute: HrmMyProfileRoute,
@@ -2277,6 +2338,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmLifecycleMovementsRoute: HrmLifecycleMovementsRouteWithChildren,
   HrmLifecycleOffboardingRoute: HrmLifecycleOffboardingRouteWithChildren,
   HrmLifecycleOnboardingRoute: HrmLifecycleOnboardingRouteWithChildren,
+  HrmOffboardingIdRoute: HrmOffboardingIdRoute,
   HrmPayCompensationRoute: HrmPayCompensationRoute,
   HrmPayrollExceptionsRoute: HrmPayrollExceptionsRoute,
   HrmPayrollRunsRoute: HrmPayrollRunsRouteWithChildren,
@@ -2319,6 +2381,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmEmployeesIndexRoute: HrmEmployeesIndexRoute,
   HrmLeaveIndexRoute: HrmLeaveIndexRoute,
   HrmLifecycleIndexRoute: HrmLifecycleIndexRoute,
+  HrmOffboardingIndexRoute: HrmOffboardingIndexRoute,
   HrmPayrollIndexRoute: HrmPayrollIndexRoute,
   HrmPayslipsIndexRoute: HrmPayslipsIndexRoute,
   HrmPerformanceIndexRoute: HrmPerformanceIndexRoute,

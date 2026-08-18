@@ -1068,4 +1068,36 @@ export const realApi = {
     hrmApi.get<Record<string, unknown>>(`/hrm/me/performance/${cycleId}`),
   submitSelfAssessment: (assessmentId: string, body: Record<string, unknown>) =>
     hrmApi.patch<Record<string, unknown>>(`/hrm/me/performance/${assessmentId}/self`, body),
+  // M37: Offboarding & Exit Management
+  offboardingRequests: (status?: string) =>
+    hrmApi.get<unknown[]>(`/hrm/offboarding${status ? `?status=${status}` : ""}`),
+  createOffboarding: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding`, body),
+  offboardingRequest: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/offboarding/${id}`),
+  approveOffboarding: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/approve`),
+  rejectOffboarding: (id: string, reason: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/reject`, { reason }),
+  cancelOffboarding: (id: string, reason: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/cancel`, { reason }),
+  markFinalPay: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/final-pay`),
+  addChecklistItem: (requestId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist`, body),
+  updateChecklistItem: (requestId: string, itemId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist/${itemId}`, body),
+  completeChecklistItem: (requestId: string, itemId: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist/${itemId}/complete`),
+  createExitInterview: (requestId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/exit-interview`, body),
+  getExitInterview: (requestId: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/offboarding/${requestId}/exit-interview`),
+  updateExitInterview: (requestId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/offboarding/${requestId}/exit-interview`, body),
+  // M37 self-service
+  myOffboarding: () =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/me/offboarding`),
+  submitResignation: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/me/offboarding`, body),
 };

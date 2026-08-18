@@ -92,6 +92,12 @@ function SelfService() {
                 to: "/hrm/my-performance",
                 icon: Bell,
               },
+              {
+                label: "Resignation",
+                value: linked ? "Submit" : "—",
+                to: "/hrm/my-offboarding",
+                icon: UserRound,
+              },
             ];
             return (
               <div className="space-y-6" data-testid="employee-self-service">

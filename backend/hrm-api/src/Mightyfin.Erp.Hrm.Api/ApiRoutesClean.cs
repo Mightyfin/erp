@@ -15,6 +15,7 @@ using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Shared;
 using Mightyfin.Erp.Hrm.Application.Performance;
+using Mightyfin.Erp.Hrm.Application.Offboarding;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
 // Minimal-API routes grouped by the frontend client interfaces (PeopleClient,
@@ -50,6 +51,7 @@ public static class Routes
         RegisterMe(app);
         RegisterImportExport(app);
         RegisterPerformance(app);
+        RegisterOffboarding(app);
     }
 
     public static void RegisterNotifications(WebApplication app)
@@ -301,6 +303,19 @@ public static class Routes
             var request = await ReadBodyAsync<SelfAssessmentSubmit>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.SubmitSelfAssessmentAsync(assessmentId, subject, request, ct));
+        });
+        // M37: self-service offboarding
+        g.MapGet("/offboarding", async (HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http) ?? "";
+            return Results.Ok(await svc.GetMyOffboardingAsync(subject, ct));
+        });
+        g.MapPost("/offboarding", async (HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http) ?? "";
+            var request = await ReadBodyAsync<OffboardingRequestCreate>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.SubmitMyResignationAsync(request, subject, ct));
         });
     }
 
@@ -1431,9 +1446,95 @@ public static void RegisterPerformance(WebApplication app)
         => Results.Ok(await svc.GetCycleReportAsync(id, ct)));
 }
 
+// M37: Offboarding & Exit Management
+public static void RegisterOffboarding(WebApplication app)
+{
+    var g = app.MapGroup($"{HrmPrefix}/offboarding").RequireAuthorization();
+
+    // HR admin: list and manage offboarding requests
+    g.MapGet("/", async (string? status, IOffboardingService svc, CancellationToken ct) =>
+        Results.Ok(await svc.ListRequestsAsync(status, ct)));
+
+    g.MapPost("/", async (HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<OffboardingRequestCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        var subject = ResolveSubjectId(http) ?? "";
+        return Results.Ok(await svc.CreateRequestAsync(request, subject, ct));
+    });
+
+    g.MapGet("/{id:guid}", async (Guid id, IOffboardingService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetRequestAsync(id, ct)));
+
+    g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var subject = ResolveSubjectId(http) ?? "";
+        return Results.Ok(await svc.ApproveRequestAsync(id, subject, ct));
+    });
+
+    g.MapPost("/{id:guid}/reject", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var subject = ResolveSubjectId(http) ?? "";
+        var body = await ReadBodyAsync<RejectRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.RejectRequestAsync(id, body.Reason, subject, ct));
+    });
+
+    g.MapPost("/{id:guid}/cancel", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var body = await ReadBodyAsync<CancelRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.CancelRequestAsync(id, body.Reason, ct));
+    });
+
+    g.MapPost("/{id:guid}/final-pay", async (Guid id, IOffboardingService svc, CancellationToken ct) =>
+        Results.Ok(await svc.MarkFinalPayProcessedAsync(id, ct)));
+
+    // Checklist items
+    g.MapPost("/{id:guid}/checklist", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<ChecklistItemCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.AddChecklistItemAsync(id, request, ct));
+    });
+
+    g.MapPatch("/{id:guid}/checklist/{itemId:guid}", async (Guid id, Guid itemId, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<ChecklistItemUpdate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateChecklistItemAsync(id, itemId, request, ct));
+    });
+
+    g.MapPost("/{id:guid}/checklist/{itemId:guid}/complete", async (Guid id, Guid itemId, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var subject = ResolveSubjectId(http) ?? "";
+        return Results.Ok(await svc.CompleteChecklistItemAsync(itemId, subject, ct));
+    });
+
+    // Exit interview
+    g.MapPost("/{id:guid}/exit-interview", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<ExitInterviewCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.CreateExitInterviewAsync(id, request, ct));
+    });
+
+    g.MapGet("/{id:guid}/exit-interview", async (Guid id, IOffboardingService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetExitInterviewAsync(id, ct)));
+
+    g.MapPatch("/{id:guid}/exit-interview", async (Guid id, HttpContext http, IOffboardingService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<ExitInterviewUpdate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateExitInterviewAsync(id, request, ct));
+    });
 }
 
+
+}
 // Route-local binding types.
+public sealed record RejectRequest(string Reason);
+public sealed record CancelRequest(string Reason);
 public sealed record PayrollRunApprovalNote(string? Note);
 public sealed record StatutoryExportQuery(string ExportType, Guid PeriodId);
 // M31 import/export: the UI sends client-mapped rows (file column → canonical
@@ -1445,4 +1546,6 @@ public sealed class ApiVersioning
 {
     public int CurrentVersion { get; set; }
 }
+
+
 

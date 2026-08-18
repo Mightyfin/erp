@@ -11,6 +11,7 @@ using Mightyfin.Erp.Hrm.Application.Experience;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Performance;
+using Mightyfin.Erp.Hrm.Application.Offboarding;
 using Mightyfin.Erp.Hrm.Infrastructure;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -83,6 +84,8 @@ builder.Services.AddScoped<IExperienceRepository, ExperienceRepository>();
 builder.Services.AddScoped<IExperienceService, ExperienceServiceImpl>();
 builder.Services.AddScoped<IPerformanceRepository, PerformanceRepository>();
 builder.Services.AddScoped<IPerformanceService, PerformanceServiceImpl>();
+builder.Services.AddScoped<IOffboardingRepository, OffboardingRepository>();
+builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
 builder.Services.AddScoped<IPayslipDocumentService, PayslipDocumentServiceImpl>();

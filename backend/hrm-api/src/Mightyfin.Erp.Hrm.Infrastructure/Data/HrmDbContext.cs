@@ -144,6 +144,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PerformanceGoal> PerformanceGoals => Set<PerformanceGoal>();
     public DbSet<PerformanceAssessment> PerformanceAssessments => Set<PerformanceAssessment>();
 
+    // Offboarding & exit (M37)
+    public DbSet<OffboardingRequest> OffboardingRequests => Set<OffboardingRequest>();
+    public DbSet<OffboardingChecklistItem> OffboardingChecklistItems => Set<OffboardingChecklistItem>();
+    public DbSet<ExitInterview> ExitInterviews => Set<ExitInterview>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("hrm");
@@ -275,6 +280,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<PerformanceGoal>(modelBuilder, "performance_goals");
         ConfigureEntity<PerformanceAssessment>(modelBuilder, "performance_assessments");
 
+        // Offboarding & exit (M37)
+        ConfigureEntity<OffboardingRequest>(modelBuilder, "offboarding_requests");
+        ConfigureEntity<OffboardingChecklistItem>(modelBuilder, "offboarding_checklist_items");
+        ConfigureEntity<ExitInterview>(modelBuilder, "exit_interviews");
+
         // Relationships
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.DefaultCalendar).WithMany().HasForeignKey(x => x.DefaultCalendarId).OnDelete(DeleteBehavior.SetNull);
@@ -339,6 +349,12 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<PerformanceGoal>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<PerformanceAssessment>().HasOne(x => x.Cycle).WithMany(x => x.Assessments).HasForeignKey(x => x.CycleId);
         modelBuilder.Entity<PerformanceAssessment>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+
+        // Offboarding & exit relationships (M37)
+        modelBuilder.Entity<OffboardingChecklistItem>().HasOne(x => x.Request).WithMany(x => x.ChecklistItems).HasForeignKey(x => x.OffboardingRequestId);
+        modelBuilder.Entity<OffboardingRequest>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ExitInterview>().HasOne(x => x.Request).WithOne().HasForeignKey<ExitInterview>(x => x.OffboardingRequestId);
+        modelBuilder.Entity<ExitInterview>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
 
         base.OnModelCreating(modelBuilder);
     }

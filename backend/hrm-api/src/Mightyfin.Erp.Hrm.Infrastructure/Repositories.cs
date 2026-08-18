@@ -6,6 +6,7 @@ using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Performance;
+using Mightyfin.Erp.Hrm.Application.Offboarding;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -1633,4 +1634,73 @@ public sealed class PerformanceRepository(HrmDbContext db) : IPerformanceReposit
 
     public async Task<PerformanceAssessment?> GetMyAssessmentAsync(Guid cycleId, Guid workerId, CancellationToken ct)
         => await db.PerformanceAssessments.FirstOrDefaultAsync(a => a.CycleId == cycleId && a.WorkerId == workerId, ct);
+}
+
+public sealed class OffboardingRepository(HrmDbContext db) : IOffboardingRepository
+{
+    public async Task<List<OffboardingRequest>> ListRequestsAsync(string? status, CancellationToken ct)
+    {
+        var q = db.OffboardingRequests.Include(r => r.Worker).Include(r => r.ChecklistItems).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        return (await q.Take(200).ToListAsync(ct)).OrderByDescending(r => r.CreatedAt).ToList();
+    }
+    public async Task<OffboardingRequest?> GetRequestAsync(Guid id, CancellationToken ct)
+        => await db.OffboardingRequests.Include(r => r.Worker).Include(r => r.ChecklistItems).Include(r => r.ExitInterview).FirstOrDefaultAsync(r => r.Id == id, ct);
+    public async Task<OffboardingRequest?> GetActiveForWorkerAsync(Guid workerId, CancellationToken ct)
+        => await db.OffboardingRequests.Include(r => r.Worker).FirstOrDefaultAsync(r => r.WorkerId == workerId && r.Status != "completed" && r.Status != "cancelled", ct);
+    public async Task<OffboardingRequest> CreateRequestAsync(OffboardingRequest request, CancellationToken ct)
+    {
+        db.OffboardingRequests.Add(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+    public async Task<OffboardingRequest> UpdateRequestAsync(OffboardingRequest request, CancellationToken ct)
+    {
+        foreach (var item in request.ChecklistItems.ToList())
+        {
+            var entry = db.Entry(item);
+            if (entry.State != EntityState.Unchanged && entry.State != EntityState.Added && entry.State != EntityState.Detached)
+                entry.State = EntityState.Unchanged;
+        }
+        if (db.Entry(request).State == EntityState.Detached)
+            db.OffboardingRequests.Update(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+    public async Task<OffboardingChecklistItem?> GetChecklistItemAsync(Guid id, CancellationToken ct)
+        => await db.OffboardingChecklistItems.FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<OffboardingChecklistItem> CreateChecklistItemAsync(OffboardingChecklistItem item, CancellationToken ct)
+    {
+        db.OffboardingChecklistItems.Add(item);
+        await db.SaveChangesAsync(ct);
+        return item;
+    }
+    public async Task<OffboardingChecklistItem> UpdateChecklistItemAsync(OffboardingChecklistItem item, CancellationToken ct)
+    {
+        if (db.Entry(item).State == EntityState.Detached)
+            db.OffboardingChecklistItems.Update(item);
+        await db.SaveChangesAsync(ct);
+        return item;
+    }
+    public async Task<ExitInterview?> GetExitInterviewAsync(Guid requestId, CancellationToken ct)
+        => await db.ExitInterviews.Include(e => e.Worker).FirstOrDefaultAsync(e => e.OffboardingRequestId == requestId, ct);
+    public async Task<ExitInterview?> GetExitInterviewByIdAsync(Guid id, CancellationToken ct)
+        => await db.ExitInterviews.Include(e => e.Worker).FirstOrDefaultAsync(e => e.Id == id, ct);
+    public async Task<ExitInterview> CreateExitInterviewAsync(ExitInterview interview, CancellationToken ct)
+    {
+        db.ExitInterviews.Add(interview);
+        await db.SaveChangesAsync(ct);
+        return interview;
+    }
+    public async Task<ExitInterview> UpdateExitInterviewAsync(ExitInterview interview, CancellationToken ct)
+    {
+        if (db.Entry(interview).State == EntityState.Detached)
+            db.ExitInterviews.Update(interview);
+        await db.SaveChangesAsync(ct);
+        return interview;
+    }
+    public async Task<Worker?> FindWorkerAsync(Guid workerId, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.Id == workerId, ct);
+    public async Task<Worker?> FindWorkerBySubjectIdAsync(string subjectId, CancellationToken ct)
+        => await db.Workers.FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
 }

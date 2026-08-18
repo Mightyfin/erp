@@ -173,6 +173,15 @@ export const hrmModule: ModuleDefinition = {
       ],
     },
     {
+      id: "offboarding",
+      label: "Offboarding",
+      icon: Briefcase,
+      roles: ["hr_ops", "hr_admin"],
+      items: [
+        { label: "Offboarding requests", to: "/hrm/offboarding" },
+      ],
+    },
+    {
       id: "experience",
       label: "Employee experience",
       icon: MessagesSquare,
