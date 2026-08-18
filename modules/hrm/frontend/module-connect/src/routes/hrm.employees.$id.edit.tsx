@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Info, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -520,7 +520,7 @@ function HistoryForm({
           <Input
             id={f.id ?? f.name}
             type={f.type ?? "text"}
-            value={String(row[f.name] ?? "")}
+            value={row[f.name] === 0 ? "" : String(row[f.name] ?? "")}
             onChange={(e) => {
               row[f.name] = e.target.value;
             }}
@@ -583,6 +583,12 @@ function HistorySection({ workerId }: { workerId: string }) {
   const [editing, setEditing] = useState<{ kind: HistoryKind; row: HistoryRow } | null>(null);
   const [adding, setAdding] = useState<HistoryKind | null>(null);
   const [deleting, setDeleting] = useState<{ kind: HistoryKind; row: HistoryRow } | null>(null);
+  // A stable row that survives re-renders while the inline form is typed into.
+  const formRowRef = useRef<Record<HistoryKind, HistoryRow>>({
+    education: {},
+    "external-work-history": {},
+    "internal-work-history": {},
+  });
 
   useEffect(() => {
     let alive = true;
@@ -677,8 +683,8 @@ function HistorySection({ workerId }: { workerId: string }) {
   }
 
   function yearRange(row: HistoryRow) {
-    const s = row.startYear ? String(row.startYear) : "";
-    const e = row.endYear ? String(row.endYear) : "";
+    const s = row.startYear && Number(row.startYear) ? String(row.startYear) : "";
+    const e = row.endYear && Number(row.endYear) ? String(row.endYear) : "";
     return s || e ? `${s}–${e}`.replace(/^–|–$/, "") : "";
   }
 
@@ -701,6 +707,7 @@ function HistorySection({ workerId }: { workerId: string }) {
             className="gap-1"
             disabled={editing !== null || adding !== null}
             onClick={() => {
+              formRowRef.current.education = {};
               setAdding("education");
               setEditing(null);
             }}
@@ -711,8 +718,8 @@ function HistorySection({ workerId }: { workerId: string }) {
         {adding === "education" || (editing?.kind === "education") ? (
           <HistoryForm
             kind="education"
-            row={editing?.kind === "education" ? editing.row : {}}
-            onSubmit={() => save("education", editing?.kind === "education" ? editing.row : {})}
+            row={editing?.kind === "education" ? editing.row : formRowRef.current.education}
+            onSubmit={() => save("education", editing?.kind === "education" ? editing.row : formRowRef.current.education)}
             onDiscard={() => {
               setAdding(null);
               setEditing(null);
@@ -765,6 +772,7 @@ function HistorySection({ workerId }: { workerId: string }) {
             className="gap-1"
             disabled={editing !== null || adding !== null}
             onClick={() => {
+              formRowRef.current["external-work-history"] = {};
               setAdding("external-work-history");
               setEditing(null);
             }}
@@ -775,11 +783,13 @@ function HistorySection({ workerId }: { workerId: string }) {
         {adding === "external-work-history" || editing?.kind === "external-work-history" ? (
           <HistoryForm
             kind="external-work-history"
-            row={editing?.kind === "external-work-history" ? editing.row : {}}
+            row={editing?.kind === "external-work-history" ? editing.row : formRowRef.current["external-work-history"]}
             onSubmit={() =>
               save(
                 "external-work-history",
-                editing?.kind === "external-work-history" ? editing.row : {},
+                editing?.kind === "external-work-history"
+                  ? editing.row
+                  : formRowRef.current["external-work-history"],
               )
             }
             onDiscard={() => {
@@ -836,6 +846,7 @@ function HistorySection({ workerId }: { workerId: string }) {
             className="gap-1"
             disabled={editing !== null || adding !== null}
             onClick={() => {
+              formRowRef.current["internal-work-history"] = {};
               setAdding("internal-work-history");
               setEditing(null);
             }}
@@ -846,11 +857,13 @@ function HistorySection({ workerId }: { workerId: string }) {
         {adding === "internal-work-history" || editing?.kind === "internal-work-history" ? (
           <HistoryForm
             kind="internal-work-history"
-            row={editing?.kind === "internal-work-history" ? editing.row : {}}
+            row={editing?.kind === "internal-work-history" ? editing.row : formRowRef.current["internal-work-history"]}
             onSubmit={() =>
               save(
                 "internal-work-history",
-                editing?.kind === "internal-work-history" ? editing.row : {},
+                editing?.kind === "internal-work-history"
+                  ? editing.row
+                  : formRowRef.current["internal-work-history"],
               )
             }
             onDiscard={() => {
