@@ -932,6 +932,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             await repo.UpdatePayslipAsync(slip, ct);
         }
         // Download the PDF from durable storage and return raw bytes.
+        if (slip.DocumentUrl!.StartsWith("file://"))
+        {
+            // Local file: read directly from filesystem.
+            var localPath = slip.DocumentUrl["file://".Length..];
+            if (!File.Exists(localPath))
+                throw new DomainException("payslip-file-missing", $"Payslip PDF file not found at {localPath}");
+            return await File.ReadAllBytesAsync(localPath, ct);
+        }
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var bytes = await httpClient.GetByteArrayAsync(slip.DocumentUrl, ct);
         return bytes;

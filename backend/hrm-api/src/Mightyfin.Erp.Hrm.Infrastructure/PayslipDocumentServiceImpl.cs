@@ -60,23 +60,14 @@ public sealed class PayslipDocumentServiceImpl(HrmDbContext db) : IPayslipDocume
 
     private static async Task<string> UploadAsync(string pdfPath, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo("manus-upload-file", $"\"{pdfPath}\"")
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("manus-upload-file not found on this host");
-        var outText = await proc.StandardOutput.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-        if (proc.ExitCode != 0)
-        {
-            var err = await proc.StandardError.ReadToEndAsync(ct);
-            throw new InvalidOperationException($"Payslip upload failed: {err.Trim()}");
-        }
-        // Output is a JSON-ish wrapper; the URL is the first http(s) token.
-        var match = System.Text.RegularExpressions.Regex.Match(outText, @"https://[^\s""',]+");
-        return match.Success ? match.Value : outText.Trim();
+        // Store locally on the server filesystem. The preview endpoint serves these directly.
+        var fileName = Path.GetFileName(pdfPath);
+        var storeDir = Path.Combine(Path.GetTempPath(), "hrm-payslips");
+        Directory.CreateDirectory(storeDir);
+        var destPath = Path.Combine(storeDir, fileName);
+        await Task.Run(() => File.Copy(pdfPath, destPath, overwrite: true), ct);
+        // Return a local file URL that the preview endpoint can resolve.
+        return $"file://{destPath}";
     }
 
     private static string RenderPayslipHtml(string workerName, string employeeNo, string periodLabel,
