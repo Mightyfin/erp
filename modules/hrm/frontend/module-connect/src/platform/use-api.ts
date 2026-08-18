@@ -236,7 +236,15 @@ export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeepr
     paymentMethod: text(bank?.paymentMethod), bankName: text(bank?.bankName),
     bankBranch: text(bank?.branchCode), bankAccount: text(bank?.accountNumber),
     tpin: text(raw.tpin), napsaNumber: text(raw.napsaNumber), nhimaNumber: text(raw.nhimaNumber),
-    education: [], previousEmployment: [], dependants: [],
+    education: Array.isArray(raw.education) ? raw.education as Record<string, unknown>[] : [],
+    previousEmployment: Array.isArray(raw.externalWorkHistory)
+      ? (raw.externalWorkHistory as Record<string, unknown>[]).map((item) => ({
+          id: text(item.id), employer: text(item.company), jobTitle: text(item.role ?? ""),
+          from: text(item.startDate), to: text(item.endDate), reasonForLeaving: "",
+          referenceChecked: false,
+        }))
+      : [],
+    dependants: [],
   };
 }
 
@@ -966,4 +974,29 @@ export const realApi = {
     hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/bank-details`, body),
   removeBankDetails: (workerId: string, bankId: string) =>
     hrmApi.delete<unknown>(`/hrm/workers/${workerId}/bank-details/${bankId}`),
+  /** M33 worker history: education, external and internal work history. */
+  education: (workerId: string) =>
+    hrmApi.get<unknown[]>(`/hrm/workers/${workerId}/education`),
+  addEducation: (workerId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/education`, body),
+  updateEducation: (workerId: string, recordId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/education/${recordId}`, body),
+  removeEducation: (workerId: string, recordId: string) =>
+    hrmApi.delete<unknown>(`/hrm/workers/${workerId}/education/${recordId}`),
+  externalWorkHistory: (workerId: string) =>
+    hrmApi.get<unknown[]>(`/hrm/workers/${workerId}/external-work-history`),
+  addExternalWorkHistory: (workerId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/external-work-history`, body),
+  updateExternalWorkHistory: (workerId: string, recordId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/external-work-history/${recordId}`, body),
+  removeExternalWorkHistory: (workerId: string, recordId: string) =>
+    hrmApi.delete<unknown>(`/hrm/workers/${workerId}/external-work-history/${recordId}`),
+  internalWorkHistory: (workerId: string) =>
+    hrmApi.get<unknown[]>(`/hrm/workers/${workerId}/internal-work-history`),
+  addInternalWorkHistory: (workerId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/internal-work-history`, body),
+  updateInternalWorkHistory: (workerId: string, recordId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/internal-work-history/${recordId}`, body),
+  removeInternalWorkHistory: (workerId: string, recordId: string) =>
+    hrmApi.delete<unknown>(`/hrm/workers/${workerId}/internal-work-history/${recordId}`),
 };

@@ -1,5 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Info } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Info, Pencil, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { employeeProfileApi } from "@/mock/employeeprofile";
 import { branchOptions, departmentOptions, gradeOptions, workLocationOptions } from "@/mock/reference";
 import { EMPLOYMENT_TYPES } from "@/mock/types";
@@ -15,6 +19,8 @@ import { Async } from "@/platform/components/Async";
 import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
 import { LoadingState, RestrictedState } from "@/platform/components/States";
+import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
+import { SubRecordCard, SubRecords } from "@/platform/components/ProfileFields";
 import { feedback } from "@/platform/feedback";
 import { useMock } from "@/platform/use-mock";
 
@@ -279,18 +285,48 @@ function EditEmployee() {
             ? sections
                 .map((section) => ({
                   ...section,
-                  description: "These fields are stored on the live worker record.",
+                  description: section.render
+                    ? section.description
+                    : "These fields are stored on the live worker record.",
                   fields: section.fields?.filter((field) => liveFields.has(field.name)),
                 }))
-                .filter((section) => section.fields?.length)
+                .filter((section) => section.render || section.fields?.length)
             : sections;
+
+          // The route id is the mock employee id (`w-1001`) in demo mode but the
+          // real worker guid in production — `adaptWorkers` keeps the real id on
+          // the `id` field, so fall back to the route id in mock mode.
+          const workerId = employee.id ?? id;
 
           return (
             <EditPage
               title={employee.fullName}
               reference={employee.employeeNo}
               description={USE_REAL ? "Only fields backed by the live worker record are editable here." : "Changes are dated and go into the employee's history. Anything affecting pay is approved before it reaches a run."}
-              sections={visibleSections}
+              sections={[
+                ...visibleSections,
+                ...(USE_REAL
+                  ? [
+                      {
+                        id: "history",
+                        title: "Employee history",
+                        description: "Education and previous employers. Every change here is written straight to the live record, with one person to undo it.",
+                        render: () => (
+                          <HistorySection workerId={workerId} />
+                        ),
+                      },
+                    ]
+                  : [
+                      {
+                        id: "history",
+                        title: "Employee history",
+                        description: "Education, previous employers and moves within this organisation.",
+                        render: () => (
+                          <p className="text-sm text-muted-foreground">History is recorded in the live build of this screen. Nothing reaches payroll until a change is approved.</p>
+                        ),
+                      },
+                    ]),
+              ] as EditSection[]}
               initial={{
                 salutation: pr?.salutation ?? "Mr",
                 fullName: employee.fullName,
@@ -350,6 +386,7 @@ function EditEmployee() {
               }}
               saveLabel="Save the change"
               footerNote={USE_REAL ? "Saved changes are written to the live HRM worker record and audited by the API." : "Nothing reaches payroll until the change is approved."}
+              extraChanges={[]}
               onCancel={() => navigate({ to: "/hrm/employees/$id", params: { id } })}
               onSave={async (values, changed) => {
                 if (USE_REAL) {
@@ -427,5 +464,441 @@ function EditEmployee() {
       </Async>
     </AppShell>
       </AuthGate>
+  );
+}
+
+/**
+ * M33: live CRUD for the three worker-history collections.
+ *
+ * The rule these sections encode: a history record is append-only in spirit,
+ * so adding is the loudest action, editing quietly fixes a typo, and deleting
+ * is the only thing that needs a second thought — the dialog states the
+ * consequence ("gone from payroll audits too") instead of asking "are you sure?".
+ * Everything saves straight to the live record; the one visible Undo reverses
+ * the last add.
+ */
+type HistoryRow = Record<string, unknown>;
+
+type HistoryKind = "education" | "external-work-history" | "internal-work-history";
+
+function historyLists() {
+  return {
+    education: realApi.education,
+    "external-work-history": realApi.externalWorkHistory,
+    "internal-work-history": realApi.internalWorkHistory,
+  };
+}
+
+/** Inline add/edit form shown per history section. */
+function HistoryForm({
+  kind,
+  row,
+  onSubmit,
+  onDiscard,
+}: {
+  kind: HistoryKind;
+  row: HistoryRow;
+  onSubmit: () => void;
+  onDiscard: () => void;
+}) {
+  const set = (name: string) => (value: string) =>
+    onSubmit(); // unused — see below
+  void set;
+  return (
+    <div className="mt-2 rounded-md border bg-surface-muted p-3">
+      {historyFields(kind).map((f) => (
+        <div key={f.name} className="mt-2 first:mt-0">
+          <label htmlFor={f.name} className="text-xs text-muted-foreground">
+            {f.label}
+          </label>
+          <Input
+            id={f.name}
+            type={f.type ?? "text"}
+            value={String(row[f.name] ?? "")}
+            onChange={(e) => {
+              row[f.name] = e.target.value;
+              onSubmit();
+            }}
+          />
+        </div>
+      ))}
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onDiscard}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={onSubmit}>
+          {row.id ? "Update" : "Add"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The fields a worker-history record owns — one table per kind. */
+function historyFields(kind: HistoryKind) {
+  if (kind === "education") {
+    return [
+      { name: "institution", label: "Institution", type: "text" },
+      { name: "qualification", label: "Qualification", type: "text" },
+      { name: "fieldOfStudy", label: "Field of study", type: "text" },
+      { name: "grade", label: "Grade", type: "text" },
+      { name: "startYear", label: "Start year", type: "text" },
+      { name: "endYear", label: "End year", type: "text" },
+    ];
+  }
+  if (kind === "external-work-history") {
+    return [
+      { name: "company", label: "Company", type: "text" },
+      { name: "role", label: "Role", type: "text" },
+      { name: "startDate", label: "Start date", type: "text", hint: "YYYY-MM-DD" },
+      { name: "endDate", label: "End date", type: "text", hint: "YYYY-MM-DD" },
+      { name: "responsibilities", label: "Responsibilities", type: "text" },
+    ];
+  }
+  return [
+    { name: "orgUnitName", label: "Department / branch", type: "text" },
+    { name: "role", label: "Role", type: "text" },
+    { name: "grade", label: "Grade", type: "text" },
+    { name: "startDate", label: "Start date", type: "text", hint: "YYYY-MM-DD" },
+    { name: "endDate", label: "End date", type: "text", hint: "YYYY-MM-DD" },
+    { name: "reason", label: "Reason for the move", type: "text" },
+  ];
+}
+
+function HistorySection({ workerId }: { workerId: string }) {
+  const [education, setEducation] = useState<HistoryRow[]>([]);
+  const [external, setExternal] = useState<HistoryRow[]>([]);
+  const [internal, setInternal] = useState<HistoryRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ kind: HistoryKind; row: HistoryRow } | null>(null);
+  const [adding, setAdding] = useState<HistoryKind | null>(null);
+  const [deleting, setDeleting] = useState<{ kind: HistoryKind; row: HistoryRow } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      realApi.education(workerId).catch(() => []),
+      realApi.externalWorkHistory(workerId).catch(() => []),
+      realApi.internalWorkHistory(workerId).catch(() => []),
+    ])
+      .then(([ed, ext, inn]) => {
+        if (!alive) return;
+        setEducation(Array.isArray(ed) ? ed : []);
+        setExternal(Array.isArray(ext) ? ext : []);
+        setInternal(Array.isArray(inn) ? inn : []);
+      })
+      .catch((err) => {
+        if (alive) setLoadError(err instanceof ApiError ? err.message : String(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [workerId]);
+
+  async function save(kind: HistoryKind, row: HistoryRow) {
+    const body: Record<string, unknown> = {};
+    for (const f of historyFields(kind)) {
+      const value = (row[f.name] ?? "").toString().trim();
+      if (value) {
+        if (f.name === "startYear" || f.name === "endYear") {
+          const year = Number(value);
+          if (!Number.isFinite(year)) continue;
+          body[f.name] = year;
+        } else body[f.name] = value;
+      } else body[f.name] = null;
+    }
+    try {
+      if (row.id) {
+        if (kind === "education") await realApi.updateEducation(workerId, String(row.id), body);
+        else if (kind === "external-work-history")
+          await realApi.updateExternalWorkHistory(workerId, String(row.id), body);
+        else await realApi.updateInternalWorkHistory(workerId, String(row.id), body);
+        feedback.saved("History record updated on the live HRM record.");
+      } else {
+        const created =
+          kind === "education"
+            ? await realApi.addEducation(workerId, body)
+            : kind === "external-work-history"
+              ? await realApi.addExternalWorkHistory(workerId, body)
+              : await realApi.addInternalWorkHistory(workerId, body);
+        row.id = String((created as Record<string, unknown>).id ?? "");
+        feedback.saved(
+          "History record added to the live HRM record.",
+          async () => {
+            if (!row.id) return;
+            try {
+              if (kind === "education") await realApi.removeEducation(workerId, row.id);
+              else if (kind === "external-work-history")
+                await realApi.removeExternalWorkHistory(workerId, row.id);
+              else await realApi.removeInternalWorkHistory(workerId, row.id);
+              setEducation((s) => s.filter((r) => r.id !== row.id));
+              setExternal((s) => s.filter((r) => r.id !== row.id));
+              setInternal((s) => s.filter((r) => r.id !== row.id));
+              feedback.note("The record was removed again.");
+            } catch {
+              feedback.blocked("The undo failed — the record is still saved.");
+            }
+          },
+        );
+      }
+      setEditing(null);
+      setAdding(null);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      feedback.blocked("The history record could not be saved.", msg);
+    }
+  }
+
+  async function remove(kind: HistoryKind, row: HistoryRow) {
+    try {
+      if (kind === "education") await realApi.removeEducation(workerId, String(row.id));
+      else if (kind === "external-work-history")
+        await realApi.removeExternalWorkHistory(workerId, String(row.id));
+      else await realApi.removeInternalWorkHistory(workerId, String(row.id));
+      setEducation((s) => s.filter((r) => r.id !== row.id));
+      setExternal((s) => s.filter((r) => r.id !== row.id));
+      setInternal((s) => s.filter((r) => r.id !== row.id));
+      feedback.removed("History record removed from the live HRM record.");
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      feedback.blocked("The record could not be removed.", msg);
+    }
+    setDeleting(null);
+  }
+
+  function yearRange(row: HistoryRow) {
+    const s = row.startYear ? String(row.startYear) : "";
+    const e = row.endYear ? String(row.endYear) : "";
+    return s || e ? `${s}–${e}`.replace(/^–|–$/, "") : "";
+  }
+
+  return (
+    <div className="space-y-6">
+      {loadError ? (
+        <p role="alert" className="rounded-md border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
+          <AlertTriangle className="mr-1.5 inline size-3.5" aria-hidden />
+          {loadError}
+        </p>
+      ) : null}
+
+      {/* Education */}
+      <div>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Education</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            disabled={editing !== null || adding !== null}
+            onClick={() => {
+              setAdding("education");
+              setEditing(null);
+            }}
+          >
+            <Plus className="size-3.5" aria-hidden /> Add
+          </Button>
+        </div>
+        {adding === "education" || (editing?.kind === "education") ? (
+          <HistoryForm
+            kind="education"
+            row={editing?.kind === "education" ? editing.row : {}}
+            onSubmit={() => save("education", editing?.kind === "education" ? editing.row : {})}
+            onDiscard={() => {
+              setAdding(null);
+              setEditing(null);
+            }}
+          />
+        ) : (
+          <SubRecords
+            items={education}
+            empty="No qualifications recorded yet."
+            render={(ed) => (
+              <SubRecordCard
+                title={String(ed.qualification ?? "Qualification not recorded")}
+                meta={yearRange(ed)}
+              >
+                {ed.institution ? String(ed.institution) : "Institution not recorded"}
+                {ed.fieldOfStudy ? ` · ${ed.fieldOfStudy}` : ""}
+                {ed.grade ? ` · ${ed.grade}` : ""}
+                <span className="ml-3">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-info hover:underline"
+                    onClick={() => {
+                      setEditing({ kind: "education", row: { ...ed } });
+                      setAdding(null);
+                    }}
+                  >
+                    <Pencil className="size-3" aria-hidden /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="ml-3 inline-flex items-center gap-1 text-danger hover:underline"
+                    onClick={() => setDeleting({ kind: "education", row: ed })}
+                  >
+                    <Trash2 className="size-3" aria-hidden /> Remove
+                  </button>
+                </span>
+              </SubRecordCard>
+            )}
+          />
+        )}
+      </div>
+
+      {/* External work history */}
+      <div>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Previous employers</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            disabled={editing !== null || adding !== null}
+            onClick={() => {
+              setAdding("external-work-history");
+              setEditing(null);
+            }}
+          >
+            <Plus className="size-3.5" aria-hidden /> Add
+          </Button>
+        </div>
+        {adding === "external-work-history" || editing?.kind === "external-work-history" ? (
+          <HistoryForm
+            kind="external-work-history"
+            row={editing?.kind === "external-work-history" ? editing.row : {}}
+            onSubmit={() =>
+              save(
+                "external-work-history",
+                editing?.kind === "external-work-history" ? editing.row : {},
+              )
+            }
+            onDiscard={() => {
+              setAdding(null);
+              setEditing(null);
+            }}
+          />
+        ) : (
+          <SubRecords
+            items={external}
+            empty="No previous employers recorded yet."
+            render={(ex) => (
+              <SubRecordCard
+                title={`${String(ex.role ?? "Role not recorded")} — ${String(ex.company ?? "Company not recorded")}`}
+                meta={
+                  ex.startDate || ex.endDate
+                    ? `${ex.startDate ?? "—"} to ${ex.endDate ?? "present"}`
+                    : undefined
+                }
+              >
+                {ex.responsibilities ? String(ex.responsibilities) : "No responsibilities recorded"}
+                <span className="ml-3">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-info hover:underline"
+                    onClick={() => {
+                      setEditing({ kind: "external-work-history", row: { ...ex } });
+                      setAdding(null);
+                    }}
+                  >
+                    <Pencil className="size-3" aria-hidden /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="ml-3 inline-flex items-center gap-1 text-danger hover:underline"
+                    onClick={() => setDeleting({ kind: "external-work-history", row: ex })}
+                  >
+                    <Trash2 className="size-3" aria-hidden /> Remove
+                  </button>
+                </span>
+              </SubRecordCard>
+            )}
+          />
+        )}
+      </div>
+
+      {/* Internal work history */}
+      <div>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Moves within this organisation</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            disabled={editing !== null || adding !== null}
+            onClick={() => {
+              setAdding("internal-work-history");
+              setEditing(null);
+            }}
+          >
+            <Plus className="size-3.5" aria-hidden /> Add
+          </Button>
+        </div>
+        {adding === "internal-work-history" || editing?.kind === "internal-work-history" ? (
+          <HistoryForm
+            kind="internal-work-history"
+            row={editing?.kind === "internal-work-history" ? editing.row : {}}
+            onSubmit={() =>
+              save(
+                "internal-work-history",
+                editing?.kind === "internal-work-history" ? editing.row : {},
+              )
+            }
+            onDiscard={() => {
+              setAdding(null);
+              setEditing(null);
+            }}
+          />
+        ) : (
+          <SubRecords
+            items={internal}
+            empty="No internal moves recorded yet."
+            render={(inn) => (
+              <SubRecordCard
+                title={`${String(inn.role ?? "Role not recorded")} — ${String(inn.orgUnitName ?? "Department not recorded")}`}
+                meta={
+                  inn.startDate || inn.endDate
+                    ? `${inn.startDate ?? "—"} to ${inn.endDate ?? "present"}`
+                    : undefined
+                }
+              >
+                {inn.grade ? `Grade ${inn.grade}` : "Grade not recorded"}
+                {inn.reason ? ` · ${inn.reason}` : ""}
+                <span className="ml-3">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-info hover:underline"
+                    onClick={() => {
+                      setEditing({ kind: "internal-work-history", row: { ...inn } });
+                      setAdding(null);
+                    }}
+                  >
+                    <Pencil className="size-3" aria-hidden /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="ml-3 inline-flex items-center gap-1 text-danger hover:underline"
+                    onClick={() => setDeleting({ kind: "internal-work-history", row: inn })}
+                  >
+                    <Trash2 className="size-3" aria-hidden /> Remove
+                  </button>
+                </span>
+              </SubRecordCard>
+            )}
+          />
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title="Remove this history record?"
+        consequence="It disappears from the employee's record, including any audit trail that showed it."
+        confirmLabel="Remove it"
+        destructive
+        onConfirm={() => {
+          if (deleting) remove(deleting.kind, deleting.row);
+        }}
+      />
+    </div>
   );
 }
