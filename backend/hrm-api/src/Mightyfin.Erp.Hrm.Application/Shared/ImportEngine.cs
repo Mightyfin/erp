@@ -24,7 +24,10 @@ public interface IImportSchema
     string DisplayName { get; }                   // e.g. "Employees"
     List<ImportFieldDef> Fields { get; }
     /// Validate one mapped row against tenant data without persisting.
-    Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, CancellationToken ct);
+    /// mode is "insert" or "update" — insert rows must satisfy all required
+    /// fields; update rows may patch only the fields the file supplies, as the
+    /// existing record already carries its identity on file.
+    Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct);
     /// Persist one validated row (create in Insert mode, update in Update mode).
     Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct);
 }

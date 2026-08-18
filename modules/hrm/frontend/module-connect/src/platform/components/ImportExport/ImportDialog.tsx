@@ -474,7 +474,7 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
                         {statusIcon(previewRowStatus(r))}
                         <span className="capitalize">{previewRowStatus(r)}</span>
                       </span>
-                      <span className="text-xs text-muted-foreground truncate">{r.message ? String(r.message) : "—"}</span>
+                      <span className="text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>{r.message ? String(r.message) : "—"}</span>
                     </div>
                   ))}
                 </div>

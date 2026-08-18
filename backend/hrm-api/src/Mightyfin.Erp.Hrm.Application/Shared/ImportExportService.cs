@@ -70,7 +70,7 @@ public sealed class ImportExportServiceImpl : IImportExportService
         {
             var row = rows[i];
             ImportRowOutcome r;
-            try { r = await schema.PreviewRowAsync(row, ct); }
+            try { r = await schema.PreviewRowAsync(row, mode, ct); }
             catch (DomainException ex) { r = new ImportRowOutcome("error", ex.Message); }
             catch (Exception ex) { r = new ImportRowOutcome("error", ex.Message); }
             outcomes.Add(new ImportRowPreviewDto(i + 2, r.Status, r.Message, r.ResolvedRow ?? row));
