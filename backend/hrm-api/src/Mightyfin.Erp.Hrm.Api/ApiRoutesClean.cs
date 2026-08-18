@@ -14,6 +14,7 @@ using Mightyfin.Erp.Hrm.Application.Workflow;
 using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Shared;
+using Mightyfin.Erp.Hrm.Application.Performance;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
 // Minimal-API routes grouped by the frontend client interfaces (PeopleClient,
@@ -48,6 +49,7 @@ public static class Routes
         RegisterNotifications(app);
         RegisterMe(app);
         RegisterImportExport(app);
+        RegisterPerformance(app);
     }
 
     public static void RegisterNotifications(WebApplication app)
@@ -280,6 +282,26 @@ public static class Routes
             Results.Ok(await svc.MarkReadAsync(id, ResolveSubjectId(http) ?? "", ct)));
         g.MapPost("/notifications/read-all", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
             Results.Ok(new { markedRead = await svc.MarkAllReadAsync(ResolveSubjectId(http) ?? "", ct) }));
+
+        // M36: self-service performance
+        g.MapGet("/performance", async (HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http) ?? "";
+            return Results.Ok(await svc.GetMyPerformanceAsync(subject, ct));
+        });
+        g.MapGet("/performance/{cycleId:guid}", async (Guid cycleId, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http) ?? "";
+            var assessment = await svc.GetMyAssessmentAsync(subject, cycleId, ct);
+            return assessment is null ? Results.NotFound() : Results.Ok(assessment);
+        });
+        g.MapPatch("/performance/{assessmentId:guid}/self", async (Guid assessmentId, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http) ?? "";
+            var request = await ReadBodyAsync<SelfAssessmentSubmit>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.SubmitSelfAssessmentAsync(assessmentId, subject, request, ct));
+        });
     }
 
     private static async Task<WorkerDto> RequireLinkedWorkerAsync(
@@ -1342,6 +1364,73 @@ public static class Routes
         });
     }
 
+    // ===================== Performance & Goals (M36) =====================
+public static void RegisterPerformance(WebApplication app)
+{
+    // HR admin: cycles
+    var g = app.MapGroup($"{HrmPrefix}/performance").RequireAuthorization();
+    g.MapGet("/cycles", async ([FromQuery] string? status, IPerformanceService svc, CancellationToken ct)
+        => await svc.ListCyclesAsync(status, ct));
+    g.MapPost("/cycles", async (HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<PerformanceCycleCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Created("", await svc.CreateCycleAsync(req, ct));
+    });
+    g.MapGet("/cycles/{id:guid}", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => Results.Ok(await svc.GetCycleAsync(id, ct)));
+    g.MapPatch("/cycles/{id:guid}", async (Guid id, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<PerformanceCycleUpdate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateCycleAsync(id, req, ct));
+    });
+    g.MapPost("/cycles/{id:guid}/close", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => Results.Ok(await svc.CloseCycleAsync(id, ct)));
+    // HR admin: goals
+    g.MapGet("/cycles/{id:guid}/goals", async (Guid id, [FromQuery] Guid? workerId, IPerformanceService svc, CancellationToken ct)
+        => await svc.ListGoalsAsync(id, workerId, ct));
+    g.MapPost("/cycles/{id:guid}/goals", async (Guid id, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<PerformanceGoalCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Created("", await svc.CreateGoalAsync(id, req, ct));
+    });
+    g.MapPatch("/goals/{id:guid}", async (Guid id, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<PerformanceGoalUpdate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateGoalAsync(id, req, ct));
+    });
+    g.MapDelete("/goals/{id:guid}", async (Guid id, IPerformanceService svc, CancellationToken ct) =>
+    {
+        await svc.DeleteGoalAsync(id, ct);
+        return Results.Ok();
+    });
+    // HR admin: assessments
+    g.MapGet("/cycles/{id:guid}/assessments", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => await svc.ListAssessmentsAsync(id, ct));
+    g.MapGet("/assessments/{id:guid}", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => Results.Ok(await svc.GetAssessmentAsync(id, ct)));
+    g.MapPost("/cycles/{id:guid}/assessments", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => Results.Ok(await svc.EnsureAssessmentsAsync(id, ct)));
+    g.MapPatch("/assessments/{id:guid}/manager", async (Guid id, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<ManagerAssessmentSubmit>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.SubmitManagerAssessmentAsync(id, req, ct));
+    });
+    g.MapPatch("/assessments/{id:guid}/finalize", async (Guid id, HttpContext http, IPerformanceService svc, CancellationToken ct) =>
+    {
+        var req = await ReadBodyAsync<FinalizeAssessment>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.FinalizeAssessmentAsync(id, req, ct));
+    });
+    // HR admin: report
+    g.MapGet("/cycles/{id:guid}/report", async (Guid id, IPerformanceService svc, CancellationToken ct)
+        => Results.Ok(await svc.GetCycleReportAsync(id, ct)));
+}
+
 }
 
 // Route-local binding types.
@@ -1356,3 +1445,4 @@ public sealed class ApiVersioning
 {
     public int CurrentVersion { get; set; }
 }
+

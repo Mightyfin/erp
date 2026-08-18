@@ -5,6 +5,7 @@ using Mightyfin.Erp.Hrm.Application.Experience;
 using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workflow;
+using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -1507,4 +1508,129 @@ public sealed class DocumentsRepository(HrmDbContext db) : IDocumentsRepository
         await db.WorkerDocuments.FirstOrDefaultAsync(d => d.Id == id, ct);
     public async Task<List<WorkerDocument>> ListAllDocumentsAsync(CancellationToken ct) =>
         await db.WorkerDocuments.ToListAsync(ct);
+}
+
+// ===================== Performance & Goals (M36) =====================
+public sealed class PerformanceRepository(HrmDbContext db) : IPerformanceRepository
+{
+    public async Task<(List<PerformanceCycle> Items, int Total)> ListCyclesAsync(string? status, CancellationToken ct)
+    {
+        var q = db.PerformanceCycles.Include(c => c.Goals).Include(c => c.Assessments).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        var items = (await q.Take(100).ToListAsync(ct)).OrderByDescending(c => c.CreatedAt).ToList();
+        return (items, items.Count);
+    }
+
+    public async Task<PerformanceCycle?> GetCycleAsync(Guid id, CancellationToken ct)
+        => await db.PerformanceCycles.Include(c => c.Goals).Include(c => c.Assessments).FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public async Task<PerformanceCycle> CreateCycleAsync(PerformanceCycle cycle, CancellationToken ct)
+    {
+        db.PerformanceCycles.Add(cycle);
+        await db.SaveChangesAsync(ct);
+        return cycle;
+    }
+
+    public async Task<PerformanceCycle> UpdateCycleAsync(PerformanceCycle cycle, CancellationToken ct)
+    {
+        // M36: EF Core 10 demotes navigation-added children to Modified when the
+        // parent is Modified. Pin existing tracked children to Unchanged so the
+        // tracker skips them (same pattern as ExperienceRepository).
+        foreach (var g in cycle.Goals.ToList())
+        {
+            var entry = db.Entry(g);
+            if (entry.State != EntityState.Unchanged && entry.State != EntityState.Added && entry.State != EntityState.Detached)
+                entry.State = EntityState.Unchanged;
+        }
+        foreach (var a in cycle.Assessments.ToList())
+        {
+            var entry = db.Entry(a);
+            if (entry.State != EntityState.Unchanged && entry.State != EntityState.Added && entry.State != EntityState.Detached)
+                entry.State = EntityState.Unchanged;
+        }
+        if (db.Entry(cycle).State == EntityState.Detached)
+            db.PerformanceCycles.Update(cycle);
+        await db.SaveChangesAsync(ct);
+        return cycle;
+    }
+
+    public async Task<List<PerformanceGoal>> ListGoalsAsync(Guid cycleId, Guid? workerId, CancellationToken ct)
+    {
+        var q = db.PerformanceGoals.Include(g => g.Worker).AsQueryable();
+        q = q.Where(g => g.CycleId == cycleId);
+        if (workerId.HasValue) q = q.Where(g => g.WorkerId == workerId.Value);
+        return (await q.Take(200).ToListAsync(ct)).OrderBy(g => g.SortOrder).ToList();
+    }
+
+    public async Task<PerformanceGoal> CreateGoalAsync(PerformanceGoal goal, CancellationToken ct)
+    {
+        db.PerformanceGoals.Add(goal);
+        await db.SaveChangesAsync(ct);
+        return goal;
+    }
+
+    public async Task<PerformanceGoal> UpdateGoalAsync(PerformanceGoal goal, CancellationToken ct)
+    {
+        if (db.Entry(goal).State == EntityState.Detached)
+            db.PerformanceGoals.Update(goal);
+        await db.SaveChangesAsync(ct);
+        return goal;
+    }
+
+    public async Task DeleteGoalAsync(Guid id, CancellationToken ct)
+    {
+        var goal = await db.PerformanceGoals.FirstOrDefaultAsync(g => g.Id == id, ct)
+            ?? throw new DomainException("goal-not-found", $"Goal {id} does not exist.");
+        db.PerformanceGoals.Remove(goal);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<PerformanceGoal?> GetGoalAsync(Guid id, CancellationToken ct)
+        => await db.PerformanceGoals.Include(g => g.Worker).FirstOrDefaultAsync(g => g.Id == id, ct);
+
+    public async Task<List<PerformanceAssessment>> ListAssessmentsAsync(Guid cycleId, CancellationToken ct)
+        => (await db.PerformanceAssessments.Include(a => a.Worker)
+            .Where(a => a.CycleId == cycleId).Take(500).ToListAsync(ct))
+            .OrderBy(a => a.Worker?.FullName, StringComparer.OrdinalIgnoreCase).ToList();
+
+    public async Task<PerformanceAssessment?> GetAssessmentAsync(Guid id, CancellationToken ct)
+        => await db.PerformanceAssessments.Include(a => a.Worker).FirstOrDefaultAsync(a => a.Id == id, ct);
+
+    public async Task<PerformanceAssessment> CreateAssessmentAsync(PerformanceAssessment assessment, CancellationToken ct)
+    {
+        db.PerformanceAssessments.Add(assessment);
+        await db.SaveChangesAsync(ct);
+        return assessment;
+    }
+
+    // M36: explicit top-level insert for each assessment (EF Core 10
+    // Modified-parent demotion immunity) — same pattern as ExperienceRepository.AddMessageAsync.
+    public async Task AddRangeAssessmentsAsync(List<PerformanceAssessment> assessments, CancellationToken ct)
+    {
+        db.Set<PerformanceAssessment>().AddRange(assessments);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<PerformanceAssessment> UpdateAssessmentAsync(PerformanceAssessment assessment, CancellationToken ct)
+    {
+        if (db.Entry(assessment).State == EntityState.Detached)
+            db.PerformanceAssessments.Update(assessment);
+        await db.SaveChangesAsync(ct);
+        return assessment;
+    }
+
+    public async Task<List<Worker>> ListActiveWorkersAsync(CancellationToken ct)
+        => await db.Workers.Where(w => w.Status == "active").Take(2000).ToListAsync(ct);
+
+    public async Task<List<PerformanceCycle>> ListMyCyclesAsync(string subjectId, CancellationToken ct)
+    {
+        // Self-service: all cycles the worker can see (any status except closed
+        // cycles that never had an assessment row for the worker).
+        return (await db.PerformanceCycles.Take(200).ToListAsync(ct))
+            .Where(c => c.Status != "closed")
+            .OrderByDescending(c => c.CreatedAt).ToList();
+    }
+
+    public async Task<PerformanceAssessment?> GetMyAssessmentAsync(Guid cycleId, Guid workerId, CancellationToken ct)
+        => await db.PerformanceAssessments.FirstOrDefaultAsync(a => a.CycleId == cycleId && a.WorkerId == workerId, ct);
 }

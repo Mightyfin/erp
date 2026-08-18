@@ -86,6 +86,12 @@ function SelfService() {
                 to: "/hrm/my-preferences",
                 icon: Settings,
               },
+              {
+                label: "My performance",
+                value: linked ? "Review" : "—",
+                to: "/hrm/my-performance",
+                icon: Bell,
+              },
             ];
             return (
               <div className="space-y-6" data-testid="employee-self-service">

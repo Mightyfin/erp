@@ -23,6 +23,7 @@ export const ENABLED_SECTIONS = new Set([
   "self-service", // M31 employee-owned profile, pay, leave, documents and notifications
   "recruitment", // M29 candidate-to-worker workflow is operational
   "relations", // M30 restricted case and protected-disclosure operations
+  "performance", // M36 performance cycles, goals and assessments
   "configuration",
 ]);
 
@@ -41,6 +42,8 @@ const ENABLED_PREFIXES = [
   "/hrm/self-service",
   "/hrm/my-profile",
   "/hrm/my-preferences", // M35 employee notification preferences
+  "/hrm/performance", // M36 performance management
+  "/hrm/my-performance", // M36 self-service performance
   "/hrm/my-documents",
   "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",

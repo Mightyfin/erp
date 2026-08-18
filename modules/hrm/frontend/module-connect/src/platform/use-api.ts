@@ -1030,4 +1030,42 @@ export const realApi = {
     hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/internal-work-history/${recordId}`, body),
   removeInternalWorkHistory: (workerId: string, recordId: string) =>
     hrmApi.delete<unknown>(`/hrm/workers/${workerId}/internal-work-history/${recordId}`),
+  /** M36: Performance & goal management */
+  performanceCycles: (status?: string) =>
+    hrmApi.get<unknown[]>(`/hrm/performance/cycles${status ? `?status=${status}` : ""}`),
+  createPerformanceCycle: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/performance/cycles`, body),
+  performanceCycle: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/performance/cycles/${id}`),
+  updatePerformanceCycle: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/performance/cycles/${id}`, body),
+  closePerformanceCycle: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/performance/cycles/${id}/close`, {}),
+  performanceGoals: (cycleId: string, workerId?: string) =>
+    hrmApi.get<unknown[]>(`/hrm/performance/cycles/${cycleId}/goals${workerId ? `?workerId=${workerId}` : ""}`),
+  createPerformanceGoal: (cycleId: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/performance/cycles/${cycleId}/goals`, body),
+  updatePerformanceGoal: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/performance/goals/${id}`, body),
+  deletePerformanceGoal: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/performance/goals/${id}`),
+  performanceAssessments: (cycleId: string) =>
+    hrmApi.get<unknown[]>(`/hrm/performance/cycles/${cycleId}/assessments`),
+  performanceAssessment: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/performance/assessments/${id}`),
+  seedPerformanceAssessments: (cycleId: string) =>
+    hrmApi.post<unknown[]>(`/hrm/performance/cycles/${cycleId}/assessments`, {}),
+  submitManagerAssessment: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/performance/assessments/${id}/manager`, body),
+  finalizeAssessment: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/performance/assessments/${id}/finalize`, body),
+  performanceCycleReport: (cycleId: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/performance/cycles/${cycleId}/report`),
+  // M36 self-service
+  myPerformance: () =>
+    hrmApi.get<unknown[]>(`/hrm/me/performance`),
+  myPerformanceCycle: (cycleId: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/me/performance/${cycleId}`),
+  submitSelfAssessment: (assessmentId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/me/performance/${assessmentId}/self`, body),
 };

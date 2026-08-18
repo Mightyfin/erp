@@ -16,6 +16,7 @@ import { Route as HrmIndexRouteImport } from './routes/hrm.index'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
+import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
 import { Route as HrmMyPreferencesRouteImport } from './routes/hrm.my-preferences'
 import { Route as HrmMyProfileRouteImport } from './routes/hrm.my-profile'
 import { Route as HrmSelfServiceRouteImport } from './routes/hrm.self-service'
@@ -64,6 +65,8 @@ import { Route as HrmPeopleMasterDataRouteImport } from './routes/hrm.people.mas
 import { Route as HrmPeopleOrgRouteImport } from './routes/hrm.people.org'
 import { Route as HrmPeoplePositionsRouteImport } from './routes/hrm.people.positions'
 import { Route as HrmPeoplePrivacyRouteImport } from './routes/hrm.people.privacy'
+import { Route as HrmPerformanceIndexRouteImport } from './routes/hrm.performance.index'
+import { Route as HrmPerformanceIdRouteImport } from './routes/hrm.performance.$id'
 import { Route as HrmRecruitmentIndexRouteImport } from './routes/hrm.recruitment.index'
 import { Route as HrmRecruitmentCandidatesRouteImport } from './routes/hrm.recruitment.candidates'
 import { Route as HrmRecruitmentOffersRouteImport } from './routes/hrm.recruitment.offers'
@@ -143,6 +146,11 @@ const HrmHelpRoute = HrmHelpRouteImport.update({
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
   id: '/hrm/my-documents',
   path: '/hrm/my-documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmMyPerformanceRoute = HrmMyPerformanceRouteImport.update({
+  id: '/hrm/my-performance',
+  path: '/hrm/my-performance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmMyPreferencesRoute = HrmMyPreferencesRouteImport.update({
@@ -391,6 +399,16 @@ const HrmPeoplePrivacyRoute = HrmPeoplePrivacyRouteImport.update({
   path: '/hrm/people/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmPerformanceIndexRoute = HrmPerformanceIndexRouteImport.update({
+  id: '/hrm/performance/',
+  path: '/hrm/performance/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmPerformanceIdRoute = HrmPerformanceIdRouteImport.update({
+  id: '/hrm/performance/$id',
+  path: '/hrm/performance/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmRecruitmentIndexRoute = HrmRecruitmentIndexRouteImport.update({
   id: '/hrm/recruitment/',
   path: '/hrm/recruitment/',
@@ -633,6 +651,7 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
@@ -675,6 +694,7 @@ export interface FileRoutesByFullPath {
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/performance/$id': typeof HrmPerformanceIdRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
   '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
@@ -708,6 +728,7 @@ export interface FileRoutesByFullPath {
   '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
   '/hrm/payroll/': typeof HrmPayrollIndexRoute
   '/hrm/payslips/': typeof HrmPayslipsIndexRoute
+  '/hrm/performance/': typeof HrmPerformanceIndexRoute
   '/hrm/recruitment/': typeof HrmRecruitmentIndexRoute
   '/hrm/relations/': typeof HrmRelationsIndexRoute
   '/hrm/reports/': typeof HrmReportsIndexRoute
@@ -735,6 +756,7 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
@@ -777,6 +799,7 @@ export interface FileRoutesByTo {
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/performance/$id': typeof HrmPerformanceIdRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
   '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
@@ -810,6 +833,7 @@ export interface FileRoutesByTo {
   '/hrm/lifecycle': typeof HrmLifecycleIndexRoute
   '/hrm/payroll': typeof HrmPayrollIndexRoute
   '/hrm/payslips': typeof HrmPayslipsIndexRoute
+  '/hrm/performance': typeof HrmPerformanceIndexRoute
   '/hrm/recruitment': typeof HrmRecruitmentIndexRoute
   '/hrm/relations': typeof HrmRelationsIndexRoute
   '/hrm/reports': typeof HrmReportsIndexRoute
@@ -838,6 +862,7 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-performance': typeof HrmMyPerformanceRoute
   '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
@@ -880,6 +905,7 @@ export interface FileRoutesById {
   '/hrm/people/org': typeof HrmPeopleOrgRoute
   '/hrm/people/positions': typeof HrmPeoplePositionsRouteWithChildren
   '/hrm/people/privacy': typeof HrmPeoplePrivacyRoute
+  '/hrm/performance/$id': typeof HrmPerformanceIdRoute
   '/hrm/recruitment/candidates': typeof HrmRecruitmentCandidatesRouteWithChildren
   '/hrm/recruitment/offers': typeof HrmRecruitmentOffersRoute
   '/hrm/recruitment/operations': typeof HrmRecruitmentOperationsRoute
@@ -913,6 +939,7 @@ export interface FileRoutesById {
   '/hrm/lifecycle/': typeof HrmLifecycleIndexRoute
   '/hrm/payroll/': typeof HrmPayrollIndexRoute
   '/hrm/payslips/': typeof HrmPayslipsIndexRoute
+  '/hrm/performance/': typeof HrmPerformanceIndexRoute
   '/hrm/recruitment/': typeof HrmRecruitmentIndexRoute
   '/hrm/relations/': typeof HrmRelationsIndexRoute
   '/hrm/reports/': typeof HrmReportsIndexRoute
@@ -942,6 +969,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
@@ -984,6 +1012,7 @@ export interface FileRouteTypes {
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
+    | '/hrm/performance/$id'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
     | '/hrm/recruitment/operations'
@@ -1017,6 +1046,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle/'
     | '/hrm/payroll/'
     | '/hrm/payslips/'
+    | '/hrm/performance/'
     | '/hrm/recruitment/'
     | '/hrm/relations/'
     | '/hrm/reports/'
@@ -1044,6 +1074,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
@@ -1086,6 +1117,7 @@ export interface FileRouteTypes {
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
+    | '/hrm/performance/$id'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
     | '/hrm/recruitment/operations'
@@ -1119,6 +1151,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle'
     | '/hrm/payroll'
     | '/hrm/payslips'
+    | '/hrm/performance'
     | '/hrm/recruitment'
     | '/hrm/relations'
     | '/hrm/reports'
@@ -1146,6 +1179,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-performance'
     | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
@@ -1188,6 +1222,7 @@ export interface FileRouteTypes {
     | '/hrm/people/org'
     | '/hrm/people/positions'
     | '/hrm/people/privacy'
+    | '/hrm/performance/$id'
     | '/hrm/recruitment/candidates'
     | '/hrm/recruitment/offers'
     | '/hrm/recruitment/operations'
@@ -1221,6 +1256,7 @@ export interface FileRouteTypes {
     | '/hrm/lifecycle/'
     | '/hrm/payroll/'
     | '/hrm/payslips/'
+    | '/hrm/performance/'
     | '/hrm/recruitment/'
     | '/hrm/relations/'
     | '/hrm/reports/'
@@ -1249,6 +1285,7 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmHelpRoute: typeof HrmHelpRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
+  HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
   HrmMyPreferencesRoute: typeof HrmMyPreferencesRoute
   HrmMyProfileRoute: typeof HrmMyProfileRoute
   HrmSelfServiceRoute: typeof HrmSelfServiceRoute
@@ -1291,6 +1328,7 @@ export interface RootRouteChildren {
   HrmPeopleOrgRoute: typeof HrmPeopleOrgRoute
   HrmPeoplePositionsRoute: typeof HrmPeoplePositionsRouteWithChildren
   HrmPeoplePrivacyRoute: typeof HrmPeoplePrivacyRoute
+  HrmPerformanceIdRoute: typeof HrmPerformanceIdRoute
   HrmRecruitmentCandidatesRoute: typeof HrmRecruitmentCandidatesRouteWithChildren
   HrmRecruitmentOffersRoute: typeof HrmRecruitmentOffersRoute
   HrmRecruitmentOperationsRoute: typeof HrmRecruitmentOperationsRoute
@@ -1324,6 +1362,7 @@ export interface RootRouteChildren {
   HrmLifecycleIndexRoute: typeof HrmLifecycleIndexRoute
   HrmPayrollIndexRoute: typeof HrmPayrollIndexRoute
   HrmPayslipsIndexRoute: typeof HrmPayslipsIndexRoute
+  HrmPerformanceIndexRoute: typeof HrmPerformanceIndexRoute
   HrmRecruitmentIndexRoute: typeof HrmRecruitmentIndexRoute
   HrmRelationsIndexRoute: typeof HrmRelationsIndexRoute
   HrmReportsIndexRoute: typeof HrmReportsIndexRoute
@@ -1382,6 +1421,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/my-documents'
       fullPath: '/hrm/my-documents'
       preLoaderRoute: typeof HrmMyDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/my-performance': {
+      id: '/hrm/my-performance'
+      path: '/hrm/my-performance'
+      fullPath: '/hrm/my-performance'
+      preLoaderRoute: typeof HrmMyPerformanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-preferences': {
@@ -1718,6 +1764,20 @@ declare module '@tanstack/react-router' {
       path: '/hrm/people/privacy'
       fullPath: '/hrm/people/privacy'
       preLoaderRoute: typeof HrmPeoplePrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/performance/': {
+      id: '/hrm/performance/'
+      path: '/hrm/performance'
+      fullPath: '/hrm/performance/'
+      preLoaderRoute: typeof HrmPerformanceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/performance/$id': {
+      id: '/hrm/performance/$id'
+      path: '/hrm/performance/$id'
+      fullPath: '/hrm/performance/$id'
+      preLoaderRoute: typeof HrmPerformanceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/recruitment/': {
@@ -2184,6 +2244,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmHelpRoute: HrmHelpRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
+  HrmMyPerformanceRoute: HrmMyPerformanceRoute,
   HrmMyPreferencesRoute: HrmMyPreferencesRoute,
   HrmMyProfileRoute: HrmMyProfileRoute,
   HrmSelfServiceRoute: HrmSelfServiceRoute,
@@ -2226,6 +2287,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmPeopleOrgRoute: HrmPeopleOrgRoute,
   HrmPeoplePositionsRoute: HrmPeoplePositionsRouteWithChildren,
   HrmPeoplePrivacyRoute: HrmPeoplePrivacyRoute,
+  HrmPerformanceIdRoute: HrmPerformanceIdRoute,
   HrmRecruitmentCandidatesRoute: HrmRecruitmentCandidatesRouteWithChildren,
   HrmRecruitmentOffersRoute: HrmRecruitmentOffersRoute,
   HrmRecruitmentOperationsRoute: HrmRecruitmentOperationsRoute,
@@ -2259,6 +2321,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmLifecycleIndexRoute: HrmLifecycleIndexRoute,
   HrmPayrollIndexRoute: HrmPayrollIndexRoute,
   HrmPayslipsIndexRoute: HrmPayslipsIndexRoute,
+  HrmPerformanceIndexRoute: HrmPerformanceIndexRoute,
   HrmRecruitmentIndexRoute: HrmRecruitmentIndexRoute,
   HrmRelationsIndexRoute: HrmRelationsIndexRoute,
   HrmReportsIndexRoute: HrmReportsIndexRoute,

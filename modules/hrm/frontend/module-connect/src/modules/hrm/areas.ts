@@ -127,7 +127,7 @@ export const areas = {
     description: "Goals, reviews, development and succession — how people grow and are retained.",
     catalogueRefs: "HRM-038, HRM-039, HRM-040, HRM-041",
     capabilities: [
-      { label: "Goals and performance reviews", detail: "Cycles, cascading goals, self/manager/peer review and calibration.", tier: "Advanced", state: "built", to: "/hrm/talent/reviews" },
+      { label: "Goals and performance reviews", detail: "Cycles, cascading goals, self/manager/peer review and calibration.", tier: "Advanced", state: "built", to: "/hrm/performance" },
       { label: "Continuous feedback and check-ins", detail: "Lightweight feedback between formal cycles.", tier: "Advanced", state: "built", to: "/hrm/talent/feedback" },
       { label: "Performance improvement plans", detail: "Structured plans with disagreement and appeal paths.", tier: "Advanced", state: "built", to: "/hrm/talent/feedback" },
       { label: "Learning and development", detail: "Catalogue, enrolment, certificates, expiry and recertification.", tier: "Advanced", state: "built", to: "/hrm/talent/learning" },

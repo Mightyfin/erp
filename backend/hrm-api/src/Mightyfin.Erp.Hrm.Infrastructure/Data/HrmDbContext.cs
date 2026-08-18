@@ -139,6 +139,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<RelationsEvidence> RelationsEvidence => Set<RelationsEvidence>();
     public DbSet<ProtectedDisclosureEvent> ProtectedDisclosureEvents => Set<ProtectedDisclosureEvent>();
 
+    // Performance & goals (M36)
+    public DbSet<PerformanceCycle> PerformanceCycles => Set<PerformanceCycle>();
+    public DbSet<PerformanceGoal> PerformanceGoals => Set<PerformanceGoal>();
+    public DbSet<PerformanceAssessment> PerformanceAssessments => Set<PerformanceAssessment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("hrm");
@@ -265,6 +270,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<RelationsEvidence>(modelBuilder, "relations_evidence");
         ConfigureEntity<ProtectedDisclosureEvent>(modelBuilder, "protected_disclosure_events");
 
+        // Performance & goals (M36)
+        ConfigureEntity<PerformanceCycle>(modelBuilder, "performance_cycles");
+        ConfigureEntity<PerformanceGoal>(modelBuilder, "performance_goals");
+        ConfigureEntity<PerformanceAssessment>(modelBuilder, "performance_assessments");
+
         // Relationships
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.DefaultCalendar).WithMany().HasForeignKey(x => x.DefaultCalendarId).OnDelete(DeleteBehavior.SetNull);
@@ -323,6 +333,12 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<RelationsCaseAccess>().HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId);
         modelBuilder.Entity<RelationsCaseEvent>().HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId);
         modelBuilder.Entity<ProtectedDisclosureEvent>().HasOne(x => x.Disclosure).WithMany().HasForeignKey(x => x.DisclosureId);
+
+        // Performance & goals relationships (M36)
+        modelBuilder.Entity<PerformanceGoal>().HasOne(x => x.Cycle).WithMany(x => x.Goals).HasForeignKey(x => x.CycleId);
+        modelBuilder.Entity<PerformanceGoal>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+        modelBuilder.Entity<PerformanceAssessment>().HasOne(x => x.Cycle).WithMany(x => x.Assessments).HasForeignKey(x => x.CycleId);
+        modelBuilder.Entity<PerformanceAssessment>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
 
         base.OnModelCreating(modelBuilder);
     }

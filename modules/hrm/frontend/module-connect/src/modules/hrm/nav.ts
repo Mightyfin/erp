@@ -164,6 +164,15 @@ export const hrmModule: ModuleDefinition = {
       ],
     },
     {
+      id: "performance",
+      label: "Performance",
+      icon: Sparkles,
+      roles: ["hr_ops", "hr_admin"],
+      items: [
+        { label: "Performance cycles", to: "/hrm/performance" },
+      ],
+    },
+    {
       id: "experience",
       label: "Employee experience",
       icon: MessagesSquare,
