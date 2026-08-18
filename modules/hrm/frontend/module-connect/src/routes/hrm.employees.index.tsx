@@ -245,8 +245,6 @@ function EmployeesPage() {
               Volunteer: "volunteer",
             })[v] === e.employmentType,
         },
-      ]
-    : [
         {
           id: "entity",
           label: "Entity & branch",
@@ -257,6 +255,8 @@ function EmployeesPage() {
               ? unitByName.get(e.department)?.entityId === v.slice(7)
               : e.department === v,
         },
+      ]
+    : [
         {
           id: "type",
           label: "Employment type",
