@@ -529,6 +529,22 @@ export const realApi = {
   payslipById: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/payslips/id/${id}`),
 
   /* ------------------------------------------------------------------ */
+  /* M34: admin payslip surface per run.                                  */
+  /* ------------------------------------------------------------------ */
+
+  /** All payslips for a released run — real IDs for navigation. */
+  payrollRunPayslips: (runId: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${runId}/payslips`),
+  /** Bulk-generate PDFs for all payslips in a run. Idempotent. */
+  payrollGenerateAllPayslips: (runId: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${runId}/payslips/generate-all`, null),
+  /** Raw PDF bytes for inline preview. Returns a download URL string. */
+  payslipPreviewUrl: (payslipId: string) =>
+    `${import.meta.env.VITE_HRM_API_BASE ?? "/api"}/hrm/payroll/payslips/${payslipId}/preview`,
+  /** Direct PDF download trigger via blob fetch. */
+  payslipDownloadBlob: (payslipId: string) =>
+    hrmApi.getBlob(`/hrm/payroll/payslips/${payslipId}/preview`),
+
+  /* ------------------------------------------------------------------ */
   /* M25: employee self-service — own payslips and requests inbox,        */
   /* always keyed on the caller's OIDC subject.                           */
   /* ------------------------------------------------------------------ */

@@ -1007,6 +1007,123 @@ function RunDetail() {
                   </Async>
                 </DetailSection>
 
+                {/* M34: admin payslip surface — list of payslips for this run with bulk PDF generate */}
+                {USE_REAL && (run.status === "Paid" || run.status === "Closed" || run.backendStatus === "released") ? (
+                  <DetailSection
+                    title="Payslips"
+                    description="One payslip per released pay line. Generate PDFs for the whole run, or preview/download an individual one."
+                  >
+                    <Async
+                      state={
+                        useApi(async () => {
+                          const raw = await realApi.payrollRunPayslips(run.id);
+                          return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
+                        })
+                      }
+                      rows={4}
+                    >
+                      {(slips) => {
+                        if (!slips.length) {
+                          return (
+                            <div className="flex flex-wrap items-center gap-3">
+                              <p className="text-sm text-muted-foreground">
+                                Run is released but no payslips were found — generate them.
+                              </p>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                onClick={async () => {
+                                  try {
+                                    await realApi.payrollGenerateAllPayslips(run.id);
+                                    feedback.submitted(
+                                      "Payslip PDFs generated",
+                                      `All ${slips.length} payslip documents are ready. Re-open to see the download links.`,
+                                    );
+                                    await state.reload();
+                                  } catch (e) {
+                                    feedback.blocked(
+                                      "Payslip PDF generation failed",
+                                      e instanceof Error ? e.message : "Unknown error.",
+                                    );
+                                  }
+                                }}
+                              >
+                                <Download className="size-4" aria-hidden />
+                                Generate PDFs for all payslips
+                              </Button>
+                              <span className="text-xs text-muted-foreground">
+                                Idempotent — already-generated slips are returned as-is.
+                              </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs">
+                                <thead>
+                                  <tr className="border-b bg-surface-muted text-muted-foreground">
+                                    <th className="px-2 py-1.5">Payslip</th>
+                                    <th className="px-2 py-1.5">Employee</th>
+                                    <th className="px-2 py-1.5 text-right">Net</th>
+                                    <th className="px-2 py-1.5">Status</th>
+                                    <th className="px-2 py-1.5" />
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {slips.map((s) => (
+                                    <tr key={String(s.id ?? "")} className="border-b last:border-0">
+                                      <td className="px-2 py-1.5 font-mono text-primary">
+                                        {String(s.payslipNo ?? s.id ?? "")}
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        {String(s.employee ?? s.workerName ?? "")}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right tabular">
+                                        {money(Number(s.netPay ?? 0), run.currency)}
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        <span
+                                          className={
+                                            String(s.status ?? "") === "released" || String(s.status ?? "") === "final"
+                                              ? "text-success"
+                                              : "text-muted-foreground"
+                                          }
+                                        >
+                                          {String(s.status ?? "draft")}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right">
+                                        <Link
+                                          to="/hrm/payslips/$id"
+                                          params={{ id: String(s.id ?? "") }}
+                                          className="mr-2 text-primary underline underline-offset-2"
+                                        >
+                                          Open
+                                        </Link>
+                                        <Link
+                                          to="/hrm/payslips/$id"
+                                          params={{ id: String(s.id ?? "") }}
+                                          className="text-primary underline underline-offset-2"
+                                        >
+                                          PDF
+                                        </Link>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    </Async>
+                  </DetailSection>
+                ) : null}
+
                 <DetailSection
                   title="Control totals"
                   description="Compared with the previous period. Anything moving 2% or more is flagged as material and needs an explanation before approval."

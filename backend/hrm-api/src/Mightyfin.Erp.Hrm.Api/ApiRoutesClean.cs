@@ -790,6 +790,17 @@ public static class Routes
             => await svc.EmployerLiabilityReportAsync(periodId, ct));
         g.MapPost("/payslips/{id:guid}/generate", async (Guid id, IPayrollService svc, CancellationToken ct)
             => Results.Ok(await svc.GeneratePayslipDocumentAsync(id, ct)));
+
+        // M34: admin payslip surface per run — list, bulk generate, and preview.
+        g.MapGet("/runs/{id:guid}/payslips", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => await svc.ListRunPayslipsAsync(id, ct));
+        g.MapPost("/runs/{id:guid}/payslips/generate-all", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GenerateAllPayslipDocumentsAsync(id, ct)));
+        g.MapGet("/payslips/{id:guid}/preview", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+        {
+            var bytes = await svc.GetPayslipPreviewAsync(id, ct);
+            return Results.File(bytes, "application/pdf", $"payslip-{id:D}.pdf");
+        });
     }
 
     public static void RegisterConfig(WebApplication app)

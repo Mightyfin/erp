@@ -77,6 +77,12 @@ public interface IPayrollService
 
     // M24: statutory identity readiness per run — hard gate on release.
     Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
+
+    // M34: admin payslip list per run (real IDs for navigation), bulk PDF
+    // generation, and raw PDF preview bytes.
+    Task<List<PayslipDto>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
+    Task<List<PayslipDto>> GenerateAllPayslipDocumentsAsync(Guid runId, CancellationToken ct);
+    Task<byte[]> GetPayslipPreviewAsync(Guid payslipId, CancellationToken ct);
 }
 
 public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType, string CalculationBasis, decimal? Rate, decimal? FixedAmount, decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Version, bool IsActive);
@@ -876,6 +882,61 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapPayslip(slip);
     }
 
+    // M34: admin payslip list for a specific run — returns real payslip IDs
+    // so the UI can link from run detail to the actual payslip record.
+    public async Task<List<PayslipDto>> ListRunPayslipsAsync(Guid runId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var items = await repo.ListRunPayslipsAsync(runId, ct);
+        return items.Select(MapPayslip).ToList();
+    }
+
+    // M34: bulk PDF generation for all payslips in a run. Idempotent — slips
+    // that already have a DocumentUrl are returned unchanged; slips without
+    // one are generated fresh.
+    public async Task<List<PayslipDto>> GenerateAllPayslipDocumentsAsync(Guid runId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var items = await repo.ListRunPayslipsAsync(runId, ct);
+        if (items.Count == 0)
+            throw new DomainException("run-has-no-payslips", $"Run {runId} has no payslip records. Payslips are created when the run is released.");
+        var results = new List<PayslipDto>();
+        foreach (var slip in items)
+        {
+            if (string.IsNullOrWhiteSpace(slip.DocumentUrl))
+            {
+                var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
+                    ?? throw new DomainException("payslip-line-missing", $"Payslip {slip.Id} has no run line.");
+                slip.DocumentUrl = await payslipDocument.GenerateAsync(slip, line, ct);
+                slip.Status = "final";
+                await repo.UpdatePayslipAsync(slip, ct);
+            }
+            results.Add(MapPayslip(slip));
+        }
+        return results;
+    }
+
+    // M34: raw PDF bytes for inline preview. Generates the document on demand
+    // if it does not exist yet.
+    public async Task<byte[]> GetPayslipPreviewAsync(Guid payslipId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var slip = await repo.GetPayslipAsync(payslipId, ct)
+            ?? throw new DomainException("payslip-not-found", $"Payslip {payslipId} does not exist.");
+        if (string.IsNullOrWhiteSpace(slip.DocumentUrl))
+        {
+            var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
+                ?? throw new DomainException("payslip-line-missing", $"Payslip {payslipId} has no run line.");
+            slip.DocumentUrl = await payslipDocument.GenerateAsync(slip, line, ct);
+            slip.Status = "final";
+            await repo.UpdatePayslipAsync(slip, ct);
+        }
+        // Download the PDF from durable storage and return raw bytes.
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        var bytes = await httpClient.GetByteArrayAsync(slip.DocumentUrl, ct);
+        return bytes;
+    }
+
     public async Task<Paged<PayslipDto>> GetPayslipsAsync(Guid workerId, string? callerSubject = null, CancellationToken ct = default)
     {
         authz.RequireAnyRole("employee", "payroll", "hr_admin");
@@ -1157,6 +1218,8 @@ public interface IPayrollRepository
     Task UpdatePayslipAsync(Payslip payslip, CancellationToken ct);
     Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
+    // M34: payslips for a specific run (HR admin surface).
+    Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
 }
 
 public sealed record PayrollPaymentRow(Guid WorkerId, string EmployeeNo, string WorkerName,

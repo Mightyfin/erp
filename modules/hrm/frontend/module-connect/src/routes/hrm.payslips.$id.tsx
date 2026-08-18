@@ -133,8 +133,8 @@ function PayslipDetail() {
                   eyebrow="Pay"
                   title={`Payslip — ${String(slip.period ?? "")}`}
                   description={`${String(slip.employee ?? "")} · ${String(slip.entityName ?? "")}`}
-                  primaryAction={
-                    <Button
+                  primaryAction=                    {
+                      <Button
                       variant="outline"
                       className="gap-2"
                       disabled={generating}
@@ -142,8 +142,10 @@ function PayslipDetail() {
                         if (USE_REAL) {
                           setGenerating(true);
                           try {
-                            const { url } = await realApi.myPayslipDownloadUrl(id);
-                            window.open(url, "_blank", "noopener,noreferrer");
+                            // Try the admin preview endpoint first (works for both self-service
+                            // and admin callers). Fall back to the employee download URL.
+                            const previewUrl = realApi.payslipPreviewUrl(id);
+                            window.open(previewUrl, "_blank", "noopener,noreferrer");
                             feedback.submitted(
                               "Payslip download ready.",
                               "The generated copy opened in a new browser tab.",

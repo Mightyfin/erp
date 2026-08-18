@@ -1198,6 +1198,21 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         db.Payslips.Update(payslip);
         await db.SaveChangesAsync(ct);
     }
+
+    // M34: HR admin payslip list per run — joins via RunLine → RunId.
+    public async Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct)
+    {
+        var slipIds = await db.PayrollRunLines
+            .Where(l => l.RunId == runId)
+            .Select(l => l.Id)
+            .ToListAsync(ct);
+        if (slipIds.Count == 0) return [];
+        return await db.Payslips.Include(p => p.RunLine).ThenInclude(l => l!.Components)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Worker)
+            .Include(p => p.RunLine).ThenInclude(l => l!.Run).ThenInclude(r => r!.PayPeriod)
+            .Where(p => slipIds.Contains(p.RunLineId))
+            .ToListAsync(ct);
+    }
 }
 
 // ===================== Config / extras =====================

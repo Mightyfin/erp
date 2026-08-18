@@ -281,3 +281,145 @@ public class PayrollEngineTests
     }
 }
 
+
+/// <summary>M34: admin payslip surface — list by run, bulk PDF generation, preview bytes.</summary>
+public class M34RunPayslipTests
+{
+    private sealed class FakeDocumentService(string url) : IPayslipDocumentService
+    {
+        public Task<string> GenerateAsync(Payslip slip, PayrollRunLine line, CancellationToken ct)
+            => Task.FromResult(url);
+    }
+
+    private static SalaryComponent Comp(string code, string type, string basis, string? tied = null, decimal? rate = null, bool statutory = false, int priority = 100)
+        => new() { Code = code, Name = code, ComponentType = type, CalculationBasis = basis, BasisComponentCode = tied,
+            Rate = rate, FixedAmount = null, Ceiling = null, IsTaxable = true, IsStatutory = statutory, Priority = priority,
+            Version = 1, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)) };
+
+    private static Worker TestWorker(string empNo = "T001") => new()
+    {
+        EmployeeNo = empNo, FirstName = "Test", LastName = "Worker", WorkerType = "employee", Status = "active",
+        Nrc = "123456/10/1", Tpin = "1000000001", NapsaNumber = "NAPSA-1", NhimaNumber = "NHIMA-1",
+    };
+
+    private static async Task<(PayrollServiceImpl service, HrmDbContext ctx)> BuildWithStackAsync(string docUrl = "https://storage.example/doc.pdf")
+    {
+        var ctx = TestDbContextFactory.Create("m34-tenant");
+        var basic = Comp("basic", "earning", "fixed", statutory: false, priority: 10);
+        var paye = Comp("paye", "tax", "slab", tied: "gross", statutory: true, priority: 90);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true, priority: 91);
+        var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 92);
+        foreach (var c in new[] { basic, paye, napsaEe, nhimaEe }) ctx.SalaryComponents.Add(c);
+        foreach (var s in new[]
+        {
+            new TaxSlab { TaxYear = "2026", MinAmount = 0m, MaxAmount = 5100m, Rate = 0m, Sequence = 10, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new TaxSlab { TaxYear = "2026", MinAmount = 5100m, MaxAmount = 7100m, Rate = 20m, Sequence = 20, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new TaxSlab { TaxYear = "2026", MinAmount = 7100m, MaxAmount = 9200m, Rate = 30m, Sequence = 30, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new TaxSlab { TaxYear = "2026", MinAmount = 9200m, MaxAmount = null, Rate = 37m, Sequence = 40, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        }) ctx.TaxSlabs.Add(s);
+        foreach (var r in new[]
+        {
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "nhima-ee", Name = "NHIMA EE", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        }) ctx.ContributionRules.Add(r);
+
+        var group = new PayGroup { Code = "M34-MONTHLY", Name = "M34 Monthly", Frequency = "monthly", Currency = "ZMW", CalendarDayOfMonth = 25 };
+        ctx.PayGroups.Add(group);
+
+        var p1 = new PayPeriod { PayGroupId = group.Id, PeriodLabel = "Aug 2026", StartDate = DateOnly.FromDateTime(new DateTime(2026, 8, 1)), EndDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)), CutoffDate = DateOnly.FromDateTime(new DateTime(2026, 8, 20)), PayDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)), IsCurrent = true };
+        ctx.PayPeriods.Add(p1);
+
+        var w1 = TestWorker("M34-001");
+        var w2 = TestWorker("M34-002");
+        ctx.Workers.Add(w1);
+        ctx.Workers.Add(w2);
+
+        var structure = new SalaryStructure { Code = "M34-STD", Name = "M34 Standard" };
+        ctx.SalaryStructures.Add(structure);
+
+        foreach (var w in new[] { w1, w2 })
+        {
+            var profile = new WorkerPayrollProfile { WorkerId = w.Id, PayGroupId = group.Id, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), StructureId = structure.Id };
+            profile.ComponentValues.Add(new WorkerComponentValue { ComponentId = basic.Id, Component = basic, Amount = 25000m });
+            ctx.WorkerPayrollProfiles.Add(profile);
+        }
+        await ctx.SaveChangesAsync();
+
+        var repo = new PayrollRepository(ctx);
+        var service = new PayrollServiceImpl(repo, new PermissiveAuthz(), new FakeDocumentService(docUrl));
+        return (service, ctx);
+    }
+
+    private static async Task<Guid> RunLifecycleAsync(PayrollServiceImpl service, Guid payPeriodId, Guid payGroupId)
+    {
+        var run = await service.CreateRunAsync(new PayrollRunCreate(payPeriodId, payGroupId), CancellationToken.None);
+        run = await service.LockRunAsync(run.Id, CancellationToken.None);
+        run = await service.CalculateRunAsync(run.Id, CancellationToken.None);
+        run = await service.ApproveRunAsync(run.Id, "ok", CancellationToken.None);
+        run = await service.ReleaseRunAsync(run.Id, CancellationToken.None);
+        return run.Id;
+    }
+
+    [Fact]
+    public async Task ListRunPayslips_ReturnsAllSlipsForTheRun()
+    {
+        var (service, ctx) = await BuildWithStackAsync();
+        var group = await ctx.PayGroups.FirstAsync();
+        var period = await ctx.PayPeriods.FirstAsync();
+        var runId = await RunLifecycleAsync(service, period.Id, group.Id);
+
+        var slips = await service.ListRunPayslipsAsync(runId, CancellationToken.None);
+        Assert.Equal(2, slips.Count); // two workers
+        Assert.All(slips, s => Assert.Equal("final", s.Status));
+        Assert.All(slips, s => Assert.NotNull(s.Id));
+        Assert.All(slips, s => Assert.NotNull(s.PayslipNo));
+        Assert.All(slips, s => Assert.True(s.NetPay > 0));
+    }
+
+    [Fact]
+    public async Task GenerateAllPayslipDocuments_SetsDocumentUrlOnAllSlips()
+    {
+        var (service, ctx) = await BuildWithStackAsync();
+        var group = await ctx.PayGroups.FirstAsync();
+        var period = await ctx.PayPeriods.FirstAsync();
+        var runId = await RunLifecycleAsync(service, period.Id, group.Id);
+
+        // Before generation: no DocumentUrl.
+        var before = await ctx.Payslips.Where(s => s.RunLine.RunId == runId).ToListAsync();
+        Assert.All(before, s => Assert.Null(s.DocumentUrl));
+
+        var updated = await service.GenerateAllPayslipDocumentsAsync(runId, CancellationToken.None);
+        Assert.Equal(2, updated.Count);
+        Assert.All(updated, s => Assert.Equal("https://storage.example/doc.pdf", s.DocumentUrl));
+
+        // Idempotent: second call returns same results without changing data.
+        var updated2 = await service.GenerateAllPayslipDocumentsAsync(runId, CancellationToken.None);
+        Assert.Equal(updated.Count, updated2.Count);
+        Assert.All(updated2, s => Assert.Equal("https://storage.example/doc.pdf", s.DocumentUrl));
+    }
+
+    [Fact]
+    public async Task ListRunPayslips_WithNoRelease_ReturnsEmpty()
+    {
+        var (service, ctx) = await BuildWithStackAsync();
+        var group = await ctx.PayGroups.FirstAsync();
+        var period = await ctx.PayPeriods.FirstAsync();
+
+        // Create a run but don't release it.
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), CancellationToken.None);
+        var slips = await service.ListRunPayslipsAsync(run.Id, CancellationToken.None);
+        Assert.Empty(slips);
+    }
+
+    [Fact]
+    public async Task GenerateAllPayslipDocuments_WithNoRelease_Throws()
+    {
+        var (service, ctx) = await BuildWithStackAsync();
+        var group = await ctx.PayGroups.FirstAsync();
+        var period = await ctx.PayPeriods.FirstAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), CancellationToken.None);
+        await Assert.ThrowsAsync<DomainException>(() =>
+            service.GenerateAllPayslipDocumentsAsync(run.Id, CancellationToken.None));
+    }
+}
