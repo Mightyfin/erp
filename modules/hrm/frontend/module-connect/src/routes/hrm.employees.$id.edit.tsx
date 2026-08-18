@@ -510,15 +510,26 @@ function HistoryForm({
   const missingRequired = required.some(
     (name) => !String(row[name] ?? "").trim(),
   );
+  // Unique ids across all three history forms — the three tables share field
+  // names (role, startDate, endDate, grade) and duplicate ids break both
+  // `htmlFor` pairing and any script that reads the form.
+  const fieldId = (name: string) =>
+    kind === "education"
+      ? name === "grade"
+        ? "educationGrade"
+        : `education-${name}`
+      : kind === "external-work-history"
+        ? `ext-${name}`
+        : `int-${name}`;
   return (
     <div className="mt-2 rounded-md border bg-surface-muted p-3">
       {historyFields(kind).map((f) => (
         <div key={f.name} className="mt-2 first:mt-0">
-          <label htmlFor={f.id ?? f.name} className="text-xs text-muted-foreground">
+          <label htmlFor={fieldId(f.name)} className="text-xs text-muted-foreground">
             {f.label}
           </label>
           <Input
-            id={f.id ?? f.name}
+            id={fieldId(f.name)}
             type={f.type ?? "text"}
             value={row[f.name] === 0 ? "" : String(row[f.name] ?? "")}
             onChange={(e) => {
@@ -551,7 +562,7 @@ function historyFields(kind: HistoryKind) {
       { name: "institution", label: "Institution", type: "text" },
       { name: "qualification", label: "Qualification", type: "text" },
       { name: "fieldOfStudy", label: "Field of study", type: "text" },
-      { name: "grade", label: "Grade", type: "text", id: "educationGrade" },
+      { name: "grade", label: "Grade", type: "text" },
       { name: "startYear", label: "Start year", type: "text" },
       { name: "endYear", label: "End year", type: "text" },
     ];
