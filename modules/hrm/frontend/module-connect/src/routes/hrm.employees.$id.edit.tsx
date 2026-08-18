@@ -481,13 +481,11 @@ type HistoryRow = Record<string, unknown>;
 
 type HistoryKind = "education" | "external-work-history" | "internal-work-history";
 
-function historyLists() {
-  return {
-    education: realApi.education,
-    "external-work-history": realApi.externalWorkHistory,
-    "internal-work-history": realApi.internalWorkHistory,
-  };
-}
+const HISTORY_HINT: Record<HistoryKind, string> = {
+  education: "Give the institution and qualification first.",
+  "external-work-history": "Give the company and role first.",
+  "internal-work-history": "Give the department and role first.",
+};
 
 /** Inline add/edit form shown per history section. */
 function HistoryForm({
@@ -501,23 +499,30 @@ function HistoryForm({
   onSubmit: () => void;
   onDiscard: () => void;
 }) {
-  const set = (name: string) => (value: string) =>
-    onSubmit(); // unused — see below
-  void set;
+  // The loudest fields a record cannot exist without. Everything else is
+  // optional detail the server fills with blanks.
+  const required =
+    kind === "education"
+      ? ["institution", "qualification"]
+      : kind === "external-work-history"
+        ? ["company", "role"]
+        : ["orgUnitName", "role"];
+  const missingRequired = required.some(
+    (name) => !String(row[name] ?? "").trim(),
+  );
   return (
     <div className="mt-2 rounded-md border bg-surface-muted p-3">
       {historyFields(kind).map((f) => (
         <div key={f.name} className="mt-2 first:mt-0">
-          <label htmlFor={f.name} className="text-xs text-muted-foreground">
+          <label htmlFor={f.id ?? f.name} className="text-xs text-muted-foreground">
             {f.label}
           </label>
           <Input
-            id={f.name}
+            id={f.id ?? f.name}
             type={f.type ?? "text"}
             value={String(row[f.name] ?? "")}
             onChange={(e) => {
               row[f.name] = e.target.value;
-              onSubmit();
             }}
           />
         </div>
@@ -526,7 +531,12 @@ function HistoryForm({
         <Button variant="ghost" size="sm" onClick={onDiscard}>
           Cancel
         </Button>
-        <Button size="sm" onClick={onSubmit}>
+        <Button
+          size="sm"
+          onClick={onSubmit}
+          disabled={missingRequired}
+          title={missingRequired ? HISTORY_HINT[kind] : undefined}
+        >
           {row.id ? "Update" : "Add"}
         </Button>
       </div>
@@ -541,7 +551,7 @@ function historyFields(kind: HistoryKind) {
       { name: "institution", label: "Institution", type: "text" },
       { name: "qualification", label: "Qualification", type: "text" },
       { name: "fieldOfStudy", label: "Field of study", type: "text" },
-      { name: "grade", label: "Grade", type: "text" },
+      { name: "grade", label: "Grade", type: "text", id: "educationGrade" },
       { name: "startYear", label: "Start year", type: "text" },
       { name: "endYear", label: "End year", type: "text" },
     ];
