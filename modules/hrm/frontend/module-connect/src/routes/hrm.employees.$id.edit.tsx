@@ -507,20 +507,25 @@ function HistoryForm({
       : kind === "external-work-history"
         ? ["company", "role"]
         : ["orgUnitName", "role"];
+  // The form is uncontrolled, so requiredness is derived from the live DOM
+  // whenever any input changes. A mount-time tick picks up values that were
+  // placed in the DOM before React rendered (e.g. programmatic fills).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    setTick((t) => t + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const missingRequired = required.some(
-    (name) => !String(row[name] ?? "").trim(),
+    (name) => !String(document.getElementById(historyFieldId(kind, name))?.value ?? row[name] ?? "").trim(),
   );
-  // Unique ids across all three history forms — the three tables share field
-  // names (role, startDate, endDate, grade) and duplicate ids break both
-  // `htmlFor` pairing and any script that reads the form.
-  const fieldId = (name: string) =>
-    kind === "education"
-      ? name === "grade"
-        ? "educationGrade"
-        : `education-${name}`
-      : kind === "external-work-history"
-        ? `ext-${name}`
-        : `int-${name}`;
+  // DOM ids are stable and unique across all three history forms — save()
+  // reads the live DOM values (manual typing and programmatic fills both land
+  // in the DOM, even when React state never synchronises).
+  const fieldId = (name: string) => historyFieldId(kind, name);
+  // Uncontrolled inputs read from refs at submit time. A controlled `value`
+  // prop lets React re-renders win over programmatic/native edits — switching
+  // to `defaultValue` guarantees what the user types (or automation fills) is
+  // exactly what gets saved.
   return (
     <div className="mt-2 rounded-md border bg-surface-muted p-3">
       {historyFields(kind).map((f) => (
@@ -531,10 +536,8 @@ function HistoryForm({
           <Input
             id={fieldId(f.name)}
             type={f.type ?? "text"}
-            value={row[f.name] === 0 ? "" : String(row[f.name] ?? "")}
-            onChange={(e) => {
-              row[f.name] = e.target.value;
-            }}
+            defaultValue={row.id ? String(row[f.name] ?? "") : undefined}
+            onChange={() => setTick((t) => t + 1)}
           />
         </div>
       ))}
@@ -553,6 +556,17 @@ function HistoryForm({
       </div>
     </div>
   );
+}
+
+/** Stable DOM ids for a history form field — unique across all three kinds. */
+function historyFieldId(kind: HistoryKind, name: string) {
+  return kind === "education"
+    ? name === "grade"
+      ? "educationGrade"
+      : `education-${name}`
+    : kind === "external-work-history"
+      ? `ext-${name}`
+      : `int-${name}`;
 }
 
 /** The fields a worker-history record owns — one table per kind. */
@@ -634,6 +648,13 @@ function HistorySection({ workerId }: { workerId: string }) {
   }, [workerId]);
 
   async function save(kind: HistoryKind, row: HistoryRow) {
+    // Re-read the live DOM values so manual typing and programmatic fills
+    // are both captured — React-controlled state is not used for history
+    // forms (uncontrolled inputs, defaultValue only).
+    for (const f of historyFields(kind)) {
+      const el = document.getElementById(historyFieldId(kind, f.name));
+      if (el && "value" in el) row[f.name] = String((el as HTMLInputElement).value);
+    }
     const body: Record<string, unknown> = {};
     for (const f of historyFields(kind)) {
       const value = (row[f.name] ?? "").toString().trim();
