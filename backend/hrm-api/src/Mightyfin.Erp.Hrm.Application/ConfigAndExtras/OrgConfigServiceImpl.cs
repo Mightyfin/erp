@@ -155,6 +155,51 @@ public sealed class ConfigAdminServiceImpl(IConfigRepository repo, IAuthzService
         return roots;
     }
 
+    /// <summary>Legal entities with their org units nested beneath (entity → branch → department → team).
+    /// Units whose legal entity is missing or unknown fall under an "Unassigned" root so nothing disappears.</summary>
+    public async Task<List<OrgUnitTreeDto>> GetEntityTreeAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "employee", "manager", "payroll");
+        var units = await repo.ListOrgUnitsAsync(ct);
+        var workers = await repo.ListAllWorkersAsync(null, ct);
+        var now = DateOnly.FromDateTime(DateTime.UtcNow);
+        var effective = units.Where(u =>
+            u.EffectiveFrom <= now && (u.EffectiveTo is null || u.EffectiveTo > now) && u.Status != "closed").ToList();
+
+        OrgUnitTreeDto ToTree(OrgUnit u) => new(
+            u.Id, u.Code, u.Name, u.UnitType, u.Status, u.ManagerId,
+            u.ManagerId.HasValue ? workers.FirstOrDefault(w => w.Id == u.ManagerId)?.FullName : null,
+            u.EffectiveFrom.ToString("yyyy-MM-dd"), u.EffectiveTo?.ToString("yyyy-MM-dd"), []);
+
+        var nodes = effective.Select(ToTree).ToDictionary(n => n.Id);
+        var entitiesByName = (await repo.ListLegalEntitiesAsync(ct))
+            .ToDictionary(e => e.Id, e => e.RegisteredName);
+        var entityRoots = new Dictionary<Guid, OrgUnitTreeDto>();
+        OrgUnitTreeDto unassignedRoot = new(Guid.Empty, "UNASSIGNED", "Unassigned", "entity", "active", null, null,
+            now.ToString("yyyy-MM-dd"), null, []);
+        foreach (var u in effective)
+        {
+            var node = nodes[u.Id];
+            OrgUnitTreeDto parent;
+            if (u.LegalEntityId is Guid le && entityRoots.TryGetValue(le, out var existing))
+                parent = existing;
+            else if (u.LegalEntityId is Guid le2)
+                parent = entityRoots[le2] = new OrgUnitTreeDto(le2, "", entitiesByName.GetValueOrDefault(le2) ?? "Unknown entity", "entity", "active", null, null,
+                    now.ToString("yyyy-MM-dd"), null, []);
+            else
+                parent = unassignedRoot;
+            if (u.ParentId is null || !nodes.ContainsKey(u.ParentId.Value))
+                parent.Children.Add(node);
+            else
+                nodes[u.ParentId.Value].Children.Add(node);
+        }
+        var roots = new List<OrgUnitTreeDto>();
+        foreach (var kvp in entityRoots.OrderBy(k => k.Value.Name == "" ? 1 : 0).ThenBy(k => k.Value.Name))
+            roots.Add(kvp.Value);
+        if (unassignedRoot.Children.Count > 0) roots.Add(unassignedRoot);
+        return roots;
+    }
+
     public async Task<OrgUnitDtoFull> CreateOrgUnitAsync(OrgUnitCreateRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");

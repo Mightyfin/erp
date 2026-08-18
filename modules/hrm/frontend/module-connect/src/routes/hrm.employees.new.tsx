@@ -10,6 +10,12 @@ import { employees, entities } from "@/mock/data";
 import { api } from "@/mock/service";
 import { ApiError } from "@/platform/api-client";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
@@ -78,8 +84,55 @@ function NewEmployee() {
   const locations = USE_REAL ? references.data?.locations ?? [] : entities.flatMap((e) => e.branches.map((name) => ({ id: name, name, code: "", legalEntityId: e.id })));
   const managerOptions = USE_REAL ? references.data?.workers ?? [] : employees;
   const entity = legalEntities.find((e) => String(e.id) === entityId);
+
+/** Re-shape the flat org-unit list into a hierarchy: units whose parentId
+ *  points to another unit become children; units without a parent are roots. */
+function buildOrgTree(
+  units: Array<{ id: string; name: string; code: string; legalEntityId: string; parentId?: string }>,
+): OrgTreeNode[] {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const roots: OrgTreeNode[] = [];
+  const childrenOf = new Map<string, OrgTreeNode[]>();
+  for (const u of units) {
+    const node: OrgTreeNode = {
+      id: u.id,
+      code: u.code,
+      name: u.name,
+      unitType: "department",
+      status: "active",
+      managerId: null,
+      managerName: null,
+      effectiveFrom: "",
+      effectiveTo: null,
+      children: [],
+    };
+    if (u.parentId && byId.has(u.parentId)) {
+      const list = childrenOf.get(u.parentId) ?? [];
+      list.push(node);
+      childrenOf.set(u.parentId, list);
+    } else {
+      roots.push(node);
+    }
+  }
+  const attach = (node: OrgTreeNode) => {
+    node.children = childrenOf.get(node.id) ?? [];
+    for (const child of node.children) attach(child);
+  };
+  for (const root of roots) attach(root);
+  return roots;
+}
   const entityLocations = locations.filter((l) => !entityId || String(l.legalEntityId ?? "") === entityId);
   const entityUnits = orgUnits.filter((u) => !entityId || !u.legalEntityId || String(u.legalEntityId) === entityId);
+  // Tree-shaped unit list so the department picker shows the org hierarchy
+  // (Entity › Department › Team) instead of flat unit names.
+  const flatUnits = references.data?.orgUnits ?? [];
+  const treeRoots = USE_REAL && flatUnits.length ? buildOrgTree(flatUnits) : demoEntityTree;
+  const treeUnits = flattenEntityTree(treeRoots, false);
+  const treeOptions = treeToSelectOptions(treeRoots);
+  const treeUnitById = new Map(treeUnits.map((t) => [t.unitId, t]));
+  const filteredTreeOptions = treeOptions.filter(
+    (o) => !o.value.startsWith("entity:") || o.value === `entity:${entityId}`,
+  );
   const selectedLocation = locations.find((l) => String(l.id) === locationId);
   const selectedUnit = orgUnits.find((u) => String(u.id) === orgUnitId);
 
@@ -173,16 +226,22 @@ function NewEmployee() {
           </div>
           <div>
             <Label htmlFor="dept">Department</Label>
-            <Select value={orgUnitId} onValueChange={setOrgUnitId}>
+            <Select value={orgUnitId || filteredTreeOptions[0]?.value || ""} onValueChange={setOrgUnitId}>
               <SelectTrigger id="dept" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {entityUnits.map((unit) => (
-                  <SelectItem key={String(unit.id)} value={String(unit.id)}>
-                    {String(unit.name ?? unit.id)}
-                  </SelectItem>
-                ))}
+                {filteredTreeOptions.length
+                  ? filteredTreeOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))
+                  : entityUnits.map((unit) => (
+                      <SelectItem key={String(unit.id)} value={String(unit.id)}>
+                        {String(unit.name ?? unit.id)}
+                      </SelectItem>
+                    ))}
               </SelectContent>
             </Select>
           </div>

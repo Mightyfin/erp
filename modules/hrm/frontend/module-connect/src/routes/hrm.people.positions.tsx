@@ -20,6 +20,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { entities } from "@/mock/data";
+import {
+  demoEntityTree,
+  fetchOrgUnits,
+  flattenEntityTree,
+  treePathLabel,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import type { Position } from "@/mock/structure";
 import {
   licenceAttention,
@@ -103,7 +111,7 @@ function adaptJob(j: Record<string, unknown>, units: Record<string, string>): Jo
     positionNo: String(j.code ?? ""),
     jobTitle: String(j.title ?? ""),
     grade: j.grade ? String(j.grade) : "—",
-    entityId: "",
+    entityId: String(j.legalEntityId ?? ""),
     branch: "—",
     department: units[String(j.orgUnitId ?? "")] ?? "—",
     team: "",
@@ -129,17 +137,34 @@ function PositionsList() {
   const [busy, setBusy] = useState(false);
 
   const state = useApi(async () => {
-    const [jobs, units] = await Promise.all([
+    const [jobs, units, entities] = await Promise.all([
       realApi.jobs({ includeInactive: true }),
       realApi.orgUnits(),
+      fetchOrgUnits(),
     ]);
     const unitMap: Record<string, string> = {};
-    for (const u of (units ?? []) as Record<string, unknown>[]) unitMap[String(u.id ?? "")] = String(u.name ?? "");
-    return ((jobs ?? []) as Record<string, unknown>[]).map((j) => adaptJob(j, unitMap));
+    const unitEntity: Record<string, string> = {};
+    for (const u of (units ?? []) as Record<string, unknown>[]) {
+      unitMap[String(u.id ?? "")] = String(u.name ?? "");
+      unitEntity[String(u.id ?? "")] = String(u.legalEntityId ?? "");
+    }
+    return ((jobs ?? []) as Record<string, unknown>[]).map((j) =>
+      adaptJob({ ...j, legalEntityId: unitEntity[String(j.orgUnitId ?? "")] ?? j.legalEntityId }, unitMap),
+    );
   }, [createOpen, editJob, busy]);
 
   const unitsState = useApi(() => realApi.orgUnits(), [createOpen]);
   const unitRows = ((unitsState.data ?? []) as Record<string, unknown>[]) ?? [];
+
+  const treeState = useApi<OrgTreeNode[]>(async () => {
+    if (import.meta.env.VITE_USE_REAL_API === "true") return (await realApi.entityTree()) as OrgTreeNode[];
+    return demoEntityTree;
+  }, [createOpen]);
+  const entityUnits = flattenEntityTree(treeState.data ?? []);
+  const entityFilterOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
 
   const refresh = () => setBusy((b) => !b);
 
@@ -353,9 +378,13 @@ function PositionsList() {
                   filters={[
                     {
                       id: "entity",
-                      label: "Entity",
-                      options: entities.map((x) => x.name),
-                      match: (p, v) => entities.find((x) => x.id === p.entityId)?.name === v,
+                      label: "Entity & branch",
+                      options: treeToSelectOptions(treeState.data ?? []).map((o) => o.value),
+                      treeOptions: entityFilterOptions,
+                      match: (p, v) =>
+                        v.startsWith("entity:")
+                          ? p.entityId === v.slice(7)
+                          : (p as unknown as { _unitId?: string })._unitId === v,
                     },
                     {
                       id: "status",
@@ -364,10 +393,14 @@ function PositionsList() {
                       match: (p, v) => p.status === v,
                     },
                     {
-                      id: "branch",
-                      label: "Branch",
-                      options: entities.flatMap((x) => x.branches),
-                      match: (p, v) => p.branch === v,
+                      id: "department",
+                      label: "Department (tree)",
+                      options: entityUnits.map((e) => e.unitName),
+                      treeOptions: entityUnits.map((e) => ({
+                        value: e.unitName,
+                        label: treePathLabel(e.path),
+                      })),
+                      match: (p, v) => p.department === v,
                     },
                     {
                       id: "establishment",

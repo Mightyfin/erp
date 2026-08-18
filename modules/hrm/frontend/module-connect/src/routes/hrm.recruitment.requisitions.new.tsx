@@ -8,6 +8,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { entities } from "@/mock/data";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treePathLabel,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { approversFor, checkEstablishment, grades, money, recruitmentApi } from "@/mock/recruitment";
 import type { RequisitionReason } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
@@ -62,6 +69,30 @@ function NewRequisition() {
   const [entityId, setEntityId] = useState("ent-zm1");
   const [branch, setBranch] = useState("Lusaka HQ");
   const [department, setDepartment] = useState("Operations");
+
+  // Tree-driven placement options: legal entity › branch/department paths.
+  const [placementTree, setPlacementTree] = useState<OrgTreeNode[] | null>(null);
+  if (USE_REAL && !placementTree) {
+    realApi.entityTree().then((t) => setPlacementTree((t ?? []) as OrgTreeNode[])).catch(() => undefined);
+  }
+  const placementUnits = flattenEntityTree(placementTree ?? demoEntityTree);
+  const placementOptions = treeToSelectOptions(placementTree ?? demoEntityTree);
+  const choosePlacement = (value: string) => {
+    const match = placementUnits.find(
+      (p) => (p.unitType === "entity" ? `entity:${p.entityId}` : p.unitId) === value,
+    );
+    if (match) {
+      if (match.unitType === "entity") {
+        setEntityId(match.entityId);
+        setBranch(match.path[1] ?? "");
+        setDepartment(match.path[1] ?? "Operations");
+      } else {
+        setEntityId(match.entityId);
+        setBranch(match.path[1] ?? "");
+        setDepartment(match.unitName);
+      }
+    }
+  };
   const [employmentType, setEmploymentType] = useState("Permanent");
   const [headcount, setHeadcount] = useState(1);
   const [targetStart, setTargetStart] = useState("2026-10-01");
@@ -151,50 +182,28 @@ function NewRequisition() {
             <Label htmlFor="job-title">Job title</Label>
             <Input id="job-title" className="mt-1" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
           </div>
-          <div>
-            <Label htmlFor="entity">Legal entity</Label>
-            <Select value={entityId} onValueChange={chooseEntity}>
-              <SelectTrigger id="entity" className="mt-1">
+          <div className="sm:col-span-2">
+            <Label htmlFor="placement">Placement — entity › branch › department</Label>
+            <Select value={placementOptions.find((o) => o.value === `entity:${entityId}` || o.value === (placementUnits.find((p) => p.unitName === department && p.unitType !== "entity")?.unitId ?? ""))?.value ?? `entity:${entityId}`} onValueChange={choosePlacement}>
+              <SelectTrigger id="placement" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {entities.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name}
+                {placementOptions.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className={o.value.startsWith("entity:") ? "font-semibold text-primary" : undefined}
+                  >
+                    {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label htmlFor="branch">Branch</Label>
-            <Select value={branch} onValueChange={setBranch}>
-              <SelectTrigger id="branch" className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {entity.branches.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="department">Department</Label>
-            <Select value={department} onValueChange={setDepartment}>
-              <SelectTrigger id="department" className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The post will be created under the selected branch or department within the organisation
+              tree.
+            </p>
           </div>
           <div>
             <Label htmlFor="grade">Grade</Label>

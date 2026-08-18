@@ -186,13 +186,13 @@ export function adaptOrgUnits(raw: unknown): import("@/mock/structure").OrgUnit[
   const out: import("@/mock/structure").OrgUnit[] = [];
   const walk = (node: Record<string, unknown>, parentId: string | undefined) => {
     const children = (node.children as Array<Record<string, unknown>> | undefined) ?? [];
-    const unitType = String(node.unitType ?? "");
+    const unitType = String(node.unitType ?? "").toLowerCase();
     const kind: "Entity" | "Branch" | "Department" | "Team" =
-      unitType === "Entity"
+      unitType === "entity"
         ? "Entity"
-        : unitType === "Branch"
+        : unitType === "branch"
           ? "Branch"
-          : unitType === "Department"
+          : unitType === "department"
             ? "Department"
             : "Team";
     out.push({
@@ -297,6 +297,8 @@ export const realApi = {
   orgUnits: () => hrmApi.get<unknown[]>("/hrm/admin/org-units"),
   /** Recursive org-unit tree — used by the people structure page. */
   orgUnitsTree: () => hrmApi.get<unknown[]>("/hrm/admin/org-units/tree"),
+  /** Legal entities with org units nested beneath (entity › branches › departments › teams). */
+  entityTree: () => hrmApi.get<unknown[]>("/hrm/admin/org-units/entity-tree"),
   /** Work locations (config) — used for location placement selects. */
   locations: async () => {
     // Config endpoints return a paginated envelope { items, totalCount, ... }

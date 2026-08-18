@@ -29,6 +29,13 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 import { feedback } from "@/platform/feedback";
 import { useAuth } from "@/platform/auth";
 import { entities } from "@/mock/data";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treePathLabel,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { api } from "@/mock/service";
 import type { Employee } from "@/mock/types";
 import { useMock } from "@/platform/use-mock";
@@ -100,6 +107,17 @@ function EmployeesPage() {
   const mockState = useMock(() => api.employees());
   const rows: EmployeeRow[] = USE_REAL ? (state.data ?? []) : mockState.data ?? [];
 
+  const treeState = useApi<OrgTreeNode[]>(async () => {
+    if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
+    return demoEntityTree;
+  }, []);
+  const entityTreeOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
+  const entityUnits = flattenEntityTree(treeState.data ?? []);
+  const unitByName = new Map(entityUnits.map((e) => [e.unitName, e]));
+
   const userRoles = new Set(useAuth().user?.roles ?? []);
   const showArchiveAction = !USE_REAL || userRoles.has("hr_admin") || userRoles.has("hr_ops");
 
@@ -139,7 +157,9 @@ function EmployeesPage() {
       id: "entity",
       header: "Entity",
       cell: (e) =>
-        USE_REAL ? "—" : entities.find((x) => x.id === e.entityId)?.name.split(" ").slice(0, 2).join(" "),
+        USE_REAL
+          ? (unitByName.get(e.department)?.entityName ?? e.department).split(" ").slice(0, 2).join(" ")
+          : entities.find((x) => x.id === e.entityId)?.name.split(" ").slice(0, 2).join(" "),
     },
     {
       id: "branch",
@@ -229,9 +249,13 @@ function EmployeesPage() {
     : [
         {
           id: "entity",
-          label: "Entity",
-          options: entities.map((x) => x.name),
-          match: (e: EmployeeRow, v: string) => entities.find((x) => x.id === e.entityId)?.name === v,
+          label: "Entity & branch",
+          options: treeToSelectOptions(treeState.data ?? []).map((o) => o.value),
+          treeOptions: entityTreeOptions,
+          match: (e: EmployeeRow, v: string) =>
+            v.startsWith("entity:")
+              ? unitByName.get(e.department)?.entityId === v.slice(7)
+              : e.department === v,
         },
         {
           id: "type",

@@ -2,6 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { entities } from "@/mock/data";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treePathLabel,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { recruitmentApi } from "@/mock/recruitment";
 import type { Vacancy } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
@@ -75,6 +82,16 @@ function VacanciesList() {
     const res = await realApi.recruitmentVacancies();
     return (res.items as unknown[]).map(adaptVacancy);
   }, []);
+  const treeState = useApi<OrgTreeNode[]>(async () => {
+    if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
+    return demoEntityTree;
+  }, []);
+  const entityTreeOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
+  const entityUnits = flattenEntityTree(treeState.data ?? []);
+  const deptTreeOptions = entityUnits.map((e) => ({ value: e.unitName, label: treePathLabel(e.path) }));
   const [view, setView] = useState("live");
 
   return (
@@ -124,9 +141,13 @@ function VacanciesList() {
               },
               {
                 id: "entity",
-                label: "Legal entity",
-                options: entities.map((e) => e.name),
-                match: (v, value) => entityName(v.entityId) === value,
+                label: "Entity & branch",
+                options: treeToSelectOptions(treeState.data ?? []).map((o) => o.value),
+                treeOptions: entityTreeOptions,
+                match: (v, value) =>
+                  value.startsWith("entity:")
+                    ? v.entityId === value.slice(7)
+                    : v.department === value,
               },
               {
                 id: "applicants",

@@ -486,7 +486,7 @@ function OrgStructurePage() {
   const [tick, setTick] = useState(0);
   const state = useApi(
     async (): Promise<OrgUnit[]> =>
-      USE_REAL ? adaptOrgUnits(await realApi.orgUnitsTree()) : ([] as OrgUnit[]),
+      USE_REAL ? adaptOrgUnits(await realApi.entityTree()) : ([] as OrgUnit[]),
     [USE_REAL, tick],
   );
 
@@ -523,12 +523,12 @@ function OrgStructurePage() {
             <SelectContent>
               <SelectItem value="all">Entity: all</SelectItem>
               {USE_REAL
-                ? Array.from(new Set(state.data?.map((u) => `${u.entityId}|${u.name}`) ?? []))
+                ? Array.from(new Set(state.data?.filter((u) => u.kind === "Entity").map((u) => `${u.id}|${u.name}`) ?? []))
                     .sort()
                     .map((key) => {
                       const [eid, ...rest] = key.split("|");
                       return (
-                        <SelectItem key={eid} value={eid}>
+                        <SelectItem key={eid} value={eid} className="font-semibold text-primary">
                           {rest.join("|") || eid}
                         </SelectItem>
                       );
@@ -545,7 +545,9 @@ function OrgStructurePage() {
       <Async state={state} rows={5}>
         {(units) => {
           const live = USE_REAL ? units : demo.data ?? [];
-          const scoped = entityId === "all" ? live : live.filter((u) => u.entityId === entityId);
+          const scoped = entityId === "all"
+            ? live
+            : live.filter((u) => u.entityId === entityId || u.id === entityId);
           const roots = buildTree(scoped);
           const selected = scoped.find((u) => u.id === selectedId) ?? scoped[0];
 

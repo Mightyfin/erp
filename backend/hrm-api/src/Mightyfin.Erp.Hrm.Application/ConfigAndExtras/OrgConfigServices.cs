@@ -21,6 +21,7 @@ public interface IConfigAdminService
     // Org units (effective-dated tree)
     Task<List<OrgUnitDtoFull>> ListOrgUnitsAsync(CancellationToken ct);
     Task<List<OrgUnitTreeDto>> GetOrgUnitTreeAsync(CancellationToken ct);
+    Task<List<OrgUnitTreeDto>> GetEntityTreeAsync(CancellationToken ct);
     Task<OrgUnitDtoFull> CreateOrgUnitAsync(OrgUnitCreateRequest request, CancellationToken ct);
     Task<OrgUnitDtoFull> UpdateOrgUnitAsync(Guid id, OrgUnitUpdateRequest request, CancellationToken ct);
     Task CloseOrgUnitAsync(Guid id, OrgUnitCloseRequest request, CancellationToken ct);

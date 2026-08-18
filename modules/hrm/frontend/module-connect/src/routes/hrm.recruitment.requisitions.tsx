@@ -2,6 +2,13 @@ import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { entities } from "@/mock/data";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treePathLabel,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { money, recruitmentApi } from "@/mock/recruitment";
 import type { Requisition } from "@/mock/recruitment";
 import { AppShell } from "@/platform/components/AppShell";
@@ -49,7 +56,11 @@ function RequisitionsRoute() {
 
 interface RequisitionRow extends Requisition {}
 
-function adaptVacancy(v: Record<string, unknown>, unitNames: Record<string, string>): RequisitionRow {
+function adaptVacancy(
+  v: Record<string, unknown>,
+  unitNames: Record<string, string>,
+  unitEntity: Record<string, string>,
+): RequisitionRow {
   const status = String(v.status ?? "draft");
   const label = status === "draft" ? "Draft" : status === "published" ? "Approved" : status === "closed" ? "Rejected" : "Returned";
   return {
@@ -60,7 +71,7 @@ function adaptVacancy(v: Record<string, unknown>, unitNames: Record<string, stri
     businessCase: String(v.description ?? "Raised as a vacancy on the requisition page."),
     hiringManager: "",
     recruiter: "Talent Acquisition",
-    entityId: "",
+    entityId: unitEntity[String(v.orgUnitId ?? "")] ?? "",
     branch: "—",
     department: unitNames[String(v.orgUnitId ?? "")] ?? "",
     grade: String(v.grade ?? "—"),
@@ -93,9 +104,24 @@ function RequisitionsList() {
       realApi.orgUnits(),
     ]);
     const unitNames: Record<string, string> = {};
-    for (const u of (units ?? []) as Record<string, unknown>[]) unitNames[String(u.id ?? "")] = String(u.name ?? "");
-    return (((vacancies as { items?: Record<string, unknown>[] } | undefined)?.items ?? []) as Record<string, unknown>[]).map((v) => adaptVacancy(v, unitNames));
+    const unitEntity: Record<string, string> = {};
+    for (const u of (units ?? []) as Record<string, unknown>[]) {
+      unitNames[String(u.id ?? "")] = String(u.name ?? "");
+      unitEntity[String(u.id ?? "")] = String(u.legalEntityId ?? "");
+    }
+    return (((vacancies as { items?: Record<string, unknown>[] } | undefined)?.items ?? []) as Record<string, unknown>[]).map((v) => adaptVacancy(v, unitNames, unitEntity));
   }, [view]);
+
+  const treeState = useApi<OrgTreeNode[]>(async () => {
+    if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
+    return demoEntityTree;
+  }, [view]);
+  const entityTreeOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
+  const entityUnits = flattenEntityTree(treeState.data ?? []);
+  const deptTreeOptions = entityUnits.map((e) => ({ value: e.unitName, label: treePathLabel(e.path) }));
   const state = USE_REAL ? realState : mockState;
 
   return (
@@ -148,9 +174,13 @@ function RequisitionsList() {
               },
               {
                 id: "entity",
-                label: "Legal entity",
-                options: entities.map((e) => e.name),
-                match: (r, v) => entityName(r.entityId) === v,
+                label: "Entity & branch",
+                options: treeToSelectOptions(treeState.data ?? []).map((o) => o.value),
+                treeOptions: entityTreeOptions,
+                match: (r, v) =>
+                  v.startsWith("entity:")
+                    ? r.entityId === v.slice(7)
+                    : r.department === v,
               },
               {
                 id: "establishment",

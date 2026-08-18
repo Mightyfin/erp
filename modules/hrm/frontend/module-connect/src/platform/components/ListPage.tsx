@@ -27,6 +27,9 @@ export interface FilterDef<T> {
   label: string;
   options: string[];
   match: (row: T, value: string) => boolean;
+  /** Optional hierarchical option list (entity › branch › department). Renders
+   *  a tree with › separators and entity group labels instead of flat options. */
+  treeOptions?: { value: string; label: string; entity?: boolean }[];
 }
 
 export interface SavedView {
@@ -125,11 +128,21 @@ export function ListPage<T extends { id: string }>({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{f.label}: all</SelectItem>
-              {f.options.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o}
-                </SelectItem>
-              ))}
+              {f.treeOptions
+                ? f.treeOptions.map((o) => (
+                    <SelectItem
+                      key={o.value}
+                      value={o.value}
+                      className={o.entity ? "font-semibold text-primary" : undefined}
+                    >
+                      {o.label}
+                    </SelectItem>
+                  ))
+                : f.options.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
             </SelectContent>
           </Select>
         ))}

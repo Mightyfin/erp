@@ -182,3 +182,56 @@ public class ConfigAdminServiceTests
                 Code: "annualleave", Name: "Dup"), default));
     }
 }
+
+public class EntityTreeTests
+{
+    private static (ConfigAdminServiceImpl svc, HrmDbContext ctx) Build(string tenant = "test-tenant")
+    {
+        var ctx = TestDbContextFactory.Create(tenant);
+        var repo = new ConfigRepository(ctx);
+        var svc = new ConfigAdminServiceImpl(repo, new PermissiveAuthz());
+        return (svc, ctx);
+    }
+
+    [Fact]
+    public async Task EntityTree_RootsAreEntities_WithNestedUnits()
+    {
+        var (svc, _) = Build();
+        var entity = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "ET1", RegisteredName: "Entity Tree One"), default);
+        await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "FIN", Name: "Finance", LegalEntityId: entity.Id), default);
+        var dept = await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "HR", Name: "Human Resources", LegalEntityId: entity.Id), default);
+        await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "HR-REC", Name: "Recruitment", LegalEntityId: entity.Id, ParentId: dept.Id), default);
+
+        var tree = await svc.GetEntityTreeAsync(default);
+        Assert.Single(tree);
+        Assert.Equal("Entity Tree One", tree[0].Name);
+        Assert.Equal("entity", tree[0].UnitType);
+        Assert.Equal(2, tree[0].Children.Count);
+        var hr = tree[0].Children.First(n => n.Code == "HR");
+        Assert.Single(hr.Children);
+        Assert.Equal("Recruitment", hr.Children[0].Name);
+    }
+
+    [Fact]
+    public async Task EntityTree_MultipleEntities_SeparateRoots()
+    {
+        var (svc, _) = Build();
+        var e1 = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "E1", RegisteredName: "Alpha"), default);
+        var e2 = await svc.CreateLegalEntityAsync(
+            new LegalEntityCreateRequest(Code: "E2", RegisteredName: "Beta"), default);
+        await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "A1", Name: "A Unit", LegalEntityId: e1.Id), default);
+        await svc.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+            Code: "B1", Name: "B Unit", LegalEntityId: e2.Id), default);
+
+        var tree = await svc.GetEntityTreeAsync(default);
+        Assert.Equal(2, tree.Count);
+        Assert.All(tree, n => Assert.Contains(n.Name, new[] { "Alpha", "Beta" }));
+        Assert.All(tree, n => Assert.Single(n.Children));
+    }
+}

@@ -11,6 +11,12 @@ import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { realApi, useApi } from "@/platform/use-api";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 import { GuidedFlow, NextSteps } from "@/platform/components/GuidedFlow";
 import type { FlowStep } from "@/platform/components/GuidedFlow";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -104,15 +110,24 @@ function NewRun() {
             status: string;
           }[])
         : [];
-      return { periods, groupId };
+      const tree = USE_REAL
+        ? ((await realApi.entityTree()) as unknown as OrgTreeNode[])
+        : demoEntityTree;
+      return { periods, groupId, tree };
     },
     [],
   );
+  const placementUnits = flattenEntityTree(setup.data?.tree ?? demoEntityTree);
+  const placementOptions = treeToSelectOptions(setup.data?.tree ?? demoEntityTree).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
   const chosenPeriod =
     setup.data?.periods.find((p) => p.periodLabel === period) ??
     (setup.data?.periods ?? [])[0];
 
   const entity = ENTITIES.find((e) => e.id === entityId) ?? ENTITIES[0];
+  const entityEntityId = placementUnits.find((p) => p.unitType === "entity")?.entityId ?? entityId;
   const included = POPULATION.filter((p) => !excluded.includes(p.name));
   const estimate = included.length * 20_878.88;
   const dateProblem = useMemo(
@@ -129,21 +144,30 @@ function NewRun() {
         <div className="max-w-lg space-y-4">
           <div>
             <Label htmlFor="entity">Legal entity</Label>
-            <Select value={entityId} onValueChange={setEntityId}>
+            <Select
+              value={USE_REAL && setup.data?.tree ? `entity:${entityEntityId}` : entityId}
+              onValueChange={(v) =>
+                v.startsWith("entity:") ? setEntityId(v.slice(7)) : setEntityId(v)
+              }
+            >
               <SelectTrigger id="entity" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ENTITIES.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name}
+                {placementOptions.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className={o.entity ? "font-semibold text-primary" : undefined}
+                  >
+                    {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="mt-1 text-xs text-muted-foreground">
               The entity is the employer of record, so it decides the currency ({entity.currency}) and
-              which statutory rules apply.
+              which statutory rules apply. Branches and departments sit under their entity in the list below.
             </p>
           </div>
 

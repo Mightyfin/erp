@@ -768,6 +768,7 @@ public static class Routes
 
         g.MapGet("/org-units", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListOrgUnitsAsync(ct));
         g.MapGet("/org-units/tree", async (IConfigAdminService svc, CancellationToken ct) => await svc.GetOrgUnitTreeAsync(ct));
+        g.MapGet("/org-units/entity-tree", async (IConfigAdminService svc, CancellationToken ct) => await svc.GetEntityTreeAsync(ct));
         g.MapPost("/org-units", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<OrgUnitCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
