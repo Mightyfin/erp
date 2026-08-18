@@ -16,6 +16,11 @@ public interface ITimeService
     // subject id (not a caller-supplied worker id) so an employee can only see
     // their own requests and balances.
     Task<MyLeaveDto> MyLeaveAsync(string subjectId, CancellationToken ct);
+
+    // M35: single self-service dashboard payload — today's attendance punch,
+    // leave balances, and the worker's identity. One round-trip for the main
+    // self-service page instead of 3 separate calls.
+    Task<SelfDashboardDto> MyDashboardAsync(string subjectId, CancellationToken ct);
     Task<LeaveRequestDto> CancelLeaveAsync(Guid id, string subjectId, CancellationToken ct);
     Task<Paged<AttendanceCorrectionDto>> ListCorrectionsAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<AttendanceCorrectionDto> CreateCorrectionAsync(AttendanceCorrectionCreate request, CancellationToken ct);
@@ -53,6 +58,11 @@ public sealed record SelfLeaveRequestDto(Guid Id, string LeaveTypeCode, string S
 /// every configured leave type, and own leave requests.</summary>
 public sealed record MyLeaveDto(Guid WorkerId, string WorkerName, string? EmployeeNo, bool Linked,
     List<LeaveBalanceDto> Balances, List<SelfLeaveRequestDto> Requests);
+
+/// <summary>M35: self-service dashboard payload — today's attendance punch,
+/// leave balances, and worker identity. One round-trip for the dashboard.</summary>
+public sealed record SelfDashboardDto(Guid WorkerId, string WorkerName, string? EmployeeNo, bool Linked,
+    PunchResultDto? TodayPunch, List<LeaveBalanceDto> Balances);
 public sealed record AttendanceCorrectionDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
     string IssueType, string? ProposedClockIn, string? ProposedClockOut, string? ProposedStatus,
     string Reason, string Status, DateTimeOffset CreatedAt);
@@ -659,6 +669,22 @@ public sealed class TimeServiceImpl(
         var requests = items.Select(r => new SelfLeaveRequestDto(r.Id, r.LeaveTypeCode, r.StartDate.ToString(),
             r.EndDate.ToString(), r.RequestedDays, r.Status, r.RejectionReason, r.CrossesCutoff, r.CreatedAt)).ToList();
         return new MyLeaveDto(worker.Id, worker.FullName, worker.EmployeeNo, true, balances, requests);
+    }
+
+    // M35: self-service dashboard — today's punch + leave balances in one call.
+    public async Task<SelfDashboardDto> MyDashboardAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await workers.FindBySubjectIdAsync(subjectId, ct);
+        if (worker is null)
+            return new SelfDashboardDto(Guid.Empty, "", null, false, null, []);
+        PunchResultDto? today = null;
+        try { today = await GetTodayAsync(worker.Id, ct); }
+        catch { /* not clocked in yet — leave as null */ }
+        var balances = await GetBalancesAsync(worker.Id, ct);
+        return new SelfDashboardDto(worker.Id, worker.FullName, worker.EmployeeNo, true, today, balances);
     }
 
     public async Task<LeaveRequestDto> CancelLeaveAsync(Guid id, string subjectId, CancellationToken ct)

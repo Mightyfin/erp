@@ -120,8 +120,28 @@ public static class Routes
             return Results.Ok(await svc.UpdateOwnProfileAsync(raw with { SubjectId = subject }, ct));
         });
 
+        // M35: self-service notification preferences — GET/PUT /me/preferences.
+        // The preferences are a free-form JSON blob; the UI renders known keys
+        // (email, inApp, topics) and ignores the rest.
+        g.MapGet("/preferences", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+            Results.Ok(new { preferences = await svc.GetMyPreferencesAsync(ResolveSubjectId(http) ?? "", ct) }));
+        g.MapPut("/preferences", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var raw = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (raw.ValueKind == System.Text.Json.JsonValueKind.Undefined)
+                throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateMyPreferencesAsync(subject, raw.GetRawText(), ct));
+        });
+
         // M16 self-service: the signed-in worker's own leave inbox (balances +
         // own requests + cancel) — always keyed on the token subject.
+        // M35: self-service dashboard — today's punch + leave balances + identity in one call.
+        g.MapGet("/dashboard", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+            Results.Ok(await svc.MyDashboardAsync(ResolveSubjectId(http) ?? "", ct)));
+
         g.MapGet("/leave", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var subject = ResolveSubjectId(http);

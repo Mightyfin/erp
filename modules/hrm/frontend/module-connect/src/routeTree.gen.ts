@@ -16,6 +16,7 @@ import { Route as HrmIndexRouteImport } from './routes/hrm.index'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
+import { Route as HrmMyPreferencesRouteImport } from './routes/hrm.my-preferences'
 import { Route as HrmMyProfileRouteImport } from './routes/hrm.my-profile'
 import { Route as HrmSelfServiceRouteImport } from './routes/hrm.self-service'
 import { Route as HrmSetupRouteImport } from './routes/hrm.setup'
@@ -142,6 +143,11 @@ const HrmHelpRoute = HrmHelpRouteImport.update({
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
   id: '/hrm/my-documents',
   path: '/hrm/my-documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmMyPreferencesRoute = HrmMyPreferencesRouteImport.update({
+  id: '/hrm/my-preferences',
+  path: '/hrm/my-preferences',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmMyProfileRoute = HrmMyProfileRouteImport.update({
@@ -627,6 +633,7 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
@@ -728,6 +735,7 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
@@ -830,6 +838,7 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/help': typeof HrmHelpRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
+  '/hrm/my-preferences': typeof HrmMyPreferencesRoute
   '/hrm/my-profile': typeof HrmMyProfileRoute
   '/hrm/self-service': typeof HrmSelfServiceRoute
   '/hrm/setup': typeof HrmSetupRoute
@@ -933,6 +942,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
     | '/hrm/setup'
@@ -1034,6 +1044,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
     | '/hrm/setup'
@@ -1135,6 +1146,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/help'
     | '/hrm/my-documents'
+    | '/hrm/my-preferences'
     | '/hrm/my-profile'
     | '/hrm/self-service'
     | '/hrm/setup'
@@ -1237,6 +1249,7 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmHelpRoute: typeof HrmHelpRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
+  HrmMyPreferencesRoute: typeof HrmMyPreferencesRoute
   HrmMyProfileRoute: typeof HrmMyProfileRoute
   HrmSelfServiceRoute: typeof HrmSelfServiceRoute
   HrmSetupRoute: typeof HrmSetupRoute
@@ -1369,6 +1382,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/my-documents'
       fullPath: '/hrm/my-documents'
       preLoaderRoute: typeof HrmMyDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/my-preferences': {
+      id: '/hrm/my-preferences'
+      path: '/hrm/my-preferences'
+      fullPath: '/hrm/my-preferences'
+      preLoaderRoute: typeof HrmMyPreferencesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-profile': {
@@ -2164,6 +2184,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmHelpRoute: HrmHelpRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
+  HrmMyPreferencesRoute: HrmMyPreferencesRoute,
   HrmMyProfileRoute: HrmMyProfileRoute,
   HrmSelfServiceRoute: HrmSelfServiceRoute,
   HrmSetupRoute: HrmSetupRoute,

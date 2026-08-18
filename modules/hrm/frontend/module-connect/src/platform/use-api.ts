@@ -554,6 +554,16 @@ export const realApi = {
   myLeave: () => hrmApi.myLeave(),
   createMyLeaveRequest: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/me/leave", body),
+  /** M35: single self-service dashboard payload — punch + balances + identity. */
+  myDashboard: () =>
+    hrmApi.get<{
+      workerId: string;
+      workerName: string;
+      employeeNo: string | null;
+      linked: boolean;
+      todayPunch: { state: string; clockIn: string; clockOut: string; totalHours: number; derivedStatus: string } | null;
+      balances: Array<{ leaveTypeCode: string; leaveTypeName: string; accrued: number; taken: number; reserved: number; available: number }>;
+    }>("/hrm/me/dashboard"),
   myAttendanceToday: () => hrmApi.get<unknown>("/hrm/me/attendance/today"),
   myAttendance: (params?: Record<string, unknown>) =>
     hrmApi.get<unknown>("/hrm/me/attendance", params ?? {}),
@@ -615,6 +625,11 @@ export const realApi = {
     hrmApi.post<Record<string, unknown>>(`/hrm/me/notifications/${id}/read`, null),
   markAllMyNotificationsRead: () =>
     hrmApi.post<{ markedRead: number }>("/hrm/me/notifications/read-all", null),
+  /** M35: self-service notification preferences. */
+  myPreferences: () =>
+    hrmApi.get<{ preferences: string | null }>("/hrm/me/preferences"),
+  updateMyPreferences: (preferences: Record<string, unknown>) =>
+    hrmApi.put<string>("/hrm/me/preferences", preferences),
   /** Trigger payslip document (PDF) generation, returns the updated payslip. */
   payslipGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/payslips/${id}/generate`, null),

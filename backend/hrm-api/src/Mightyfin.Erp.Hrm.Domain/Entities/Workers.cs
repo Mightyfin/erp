@@ -40,6 +40,12 @@ public class Worker : Entity
     public string? JobTitle { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
+
+    // M35: self-service notification preferences — JSON blob with channel and
+    // topic toggles. Admins write through the admin profile page; employees
+    // write through /me/preferences. Null = use organisation defaults.
+    public string? NotificationPreferences { get; set; }
+
     public ICollection<EmergencyContact> EmergencyContacts { get; set; } = new List<EmergencyContact>();
     public ICollection<WorkerBankDetail> BankDetails { get; set; } = new List<WorkerBankDetail>();
     public ICollection<WorkerEducation> Education { get; set; } = new List<WorkerEducation>();

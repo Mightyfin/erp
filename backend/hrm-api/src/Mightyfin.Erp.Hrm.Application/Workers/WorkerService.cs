@@ -26,6 +26,11 @@ public interface IWorkerService
     Task<Paged<MovementDto>> ListMovementsAsync(Guid workerId, CancellationToken ct);
     Task<MovementDto> CreateMovementAsync(MovementCreateRequest request, CancellationToken ct);
     Task ExecuteMovementAsync(Guid movementId, CancellationToken ct);
+
+    // M35: self-service notification preferences — GET /me/preferences and
+    // PUT /me/preferences. Null = organisation defaults.
+    Task<string?> GetMyPreferencesAsync(string subjectId, CancellationToken ct);
+    Task<string?> UpdateMyPreferencesAsync(string subjectId, string preferencesJson, CancellationToken ct);
 }
 
 public sealed record AssignmentDto(Guid Id, string JobTitle, string? Grade, string ContractType,
@@ -363,6 +368,36 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         w.ExternalWorkHistory.Select(e => new ExternalWorkHistoryDto(e.Id, e.Company, e.Role, e.StartDate, e.EndDate, e.Responsibilities)).ToList(),
         w.InternalWorkHistory.Select(e => new InternalWorkHistoryDto(e.Id, e.OrgUnitName, e.Role, e.Grade, e.StartDate, e.EndDate, e.Reason)).ToList(),
         w.CreatedAt, w.UpdatedAt);
+
+    // M35: self-service notification preferences
+    public async Task<string?> GetMyPreferencesAsync(string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.FindBySubjectIdAsync(subjectId, ct);
+        return worker?.NotificationPreferences;
+    }
+
+    public async Task<string?> UpdateMyPreferencesAsync(string subjectId, string preferencesJson, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        if (string.IsNullOrEmpty(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        // Validate JSON
+        try { System.Text.Json.JsonDocument.Parse(preferencesJson); }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new DomainException("bad-preferences-json", "Notification preferences must be valid JSON.");
+        }
+        var worker = await repo.FindBySubjectIdAsync(subjectId, ct)
+            ?? throw new DomainException("worker-not-linked", "Your organisation identity is not linked to an HRM worker record.");
+        var entity = await repo.GetByIdAsync(worker.Id, ct)
+            ?? throw new DomainException("worker-not-found", "Worker record not found.");
+        entity.NotificationPreferences = preferencesJson;
+        await repo.SaveChangesAsync(ct);
+        return preferencesJson;
+    }
 
     private static string? Mask(string? value, bool includeSensitive)
     {

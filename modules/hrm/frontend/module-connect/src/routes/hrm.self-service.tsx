@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Bell, CalendarDays, FileText, Mail, UserRound, WalletCards } from "lucide-react";
+import { Bell, CalendarDays, FileText, LogIn, LogOut, Mail, Settings, UserRound, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/platform/components/AppShell";
@@ -14,15 +14,15 @@ type Row = Record<string, unknown>;
 
 function SelfService() {
   const overview = useApi(async () => {
-    const [notifications, requests, leave, payslips, documents, letters] = await Promise.all([
+    const [dashboard, notifications, requests, payslips, documents, letters] = await Promise.all([
+      realApi.myDashboard(),
       realApi.myNotifications(),
       realApi.myRequests(),
-      realApi.myLeave(),
       realApi.myPayslips() as Promise<{ items: unknown[] }>,
       realApi.myDocuments(),
       realApi.myLetters(),
     ]);
-    return { notifications, requests, leave, payslips, documents, letters };
+    return { dashboard, notifications, requests, payslips, documents, letters };
   }, []);
 
   return (
@@ -41,8 +41,8 @@ function SelfService() {
             // unlinked identities get a friendly state instead of a 422.
             const documents = (data.documents as { linked?: boolean; items?: unknown[] } | null) ?? {};
             const letters = (data.letters as { linked?: boolean; items?: unknown[] } | null) ?? {};
-            const leave = (data.leave as { requests?: unknown[]; linked?: boolean } | null) ?? {};
-            const linked = Boolean(documents.linked ?? leave.linked ?? letters.linked);
+            const linked = data.dashboard.linked || Boolean(documents.linked ?? letters.linked);
+            const dash = data.dashboard;
             const cards = [
               {
                 label: "HR requests",
@@ -52,7 +52,7 @@ function SelfService() {
               },
               {
                 label: "Leave requests",
-                value: leave.requests?.length ?? 0,
+                value: dash.linked ? (dash.balances?.length ?? 0) + " types" : "—",
                 to: "/hrm/leave",
                 icon: CalendarDays,
               },
@@ -80,9 +80,102 @@ function SelfService() {
                 to: "/hrm/my-profile",
                 icon: UserRound,
               },
+              {
+                label: "Preferences",
+                value: linked ? "Set" : "—",
+                to: "/hrm/my-preferences",
+                icon: Settings,
+              },
             ];
             return (
               <div className="space-y-6" data-testid="employee-self-service">
+                {/* M35: prominent clock-in/out card — first thing the employee sees */}
+                {linked && dash.todayPunch ? (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardContent className="flex flex-wrap items-center gap-4 p-4">
+                      <div className="flex-1 min-w-48">
+                        <p className="text-sm font-medium text-muted-foreground">Today</p>
+                        <p className="text-xl font-semibold">
+                          {dash.todayPunch.state === "in" ? "Clocked in" : "Clocked out"}
+                          {dash.todayPunch.clockIn
+                            ? ` at ${dash.todayPunch.clockIn.slice(0, 5)}`
+                            : ""}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {dash.todayPunch.state === "in" ? "Don't forget to clock out" : "Have a good evening"}
+                          {dash.todayPunch.totalHours > 0
+                            ? ` · ${dash.todayPunch.totalHours.toFixed(1)}h worked`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        {dash.todayPunch.state === "out" ? (
+                          <Button
+                            size="sm"
+                            onClick={() => realApi.clockMyselfIn().then(overview.reload)}
+                          >
+                            <LogIn className="size-4" /> Clock in
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => realApi.clockMyselfOut().then(overview.reload)}
+                          >
+                            <LogOut className="size-4" /> Clock out
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : linked ? (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardContent className="flex items-center gap-4 p-4">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-muted-foreground">Welcome back</p>
+                        <p className="text-lg font-semibold">{dash.workerName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {dash.employeeNo ?? ""} · Click below to clock in for the day
+                        </p>
+                      </div>
+                      <Button size="sm" onClick={() => realApi.clockMyselfIn().then(overview.reload)}>
+                        <LogIn className="size-4" /> Clock in
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {/* M35: leave balances summary */}
+                {linked && dash.balances?.length ? (
+                  <Card>
+                    <CardHeader className="flex-row items-center justify-between pb-2">
+                      <div>
+                        <CardTitle className="text-sm font-semibold">Leave balances</CardTitle>
+                        <CardDescription>Remaining days per leave type.</CardDescription>
+                      </div>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/hrm/leave/new">Request leave</Link>
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {dash.balances.map((b) => (
+                          <div
+                            key={b.leaveTypeCode}
+                            className="rounded-md border bg-surface px-3 py-2 text-center"
+                          >
+                            <p className="text-xs text-muted-foreground capitalize">
+                              {b.leaveTypeName || b.leaveTypeCode}
+                            </p>
+                            <p className="text-lg font-semibold">{b.available}</p>
+                            <p className="text-[10px] text-muted-foreground">days available</p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
                 {!linked ? (
                   <Card className="border-warning bg-warning/10">
                     <CardHeader>

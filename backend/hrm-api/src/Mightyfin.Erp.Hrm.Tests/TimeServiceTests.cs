@@ -527,4 +527,42 @@ public class TimeServiceTests
         Assert.True(leave.DueAt > DateTimeOffset.UtcNow.AddDays(2));
         Assert.Null((await ctx.WorkflowRequests.SingleAsync(r => r.WorkflowType == "payroll")).EscalatedAt);
     }
+
+    // ===================== M35: self-service dashboard =====================
+
+    [Fact]
+    public async Task MyDashboard_UnlinkedSubject_ReturnsNotLinked()
+    {
+        var (service, _, _, _, _) = Build();
+        var dash = await service.MyDashboardAsync("nonexistent-subject", CancellationToken.None);
+        Assert.False(dash.Linked);
+        Assert.Null(dash.TodayPunch);
+        Assert.Empty(dash.Balances);
+    }
+
+    [Fact]
+    public async Task MyDashboard_LinkedSubject_ReturnsPunchAndBalances()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        // accrue 5 days annual
+        ctx.LeaveBalanceLedgers.Add(new LeaveBalanceLedger
+        {
+            WorkerId = worker.Id, LeaveTypeCode = "annual", Days = 5m,
+            Reason = "accrual", ReferenceType = "", ForDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            TenantId = "test-tenant",
+        });
+        await ctx.SaveChangesAsync();
+
+        // clock in
+        await service.ClockInAsync(worker.Id, CancellationToken.None);
+
+        var dash = await service.MyDashboardAsync("subject-001", CancellationToken.None);
+        Assert.True(dash.Linked);
+        Assert.Equal(worker.Id, dash.WorkerId);
+        Assert.Equal("EMP-TM-001", dash.EmployeeNo);
+        Assert.NotNull(dash.TodayPunch);
+        Assert.Equal("in", dash.TodayPunch!.State);
+        Assert.Single(dash.Balances);
+        Assert.Equal(5m, dash.Balances[0].Available);
+    }
 }
