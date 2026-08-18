@@ -436,6 +436,7 @@ public static class Routes
             var request = await ReadBodyAsync<EducationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var created = await svc.AddEducationAsync(workerId, request, ct);
             return Results.Created("", created);
+        });
         g.MapPatch("/{workerId:guid}/education/{recordId:guid}", async (Guid workerId, Guid recordId, HttpContext http, IWorkerLifecycleService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<EducationRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -483,7 +484,6 @@ public static class Routes
         {
             await svc.DeleteInternalWorkHistoryAsync(workerId, recordId, ct);
             return Results.Ok();
-        });
         });
     }
 
