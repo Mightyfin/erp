@@ -40,6 +40,7 @@ const ENABLED_PREFIXES = [
   "/hrm/requests",
   "/hrm/self-service",
   "/hrm/my-profile",
+  "/hrm/my-preferences", // M35 employee notification preferences
   "/hrm/my-documents",
   "/hrm/experience/letters",
   "/hrm/lifecycle/onboarding",
