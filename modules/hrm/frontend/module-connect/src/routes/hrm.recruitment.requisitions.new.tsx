@@ -455,16 +455,28 @@ function NewRequisition() {
         submitLabel="Submit requisition"
         onSubmit={async () => {
           if (USE_REAL) {
-            const vacancy = await realApi.createVacancy({
+            const orgUnitId =
+              unitMap[department.toLowerCase()] ??
+              placementUnits.find((p) => p.unitName === department && p.unitType !== "entity")?.unitId ??
+              null;
+            const result = await realApi.createRequisition({
               jobTitle: jobTitle.trim(),
+              reason: reason === "Replacement" ? "replacement" : "new",
+              headcount,
               grade: grade.trim() || null,
-              orgUnitId: unitMap[department.toLowerCase()] || null,
-              description: justification.trim() || `${reason} requisition for ${department}`,
+              orgUnitId,
+              locationId: null,
+              hiringManagerName: null,
+              budgetAnnual: annualCost > 0 ? annualCost * headcount : null,
+              currency,
+              businessCase: justification.trim() || `${reason} requisition for ${department}`,
+              approverName: approvers[0]?.name ?? null,
             });
-            setRef(String((vacancy as Record<string, unknown>).id ?? "draft"));
+            const created = result as Record<string, unknown>;
+            setRef(String(created.requisitionNo ?? created.id ?? "draft"));
             feedback.submitted(
               "Requisition submitted",
-              `The vacancy for ${jobTitle.trim()} is now in draft. Publish it from the requisitions list when approved.`,
+              `The requisition for ${jobTitle.trim()} is saved as a draft. Open it from the requisitions list to submit for approval.`,
             );
             navigate({ to: "/hrm/recruitment/requisitions" }).catch(() => undefined);
             return;

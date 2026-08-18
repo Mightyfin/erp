@@ -1415,6 +1415,42 @@ public sealed class RecruitmentRepository(HrmDbContext db) : IRecruitmentReposit
         => await db.CandidateDocuments.FirstOrDefaultAsync(x => x.Id == id, ct);
     public async Task<int> CountCandidatesForVacancyAsync(Guid vacancyId, CancellationToken ct)
         => await db.Candidates.CountAsync(c => c.VacancyId == vacancyId, ct);
+
+    // M38: requisitions
+    public async Task<(List<Requisition> Items, int Total)> ListRequisitionsAsync(string? status, CancellationToken ct)
+    {
+        var q = db.Requisitions.Include(r => r.OrgUnit).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        var items = (await q.ToListAsync(ct)).OrderByDescending(r => r.CreatedAt).ToList();
+        return (items, items.Count);
+    }
+    public async Task<Requisition> CreateRequisitionAsync(Requisition requisition, CancellationToken ct)
+    {
+        db.Set<Requisition>().Add(requisition);
+        await db.SaveChangesAsync(ct);
+        return requisition;
+    }
+    public async Task<Requisition?> GetRequisitionAsync(Guid id, CancellationToken ct)
+        => await db.Requisitions.Include(r => r.OrgUnit).FirstOrDefaultAsync(r => r.Id == id, ct);
+    public async Task<Requisition> UpdateRequisitionAsync(Requisition requisition, CancellationToken ct)
+    {
+        db.Set<Requisition>().Update(requisition);
+        await db.SaveChangesAsync(ct);
+        return requisition;
+    }
+    public async Task<List<RequisitionEvent>> ListRequisitionEventsAsync(Guid requisitionId, CancellationToken ct)
+        => (await db.RequisitionEvents.Where(x => x.RequisitionId == requisitionId).ToListAsync(ct)).OrderBy(x => x.CreatedAt).ToList();
+    public async Task<RequisitionEvent> CreateRequisitionEventAsync(RequisitionEvent entry, CancellationToken ct)
+    { db.RequisitionEvents.Add(entry); await db.SaveChangesAsync(ct); return entry; }
+    public async Task<int> CountRequisitionVacanciesAsync(Guid requisitionId, CancellationToken ct)
+        => await db.Vacancies.CountAsync(v => v.RequisitionId == requisitionId, ct);
+    public async Task<List<Vacancy>> ListVacanciesForRequisitionAsync(Guid requisitionId, CancellationToken ct)
+        => (await db.Vacancies.Include(v => v.OrgUnit).Where(v => v.RequisitionId == requisitionId).ToListAsync(ct)).OrderByDescending(v => v.CreatedAt).ToList();
+    public async Task<string> NextRequisitionNoAsync(CancellationToken ct)
+    {
+        var count = await db.Requisitions.CountAsync(ct);
+        return $"REQ-{count + 1:D4}";
+    }
 }
 
 public sealed class RelationsRepository(HrmDbContext db) : IRelationsRepository

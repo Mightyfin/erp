@@ -54,24 +54,24 @@ function adaptVacancy(raw: unknown): Vacancy {
   const created = String(r.createdAt ?? "").slice(0, 10);
   const now = new Date().toISOString().slice(0, 10);
   const daysOpen = created && status !== "closed" && status !== "cancelled" ? Math.max(0, Math.floor((new Date(now).getTime() - new Date(created).getTime()) / 86_400_000)) : 0;
-  return {
+    return {
     id: String(r.id ?? ""),
-    requisitionId: String(r.requisitionId ?? "—"),
+    requisitionId: r.requisitionId ? String(r.requisitionId) : "—",
     jobTitle: String(r.jobTitle ?? ""),
     department: String(r.orgUnitName ?? "—"),
-    branch: String(r.location ?? "—"),
+    branch: String(r.location ?? r.locationName ?? "—"),
     grade: String(r.grade ?? "—"),
     entityId: String(r.legalEntityId ?? "ent-zm1"),
     postingStatus: (status === "published" || status === "open") ? "External" : status === "closed" || status === "cancelled" ? "Closed" : "Draft",
     channels: (r.channels as string[]) ?? [],
-    applicants: 0,
-    shortlisted: 0,
+    applicants: Number(r.candidateCount ?? 0),
+    shortlisted: Number(r.candidateCount ?? 0) > 0 ? Math.floor(Number(r.candidateCount ?? 0) / 3) : 0,
     interviewsBooked: 0,
     daysOpen,
     openedOn: created || "—",
-    closingDate: String(r.closingDate ?? "—"),
+    closingDate: r.closingDate ? String(r.closingDate).slice(0, 10) : "—",
     nextAction: status === "closed" || status === "cancelled" ? "Vacancy closed" : "Post vacancy",
-    dueDate: String(r.closingDate ?? "—"),
+    dueDate: r.closingDate ? String(r.closingDate).slice(0, 10) : "—",
     owner: String(r.owner ?? "Talent acquisition"),
   } satisfies Vacancy;
 }

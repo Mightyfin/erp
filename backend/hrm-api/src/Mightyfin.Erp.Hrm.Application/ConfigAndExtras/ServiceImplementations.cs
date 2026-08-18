@@ -50,7 +50,7 @@ public sealed class RecruitmentServiceImpl(
         var (items, total) = await repo.ListVacanciesAsync(status, ct);
         var rows = new List<VacancyDto>();
         foreach (var v in items)
-            rows.Add(new VacancyDto(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt, await repo.CountCandidatesForVacancyAsync(v.Id, ct)));
+            rows.Add(MapVacancy(v, await repo.CountCandidatesForVacancyAsync(v.Id, ct)));
         return new Paged<VacancyDto>(rows, total, 1, 50);
     }
 
@@ -60,7 +60,9 @@ public sealed class RecruitmentServiceImpl(
         if (await config.GetOrgUnitAsync(request.OrgUnitId, ct) is null)
             throw new DomainException("org-unit-not-found", "The selected org unit does not exist.");
         if (string.IsNullOrWhiteSpace(request.JobTitle)) throw new DomainException("job-title-required", "Job title is required.");
-        var v = new Vacancy { OrgUnitId = request.OrgUnitId, JobTitle = request.JobTitle.Trim(), Grade = request.Grade, Description = request.Description, Status = "draft" };
+        if (request.RequisitionId is not null && await repo.GetRequisitionAsync(request.RequisitionId.Value, ct) is null)
+            throw new DomainException("requisition-not-found", "The selected requisition does not exist.");
+        var v = new Vacancy { OrgUnitId = request.OrgUnitId, JobTitle = request.JobTitle.Trim(), Grade = request.Grade, Description = request.Description, Status = "draft", RequisitionId = request.RequisitionId, LocationId = request.LocationId, ClosingDate = ParseClosingDate(request.ClosingDate) };
         var created = await repo.CreateVacancyAsync(v, ct);
         if (request.Status == "published") return await PublishVacancyAsync(created.Id, ct);
         return MapVacancy(created);
@@ -86,8 +88,28 @@ public sealed class RecruitmentServiceImpl(
         if (v.Status != "published")
             throw new DomainException("vacancy-invalid-transition", $"Vacancy {v.Status} cannot be closed; only published vacancies can.");
         v.Status = "closed";
+        v.ClosingDate ??= DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var updated = await repo.UpdateVacancyAsync(v, ct);
         return MapVacancy(updated);
+    }
+
+    public async Task<VacancyPipelineStatsDto> GetVacancyPipelineAsync(Guid vacancyId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var v = await repo.GetVacancyAsync(vacancyId, ct)
+            ?? throw new DomainException("vacancy-not-found", $"Vacancy {vacancyId} does not exist.");
+        var (items, _) = await repo.ListCandidatesAsync(vacancyId, null, ct);
+        int Count(string stage) => items.Count(x => x.Stage == stage);
+        return new VacancyPipelineStatsDto(
+            vacancyId, v.JobTitle, v.Status,
+            Count("applied"), Count("screening"), Count("shortlisted"), Count("interviewing"), Count("interviewed"),
+            Count("offered"), Count("preboarding"), Count("hired"), Count("rejected"), items.Count);
+    }
+
+    private static DateOnly? ParseClosingDate(string? value)
+    {
+        if (value is null) return null;
+        return DateOnly.TryParse(value.Trim(), out var d) ? d : null;
     }
 
     public async Task<VacancyDto> UpdateVacancyAsync(Guid vacancyId, VacancyUpdateRequest request, CancellationToken ct)
@@ -102,6 +124,8 @@ public sealed class RecruitmentServiceImpl(
         }
         if (request.Grade is not null) v.Grade = request.Grade.Trim();
         if (request.Description is not null) v.Description = request.Description.Trim();
+        if (request.LocationId is not null) v.LocationId = request.LocationId;
+        if (request.ClosingDate is not null) v.ClosingDate = ParseClosingDate(request.ClosingDate);
         if (request.Status is not null)
         {
             var next = request.Status.Trim().ToLowerInvariant();
@@ -385,13 +409,156 @@ public sealed class RecruitmentServiceImpl(
         return (doc, File.OpenRead(doc.StoragePath));
     }
 
+    // ===================== M38: Requisitions =====================
+
+    public async Task<Paged<RequisitionDto>> ListRequisitionsAsync(string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var (items, total) = await repo.ListRequisitionsAsync(status, ct);
+        var rows = new List<RequisitionDto>();
+        foreach (var r in items)
+        {
+            var vacancies = await repo.CountRequisitionVacanciesAsync(r.Id, ct);
+            rows.Add(MapRequisition(r, vacancies));
+        }
+        return new Paged<RequisitionDto>(rows, total, 1, 50);
+    }
+
+    public async Task<RequisitionDetailDto> GetRequisitionAsync(Guid requisitionId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var r = await repo.GetRequisitionAsync(requisitionId, ct)
+            ?? throw new DomainException("requisition-not-found", $"Requisition {requisitionId} does not exist.");
+        var events = await repo.ListRequisitionEventsAsync(requisitionId, ct);
+        var vacancies = await repo.ListVacanciesForRequisitionAsync(requisitionId, ct);
+        return new RequisitionDetailDto(MapRequisition(r, vacancies.Count),
+            events.Select(x => new RequisitionEventDto(x.Action, x.ActorSubjectId, x.FromStatus, x.ToStatus, x.Notes, x.CreatedAt)).ToList(),
+            vacancies.Select(v => MapVacancy(v, 0)).ToList());
+    }
+
+    public async Task<RequisitionDto> CreateRequisitionAsync(RequisitionCreate request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (string.IsNullOrWhiteSpace(request.JobTitle)) throw new DomainException("job-title-required", "Job title is required.");
+        var reason = (request.Reason ?? "new").Trim().ToLowerInvariant();
+        if (reason is not ("new" or "replacement")) throw new DomainException("requisition-reason-invalid", "Reason must be 'new' or 'replacement'.");
+        if (reason == "replacement" && request.ReplacementWorkerId is null)
+            throw new DomainException("requisition-replacement-required", "A replacement requisition must name the worker being replaced.");
+        if (await config.GetOrgUnitAsync(request.OrgUnitId, ct) is null)
+            throw new DomainException("org-unit-not-found", "The selected org unit does not exist.");
+        if (request.Headcount < 1 || request.Headcount > 50)
+            throw new DomainException("requisition-headcount-invalid", "Headcount must be between 1 and 50.");
+        var actor = authz.CurrentSubjectId ?? "system";
+        var no = await repo.NextRequisitionNoAsync(ct);
+        var r = new Requisition
+        {
+            RequisitionNo = no, JobTitle = request.JobTitle.Trim(), Reason = reason,
+            ReplacementWorkerId = request.ReplacementWorkerId, Headcount = request.Headcount,
+            Grade = string.IsNullOrWhiteSpace(request.Grade) ? null : request.Grade.Trim(),
+            OrgUnitId = request.OrgUnitId, LocationId = request.LocationId,
+            HiringManagerName = string.IsNullOrWhiteSpace(request.HiringManagerName) ? null : request.HiringManagerName.Trim(),
+            BudgetAnnual = request.BudgetAnnual, BusinessCase = string.IsNullOrWhiteSpace(request.BusinessCase) ? null : request.BusinessCase.Trim(),
+            Status = "draft", RaisedBySubjectId = actor, RaisedByName = actor
+        };
+        var created = await repo.CreateRequisitionAsync(r, ct);
+        await repo.CreateRequisitionEventAsync(new RequisitionEvent { RequisitionId = created.Id, Action = "created", ActorSubjectId = actor, ToStatus = "draft" }, ct);
+        return MapRequisition(created, 0);
+    }
+
+    public async Task<RequisitionDto> UpdateRequisitionAsync(Guid requisitionId, RequisitionUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var r = await repo.GetRequisitionAsync(requisitionId, ct)
+            ?? throw new DomainException("requisition-not-found", $"Requisition {requisitionId} does not exist.");
+        if (r.Status != "draft" && r.Status != "returned")
+            throw new DomainException("requisition-not-editable", $"A '{r.Status}' requisition cannot be edited; only draft or returned ones can.");
+        if (request.JobTitle is not null) { if (string.IsNullOrWhiteSpace(request.JobTitle)) throw new DomainException("job-title-required", "Job title is required."); r.JobTitle = request.JobTitle.Trim(); }
+        if (request.Reason is not null) { var reason = request.Reason.Trim().ToLowerInvariant(); if (reason is not ("new" or "replacement")) throw new DomainException("requisition-reason-invalid", "Reason must be 'new' or 'replacement'."); r.Reason = reason; }
+        if (request.Headcount is not null) { if (request.Headcount < 1 || request.Headcount > 50) throw new DomainException("requisition-headcount-invalid", "Headcount must be between 1 and 50."); r.Headcount = request.Headcount.Value; }
+        if (request.Grade is not null) r.Grade = request.Grade.Trim();
+        if (request.LocationId is not null) r.LocationId = request.LocationId;
+        if (request.HiringManagerName is not null) r.HiringManagerName = string.IsNullOrWhiteSpace(request.HiringManagerName) ? null : request.HiringManagerName.Trim();
+        if (request.BudgetAnnual is not null) r.BudgetAnnual = request.BudgetAnnual;
+        if (request.BusinessCase is not null) r.BusinessCase = string.IsNullOrWhiteSpace(request.BusinessCase) ? null : request.BusinessCase.Trim();
+        if (r.Status == "returned") r.Status = "draft";
+        var updated = await repo.UpdateRequisitionAsync(r, ct);
+        return MapRequisition(updated, await repo.CountRequisitionVacanciesAsync(requisitionId, ct));
+    }
+
+    public async Task<RequisitionDto> ApproveRequisitionAsync(Guid requisitionId, RequisitionDecisionRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var r = await repo.GetRequisitionAsync(requisitionId, ct)
+            ?? throw new DomainException("requisition-not-found", $"Requisition {requisitionId} does not exist.");
+        if (r.Status != "submitted") throw new DomainException("requisition-not-submitted", $"Only submitted requisitions can be approved; this one is '{r.Status}'.");
+        r.Status = "approved"; r.ApproverName = string.IsNullOrWhiteSpace(request.ApproverName) ? null : request.ApproverName.Trim(); r.ApprovedAt = DateTimeOffset.UtcNow;
+        await repo.UpdateRequisitionAsync(r, ct);
+        await repo.CreateRequisitionEventAsync(new RequisitionEvent { RequisitionId = r.Id, Action = "approved", ActorSubjectId = "system", FromStatus = "submitted", ToStatus = "approved", Notes = request.Reason }, ct);
+        return MapRequisition(r, await repo.CountRequisitionVacanciesAsync(requisitionId, ct));
+    }
+
+    public async Task<RequisitionDto> ReturnRequisitionAsync(Guid requisitionId, RequisitionDecisionRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var r = await repo.GetRequisitionAsync(requisitionId, ct)
+            ?? throw new DomainException("requisition-not-found", $"Requisition {requisitionId} does not exist.");
+        if (r.Status != "submitted") throw new DomainException("requisition-not-submitted", $"Only submitted requisitions can be returned; this one is '{r.Status}'.");
+        if (string.IsNullOrWhiteSpace(request.Reason)) throw new DomainException("return-reason-required", "A reason is required when returning a requisition.");
+        r.Status = "returned"; r.ReturnedReason = request.Reason.Trim();
+        await repo.UpdateRequisitionAsync(r, ct);
+        await repo.CreateRequisitionEventAsync(new RequisitionEvent { RequisitionId = r.Id, Action = "returned", ActorSubjectId = "system", FromStatus = "submitted", ToStatus = "returned", Notes = r.ReturnedReason }, ct);
+        return MapRequisition(r, await repo.CountRequisitionVacanciesAsync(requisitionId, ct));
+    }
+
+    private RequisitionDto MapRequisition(Requisition r, int vacancyCount) => new(r.Id, r.RequisitionNo, r.JobTitle, r.Reason, r.ReplacementWorkerId, r.Headcount, r.Grade,
+        r.OrgUnit?.Name ?? "", r.LocationId?.ToString(), r.HiringManagerName, r.BudgetAnnual, r.Currency, r.BusinessCase, r.Status,
+        r.ApproverName, r.ApprovedAt, r.ReturnedReason, r.RaisedByName, r.CreatedAt, vacancyCount);
+
+    /// <summary>Submit a draft/returned requisition for approval.</summary>
+    public async Task<RequisitionDto> SubmitRequisitionAsync(Guid requisitionId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var r = await repo.GetRequisitionAsync(requisitionId, ct)
+            ?? throw new DomainException("requisition-not-found", $"Requisition {requisitionId} does not exist.");
+        if (r.Status is not ("draft" or "returned")) throw new DomainException("requisition-not-submittable", $"A '{r.Status}' requisition cannot be submitted; only draft or returned ones can.");
+        r.Status = "submitted"; r.ReturnedReason = null;
+        await repo.UpdateRequisitionAsync(r, ct);
+        await repo.CreateRequisitionEventAsync(new RequisitionEvent { RequisitionId = r.Id, Action = "submitted", ActorSubjectId = "system", FromStatus = r.Status == "returned" ? "returned" : "draft", ToStatus = "submitted" }, ct);
+        return MapRequisition(r, await repo.CountRequisitionVacanciesAsync(requisitionId, ct));
+    }
+
+    // ===================== M38: Offer letter =====================
+
+    public async Task<OfferLetterDto> GetOfferLetterAsync(Guid offerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var o = await repo.GetOfferAsync(offerId, ct) ?? throw new DomainException("offer-not-found", $"Offer {offerId} does not exist.");
+        var c = await repo.GetCandidateAsync(o.CandidateId, ct) ?? throw new DomainException("candidate-not-found", "The offer candidate no longer exists.");
+        var vacancy = await repo.GetVacancyAsync(c.VacancyId, ct);
+        var currency = await config.ListLegalEntitiesAsync(ct);
+        var cur = currency.FirstOrDefault()?.Currency ?? "ZMW";
+        var body = BuildOfferLetterBody(c.FullName, vacancy?.JobTitle ?? o.Notes ?? "the advertised position", o, cur);
+        return new OfferLetterDto(o.Id, c.FullName, vacancy?.JobTitle ?? "", o.BaseSalary, cur, o.ContractType, o.StartDate, o.ProbationMonths, o.NoticeDays, o.Status, body);
+    }
+
+    private static string BuildOfferLetterBody(string candidateName, string jobTitle, Offer o, string currency)
+    {
+        var start = string.IsNullOrWhiteSpace(o.StartDate) ? "to be agreed" : o.StartDate;
+        return $"OFFER OF EMPLOYMENT\n\nDear {candidateName},\n\nWe are pleased to offer you the position of {jobTitle}. This offer is made subject to the terms set out below.\n\nPosition: {jobTitle}\nContract type: {o.ContractType}\nBase salary: {o.BaseSalary:N2} {currency} per month\nProbation period: {o.ProbationMonths} month(s)\nNotice period: {o.NoticeDays} day(s)\nProposed start date: {start}\n\nThis offer {GetExpiryNote(o)}\n\nPlease respond by signing and returning this letter. We look forward to welcoming you to the team.\n\nHuman Resources";
+    }
+
+    private static string GetExpiryNote(Offer o)
+    {
+        return string.IsNullOrWhiteSpace(o.ExpiresOn) ? "remains open until withdrawn" : $"expires on {o.ExpiresOn} if not accepted";
+    }
+
     private static readonly (string Code, string Title, string Owner)[] DefaultTasks =
     [
         ("signed-contract", "Collect signed employment contract", "HR"), ("identity", "Verify identity document", "HR"),
         ("statutory", "Capture statutory identifiers", "Payroll"), ("bank", "Capture payment details", "Payroll"),
         ("induction", "Schedule induction and equipment", "Hiring manager")
     ];
-    private static VacancyDto MapVacancy(Vacancy v) => new(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt);
+    private static VacancyDto MapVacancy(Vacancy v, int candidateCount = 0) => new(v.Id, v.JobTitle, v.Grade, v.Status, v.OrgUnit?.Name ?? "", v.CreatedAt, candidateCount, v.RequisitionId, v.LocationId?.ToString(), v.ClosingDate?.ToString("yyyy-MM-dd"), v.Description);
     private static CandidateDto MapCandidate(Candidate c) => new(c.Id, c.VacancyId, c.FullName, c.Email, c.Phone, c.Stage, c.Notes, c.CreatedAt, c.WorkerId);
     private static OfferDto MapOffer(Offer o) => new(o.Id, o.CandidateId, o.BaseSalary, o.ContractType, o.Status, o.CreatedAt, o.Candidate?.FullName, o.Candidate?.Vacancy?.JobTitle, o.StartDate, o.ExpiresOn, o.ApprovedAt, o.IssuedAt, o.RespondedAt);
     private static InterviewDto MapInterview(CandidateInterview x) => new(x.Id, x.CandidateId, x.ScheduledAt.ToString("O"), x.InterviewType, x.InterviewerName, x.Status, x.OverallScore, x.Recommendation, x.Notes, x.CreatedAt);

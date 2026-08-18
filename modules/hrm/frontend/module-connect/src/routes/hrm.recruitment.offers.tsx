@@ -1,9 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { FileText } from "lucide-react";
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { extrasApi, money } from "@/mock/extras";
 import type { Offer, Referral } from "@/mock/extras";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
@@ -36,10 +44,33 @@ function OffersPage() {
   const offers = useApi(async () => {
     const rows = await extrasApi.offers();
     if (!USE_REAL) return rows;
-    const res = await realApi.recruitmentVacancies();
-    const count = res.items.length;
-    return rows.map((o, i) => ({ ...o, id: i === 0 ? `offer-${count}-1` : o.id }));
+    const res = await realApi.recruitmentOffers();
+    const items = (res?.items ?? []) as Record<string, unknown>[];
+    if (items.length === 0) {
+      // No backend offer records yet; keep the design rows visible so the screen
+      // is not empty while offers are issued from candidate records.
+      const count = 0;
+      return rows.map((o, i) => ({ ...o, id: i === 0 ? `offer-${count}-1` : o.id }));
+    }
+    return items.map((o) => ({
+      id: String(o.id ?? ""),
+      candidate: String(o.candidateName ?? "—"),
+      role: String(o.jobTitle ?? "—"),
+      salary: Number(o.baseSalary ?? 0),
+      currency: "ZMW",
+      vsBand: "Band position calculated at approval.",
+      startDate: String(o.startDate ?? "—"),
+      status: String(o.status ?? "Draft"),
+      expires: o.expiresOn ? String(o.expiresOn) : "—",
+      approver: "HR Director",
+      entity: "Mighty Finance Solutions",
+    })) as Offer[];
   }, []);
+  const [letter, setLetter] = useState<{ id: string; name: string } | null>(null);
+  const letterState = useApi(async () => {
+    if (!letter) return null;
+    return await realApi.offerLetter(letter.id);
+  }, [letter]);
   const referrals = useApi(async () => extrasApi.referrals());
   const [tab, setTab] = useState<"offers" | "referrals">("offers");
 
@@ -68,6 +99,7 @@ function OffersPage() {
       </div>
 
       {tab === "offers" ? (
+        <>
         <Async state={offers} rows={3}>
           {(rows) => (
             <ListPage<Offer>
@@ -96,6 +128,17 @@ function OffersPage() {
                 ) },
                 { id: "start", header: "Start", cell: (o) => o.startDate },
                 { id: "status", header: "Status", cell: (o) => <StatusBadge status={o.status === "Awaiting approval" ? "In review" : o.status === "Sent" ? "Submitted" : o.status} /> },
+                { id: "letter", header: "Offer letter", cell: (o) => (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLetter({ id: o.id, name: o.candidate });
+                    }}
+                    className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                  >
+                    <FileText className="size-3.5" aria-hidden /> View letter
+                  </button>
+                ) },
                 { id: "expires", header: "Expires", cell: (o) => o.expires },
                 { id: "approver", header: "Approver", defaultVisible: false, cell: (o) => o.approver },
                 { id: "entity", header: "Entity", defaultVisible: false, cell: (o) => o.entity },
@@ -104,6 +147,24 @@ function OffersPage() {
             />
           )}
         </Async>
+        {letter ? (
+          <Dialog open onOpenChange={(o) => !o && setLetter(null)}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Offer letter — {letter.name}</DialogTitle>
+                <DialogDescription>Preview of the offer letter as the system would issue it.</DialogDescription>
+              </DialogHeader>
+              <Async state={letterState}>
+                {(data) => (
+                  <div className="max-h-96 overflow-y-auto whitespace-pre-wrap rounded-md border bg-surface-muted p-4 text-sm">
+                    {data ? `${data.subject}\n\n${data.body}` : "The letter could not be loaded."}
+                  </div>
+                )}
+              </Async>
+            </DialogContent>
+          </Dialog>
+        ) : null}
+        </>
       ) : (
         <Async state={referrals} rows={3}>
           {(rows) => (

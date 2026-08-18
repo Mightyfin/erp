@@ -125,6 +125,8 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<CapabilityConfig> CapabilityConfigs => Set<CapabilityConfig>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<Vacancy> Vacancies => Set<Vacancy>();
+    public DbSet<Requisition> Requisitions => Set<Requisition>();
+    public DbSet<RequisitionEvent> RequisitionEvents => Set<RequisitionEvent>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<CandidateStageEvent> CandidateStageEvents => Set<CandidateStageEvent>();
@@ -260,7 +262,13 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e.HasIndex(x => new { x.TenantId, x.CreatedAt });
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId });
         });
-        ConfigureEntity<Vacancy>(modelBuilder, "vacancies");
+        ConfigureEntity<Vacancy>(modelBuilder, "vacancies", e => e.HasIndex(x => new { x.TenantId, x.RequisitionId }));
+        ConfigureEntity<Requisition>(modelBuilder, "requisitions", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.RequisitionNo }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.Status });
+        });
+        ConfigureEntity<RequisitionEvent>(modelBuilder, "requisition_events");
         ConfigureEntity<Candidate>(modelBuilder, "candidates");
         ConfigureEntity<Offer>(modelBuilder, "offers");
         ConfigureEntity<CandidateStageEvent>(modelBuilder, "candidate_stage_events");
@@ -286,6 +294,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<ExitInterview>(modelBuilder, "exit_interviews");
 
         // Relationships
+        modelBuilder.Entity<Requisition>().HasOne(x => x.OrgUnit).WithMany().HasForeignKey(x => x.OrgUnitId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<RequisitionEvent>().HasOne(x => x.Requisition).WithMany(x => x.Events).HasForeignKey(x => x.RequisitionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Vacancy>().HasOne(x => x.Requisition).WithMany().HasForeignKey(x => x.RequisitionId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<WorkLocation>().HasOne(x => x.DefaultCalendar).WithMany().HasForeignKey(x => x.DefaultCalendarId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<OrgUnit>().HasOne(x => x.LegalEntity).WithMany().HasForeignKey(x => x.LegalEntityId).OnDelete(DeleteBehavior.Restrict);

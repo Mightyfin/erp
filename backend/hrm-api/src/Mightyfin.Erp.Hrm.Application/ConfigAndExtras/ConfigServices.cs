@@ -37,8 +37,19 @@ public interface IRecruitmentService
     Task<PreboardingCaseDto> ActivatePreboardingAsync(Guid caseId, CancellationToken ct);
     Task<CandidateDocumentDto> AddCandidateDocumentAsync(Guid candidateId, string category, string title, string fileName, string contentType, long sizeBytes, string storagePath, CancellationToken ct);
     Task<(CandidateDocument Document, Stream Stream)> GetCandidateDocumentAsync(Guid documentId, CancellationToken ct);
+    // M38: pipeline funnel stats and offer letter generation
+    Task<VacancyPipelineStatsDto> GetVacancyPipelineAsync(Guid vacancyId, CancellationToken ct);
+    Task<OfferLetterDto> GetOfferLetterAsync(Guid offerId, CancellationToken ct);
+    // M38: requisitions
+    Task<Paged<RequisitionDto>> ListRequisitionsAsync(string? status, CancellationToken ct);
+    Task<RequisitionDetailDto> GetRequisitionAsync(Guid requisitionId, CancellationToken ct);
+    Task<RequisitionDto> CreateRequisitionAsync(RequisitionCreate request, CancellationToken ct);
+    Task<RequisitionDto> UpdateRequisitionAsync(Guid requisitionId, RequisitionUpdateRequest request, CancellationToken ct);
+    Task<RequisitionDto> ApproveRequisitionAsync(Guid requisitionId, RequisitionDecisionRequest request, CancellationToken ct);
+    Task<RequisitionDto> ReturnRequisitionAsync(Guid requisitionId, RequisitionDecisionRequest request, CancellationToken ct);
+    Task<RequisitionDto> SubmitRequisitionAsync(Guid requisitionId, CancellationToken ct);
 }
-public sealed record VacancyDto(Guid Id, string JobTitle, string? Grade, string Status, string OrgUnitName, DateTimeOffset CreatedAt, int CandidateCount = 0);
+public sealed record VacancyDto(Guid Id, string JobTitle, string? Grade, string Status, string OrgUnitName, DateTimeOffset CreatedAt, int CandidateCount = 0, Guid? RequisitionId = null, string? LocationName = null, string? ClosingDate = null, string? Description = null);
 public sealed record CandidateDto(Guid Id, Guid VacancyId, string FullName, string? Email, string? Phone, string Stage, string? Notes, DateTimeOffset CreatedAt, Guid? WorkerId = null);
 public sealed record OfferDto(Guid Id, Guid CandidateId, decimal BaseSalary, string ContractType, string Status, DateTimeOffset CreatedAt,
     string? CandidateName = null, string? JobTitle = null, string? StartDate = null, string? ExpiresOn = null,
@@ -52,6 +63,20 @@ public sealed record PreboardingCaseDto(Guid Id, Guid CandidateId, string Candid
     string JobTitle, string Status, string StartDate, int CompletedTasks, int TotalTasks, List<PreboardingTaskDto> Tasks, DateTimeOffset CreatedAt);
 public sealed record CandidateDetailDto(CandidateDto Candidate, VacancyDto Vacancy, List<InterviewDto> Interviews,
     List<OfferDto> Offers, List<CandidateStageEventDto> History, List<CandidateDocumentDto> Documents, PreboardingCaseDto? Preboarding);
+
+// M38: recruitment pipeline DTOs
+public sealed record VacancyPipelineStatsDto(Guid VacancyId, string JobTitle, string Status,
+    int Applied, int Screening, int Shortlisted, int Interviewing, int Interviewed,
+    int Offered, int Preboarding, int Hired, int Rejected, int Total);
+public sealed record OfferLetterDto(Guid OfferId, string CandidateName, string JobTitle, decimal BaseSalary,
+    string Currency, string ContractType, string? StartDate, int ProbationMonths, int NoticeDays,
+    string Status, string LetterBody);
+public sealed record RequisitionDto(Guid Id, string RequisitionNo, string JobTitle, string Reason, Guid? ReplacementWorkerId, int Headcount,
+    string? Grade, string OrgUnitName, string? LocationName, string? HiringManagerName, decimal? BudgetAnnual, string Currency,
+    string? BusinessCase, string Status, string? ApproverName, DateTimeOffset? ApprovedAt, string? ReturnedReason,
+    string? RaisedByName, DateTimeOffset CreatedAt, int VacancyCount = 0);
+public sealed record RequisitionDetailDto(RequisitionDto Requisition, List<RequisitionEventDto> Events, List<VacancyDto> Vacancies);
+public sealed record RequisitionEventDto(string Action, string ActorSubjectId, string? FromStatus, string? ToStatus, string? Notes, DateTimeOffset CreatedAt);
 /// <summary>M7: result of accepting an offer — the candidate is converted into a
 /// preboarding worker record with an initial assignment (ties to M2 onboarding).</summary>
 public sealed record OfferAcceptResultDto(Guid OfferId, Guid WorkerId, string EmployeeNo, Guid AssignmentId, string Status);
@@ -179,6 +204,15 @@ public interface IRecruitmentRepository
     Task<Candidate> CreateCandidateAsync(Candidate candidate, CancellationToken ct);
     Task<Candidate?> GetCandidateAsync(Guid id, CancellationToken ct);
     Task<List<CandidateStageEvent>> ListStageEventsAsync(Guid candidateId, CancellationToken ct);
+    Task<(List<Requisition> Items, int Total)> ListRequisitionsAsync(string? status, CancellationToken ct);
+    Task<Requisition> CreateRequisitionAsync(Requisition requisition, CancellationToken ct);
+    Task<Requisition?> GetRequisitionAsync(Guid id, CancellationToken ct);
+    Task<Requisition> UpdateRequisitionAsync(Requisition requisition, CancellationToken ct);
+    Task<List<RequisitionEvent>> ListRequisitionEventsAsync(Guid requisitionId, CancellationToken ct);
+    Task<RequisitionEvent> CreateRequisitionEventAsync(RequisitionEvent entry, CancellationToken ct);
+    Task<int> CountRequisitionVacanciesAsync(Guid requisitionId, CancellationToken ct);
+    Task<string> NextRequisitionNoAsync(CancellationToken ct);
+    Task<List<Vacancy>> ListVacanciesForRequisitionAsync(Guid requisitionId, CancellationToken ct);
     Task<CandidateStageEvent> CreateStageEventAsync(CandidateStageEvent entry, CancellationToken ct);
     Task<List<CandidateInterview>> ListInterviewsAsync(Guid candidateId, CancellationToken ct);
     Task<CandidateInterview> CreateInterviewAsync(CandidateInterview interview, CancellationToken ct);
@@ -246,6 +280,10 @@ public sealed class Vacancy : Entity
     public string? Grade { get; set; }
     public string? Description { get; set; }
     public string Status { get; set; } = "draft"; // draft | published | closed | cancelled
+    public Guid? RequisitionId { get; set; }      // M38: requisition the posting was created from
+    public Requisition? Requisition { get; set; }
+    public Guid? LocationId { get; set; }         // M38: work location of the posting
+    public DateOnly? ClosingDate { get; set; }    // M38: last day applications are accepted
     public ICollection<Candidate> Candidates { get; set; } = new List<Candidate>();
 }
 

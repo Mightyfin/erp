@@ -634,9 +634,29 @@ export const realApi = {
   payslipGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/payslips/${id}/generate`, null),
 
+  /** M38: requisition pipeline. */
+  requisitions: (params?: Record<string, unknown>) =>
+    hrmApi.get<{ items: unknown[]; total: number }>("/hrm/requisitions", params ?? {}),
+  createRequisition: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/requisitions", body),
+  requisitionDetail: (id: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/requisitions/${id}`),
+  updateRequisition: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/requisitions/${id}`, body),
+  submitRequisition: (id: string) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/requisitions/${id}/submit`, null),
+  approveRequisition: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/requisitions/${id}/approve`, body),
+  returnRequisition: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>(`/hrm/requisitions/${id}/return`, body),
+
   /** Recruitment: vacancies, candidates, offers. */
   recruitmentVacancies: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/recruitment/vacancies", params ?? {}),
+  vacancyPipeline: (vacancyId: string) =>
+    hrmApi.get<Record<string, unknown>>(`/hrm/vacancies/${vacancyId}/pipeline`),
+  offerLetter: (offerId: string) =>
+    hrmApi.get<{ subject: string; body: string; format: string }>(`/hrm/offers/${offerId}/letter`),
   createVacancy: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/recruitment/vacancies", body),
   publishVacancy: (id: string) =>

@@ -52,6 +52,7 @@ public static class Routes
         RegisterImportExport(app);
         RegisterPerformance(app);
         RegisterOffboarding(app);
+        RegisterRequisitions(app);
     }
 
     public static void RegisterNotifications(WebApplication app)
@@ -1530,8 +1531,58 @@ public static void RegisterOffboarding(WebApplication app)
     });
 }
 
+// M38: Requisition Pipeline
+public static void RegisterRequisitions(WebApplication app)
+{
+    var g = app.MapGroup($"{HrmPrefix}/requisitions").RequireAuthorization();
 
+    g.MapGet("/", async (string? status, IRecruitmentService svc, CancellationToken ct) =>
+        Results.Ok(await svc.ListRequisitionsAsync(status, ct)));
+
+    g.MapPost("/", async (HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<RequisitionCreate>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.CreateRequisitionAsync(request, ct));
+    });
+
+    g.MapGet("/{id:guid}", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetRequisitionAsync(id, ct)));
+
+    g.MapPatch("/{id:guid}", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<RequisitionUpdateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateRequisitionAsync(id, request, ct));
+    });
+
+    g.MapPost("/{id:guid}/submit", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+        Results.Ok(await svc.SubmitRequisitionAsync(id, ct)));
+
+    g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+    {
+        var body = await ReadBodyAsync<RequisitionDecisionRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.ApproveRequisitionAsync(id, body, ct));
+    });
+
+    g.MapPost("/{id:guid}/return", async (Guid id, HttpContext http, IRecruitmentService svc, CancellationToken ct) =>
+    {
+        var body = await ReadBodyAsync<RequisitionDecisionRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.ReturnRequisitionAsync(id, body, ct));
+    });
+
+    // Pipeline funnel stats for a vacancy (M38)
+    app.MapGet($"{HrmPrefix}/vacancies/{{id:guid}}/pipeline", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetVacancyPipelineAsync(id, ct))).RequireAuthorization();
+
+    // Offer letter generation (M38)
+    app.MapGet($"{HrmPrefix}/offers/{{id:guid}}/letter", async (Guid id, IRecruitmentService svc, CancellationToken ct) =>
+        Results.Ok(await svc.GetOfferLetterAsync(id, ct))).RequireAuthorization();
 }
+}
+
 // Route-local binding types.
 public sealed record RejectRequest(string Reason);
 public sealed record CancelRequest(string Reason);

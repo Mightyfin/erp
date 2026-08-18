@@ -218,8 +218,8 @@ public sealed record PayGroupDto(Guid Id, string Code, string Name, string Frequ
 
 // ===================== Recruitment (M7) =====================
 
-public sealed record VacancyCreate(Guid OrgUnitId, string JobTitle, string Grade, string? Description, string Status = "draft");
-public sealed record VacancyUpdateRequest(string? JobTitle = null, string? Grade = null, string? Description = null, string? Status = null);
+public sealed record VacancyCreate(Guid OrgUnitId, string JobTitle, string Grade, string? Description, string Status = "draft", Guid? RequisitionId = null, Guid? LocationId = null, string? ClosingDate = null);
+public sealed record VacancyUpdateRequest(string? JobTitle = null, string? Grade = null, string? Description = null, string? Status = null, Guid? LocationId = null, string? ClosingDate = null);
 public sealed record CandidateCreate(Guid VacancyId, string FullName, string? Email = null, string? Phone = null, string? Source = null, string? Notes = null);
 public sealed record CandidateAdvanceRequest(string Stage, string? Score = null, string? Notes = null);
 public sealed record InterviewCreateRequest(string ScheduledAt, string InterviewType, string? InterviewerName = null, string? Notes = null);
@@ -227,6 +227,14 @@ public sealed record InterviewDecisionRequest(int OverallScore, string Recommend
 public sealed record OfferCreate(Guid CandidateId, decimal BaseSalary, string? StartDate = null, string ContractType = "permanent", int ProbationMonths = 3, int NoticeDays = 30, string? Notes = null, string? ExpiresOn = null);
 public sealed record PreboardingTaskCreateRequest(string Title, bool Required = true, string? DueDate = null, string? Owner = null);
 public sealed record PreboardingTaskUpdateRequest(string Status, string? Notes = null);
+
+// ===================== Requisitions (M38) =====================
+
+public sealed record RequisitionCreate(string JobTitle, string Reason, Guid OrgUnitId, int Headcount = 1, string? Grade = null, Guid? LocationId = null,
+    string? HiringManagerName = null, decimal? BudgetAnnual = null, string? BusinessCase = null, Guid? ReplacementWorkerId = null);
+public sealed record RequisitionUpdateRequest(string? JobTitle = null, string? Reason = null, int? Headcount = null, string? Grade = null,
+    Guid? LocationId = null, string? HiringManagerName = null, decimal? BudgetAnnual = null, string? BusinessCase = null);
+public sealed record RequisitionDecisionRequest(string? ApproverName = null, string? Reason = null);
 
 // ===================== Relations (M7) =====================
 
