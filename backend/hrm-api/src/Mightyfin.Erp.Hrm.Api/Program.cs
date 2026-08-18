@@ -67,6 +67,7 @@ builder.Services.AddScoped<IWorkerImportService, WorkerImportService>();
 // M31: shared import/export engine — every importable type registers a schema
 // here and reuses the same map-columns / preview / apply / export flow.
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Shared.IImportSchema, Mightyfin.Erp.Hrm.Application.Shared.WorkersImportSchema>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Shared.IImportSchema, Mightyfin.Erp.Hrm.Application.Shared.AttendanceImportSchema>();
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Shared.IImportExportService, Mightyfin.Erp.Hrm.Application.Shared.ImportExportServiceImpl>();
 builder.Services.AddScoped<IWorkerResolver, WorkerResolver>();
 builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();

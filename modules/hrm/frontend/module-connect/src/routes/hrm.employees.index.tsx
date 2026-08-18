@@ -41,8 +41,11 @@ import type { Employee } from "@/mock/types";
 import { useMock } from "@/platform/use-mock";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/hrm/employees/")({
   head: () => ({
@@ -303,7 +306,11 @@ function EmployeesPage() {
           primaryAction={
             <div className="flex items-center gap-2">
               <ImportTool onDone={() => state.reload()} />
-              <ExportButton />
+              <ExportButton 
+                status={statusFilter} 
+                type={typeFilter} 
+                archived={archived} 
+              />
               <Button asChild>
                 <Link to="/hrm/employees/new">
                   <UserPlus className="mr-1 size-4" aria-hidden />
@@ -402,29 +409,53 @@ function ImportTool({ onDone }: { onDone?: () => void }) {
   return <ImportDialog typeKey="workers" onDone={onDone} />;
 }
 
-/** M31 — export the roster as a server-generated CSV (round-trips into the importer). */
-function ExportButton() {
+/** M31 — export the roster as a server-generated CSV or XLSX (round-trips into the importer). */
+function ExportButton({ status, type, archived }: { status?: string; type?: string; archived?: boolean }) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleExport(format: "csv" | "xlsx") {
+    setBusy(true);
+    try {
+      // M31b: Carry over active filters to the export URL.
+      const parts: string[] = [];
+      if (status) parts.push(`status=${status}`);
+      if (type) parts.push(`workerType=${type}`);
+      if (archived) parts.push(`includeArchived=true`);
+      if (format === "xlsx") parts.push(`format=xlsx`);
+      
+      const filter = parts.length > 0 ? parts.join("&") : undefined;
+      const blob = await realApi.importExportBlob("workers", filter);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `employees-${new Date().toISOString().slice(0, 10)}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Employee ${format.toUpperCase()} export downloaded.`);
+    } catch {
+      toast.error("Export is not available yet — the server refused the request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Button
-      variant="outline"
-      onClick={async () => {
-        try {
-          const blob = await realApi.importExportBlob("workers");
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`;
-          a.click();
-          URL.revokeObjectURL(url);
-          toast.success("Employee export downloaded.");
-        } catch {
-          toast.error("Export is not available yet — the server refused the request.");
-        }
-      }}
-      className="gap-2"
-    >
-      <Download className="h-4 w-4" /> Export
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="gap-2" disabled={busy}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Export
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => handleExport("csv")}>
+          Export as CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+          Export as XLSX
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -187,6 +187,21 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         return await q.ToListAsync(ct);
     }
 
+    // M31b export flattening: status-filtered roster with OrgUnit + M33 child
+    // tables included so the export writes flattened history columns without
+    // N+1 round-trips. Archived leavers stay out unless status=all/archived.
+    public async Task<List<Worker>> ListAllWorkersWithDetailsAsync(string? status, CancellationToken ct)
+    {
+        IQueryable<Worker> q = db.Workers
+            .Include(w => w.OrgUnit)
+            .Include(w => w.Education)
+            .Include(w => w.ExternalWorkHistory)
+            .Include(w => w.InternalWorkHistory);
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("all", StringComparison.OrdinalIgnoreCase))
+            q = q.Where(w => w.Status == status);
+        return await q.ToListAsync(ct);
+    }
+
     public async Task<EmergencyContact?> GetEmergencyContactAsync(Guid id, CancellationToken ct)
         => await db.EmergencyContacts.FirstOrDefaultAsync(c => c.Id == id, ct);
 

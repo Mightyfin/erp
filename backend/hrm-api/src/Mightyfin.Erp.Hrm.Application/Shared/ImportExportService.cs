@@ -126,15 +126,33 @@ public sealed class ImportExportServiceImpl : IImportExportService
 
     public async Task<byte[]> ExportAsync(string typeKey, string? filter, CancellationToken ct)
     {
+        // Extract format from filter if present (e.g. "status=Active&format=xlsx").
+        var isXlsx = false;
+        if (filter?.Contains("format=xlsx") == true)
+        {
+            isXlsx = true;
+            filter = filter.Replace("&format=xlsx", "").Replace("format=xlsx&", "").Replace("format=xlsx", "");
+        }
+
         var schema = Schema(typeKey);
         if (schema is not IImportSchemaWithExport withExport)
             throw new DomainException("import-export-not-supported", $"'{typeKey}' does not support export yet.");
         var rows = await withExport.ExportRowsAsync(filter, ct);
+        var header = schema.Fields.Select(f => f.Key).ToList();
+
+        if (isXlsx)
+        {
+            var data = new List<List<string?>> { header.Select(k => (string?)k).ToList() };
+            foreach (var row in rows)
+                data.Add(header.Select(k => row.TryGetValue(k, out var v) ? v : "").ToList());
+            return MinimalXlsx.Build(data);
+        }
+
         var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", schema.Fields.Select(f => CsvQuote(f.Key))));
+        sb.AppendLine(string.Join(",", header.Select(CsvQuote)));
         foreach (var row in rows)
         {
-            var cells = schema.Fields.Select(f => row.TryGetValue(f.Key, out var v) ? CsvQuote(v) : "");
+            var cells = header.Select(k => row.TryGetValue(k, out var v) ? CsvQuote(v) : "");
             sb.AppendLine(string.Join(",", cells));
         }
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();

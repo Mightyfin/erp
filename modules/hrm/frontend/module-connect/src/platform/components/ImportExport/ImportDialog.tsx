@@ -151,26 +151,39 @@ const SKIP = "__skip__";
 
 /* ---------------------------------------------------------------- demo data */
 /** Demo-mode schemas keep the offline preview flow usable. */
-const DEMO_SCHEMA: ImportSchema = {
-  typeKey: "workers",
-  displayName: "Employees",
-  fields: [
-    { key: "employeeNo", label: "Employee number", required: false, naturalKey: true, example: "EMP-0011", formatNote: "Auto-generated when left blank" },
-    { key: "firstName", label: "First name", required: true },
-    { key: "lastName", label: "Last name", required: true },
-    { key: "middleName", label: "Middle name", required: false },
-    { key: "email", label: "Email", required: false, formatNote: "name@company.co.zm" },
-    { key: "phone", label: "Phone", required: false, formatNote: "+260 97 … or 097…" },
-    { key: "nrc", label: "NRC number", required: false, formatNote: "NNNNNN/NN/L" },
-    { key: "tpin", label: "TPIN", required: false, formatNote: "10 digits" },
-    { key: "napsaNumber", label: "NAPSA number", required: false, formatNote: "12 digits" },
-    { key: "nhimaNumber", label: "NHIMA number", required: false, formatNote: "12 digits" },
-    { key: "grade", label: "Grade", required: false },
-    { key: "jobTitle", label: "Job title", required: false },
-    { key: "startDate", label: "Start date", required: false, formatNote: "YYYY-MM-DD" },
-    { key: "workerType", label: "Worker type", required: false, example: "employee" },
-    { key: "orgUnitName", label: "Department", required: false },
-  ],
+const DEMO_SCHEMAS: Record<string, ImportSchema> = {
+  workers: {
+    typeKey: "workers",
+    displayName: "Employees",
+    fields: [
+      { key: "employeeNo", label: "Employee number", required: false, naturalKey: true, example: "EMP-0011", formatNote: "Auto-generated when left blank" },
+      { key: "firstName", label: "First name", required: true },
+      { key: "lastName", label: "Last name", required: true },
+      { key: "middleName", label: "Middle name", required: false },
+      { key: "email", label: "Email", required: false, formatNote: "name@company.co.zm" },
+      { key: "phone", label: "Phone", required: false, formatNote: "+260 97 … or 097…" },
+      { key: "nrc", label: "NRC number", required: false, formatNote: "NNNNNN/NN/L" },
+      { key: "tpin", label: "TPIN", required: false, formatNote: "10 digits" },
+      { key: "napsaNumber", label: "NAPSA number", required: false, formatNote: "12 digits" },
+      { key: "nhimaNumber", label: "NHIMA number", required: false, formatNote: "12 digits" },
+      { key: "grade", label: "Grade", required: false },
+      { key: "jobTitle", label: "Job title", required: false },
+      { key: "startDate", label: "Start date", required: false, formatNote: "YYYY-MM-DD" },
+      { key: "workerType", label: "Worker type", required: false, example: "employee" },
+      { key: "orgUnitName", label: "Department", required: false },
+    ],
+  },
+  attendance: {
+    typeKey: "attendance",
+    displayName: "Attendance",
+    fields: [
+      { key: "employeeNo", label: "Employee number", required: true, naturalKey: true, example: "EMP-0005" },
+      { key: "workDate", label: "Date", required: true, formatNote: "YYYY-MM-DD" },
+      { key: "clockIn", label: "Clock in", required: false, formatNote: "HH:mm" },
+      { key: "clockOut", label: "Clock out", required: false, formatNote: "HH:mm" },
+      { key: "note", label: "Note", required: false },
+    ],
+  },
 };
 
 function demoPreview(rows: Array<Record<string, string>>) {
@@ -217,7 +230,7 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
   };
 
   const schema = useMemo<ImportSchema | null>(() => {
-    if (!schemas) return typeKey === "workers" ? DEMO_SCHEMA : null;
+    if (!schemas) return DEMO_SCHEMAS[typeKey] ?? null;
     return schemas.find((s) => s.typeKey === typeKey) ?? null;
   }, [schemas, typeKey]);
 
@@ -239,8 +252,12 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
       setFileName(file.name);
       setFileColumns(headersClean.map((name) => ({ name,       sample: String(rows[0]?.[headersClean.indexOf(name)] ?? "") })));
       setFileRows(rows);
-      if (!schema) setMapping(autoMap(headersClean, DEMO_SCHEMA.fields));
-      else setMapping(autoMap(headersClean, schema.fields));
+      if (!schema) {
+        const demo = DEMO_SCHEMAS[typeKey] || DEMO_SCHEMAS.workers;
+        setMapping(autoMap(headersClean, demo.fields));
+      } else {
+        setMapping(autoMap(headersClean, schema.fields));
+      }
       setStep("map");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not read the file");

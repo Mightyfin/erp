@@ -1299,10 +1299,14 @@ public static class Routes
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ApplyAsync(request.PreviewId, request.RowIndexes, ct));
         });
+        // M31b: format=xlsx in the filter string switches the output to XLSX.
         g.MapGet("/{typeKey}/export", async (string typeKey, string? filter,
             IImportExportService svc, CancellationToken ct) =>
         {
+            var isXlsx = filter?.Contains("format=xlsx") == true;
             var bytes = await svc.ExportAsync(typeKey, filter, ct);
+            if (isXlsx)
+                return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{typeKey}-export.xlsx");
             return Results.File(bytes, "text/csv; charset=utf-8", $"{typeKey}-export.csv");
         });
     }

@@ -40,6 +40,7 @@ public interface IWorkerRepository
     Task<List<OrgUnit>> ListAllOrgUnitsAsync(CancellationToken ct);
     Task<List<WorkLocation>> ListAllLocationsAsync(CancellationToken ct);
     Task<List<Worker>> ListAllWorkersAsync(Guid? orgUnitId, CancellationToken ct);
+    Task<List<Worker>> ListAllWorkersWithDetailsAsync(string? status, CancellationToken ct);
 
     // Emergency contacts
     Task<EmergencyContact?> GetEmergencyContactAsync(Guid id, CancellationToken ct);

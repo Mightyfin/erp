@@ -40,6 +40,20 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("startDate", "Start date", false, FormatNote: "YYYY-MM-DD"),
         new("workerType", "Employment type", true, Example: "employee | contingent | intern | volunteer"),
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
+
+        // M31b flattening: history child fields (export-only in v1; import
+        // matches parent and ignores these or uses them for bulk child init)
+        new("edu.institution", "Education: Institution", false),
+        new("edu.qualification", "Education: Qualification", false),
+        new("edu.startYear", "Education: Start Year", false),
+        new("edu.endYear", "Education: End Year", false),
+        new("ext.company", "Previous Employer: Company", false),
+        new("ext.role", "Previous Employer: Role", false),
+        new("ext.startDate", "Previous Employer: Start Date", false),
+        new("ext.endDate", "Previous Employer: End Date", false),
+        new("int.orgUnitName", "Internal Move: Dept", false),
+        new("int.role", "Internal Move: Role", false),
+        new("int.startDate", "Internal Move: Start Date", false),
     ];
 
     public async Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
@@ -247,30 +261,73 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     public async Task<List<Dictionary<string, string>>> ExportRowsAsync(string? filter, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        // M31: full roster exported so the file round-trips into the importer;
-        // status filtering is offered by the export UI as follow-up.
-        var items = await repo.ListAllWorkersAsync(null, ct);
-        var orgUnits = await repo.ListAllOrgUnitsAsync(ct);
-        var byId = new Dictionary<Guid, string>(orgUnits.Count);
-        foreach (var u in orgUnits) byId[u.Id] = u.Name;
-        return items.Select(w => new Dictionary<string, string>
+        // M31b: filter support (status=Active) + child-table flattening.
+        // If a worker has multiple history records, we repeat the parent row.
+        var status = filter?.StartsWith("status=") == true ? filter[7..] : null;
+        var items = await repo.ListAllWorkersWithDetailsAsync(status, ct);
+
+        var rows = new List<Dictionary<string, string>>();
+        foreach (var w in items)
         {
-            ["employeeNo"] = w.EmployeeNo ?? "",
-            ["firstName"] = w.FirstName,
-            ["lastName"] = w.LastName,
-            ["middleName"] = w.MiddleName ?? "",
-            ["email"] = w.Email ?? "",
-            ["phone"] = w.Phone ?? "",
-            ["nrc"] = w.Nrc ?? "",
-            ["tpin"] = w.Tpin ?? "",
-            ["napsaNumber"] = w.NapsaNumber ?? "",
-            ["nhimaNumber"] = w.NhimaNumber ?? "",
-            ["grade"] = w.Grade ?? "",
-            ["jobTitle"] = w.JobTitle ?? "",
-            ["startDate"] = w.StartDate?.ToString("yyyy-MM-dd") ?? "",
-            ["workerType"] = w.WorkerType ?? "employee",
-            ["orgUnitName"] = w.OrgUnitId.HasValue && byId.TryGetValue(w.OrgUnitId.Value, out var n) ? n : "",
-        }).ToList();
+            var baseRow = new Dictionary<string, string>
+            {
+                ["employeeNo"] = w.EmployeeNo ?? "",
+                ["firstName"] = w.FirstName,
+                ["lastName"] = w.LastName,
+                ["middleName"] = w.MiddleName ?? "",
+                ["email"] = w.Email ?? "",
+                ["phone"] = w.Phone ?? "",
+                ["nrc"] = w.Nrc ?? "",
+                ["tpin"] = w.Tpin ?? "",
+                ["napsaNumber"] = w.NapsaNumber ?? "",
+                ["nhimaNumber"] = w.NhimaNumber ?? "",
+                ["grade"] = w.Grade ?? "",
+                ["jobTitle"] = w.JobTitle ?? "",
+                ["startDate"] = w.StartDate?.ToString("yyyy-MM-dd") ?? "",
+                ["workerType"] = w.WorkerType ?? "employee",
+                ["orgUnitName"] = w.OrgUnit?.Name ?? "",
+            };
+
+            // Flatten child records: repeat the parent row for each child record
+            // across the three types. If no children, just the base row.
+            var max = Math.Max(w.Education.Count, Math.Max(w.ExternalWorkHistory.Count, w.InternalWorkHistory.Count));
+            if (max == 0)
+            {
+                rows.Add(baseRow);
+                continue;
+            }
+
+            var edus = w.Education.ToList();
+            var exts = w.ExternalWorkHistory.ToList();
+            var ints = w.InternalWorkHistory.ToList();
+
+            for (var i = 0; i < max; i++)
+            {
+                var row = new Dictionary<string, string>(baseRow);
+                if (i < edus.Count)
+                {
+                    row["edu.institution"] = edus[i].Institution;
+                    row["edu.qualification"] = edus[i].Qualification;
+                    row["edu.startYear"] = edus[i].StartYear?.ToString() ?? "";
+                    row["edu.endYear"] = edus[i].EndYear?.ToString() ?? "";
+                }
+                if (i < exts.Count)
+                {
+                    row["ext.company"] = exts[i].Company;
+                    row["ext.role"] = exts[i].Role ?? "";
+                    row["ext.startDate"] = exts[i].StartDate ?? "";
+                    row["ext.endDate"] = exts[i].EndDate ?? "";
+                }
+                if (i < ints.Count)
+                {
+                    row["int.orgUnitName"] = ints[i].OrgUnitName;
+                    row["int.role"] = ints[i].Role ?? "";
+                    row["int.startDate"] = ints[i].StartDate ?? "";
+                }
+                rows.Add(row);
+            }
+        }
+        return rows;
     }
 
     private static string? OrNull(string? v) => string.IsNullOrWhiteSpace(v) ? null : v;

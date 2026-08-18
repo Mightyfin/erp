@@ -9,6 +9,7 @@ import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
+import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 
 
 export const Route = createFileRoute("/hrm/attendance/")({
@@ -74,9 +75,12 @@ function AttendanceList() {
         title="Attendance corrections"
         description="Every correction shows the recorded clock data next to what's claimed, so nothing gets approved blind."
         primaryAction={
-          <Button asChild>
-            <Link to="/hrm/attendance/new">Raise a correction</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <ImportDialog typeKey="attendance" onDone={() => state.reload()} />
+            <Button asChild>
+              <Link to="/hrm/attendance/new">Raise a correction</Link>
+            </Button>
+          </div>
         }
       />
       <Async state={state}>
