@@ -160,7 +160,9 @@ public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,
     string ExceptionStatus = "open", string? ExceptionDecisionReason = null,
     string? ExceptionDecidedBySubjectId = null, DateTimeOffset? ExceptionDecidedAt = null,
-    bool IsExcluded = false);
+    bool IsExcluded = false,
+    // M41 Gap 2: proration accounting (appended so existing callers stay binary-compatible)
+    int WorkingDays = 0, int PaymentDays = 0, string? ProrationNote = null);
 public sealed record PayrollLineComponentDto(string ComponentCode, string ComponentName,
     string ComponentType, decimal Amount, string Explanation, bool IsStatutory);
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,

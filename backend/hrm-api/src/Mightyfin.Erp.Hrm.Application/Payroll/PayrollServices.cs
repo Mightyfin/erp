@@ -437,6 +437,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         await repo.UpdateRunAsync(run, ct);
 
         var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct);
+        var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
         await repo.ClearRunLinesAsync(run.Id, ct);
@@ -446,6 +447,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             var worker = profile.Worker;
             if (worker is null) { exceptions++; continue; }
             var ctx = new CalcContext(worker, profile, components, rules, slabs);
+
+            // M41 Gap 2: how many days did this worker actually earn pay for?
+            var (workingDays, paymentDays, note) = PaymentDaysCalculator.For(
+                prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
+            ctx.SetProration(workingDays, paymentDays, note);
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
             var net = ctx.Gross - ctx.Deductions;
@@ -466,6 +472,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 HasException = ctx.ExceptionReason is not null, ExceptionReason = ctx.ExceptionReason,
                 ComponentCount = ctx.Components.Count,
                 RuleVersionSnapshot = JsonSerializer.Serialize(components.Select(c => new { c.Id, c.Version }).ToList()),
+                WorkingDays = ctx.WorkingDays, PaymentDays = ctx.PaymentDays,
+                ProrationNote = ctx.ProrationNote,
             };
             foreach (var lc in ctx.Components)
                 line.Components.Add(new PayrollLineComponent { ComponentCode = lc.Code, ComponentName = lc.Name, ComponentType = lc.Type, Amount = lc.Amount, Explanation = lc.Explanation, IsStatutory = lc.IsStatutory });
@@ -494,7 +502,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             l.Id, l.WorkerId, l.Worker?.FullName ?? "", l.Worker?.EmployeeNo ?? "",
             l.GrossPay, l.TotalDeductions, l.NetPay, l.EmployerCost, l.HasException, l.ExceptionReason,
             l.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
-            l.ExceptionStatus, l.ExceptionDecisionReason, l.ExceptionDecidedBySubjectId, l.ExceptionDecidedAt, l.IsExcluded)).ToList(), total, 1, 100);
+            l.ExceptionStatus, l.ExceptionDecisionReason, l.ExceptionDecidedBySubjectId, l.ExceptionDecidedAt, l.IsExcluded,
+            l.WorkingDays, l.PaymentDays, l.ProrationNote)).ToList(), total, 1, 100);
     }
 
     public async Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request,
@@ -1083,6 +1092,9 @@ internal sealed class CalcContext
     public decimal Gross;
     public decimal Deductions;
     public decimal EmployerCost;
+    public int WorkingDays;
+    public int PaymentDays;
+    public string? ProrationNote;
     public string? ExceptionReason;
     public readonly List<(string Code, string Name, string Type, decimal Amount, string Explanation, bool IsStatutory)> Components = [];
     private readonly Dictionary<string, decimal> _values = new();
@@ -1108,6 +1120,16 @@ internal sealed class CalcContext
             _ => 0,
         };
 
+        // M41 Gap 2: prorate salary-earned amounts when the worker did not earn
+        // pay for the full period (mid-month starter/leaver or unpaid leave).
+        // Only FIXED-basis components are scaled here — percent-of and slab
+        // components read their bases through Resolve, which already returns
+        // the prorated earnings, so scaling them again would double-prorate.
+        // PAYE slabs follow the prorated gross automatically and statutory
+        // rules re-apply floors/ceilings afterwards (e.g. NHIMA monthly
+        // minimum).
+        if (comp.CalculationBasis == "fixed") amount = ApplyProration(comp, amount);
+
         // statutory rules override (NAPSA ceiling example: min(pay*rate, ceiling)).
         // A rule is tied to an EARNING component (TiedComponentCode) and applies to
         // the deduction/tax/contribution component whose BasisComponentCode matches it.
@@ -1128,6 +1150,10 @@ internal sealed class CalcContext
         Components.Add((comp.Code, comp.Name, comp.ComponentType, Math.Round(amount, 2),
             BuildExplanation(comp, amount), comp.IsStatutory));
 
+        // Earnings must resolve before dependent components read them, so the
+        // proration factor is baked into the resolved value immediately.
+        if (comp.ComponentType == "earning") _values[comp.Code] = amount;
+
         if (comp.ComponentType == "earning") Gross += amount;
         else if (comp.ComponentType is "deduction" or "tax") Deductions += amount;
         else if (comp.ComponentType == "employer-contribution") EmployerCost += amount;
@@ -1137,7 +1163,11 @@ internal sealed class CalcContext
         code switch
         {
             "gross" or "taxable" => Gross, // 'gross'/'taxable' are engine keywords
-            _ => _profile.ComponentValues.FirstOrDefault(v => v.Component?.Code == code)?.Amount ?? _values.GetValueOrDefault(code, 0),
+            // An earning already evaluated in this run carries its prorated
+            // value in _values — that always wins over the raw profile
+            // override, so dependent components read prorated earnings.
+            _ when _values.ContainsKey(code) => _values[code],
+            _ => _profile.ComponentValues.FirstOrDefault(v => v.Component?.Code == code)?.Amount ?? 0,
         };
 
     private decimal ProfileAmount(Guid componentId) =>
@@ -1166,6 +1196,24 @@ internal sealed class CalcContext
             "slab" => $"Progressive PAYE slab calculation on taxable income K{_lastTaxable:N2} (ZRA bands)",
             _ => comp.Ceiling.HasValue ? $"Fixed/capped at ceiling {comp.Ceiling}" : "Fixed amount",
         };
+
+    // M41 Gap 2: proration. Salary-earned components (earnings, deductions that
+    // follow earnings, employer contributions) scale with the payment-days
+    // factor; slab tax follows the prorated gross automatically and statutory
+    // floors/ceilings re-apply afterwards.
+    private decimal ApplyProration(SalaryComponent comp, decimal amount)
+    {
+        if (WorkingDays <= 0 || PaymentDays >= WorkingDays) return amount;
+        var factor = (decimal)PaymentDays / WorkingDays;
+        return Math.Round(amount * factor, 2);
+    }
+
+    public void SetProration(int workingDays, int paymentDays, string? note)
+    {
+        WorkingDays = workingDays;
+        PaymentDays = paymentDays;
+        ProrationNote = note;
+    }
 }
 
 public interface IPayrollRepository
@@ -1230,7 +1278,20 @@ public interface IPayrollRepository
     Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
     // M41: legal entities for payroll report company headers.
     Task<List<LegalEntity>> ListLegalEntitiesAsync(CancellationToken ct);
+    // M41 Gap 2: proration inputs — pay period dates, approved unpaid leave
+    // requests overlapping the period (with leave-type category), and the
+    // effective work calendar's holiday dates (informational only).
+    Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct);
 }
+
+/// <summary>M41 Gap 2: proration inputs snapshot for one pay period.</summary>
+public sealed record PayrollProrationInputs(
+    DateOnly PeriodStart, DateOnly PeriodEnd,
+    List<ApprovedUnpaidLeave> UnpaidLeaves,
+    List<DateOnly> HolidayDates);
+
+/// <summary>One approved leave of an unpaid leave type overlapping the period.</summary>
+public sealed record ApprovedUnpaidLeave(Guid WorkerId, DateOnly StartDate, DateOnly EndDate, decimal RequestedDays);
 
 public sealed record PayrollPaymentRow(Guid WorkerId, string EmployeeNo, string WorkerName,
     string BankName, string BranchCode, string AccountName, string AccountNumber, decimal Amount);

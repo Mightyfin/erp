@@ -57,6 +57,14 @@ public class PayrollRunLine : Entity
     public decimal TotalDeductions { get; set; }
     public decimal NetPay { get; set; }
     public decimal EmployerCost { get; set; }
+
+    // M41 Gap 2: proration accounting. WorkingDays = days in the pay period;
+    // PaymentDays = days the worker actually earned pay for (mid-month
+    // starters/leavers and approved unpaid leave reduce it).
+    public int WorkingDays { get; set; }
+    public int PaymentDays { get; set; }
+    public string? ProrationNote { get; set; }
+
     public bool HasException { get; set; }
     public string? ExceptionReason { get; set; }      // negative-net | missing-profile | variance | missing-bank
     public string ExceptionStatus { get; set; } = "open"; // open | resolved | waived | excluded

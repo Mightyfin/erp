@@ -982,6 +982,35 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (profiles, components, rules, slabs, period.CutoffDate);
     }
 
+    public async Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        // Approved leaves whose type is unpaid (or half-pay, treated as unpaid
+        // for proration purposes) and whose range overlaps the period.
+        var unpaidTypeCodes = await db.LeaveTypes
+            .Where(t => t.Category == "unpaid" || t.Category == "half-pay")
+            .Select(t => t.Code)
+            .ToListAsync(ct);
+        var unpaidLeaves = await db.LeaveRequests
+            .Where(lr => lr.Status == "approved"
+                && unpaidTypeCodes.Contains(lr.LeaveTypeCode)
+                && lr.StartDate <= period.EndDate && lr.EndDate >= period.StartDate)
+            .Select(lr => new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate, lr.RequestedDays))
+            .ToListAsync(ct);
+        // Effective calendar: tenant default, falling back to any Zambia
+        // calendar. Holiday dates are informational (Zambian public holidays
+        // are paid, so they never reduce payment days).
+        var calendar = await db.WorkCalendars
+            .OrderByDescending(c => c.IsDefault)
+            .FirstOrDefaultAsync(ct);
+        var holidays = calendar is null ? new List<DateOnly>() : await db.PublicHolidays
+            .Where(h => h.CalendarId == calendar.Id && h.HolidayDate >= period.StartDate && h.HolidayDate <= period.EndDate)
+            .Select(h => h.HolidayDate)
+            .ToListAsync(ct);
+        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays);
+    }
+
     public async Task ClearRunLinesAsync(Guid runId, CancellationToken ct)
     {
         var lines = await db.PayrollRunLines.Where(l => l.RunId == runId).ToListAsync(ct);
