@@ -239,10 +239,12 @@ public sealed class SetupServiceImpl(
         if (input.RegisteredName.Length is < 2 or > 120)
             throw new DomainException("organisation-registered-name-invalid", "The registered name must be 2-120 characters.");
 
-        var entity = (await config!.ListLegalEntitiesAsync(ct)).Items
-            .Where(e => e.IsDefault)
-            .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefault();
+        // M50.4: this HRM serves exactly one organisation — the wizard must
+        // always update the existing legal entity and never create a second one.
+        var entities = (await config!.ListLegalEntitiesAsync(ct)).Items;
+        var entity = entities.FirstOrDefault(e => e.IsDefault)
+            ?? entities.FirstOrDefault()
+            ?? entities.OrderByDescending(e => e.CreatedAt).FirstOrDefault();
         var update = new LegalEntityUpdateRequest(
               input.RegisteredName.Trim(), input.TradingName?.Trim(),
               input.PacraNumber?.Trim(), input.Tpin?.Trim(),
