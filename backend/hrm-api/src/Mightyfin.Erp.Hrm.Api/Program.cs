@@ -277,7 +277,7 @@ app.Use(async (ctx, next) =>
     catch (Exception ex)
     {
         var logger2 = ctx.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
-        logger2.LogError(ex, "[HRM-API UNHANDLED] {Method} {Path}", ctx.Request.Method, ctx.Request.Path.Value);
+        logger2.LogError(ex, "Unhandled exception on {Method} {Path}", ctx.Request.Method, ctx.Request.Path.Value);
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
         ctx.Response.ContentType = "application/json";
         await ctx.Response.WriteAsJsonAsync(new ApiError("internal-error", "An unexpected error occurred.", []));

@@ -99,6 +99,12 @@ public sealed class ImportExportServiceImpl : IImportExportService
         {
             if (idx < 0 || idx >= preview.Rows.Count) continue;
             var rowPreview = preview.Rows[idx];
+            if (rowPreview is null)
+            {
+                rowOutcomes.Add(new ImportRowPreviewDto(idx + 2, "error", "Row preview is missing — preview the file again."));
+                skipped++;
+                continue;
+            }
             var status = rowPreview.Status;
             if (status is "create" or "update")
             {
