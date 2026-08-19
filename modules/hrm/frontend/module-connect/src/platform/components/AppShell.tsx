@@ -49,6 +49,7 @@ import type { Role } from "@/mock/types";
 import { hrmModule } from "@/modules/hrm/nav";
 import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
+import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
 import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
@@ -438,7 +439,32 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   });
   const pathname = useRouterState({ select: (st) => st.location.pathname });
+
   const inScope = isPathEnabled(pathname);
+
+  // M47 scope-switch overlay label: resolves the human target name from the
+  // currently persisted shell scope so "Switching to …" stays accurate when
+  // the operator flips between entity-wide and branch views.
+  const switchTargetLabel = (() => {
+    try {
+      const raw = typeof localStorage !== "undefined" ? localStorage.getItem("erp.shell.state.v1") : null;
+      if (raw) {
+        const shell = JSON.parse(raw) as { entityId?: string; branch?: string } | null;
+        if (shell?.branch) {
+          const loc = liveLocations.find((l) => l.id === shell.branch);
+          return loc ? `Switching to ${loc.name}…` : "Switching to branch…";
+        }
+        if (shell?.entityId) {
+          const e = liveEntities.find((l) => String(l.id) === shell.entityId);
+          const name = e ? String((e as Record<string, unknown>).registeredName ?? (e as Record<string, unknown>).tradingName ?? (e as Record<string, unknown>).name ?? "Organisation") : "Organisation";
+          return `Switching to ${name} (organisation-wide)…`;
+        }
+      }
+    } catch {
+      /* corrupt shell state — fall through to nothing */
+    }
+    return "Switching context…";
+  })();
   const liveNotifications = shellState.data?.notificationInbox.items ?? [];
   const unread = USE_REAL
     ? shellState.data?.notificationInbox.unreadCount ?? 0
@@ -479,6 +505,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* M47: full-screen frosted overlay with a rotating switch mark and
+          "Switching to …" label while the org switcher changes scope. */}
+      <ScopeSwitchOverlay targetLabel={switchTargetLabel} />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"
