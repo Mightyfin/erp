@@ -840,6 +840,11 @@ public static class Routes
             await svc.ApproveRunAsync(id, note?.Note, ct, ResolveSubjectId(http) ?? "system");
             return Results.Ok();
         });
+        // M46: branch payroll draft workflow — the branch preparer sends their
+        // calculated run up for organisation-wide HR approval (draft | calculated
+        // -> in-review, branch run only).
+        g.MapPost("/runs/{id:guid}/submit-for-review", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+            await svc.SubmitRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapPost("/runs/{id:guid}/release", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             await svc.ReleaseRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapPost("/runs/{id:guid}/lines/{lineId:guid}/exception", async (Guid id, Guid lineId, HttpContext http, IPayrollService svc, CancellationToken ct) =>

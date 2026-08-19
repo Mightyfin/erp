@@ -985,6 +985,26 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             r => r.PayPeriodId == payPeriodId && r.Status != "reversed" && r.Status != "closed" && !r.IsReversal,
             ct);
 
+    // M46: the open (non-terminal) run for a pay period scoped to one branch;
+    // locationId = null returns an open organisation-wide run. This is the
+    // coexistence lookup: a branch draft may only exist once per branch per
+    // period, and an org run may not exist while a branch run is open.
+    public async Task<PayrollRun?> FindOpenRunByPeriodAndLocationAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+        => await db.PayrollRuns.FirstOrDefaultAsync(
+            r => r.PayPeriodId == payPeriodId && !r.IsReversal
+                && r.Status != "reversed" && r.Status != "closed"
+                && r.LocationId == locationId,
+            ct);
+
+    // M46: any open branch-scoped run for a period (blocks organisation-wide
+    // runs while a branch draft is still in flight).
+    public async Task<PayrollRun?> FindOpenBranchRunForPeriodAsync(Guid payPeriodId, CancellationToken ct)
+        => await db.PayrollRuns.FirstOrDefaultAsync(
+            r => r.PayPeriodId == payPeriodId && !r.IsReversal
+                && r.Status != "reversed" && r.Status != "closed"
+                && r.LocationId.HasValue,
+            ct);
+
     public async Task<PayrollRun> CreateRunAsync(PayrollRun run, CancellationToken ct)
     {
         db.PayrollRuns.Add(run);
@@ -1000,8 +1020,10 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return run;
     }
 
+    public Task<PayrollRun> SubmitRunAsync(PayrollRun run, CancellationToken ct) => UpdateRunAsync(run, ct);
+
     public async Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)>
-        LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct)
+        LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct, Guid? locationId = null)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
@@ -1011,6 +1033,10 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(p => p.PayGroupId == period.PayGroupId)
             .ToListAsync(ct))
             .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTime.UtcNow))
+            // M46: a run scoped to a branch only pays the workers attached to
+            // that branch (denormalized read view on Worker.LocationId; the
+            // assignment history remains the source of truth for org chart).
+            .Where(p => locationId is null || p.Worker?.LocationId == locationId)
             .ToList();
         var components = await db.SalaryComponents.Where(c => c.IsActive).OrderBy(c => c.Priority).ToListAsync(ct);
         var rules = await db.ContributionRules.Where(r => r.IsActive).ToListAsync(ct);

@@ -46,6 +46,10 @@ public interface IPayrollService
     Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct, string actorSubjectId = "system");
+    // M46: branch payroll draft (in-review) workflow — the preparer sends the
+    // calculated branch run up for top-HR approval; it then appears on the
+    // approver's queue. draft | calculated -> in-review, branch run only.
+    Task<PayrollRunDto> SubmitRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
 
     // M6: reversal of a released run (audit-preserving — never deletes history)
@@ -351,13 +355,32 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
         if (period.Status != "open")
             throw new DomainException("pay-period-not-open", $"Pay period {period.PeriodLabel} is {period.Status} and cannot accept a new run.");
-        var existing = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
-        if (existing is not null)
-            throw new DomainException("run-already-exists", "A payroll run already exists for this period.");
+        // M46 branch payroll drafts: a draft tagged with LocationId belongs to
+        // one branch and pays only that branch's workers; multiple branch runs
+        // may coexist for a period (one per branch), but an organisation-wide
+        // run may not exist while any branch run for the period is open.
+        var targetLocation = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null;
+        if (targetLocation.HasValue)
+        {
+            var sameBranch = await repo.FindOpenRunByPeriodAndLocationAsync(request.PayPeriodId, targetLocation, ct);
+            if (sameBranch is not null)
+                throw new DomainException("run-already-exists",
+                    $"A payroll run already exists for this period at branch {targetLocation}.");
+        }
+        else
+        {
+            var orgOpen = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
+            if (orgOpen is not null)
+                throw new DomainException("run-already-exists", "A payroll run already exists for this period.");
+            var branchOpen = await repo.FindOpenBranchRunForPeriodAsync(request.PayPeriodId, ct);
+            if (branchOpen is not null)
+                throw new DomainException("branch-run-open",
+                    "A branch payroll draft is open for this period. Resolve it first — an organisation-wide run cannot run alongside a branch draft, otherwise workers would be paid twice.");
+        }
         // M44 branch scoping: a run created while scoped to a branch is that branch's run (draft flows up).
         var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId,
             Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId,
-            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null };
+            LocationId = targetLocation };
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
@@ -465,7 +488,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         run.Status = "calculating";
         await repo.UpdateRunAsync(run, ct);
 
-        var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct);
+        // M46: a branch run pays only the workers attached to its branch;
+        // an organisation-wide run pays everyone.
+        var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
@@ -609,19 +634,52 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
-        if (run.Status != "calculated")
-            throw new DomainException("run-not-review-ready", $"Run is in status {run.Status}; it must be calculated before approval.");
+        if (run.Status is not "calculated" and not "in-review")
+            throw new DomainException("run-not-review-ready", $"Run is in status {run.Status}; it must be calculated (and submitted) before approval.");
         if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("run-self-approval", "The person who prepared this run cannot approve it. Send it to a separate payroll or HR approver.");
+        // M46: a branch payroll draft flows UP for approval — the approver of a
+        // branch run must be org-wide HR (no branch assignments). Confined
+        // branch HR cannot approve their own branch's run; peer approval at the
+        // same branch stays possible only for org-wide runs.
+        if (run.LocationId.HasValue && actorSubjectId != "system"
+            && (scope?.IsConfined ?? false) && (scope?.AllowedLocationIds.Contains(run.LocationId.Value) ?? false))
+            throw new DomainException("run-branch-approval-confined",
+                "This run belongs to a branch and must be approved by organisation-wide HR. Your account is confined to a branch and cannot approve branch payroll runs — send it to top HR.");
         var (lines, _) = await repo.ListRunLinesAsync(id, ct);
         var outstanding = lines.Count(l => l.HasException && l.ExceptionStatus == "open" && !l.IsExcluded);
         if (actorSubjectId != "system" && outstanding > 0)
             throw new DomainException("run-exceptions-open", $"Run has {outstanding} outstanding exception(s). Resolve, waive, or exclude each exception before approval.");
+        var fromStatus = run.Status;
         run.Status = "approved";
         run.ApprovalNote = note;
         run.ApprovedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
-        await RecordEventAsync(run, "approved", actorSubjectId, "calculated", "approved", note, null, ct);
+        await RecordEventAsync(run, "approved", actorSubjectId, fromStatus, "approved", note, null, ct);
+        return MapRun(run);
+    }
+
+    // M46: the branch preparer sends their calculated draft up for top-HR
+    // approval (draft | calculated -> in-review, branch run only). This puts
+    // the run on the organisation-wide approver's review queue and documents
+    // the maker-checker hand-off on the audit trail.
+    public async Task<PayrollRunDto> SubmitRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (!run.LocationId.HasValue)
+            throw new DomainException("run-not-branch", "Only a branch payroll run can be sent for review — organisation-wide runs go straight to approval.");
+        if (run.Status is not "draft" and not "calculated")
+            throw new DomainException("run-not-submittable", $"Run is in status {run.Status}; only a draft or calculated branch run can be sent for review.");
+        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal) && run.Status == "draft")
+            throw new DomainException("run-not-calculated-yet", "Calculate the branch run before sending it for review — the approver must be able to see the figures.");
+        var (lines, _) = await repo.ListRunLinesAsync(id, ct);
+        if (actorSubjectId != "system" && !lines.Any())
+            throw new DomainException("run-no-lines", "The run has no pay lines. Calculate it before sending for review.");
+        var fromStatus = run.Status;
+        run.Status = "in-review";
+        await repo.SubmitRunAsync(run, ct);
+        await RecordEventAsync(run, "submitted-for-review", actorSubjectId, fromStatus, "in-review", null, null, ct);
         return MapRun(run);
     }
 
@@ -1293,9 +1351,15 @@ public interface IPayrollRepository
     Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct);
     Task<List<PayrollRun>> ListRunsAsync(CancellationToken ct);
     Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct);
+    Task<PayrollRun?> FindOpenRunByPeriodAndLocationAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task<PayrollRun?> FindOpenBranchRunForPeriodAsync(Guid payPeriodId, CancellationToken ct);
+    // M46: the open (non-terminal) run for a pay period scoped to one branch;
+    // locationId = null returns an open organisation-wide run. Branch drafts
+    // may coexist for the same period across different branches.
     Task<PayrollRun> CreateRunAsync(PayrollRun run, CancellationToken ct);
     Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct);
-    Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)> LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct);
+    Task<PayrollRun> SubmitRunAsync(PayrollRun run, CancellationToken ct);
+    Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)> LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct, Guid? locationId = null);
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);
