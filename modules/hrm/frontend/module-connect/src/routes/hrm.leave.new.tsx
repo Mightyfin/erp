@@ -92,7 +92,7 @@ function NewLeave() {
             )}
             {USE_REAL && inbox.data?.linked === false && (
               <p className="mt-3 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm text-warning">
-                No worker record is linked to your account yet — leave requests cannot be filed
+                No employee record is linked to your account yet — leave requests cannot be filed
                 until HR links your account to an employee record.
               </p>
             )}

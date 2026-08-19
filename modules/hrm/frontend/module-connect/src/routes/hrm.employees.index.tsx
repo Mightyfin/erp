@@ -347,7 +347,7 @@ function EmployeesPage() {
               filters={clientFilters}
               emptyBody={
                 archived
-                  ? "No archived workers — leavers will surface here when HR archives them."
+                  ? "No archived employees — leavers will surface here when HR archives them."
                   : "No employees found for the current filters."
               }
               rowHref={(e) => (

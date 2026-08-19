@@ -112,7 +112,7 @@ export function MyProfilePage() {
     } catch (err) {
       const code = err instanceof Error && "code" in err ? (err as { code?: string }).code : undefined;
       toast.error(
-        code === "not-linked" ? "Not linked to a worker record" : "Could not save changes",
+        code === "not-linked" ? "Not linked to an employee record" : "Could not save changes",
         {
           description:
             code === "not-linked"

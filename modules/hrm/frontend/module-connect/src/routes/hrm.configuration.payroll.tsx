@@ -143,7 +143,7 @@ function PayGroupDialog({
           <DialogTitle>Edit pay group</DialogTitle>
           <DialogDescription>
             The calendar a pay run follows. Changing the payday moves every future run for this
-            group — workers already on an open period keep theirs until it closes.
+            group — employees already on an open period keep theirs until it closes.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -232,7 +232,7 @@ function PayGroupDialog({
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={isDefault} onCheckedChange={setIsDefault} aria-label="Default pay group" />
-            <span>Default pay group for new workers</span>
+            <span>Default pay group for new employees</span>
           </label>
           {error ? (
             <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
@@ -728,8 +728,8 @@ function StructureDialog({
         <DialogHeader>
           <DialogTitle>{isDefault ? "ZMW-STANDARD — mandatory structure" : "Edit structure"}</DialogTitle>
           <DialogDescription>
-            A structure decides which components a worker carries and their starting amounts. A run
-            posts to every component on the worker's structure; components are the ones from the
+            A structure decides which components an employee carries and their starting amounts. A run
+            posts to every component on the employee's structure; components are the ones from the
             Salary components screen, minus the archived ones.
           </DialogDescription>
         </DialogHeader>
@@ -821,7 +821,7 @@ function StructureDialog({
               ) : null}
             </div>
             <p className="text-xs text-muted-foreground">
-              Checked components are posted to the worker with their default amount; unchecking
+              Checked components are posted to the employee with their default amount; unchecking
               removes the component from this structure entirely.
             </p>
           </div>
@@ -863,7 +863,7 @@ function StructureTable({
   if (!rows.length) {
     return (
       <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        No salary structures yet — HR picks components here that every worker assigned to the
+        No salary structures yet — HR picks components here that every employee assigned to the
         structure will carry into a run.
       </p>
     );
@@ -871,7 +871,7 @@ function StructureTable({
   return (
     <div className="overflow-x-auto rounded-lg border bg-surface">
       <table className="w-full min-w-[44rem] text-left text-sm">
-        <caption className="sr-only">Salary structures defining which components workers carry</caption>
+        <caption className="sr-only">Salary structures defining which components employees carry</caption>
         <thead className="border-b bg-surface-muted">
           <tr>
             {["Code", "Name", "Components", "Status", "Action"].map((h) => (
@@ -932,7 +932,7 @@ function PayGroupTable({
   if (!rows.length) {
     return (
       <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        No pay groups yet — the first one becomes the default for new workers.
+        No pay groups yet — the first one becomes the default for new employees.
       </p>
     );
   }
@@ -1280,10 +1280,10 @@ function PayrollSetup() {
                   <div className="rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
                     <p className="flex items-start gap-2 font-medium">
                       <BadgeDollarSign className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      Which components a worker carries into a run
+                      Which components an employee carries into a run
                     </p>
                     <p className="mt-1.5 pl-6">
-                      Every worker is assigned a structure, and a run posts to every component on
+                      Every employee is assigned a structure, and a run posts to every component on
                       it. The ZMW-STANDARD structure is the company-wide default and can never be
                       switched off; other structures can be retired once nobody is assigned to
                       them. Archived components never appear as candidates.
@@ -1302,7 +1302,7 @@ function PayrollSetup() {
                   <div className="rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
                     <p className="flex items-start gap-2 font-medium">
                       <CalendarClock className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      One default pay group drives the calendar for new workers
+                      One default pay group drives the calendar for new employees
                     </p>
                     <p className="mt-1.5 pl-6">
                       A pay group decides how often people are paid, in which currency, and on what

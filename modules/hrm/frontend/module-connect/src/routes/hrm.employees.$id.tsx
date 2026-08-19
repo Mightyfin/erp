@@ -479,7 +479,7 @@ function EmployeePage() {
               </Async>
 
               {USE_REAL && hrAdmin ? (
-                <DetailSection title="Account linking" description="Self-service works only when the worker record is linked to an identity.">
+                <DetailSection title="Account linking" description="Self-service works only when the employee record is linked to an identity.">
                   <div className="flex flex-wrap items-center gap-3">
                     {subjectId ? (
                       <span className="flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-xs font-mono">
@@ -512,7 +512,7 @@ function EmployeePage() {
                 open={linkOpen}
                 onOpenChange={setLinkOpen}
                 title={subjectId ? `Change the linked identity for ${e.fullName}?` : `Link an identity to ${e.fullName}?`}
-                consequence="The worker's self-service surfaces (leave, documents, letters, payslips) will attach to this identity. An identity can only be linked to one worker record."
+                consequence="The employee's self-service surfaces (leave, documents, letters, payslips) will attach to this identity. An identity can only be linked to one employee record."
                 detail={
                   <ul className="list-inside list-disc space-y-1">
                     <li>Paste the Keycloak identity id (the token "sub" claim) of the user.</li>
@@ -536,13 +536,13 @@ function EmployeePage() {
                       setSubjectId(value);
                       feedback.submitted(
                         `Identity linked to ${e.fullName}.`,
-                        "The account is now connected to this worker record. Self-service surfaces will show their own data on the next visit.",
+                        "The account is now connected to this employee record. Self-service surfaces will show their own data on the next visit.",
                       );
                     })
                     .catch((err) => {
                       setLinkBusy(false);
                       const apiErr = err as { message?: string };
-                      feedback.blocked("Link failed.", String(apiErr?.message ?? "The identity could not be linked — it may already belong to another worker or not exist."));
+                      feedback.blocked("Link failed.", String(apiErr?.message ?? "The identity could not be linked — it may already belong to another employee record or not exist."));
                     });
                 }}
               />

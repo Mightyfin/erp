@@ -51,9 +51,9 @@ const categoryLabels: Record<string, string> = {
 
 const roleDescriptions: Record<string, string> = {
   hr_admin:
-    "Full HR administration: workers, payroll setup, recruitment, relations cases and organisation configuration.",
+    "Full HR administration: employees, payroll setup, recruitment, relations cases and organisation configuration.",
   hr_ops:
-    "Day-to-day HR operations: worker records, leave and time administration, basic onboarding.",
+    "Day-to-day HR operations: employee records, leave and time administration, basic onboarding.",
   payroll:
     "Payroll officer: run payroll, maintain components and structures, release payments and correct runs.",
   approver:

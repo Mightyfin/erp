@@ -207,7 +207,7 @@ function MyLeavePage() {
                   <CardContent className="flex gap-3 py-4">
                     <AlertCircle className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
                     <div>
-                      <p className="font-medium">No worker record is linked to your account.</p>
+                      <p className="font-medium">No employee record is linked to your account.</p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         Leave requests and balances are tracked against your employee record. Ask HR
                         to link your account, then come back here.

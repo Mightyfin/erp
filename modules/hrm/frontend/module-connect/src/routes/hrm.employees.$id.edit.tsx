@@ -287,7 +287,7 @@ function EditEmployee() {
                   ...section,
                   description: section.render
                     ? section.description
-                    : "These fields are stored on the live worker record.",
+                    : "These fields are stored on the live employee record.",
                   fields: section.fields?.filter((field) => liveFields.has(field.name)),
                 }))
                 .filter((section) => section.render || section.fields?.length)
@@ -302,7 +302,7 @@ function EditEmployee() {
             <EditPage
               title={employee.fullName}
               reference={employee.employeeNo}
-              description={USE_REAL ? "Only fields backed by the live worker record are editable here." : "Changes are dated and go into the employee's history. Anything affecting pay is approved before it reaches a run."}
+              description={USE_REAL ? "Only fields backed by the live employee record are editable here." : "Changes are dated and go into the employee's history. Anything affecting pay is approved before it reaches a run."}
               sections={[
                 ...visibleSections,
                 ...(USE_REAL
@@ -385,7 +385,7 @@ function EditEmployee() {
                 reason: "",
               }}
               saveLabel="Save the change"
-              footerNote={USE_REAL ? "Saved changes are written to the live HRM worker record and audited by the API." : "Nothing reaches payroll until the change is approved."}
+              footerNote={USE_REAL ? "Saved changes are written to the live HRM employee record and audited by the API." : "Nothing reaches payroll until the change is approved."}
               extraChanges={[]}
               onCancel={() => navigate({ to: "/hrm/employees/$id", params: { id } })}
               onSave={async (values, changed) => {

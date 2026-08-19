@@ -115,7 +115,7 @@ function OnboardingDetail() {
             },
             {
               label: "Bank account for payroll",
-              detail: hasBank ? `Registered with ${bankName || "the bank"} — payout ready` : "No bank account registered — the worker cannot be paid until one is added.",
+              detail: hasBank ? `Registered with ${bankName || "the bank"} — payout ready` : "No bank account registered — the employee cannot be paid until one is added.",
               state: hasBank ? "Done" : "Not started",
             },
           ];
@@ -146,7 +146,7 @@ function OnboardingDetail() {
                 { label: "Role", value: jobTitle },
                 { label: "Department", value: department },
                 { label: "Start date", value: startDate || "Not set" },
-                { label: "Worker type", value: String(w.workerType ?? "employee") },
+                { label: "Employee type", value: String(w.workerType ?? "employee") },
               ]}
             >
               <DetailSection
