@@ -1159,6 +1159,7 @@ function EmployeesStep(props: {
   const [pasteError, setPasteError] = useState<string | null>(null);
 
   // Departments already created in step 2 (backend returns { items }).
+  const fileInput = useRef<HTMLInputElement>(null);
   const units = useApi(async () => {
     const res = await realApi.orgUnits();
     return (Array.isArray(res) ? res : (res as { items?: unknown[] })?.items ?? []).map((u) => String((u as { name?: unknown }).name ?? ""));
