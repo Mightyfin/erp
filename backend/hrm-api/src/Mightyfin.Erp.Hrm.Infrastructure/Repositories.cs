@@ -841,20 +841,28 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         => await db.SalaryComponents.FirstOrDefaultAsync(c => c.Id == id, ct);
     public async Task<List<WorkerPayrollProfile>> ListProfilesAsync(Guid? workerId, CancellationToken ct)
     {
+        // M41 Gap 4: DateOnly.FromDateTime inside a predicate cannot be
+        // translated by the SQLite provider — compute the boundary client-side.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var q = db.WorkerPayrollProfiles
             .Include(p => p.Worker).Include(p => p.PayGroup)
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
-            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime));
+            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= today);
         if (workerId.HasValue) q = q.Where(p => p.WorkerId == workerId.Value);
         return (await q.OrderByDescending(p => p.EffectiveFrom).ToListAsync(ct))
             .GroupBy(p => p.WorkerId).Select(g => g.First()).ToList();
     }
     public async Task<WorkerPayrollProfile?> FindOpenProfileAsync(Guid workerId, CancellationToken ct)
-        => await db.WorkerPayrollProfiles
+    {
+        // M41 Gap 4: DateOnly.FromDateTime inside a predicate cannot be
+        // translated by the SQLite provider — compute the boundary client-side.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return await db.WorkerPayrollProfiles
             .Include(p => p.Worker).Include(p => p.PayGroup)
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
-            .Where(p => p.WorkerId == workerId && (!p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime)))
+            .Where(p => p.WorkerId == workerId && (!p.EffectiveTo.HasValue || p.EffectiveTo >= today))
             .OrderByDescending(p => p.EffectiveFrom).FirstOrDefaultAsync(ct);
+    }
     public async Task<WorkerPayrollProfile> CreateProfileAsync(WorkerPayrollProfile profile, CancellationToken ct)
     {
         db.WorkerPayrollProfiles.Add(profile);
@@ -973,7 +981,7 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
             .Where(p => p.PayGroupId == period.PayGroupId)
             .ToListAsync(ct))
-            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTimeOffset.UtcNow.DateTime))
+            .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTime.UtcNow))
             .ToList();
         var components = await db.SalaryComponents.Where(c => c.IsActive).OrderBy(c => c.Priority).ToListAsync(ct);
         var rules = await db.ContributionRules.Where(r => r.IsActive).ToListAsync(ct);

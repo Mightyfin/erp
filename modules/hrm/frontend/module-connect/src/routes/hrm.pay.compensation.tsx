@@ -22,6 +22,7 @@ import {
 import { AppShell } from "@/platform/components/AppShell";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 import { realApi, useApi } from "@/platform/use-api";
 import { useAuth } from "@/platform/auth";
 import { feedback } from "@/platform/feedback";
@@ -404,6 +405,15 @@ function CompensationPage() {
           </span>
         }
       />
+      <div className="-mt-4 mb-4 flex justify-end">
+        <ImportDialog
+          typeKey="payroll-profiles"
+          onDone={() => void state.reload()}
+          demoSample={[
+            { employeeNo: "EMP-001", payGroup: "Monthly ZMW", basic: "45000", "housing-allowance": "6750" },
+          ]}
+        />
+      </div>
 
       {!USE_REAL ? (
         <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
