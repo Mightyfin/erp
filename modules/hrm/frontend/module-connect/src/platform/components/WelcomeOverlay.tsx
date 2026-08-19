@@ -265,23 +265,43 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
     };
   }, [isComplete, fading]);
 
+  // M50.12: a step save must end in a visible outcome — advancing to a next
+  // step or, when the saved step completes the last mandatory one, finishing
+  // the whole setup. The server is the source of truth, so re-read the fresh
+  // state here (api.reload() returns void and doesn't wait) before deciding.
   const completeStep = async (key: string, payload: Record<string, unknown>) => {
     setSending(true);
     setMessage(null);
     try {
       await realApi.completeSetupStep(key, JSON.stringify(payload));
-      await api.reload();
+      // Refetch the authoritative setup state (steps + overall status).
+      const [freshState, freshSteps] = await Promise.all([realApi.setupState(), realApi.setupSteps()]);
+      const done = new Set(freshState?.completedSteps ?? []);
+      const refreshedSteps = (freshSteps as StepDto[]).map((s) => ({ ...s, done: done.has(s.key) }));
+      const mandatory = refreshedSteps.filter((s) => s.mandatory);
+      const allMandatoryDone = mandatory.length > 0 && mandatory.every((s) => s.done);
+      // Advance to the next incomplete step when one exists.
+      const idx = refreshedSteps.findIndex((s) => s.key === key);
+      const next = refreshedSteps.find((s, i) => i > idx && !s.done);
+      if (next) {
+        setActive(next.key);
+      } else if (allMandatoryDone && freshState?.status !== "complete") {
+        // The saved step closed the last mandatory gap — finish the setup so
+        // the operator never lands on a success toast with nothing after it.
+        setMessage({ text: "Last step saved — unlocking the HRM…", kind: "info" });
+        await realApi.finishSetup();
+        setMessage({ text: "Setup complete — the HRM is now unlocked.", kind: "info" });
+      } else {
+        // No next step and setup not (yet) complete: refresh the local state
+        // so the UI reflects the freshly saved step and any newly available
+        // Finish button without a full reload cycle.
+        await api.reload();
+      }
     } catch (err) {
       setMessage({ text: setupErrorText(err), kind: "error" });
     } finally {
       setSending(false);
     }
-  };
-
-  const advance = () => {
-    const idx = stepsByCompletion.findIndex((s) => s.key === active);
-    const next = stepsByCompletion.find((s, i) => i > idx && !s.done);
-    if (next) setActive(next.key);
   };
 
   const finishWizard = async () => {
@@ -382,11 +402,11 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
             step={current}
             steps={stepsByCompletion}
             sending={sending}
+            // M50.12: completeStep() now handles advancing/auto-finishing after
+            // refetching fresh state — no post-save toast or advance() here.
             onComplete={async (payload) => {
               try {
                 await completeStep(active, payload);
-                setMessage({ text: `${current?.label ?? active} saved — moving on.`, kind: "info" });
-                advance();
               } catch (err) {
                 setMessage({ text: setupErrorText(err), kind: "error" });
               }
