@@ -2184,6 +2184,14 @@ public sealed class SetupRepository(HrmDbContext db) : ISetupRepository
         // tables via TryDelete; on Postgres every listed table must exist.
         var provider = db.Database.ProviderName ?? "";
         var existsOnly = provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
+        // M49: FK order — cross-reference deletes happen in two passes so a
+        // table referenced by another (e.g. workers ← hr_requests) is never
+        // deleted before its dependants. Referencing tables are listed first.
+        foreach (var table in DataTables)
+        {
+            if (existsOnly && !await TableExistsAsync(table, ct)) continue;
+            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {QualifiedTable(table)};", ct);
+        }
         foreach (var table in DataTables)
         {
             if (existsOnly && !await TableExistsAsync(table, ct)) continue;
