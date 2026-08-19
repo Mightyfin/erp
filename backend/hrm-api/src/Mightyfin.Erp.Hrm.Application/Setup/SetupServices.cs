@@ -361,26 +361,56 @@ public sealed class SetupServiceImpl(
         var input = RequireJson<WizardWorkingTimeInput>(dataJson, "working-time");
         if (input.StandardWeeklyHours is < 1 or > 168)
             throw new DomainException("working-time-hours-invalid", "Standard weekly hours must be between 1 and 168.");
-        var calendar = (await config!.ListCalendarsAsync(ct)).Items
-            .FirstOrDefault(c => c.IsDefault)
-            ?? (await config.ListCalendarsAsync(ct)).Items.OrderByDescending(c => c.CreatedAt).FirstOrDefault();
+        var calendars = (await config!.ListCalendarsAsync(ct)).Items;
+        var calendar = calendars.FirstOrDefault(c => c.IsDefault)
+            ?? calendars.OrderByDescending(c => c.CreatedAt).FirstOrDefault();
         if (calendar is null) return; // nothing to configure yet
         await config.UpdateCalendarAsync(calendar.Id, new WorkCalendarUpdateRequest(
               StandardWeeklyHours: input.StandardWeeklyHours, WeekendDays: input.WeekendDays), ct);
+        // Holidays are already loaded (repo includes them with each calendar).
+        var existingHolidays = calendar.Holidays; // WorkCalendarDtoFull.Holidays: List<PublicHolidayDto>
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var h in input.PublicHolidays ?? [])
         {
             if (string.IsNullOrWhiteSpace(h.Name)) continue;
-            if (!DateOnly.TryParse(h.Date, out _))
+            var maybeDate = ResolveHolidayDate(h.Date, h.IsRecurring);
+            if (maybeDate is null)
                 throw new DomainException("working-time-holiday-date-invalid",
-                    $"Holiday '{h.Name}' has an invalid date (use YYYY-MM-DD).");
-            if (!h.IsRecurring)
-                await config.AddHolidayAsync(new PublicHolidayCreateRequest(
-                      calendar.Id, h.Name.Trim(), h.Date), ct);
-            else
-                await config.AddHolidayAsync(new PublicHolidayCreateRequest(
-                      calendar.Id, h.Name.Trim(), h.Date, null, true), ct);
+                    $"Holiday '{h.Name}' has an invalid date (use YYYY-MM-DD for a fixed date or MM-DD for a recurring annual day).");
+            var date = maybeDate.Value;
+            // Idempotent: re-running the step never duplicates a holiday.
+            var key = h.IsRecurring ? $"{h.Name.Trim().ToLowerInvariant()}::{date.Month:D2}-{date.Day:D2}::recurring" : $"{date:yyyy-MM-dd}";
+            if (!seen.Add(key)) continue;
+            var alreadyExists = existingHolidays.Any(x =>
+                DateOnly.TryParse(x.HolidayDate, out var existingDate) &&
+                ((x.IsRecurring && string.Equals(x.Name, h.Name.Trim(), StringComparison.OrdinalIgnoreCase) && existingDate.Month == date.Month && existingDate.Day == date.Day) ||
+                 (!x.IsRecurring && existingDate == date)));
+            if (alreadyExists) continue;
+            await config.AddHolidayAsync(new PublicHolidayCreateRequest(
+                  calendar.Id, h.Name.Trim(), date.ToString("yyyy-MM-dd"), null, h.IsRecurring), ct);
         }
     }
+    /// Resolves a holiday date string: "YYYY-MM-DD" as-is, or "MM-DD" anchored
+    /// to the current year for recurring annual holidays (independent of year).
+    private static DateOnly? ResolveHolidayDate(string? raw, bool recurring)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var s = raw.Trim();
+        if (DateOnly.TryParseExact(s, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var fixedDate))
+            return fixedDate;
+        if (DateOnly.TryParseExact(s, "MM-dd", null, System.Globalization.DateTimeStyles.None, out var annual))
+        {
+            // Anchor the recurring day to the current year so payroll/leave
+            // matching has a concrete, always-current date to compare against.
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var candidate = new DateOnly(today.Year, annual.Month, annual.Day);
+            if (!recurring && candidate < today)
+                candidate = new DateOnly(today.Year + 1, annual.Month, annual.Day);
+            return candidate;
+        }
+        return null;
+    }
+
 
     /// Step 5 — Leave: the typed list is the full source of truth — Zambian
     /// defaults ship from the UI; custom edits arrive here instead.

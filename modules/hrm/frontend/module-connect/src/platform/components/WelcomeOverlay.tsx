@@ -108,7 +108,8 @@ function setupErrorText(err: unknown): string {
     if (m.includes("setup-confined"))
       return "Only organisation-wide HR can run the setup wizard — branch-confined HR cannot.";
     if (m.includes("finish")) return "Complete the required steps first, then press Finish setup.";
-    return raw.message;
+    if (m.includes("401") || m.includes("unauthorized") || m.includes("unauthenticated"))
+      return "Your sign-in session expired while you were filling this step — please refresh the page and sign in again, then continue where you left off.";
   }
   return "Something went wrong — try again.";
 }
@@ -205,7 +206,7 @@ export function WelcomeOverlay() {
       await realApi.completeSetupStep(key, JSON.stringify(payload));
       await api.reload();
     } catch (err) {
-      throw err;
+      setMessage({ text: setupErrorText(err), kind: "error" });
     } finally {
       setSending(false);
     }
@@ -665,12 +666,37 @@ function EmploymentStep(props: { sending: boolean; onComplete: (p: Record<string
 }
 
 /* Step 4 — Working time (optional) */
+// Zambian public holidays — name + month-day (MM-DD) that repeats every year.
+const ZAMBIAN_HOLIDAYS: { name: string; date: string }[] = [
+  { name: "New Year's Day", date: "01-01" },
+  { name: "Youth Day", date: "03-12" },
+  { name: "Women's Day", date: "03-13" },
+  { name: "Kenneth Kaunda Day", date: "04-28" },
+  { name: "Labour Day", date: "05-01" },
+  { name: "Africa Day", date: "05-25" },
+  { name: "Heroes' Day", date: "07-01" },
+  { name: "Unity Day", date: "07-02" },
+  { name: "Farmers' Day", date: "08-06" },
+  { name: "National Prayer Day", date: "10-18" },
+  { name: "Independence Day", date: "10-24" },
+  { name: "Christmas Day", date: "12-25" },
+];
+function holidayRows(holidays: { name: string; date: string }[]) {
+  return holidays.map((h) => ({ Name: h.name, Date: h.date, IsRecurring: true }));
+}
 function WorkingTimeStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [hours, setHours] = useState("45");
   const [weekends, setWeekends] = useState<string[]>(["sat", "sun"]);
+  const [useHolidays, setUseHolidays] = useState(true);
+  const [holidays, setHolidays] = useState<{ name: string; date: string }[]>(ZAMBIAN_HOLIDAYS);
   const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
   const toggle = (d: string) =>
     setWeekends((ws) => (ws.includes(d) ? ws.filter((x) => x !== d) : [...ws, d]));
+  const buildPayload = (hrs: number, days: string, holidayEnabled: boolean) => ({
+    StandardWeeklyHours: hrs,
+    WeekendDays: days,
+    PublicHolidays: holidayEnabled ? holidayRows(holidays) : [],
+  });
   return (
     <StepCard
       title="Standard working time"
@@ -701,28 +727,77 @@ function WorkingTimeStep(props: { sending: boolean; onComplete: (p: Record<strin
             </div>
           </div>
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              id="wt-holidays"
+              type="checkbox"
+              checked={useHolidays}
+              onChange={(e) => setUseHolidays(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            <Label htmlFor="wt-holidays" className="cursor-pointer">
+              Use Zambia's public holidays ({holidays.length} days — repeats every year)
+            </Label>
+          </div>
+          {useHolidays && (
+            <div className="space-y-1.5">
+              {holidays.map((h, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    aria-label="Holiday name"
+                    value={h.name}
+                    onChange={(e) => setHolidays((xs) => xs.map((r, j) => (j === i ? { ...r, name: e.target.value } : r)))}
+                    className="h-9"
+                  />
+                  <Input
+                    aria-label="Date MM-DD"
+                    type="text"
+                    maxLength={5}
+                    placeholder="MM-DD"
+                    value={h.date}
+                    onChange={(e) => {
+                      let v = e.target.value.replace(/[^0-9-]/g, "");
+                      setHolidays((xs) => xs.map((r, j) => (j === i ? { ...r, date: v } : r)));
+                    }}
+                    className="h-9 w-24"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setHolidays((xs) => xs.filter((_, j) => j !== i))}
+                    disabled={holidays.length <= 1}
+                    className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                    aria-label={`Remove ${h.name}`}
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setHolidays((xs) => [...xs, { name: "", date: "" }])}
+              >
+                <Plus className="size-4" aria-hidden /> Add holiday
+              </Button>
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <SubmitRow
             disabled={props.sending}
             sending={props.sending}
             label="Save working time"
             onSubmit={() =>
-              props.onComplete({
-                StandardWeeklyHours: Math.max(1, Math.min(80, Number(hours) || 45)),
-                WeekendDays: (weekends.length ? weekends : ["sat", "sun"]).join(","),
-                PublicHolidays: null,
-              })
+              props.onComplete(
+                buildPayload(Math.max(1, Math.min(80, Number(hours) || 45)), (weekends.length ? weekends : ["sat", "sun"]).join(","), useHolidays),
+              )
             }
           />
           <SkipRow
             sending={props.sending}
-            onSkip={() =>
-              props.onComplete({
-                StandardWeeklyHours: 45,
-                WeekendDays: "sat,sun",
-                PublicHolidays: null,
-              })
-            }
+            onSkip={() => props.onComplete(buildPayload(45, "sat,sun", false))}
           />
         </div>
       </div>
