@@ -131,8 +131,15 @@ export const hrmModule: ModuleDefinition = {
           ],
         },
         {
-          label: "Scheduling and claims",
+          label: "Benefits and claims",
           items: [
+            {
+              // M41 Gap 6b: flexible benefit types, per-employee allowance
+              // overrides and the claims approve/return/pay inbox.
+              label: "Benefits",
+              to: "/hrm/benefits",
+              roles: ["hr_ops", "hr_admin", "payroll"],
+            },
             { label: "Time operations", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin"] },
             { label: "Schedules and rosters", to: "/hrm/time/schedules" },
             { label: "Timesheets", to: "/hrm/time/timesheets" },

@@ -429,6 +429,33 @@ export const realApi = {
       adjustments: Record<string, unknown>[];
     }>("/hrm/time/operations/history"),
 
+  /**
+   * Flexible benefit claims (M41 Gap 6b): configurable benefit types with an
+   * optional per-worker annual allowance override; claims are capped by the
+   * allowance when one exists, otherwise by the type's annual cap. Submitted
+   * claims go through an approve/reject/return inbox and a final pay step.
+   */
+  benefitTypes: () => hrmApi.get<unknown[]>("/hrm/benefits/types"),
+  createBenefitType: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/benefits/types", body),
+  updateBenefitType: (id: string, body: Record<string, unknown>) =>
+    hrmApi.put<unknown>(`/hrm/benefits/types/${id}`, body),
+  benefitAllowances: (params?: Record<string, unknown>) =>
+    hrmApi.get<unknown[]>("/hrm/benefits/allowances", params ?? {}),
+  setBenefitAllowance: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/benefits/allowances", body),
+  benefitClaims: (params?: Record<string, unknown>) =>
+    hrmApi.get<{ items: Record<string, unknown>[]; totalCount: number }>(
+      "/hrm/benefits/claims",
+      params ?? {},
+    ),
+  createBenefitClaim: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/benefits/claims", body),
+  decideBenefitClaim: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<unknown>(`/hrm/benefits/claims/${id}/decide`, body),
+  payBenefitClaim: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/benefits/claims/${id}/pay`, null),
+
   /** Workflow: shared approval queue + request detail/decisions. */
   workflowQueue: () => hrmApi.get<{ items: unknown[] }>("/hrm/workflow/queue"),
   workflowRequest: (id: string) => hrmApi.get<unknown>(`/hrm/workflow/requests/${id}`),
