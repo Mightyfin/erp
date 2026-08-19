@@ -93,6 +93,7 @@ function WorkerPayDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [payGroupId, setPayGroupId] = useState("");
+  const [payBasis, setPayBasis] = useState<"salary" | "timesheet">("salary");
   const [effectiveFrom, setEffectiveFrom] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
@@ -129,6 +130,8 @@ function WorkerPayDialog({
         const groupList = resolvedGroups.length ? resolvedGroups : snap.groups;
         const defaults = groupList.find((g) => Boolean(g.isDefault))?.id ?? groupList[0]?.id ?? "";
         setPayGroupId(existing ? String(existing.payGroupId ?? "") : String(defaults));
+        const basis = String(existing?.payBasis ?? "salary").toLowerCase();
+        setPayBasis(basis === "timesheet" ? "timesheet" : "salary");
         setEffectiveFrom(
           existing
             ? String(existing.effectiveFrom ?? new Date().toISOString().slice(0, 10))
@@ -140,6 +143,8 @@ function WorkerPayDialog({
             .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
             .map((c) => String(c.code ?? "")),
         );
+        const existingBasis = String(existing?.payBasis ?? "salary").toLowerCase();
+        setPayBasis(existingBasis === "timesheet" ? "timesheet" : "salary");
         setValues(
           comps
             .filter((c) => Boolean(c.isActive) && !c.isArchived)
@@ -228,6 +233,7 @@ function WorkerPayDialog({
                 payGroupId,
                 effectiveFrom,
                 values: payload,
+                payBasis,
               });
               feedback.saved(`${workerName}'s pay structure saved for the ${effectiveFrom} start date.`);
               // Refresh the parent snapshot so the workers table reflects the new profile immediately.
@@ -274,6 +280,31 @@ function WorkerPayDialog({
               className="mt-1.5"
             />
           </div>
+        </div>
+        <div className="rounded-md border border-border bg-surface-muted p-3">
+          <Label className="flex items-center gap-2">
+            Pay basis
+            <span className="text-xs font-normal text-muted-foreground">— control, not a new pay mode yet</span>
+          </Label>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {(["salary", "timesheet"] as const).map((b) => (
+              <label key={b} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="pay-basis"
+                  checked={payBasis === b}
+                  onChange={() => setPayBasis(b)}
+                  aria-label={`Pay basis ${b}`}
+                />
+                {b === "salary" ? "Salary (monthly, per component)" : "Timesheet (when timesheet pay ships)"}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Nobody is paid hourly today. “Timesheet” is a planning flag HR can switch on ahead of
+            the future timesheet-driven pay feature — every run still calculates salary-basis
+            regardless of what is selected here.
+          </p>
         </div>
         <div className="space-y-2">
           <Label>Component amounts — the opening figures a run posts to</Label>
@@ -440,7 +471,7 @@ function CompensationPage() {
                   <caption className="sr-only">Workers and their open pay profiles</caption>
                   <thead className="border-b bg-surface-muted">
                     <tr>
-                      {["Employee", "No.", "Job title", "Pay group", "Effective from", "Action"].map((h) => (
+                      {["Employee", "No.", "Job title", "Pay group", "Effective from", "Pay basis", "Action"].map((h) => (
                         <th
                           key={h}
                           scope="col"
@@ -464,6 +495,44 @@ function CompensationPage() {
                           <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.jobTitle ?? "—")}</td>
                           <td className="px-3 py-3">{profile ? String(group?.name ?? group?.code ?? "—") : <span className="text-warning">Not assigned</span>}</td>
                           <td className="px-3 py-3 font-mono text-xs">{profile ? String(profile.effectiveFrom) : "—"}</td>
+                          <td className="px-3 py-3">
+                            {profile && canAct ? (
+                              <Select
+                                value={String(profile.payBasis ?? "salary").toLowerCase() === "timesheet" ? "timesheet" : "salary"}
+                                onValueChange={async (next: string) => {
+                                  const basis = next === "timesheet" ? "timesheet" : "salary";
+                                  try {
+                                    await realApi.setPayBasis(String(w.id), basis);
+                                    try {
+                                      const refreshed = await realApi.payrollProfiles();
+                                      const arr = Array.isArray(refreshed) ? (refreshed as Raw[]) : [];
+                                      state.profiles.length = 0;
+                                      state.profiles.push(...arr);
+                                    } catch {
+                                      // Keep older snapshot — harmless.
+                                    }
+                                    feedback.saved(
+                                      basis === "timesheet"
+                                        ? "Timesheet flag set — salary-basis pay still applies until timesheet pay ships."
+                                        : "Pay basis is salary — standard per-component calculation.",
+                                    );
+                                  } catch {
+                                    feedback.error("Could not update the pay basis.");
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="salary">Salary</SelectItem>
+                                  <SelectItem value="timesheet">Timesheet — not live</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{profile ? String(profile.payBasis ?? "salary") : "—"}</span>
+                            )}
+                          </td>
                           <td className="px-3 py-3 text-right">
                             {canAct ? (
                               <Button
@@ -485,7 +554,7 @@ function CompensationPage() {
                     })}
                     {!visibleWorkers.length ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">
                           No workers match{search ? ` "${search}"` : ""}.
                         </td>
                       </tr>

@@ -141,10 +141,17 @@ public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsA
     List<SalaryStructureItemUpsert>? Items = null);
 
 public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
+// M41 Gap 3: PayBasis appended as an optional field so existing callers stay binary-compatible.
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
-    List<WorkerComponentValueCreate> Values);
+    List<WorkerComponentValueCreate> Values, string? PayBasis = null);
 public sealed record WorkerComponentValueCreate(Guid ComponentId, string? ComponentCode = null, decimal Amount = 0);
-public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? WorkerName, Guid PayGroupId, string? PayGroupName, string EffectiveFrom, List<WorkerComponentValueDto> Values);
+
+// M41 Gap 3: pay-basis control update (salary | timesheet). Timesheet pay is
+// not implemented yet — the flag is a planning control for HR.
+public sealed record PayBasisUpdateRequest(string PayBasis);
+public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? WorkerName, Guid PayGroupId, string? PayGroupName, string EffectiveFrom, List<WorkerComponentValueDto> Values,
+    // M41 Gap 3: pay-basis control — "salary" | "timesheet" (timesheet pay not yet implemented; planning flag)
+    string PayBasis = "salary");
 public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentCode, string ComponentName, decimal Amount);
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,

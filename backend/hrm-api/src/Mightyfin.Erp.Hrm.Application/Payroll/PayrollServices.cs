@@ -33,6 +33,8 @@ public interface IPayrollService
     // M5 setup: worker payroll profiles (basic salary + allowances per worker)
     Task<List<WorkerPayrollProfileDto>> ListProfilesAsync(Guid? workerId, CancellationToken ct);
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
+    // M41 Gap 3: pay-basis control (salary | timesheet) per worker profile
+    Task<WorkerPayrollProfileDto> SetPayBasisAsync(Guid workerId, PayBasisUpdateRequest request, CancellationToken ct);
 
     // Run lifecycle
     Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
@@ -396,12 +398,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             {
                 WorkerId = workerId, PayGroupId = request.PayGroupId, EffectiveFrom = effective,
                 StructureId = defaultStructure?.Id ?? Guid.Empty,
+                PayBasis = request.PayBasis ?? "salary",
             };
             await repo.CreateProfileAsync(profile, ct);
         }
         else
         {
             existing.PayGroupId = request.PayGroupId;
+            existing.PayBasis = request.PayBasis ?? existing.PayBasis;
             profile = existing;
         }
         await repo.DeleteProfileValuesAsync(profile.Id, ct);
@@ -409,6 +413,24 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             profile.ComponentValues.Add(new WorkerComponentValue { ComponentId = v.ComponentId, Amount = v.Amount });
         await repo.UpdateProfileAsync(profile, ct);
         return MapProfile(await repo.FindOpenProfileAsync(workerId, ct) ?? profile);
+    }
+
+    /// <summary>M41 Gap 3: pay-basis control. HR marks whether a worker would be
+    /// paid on the salary basis (default) or timesheet basis. Timesheet-driven
+    /// pay is not implemented yet — runs always calculate salary-basis; the flag
+    /// is a planning control and surfaces in the profile UI.</summary>
+    public async Task<WorkerPayrollProfileDto> SetPayBasisAsync(Guid workerId, PayBasisUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var basis = (request.PayBasis ?? "").Trim().ToLowerInvariant();
+        if (basis != "salary" && basis != "timesheet")
+            throw new DomainException("bad-pay-basis", "PayBasis must be 'salary' or 'timesheet'.");
+        var profile = await repo.FindOpenProfileAsync(workerId, ct);
+        if (profile is null)
+            throw new DomainException("payroll-profile-not-found", "This worker has no open payroll profile. Set up the profile first.");
+        profile.PayBasis = basis;
+        await repo.UpdateProfileAsync(profile, ct);
+        return MapProfile(profile);
     }
 
     /// <summary>Locks the run for editing (freeze inputs before calculation).
@@ -1077,7 +1099,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
         p.ComponentValues.Select(v => new WorkerComponentValueDto(v.ComponentId,
-            v.Component?.Code ?? "", v.Component?.Name ?? "", v.Amount)).ToList());
+            v.Component?.Code ?? "", v.Component?.Name ?? "", v.Amount)).ToList(),
+        p.PayBasis ?? "salary");
 
     private async Task<string> GetComponentCode(Guid componentId, CancellationToken ct)
     {

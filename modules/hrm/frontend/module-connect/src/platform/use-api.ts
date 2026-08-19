@@ -479,6 +479,10 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/profiles", params ?? {}),
   createPayrollProfile: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/payroll/profiles/${workerId}`, body),
+  /** M41 Gap 3: pay-basis control — salary (default) vs timesheet (planning
+   *  flag; timesheet-driven pay is not implemented yet). */
+  setPayBasis: (workerId: string, payBasis: "salary" | "timesheet") =>
+    hrmApi.put<unknown>(`/hrm/payroll/profiles/${workerId}/pay-basis`, { payBasis }),
   /** M27 operational run list with live totals and workflow state. */
   payrollRuns: () => hrmApi.get<{ items: unknown[]; totalCount: number }>("/hrm/payroll/runs"),
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),

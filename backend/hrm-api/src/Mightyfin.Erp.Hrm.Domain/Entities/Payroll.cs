@@ -50,6 +50,12 @@ public class WorkerPayrollProfile : Entity, IEffectiveDated
 {
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
+
+    /// <summary>M41 Gap 3 pay-basis control: "salary" (default) or "timesheet".
+    /// Timesheet-based pay is not implemented yet — this is a planning control
+    /// letting HR mark which workers would be timesheet-paid when that mode
+    /// arrives. Until then, every worker is paid on the salary basis.</summary>
+    public string PayBasis { get; set; } = "salary"; // salary | timesheet
     public Guid StructureId { get; set; }
     public SalaryStructure? Structure { get; set; }
     public Guid PayGroupId { get; set; }
