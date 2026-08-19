@@ -894,7 +894,7 @@ function LeaveStep(props: { sending: boolean; onComplete: (p: Record<string, unk
               <Label>Category</Label>
               <Select value={t.category} onValueChange={(v) => update(i, { category: v })}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" side="bottom" collisionPadding={8}>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="unpaid">Unpaid</SelectItem>
                   <SelectItem value="half-pay">Half pay</SelectItem>
@@ -968,7 +968,7 @@ function PayrollStep(props: { sending: boolean; onComplete: (p: Record<string, u
             <Label htmlFor="py-freq">Pay frequency</Label>
             <Select value={frequency} onValueChange={setFrequency}>
               <SelectTrigger id="py-freq" className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" side="bottom" collisionPadding={8}>
                 <SelectItem value="monthly">Monthly</SelectItem>
                 <SelectItem value="semimonthly">Semi-monthly</SelectItem>
                 <SelectItem value="biweekly">Bi-weekly</SelectItem>
@@ -984,7 +984,7 @@ function PayrollStep(props: { sending: boolean; onComplete: (p: Record<string, u
             <Label htmlFor="py-cur">Currency</Label>
             <Select value="ZMW" onValueChange={() => {}} disabled>
               <SelectTrigger id="py-cur" className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="ZMW">ZMW (Kwacha)</SelectItem></SelectContent>
+              <SelectContent position="popper" side="bottom" collisionPadding={8}><SelectItem value="ZMW">ZMW (Kwacha)</SelectItem></SelectContent>
             </Select>
           </div>
         </div>
