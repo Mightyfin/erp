@@ -66,7 +66,7 @@ const ENABLED_PREFIXES = [
 ];
 
 /** Always reachable regardless of scope. */
-const ALWAYS = ["/hrm", "/hrm/setup", "/hrm/help", "/sign-in", "/speak-up"];
+const ALWAYS = ["/hrm", "/hrm/help", "/sign-in", "/speak-up"];
 
 const PRODUCTION = import.meta.env.VITE_USE_REAL_API === "true";
 const DEMO_ONLY_PREFIXES = [
