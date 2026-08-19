@@ -159,10 +159,15 @@ function PayslipDetail() {
                         if (USE_REAL) {
                           setGenerating(true);
                           try {
-                            // Try the admin preview endpoint first (works for both self-service
-                            // and admin callers). Fall back to the employee download URL.
-                            const previewUrl = realApi.payslipPreviewUrl(id);
-                            window.open(previewUrl, "_blank", "noopener,noreferrer");
+                            // Fetch the PDF through the authenticated API client (window.open
+                            // cannot carry the bearer token, which is why the plain preview
+                            // URL fails with 401), then open the blob in a new tab.
+                            const blob = await realApi.payslipDownloadBlob(id);
+                            const blobUrl = URL.createObjectURL(blob);
+                            const tab = window.open(blobUrl, "_blank", "noopener,noreferrer");
+                            if (!tab) URL.revokeObjectURL(blobUrl);
+                            // Release the blob after the new tab has loaded it (2 min safety net).
+                            setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
                             feedback.submitted(
                               "Payslip download ready.",
                               "The generated copy opened in a new browser tab.",
