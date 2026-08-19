@@ -94,8 +94,11 @@ const SYSTEM_FIELDS: SystemField[] = [
 // A snapshot of the parsed spreadsheet: raw header cells + data rows.
 type ParsedSheet = { headers: string[]; rows: string[][] };
 
-// Mapping state: which system field is fed by which spreadsheet column (-1 = ignore).
-type Mapping = Record<string, number>;
+// Mapping state: which system field is fed by which spreadsheet column.
+// Number = column index (-1 = ignore). String `unit:<Name>` = a real org unit
+// picked from the ones created earlier in the wizard (never guessed).
+const UNIT_PREFIX = "unit:";
+type Mapping = Record<string, number | string>;
 
 function defaultMapping(headers: string[]): Mapping {
   // Never guess required columns — but hint optional ones by fuzzy matching.
@@ -125,7 +128,8 @@ function buildCanonical(rows: string[][], mapping: Mapping): string[][] {
   return rows.map((r) =>
     SYSTEM_FIELDS.map((f) => {
       const col = mapping[f.key];
-      if (col < 0 || col >= r.length) return "";
+      if (typeof col === "string" && col.startsWith(UNIT_PREFIX)) return col.slice(UNIT_PREFIX.length);
+      if (typeof col !== "number" || col < 0 || col >= r.length) return "";
       return (r[col] ?? "").trim().replace(/^"|"$/g, "");
     })
   );
@@ -299,7 +303,7 @@ export function WelcomeOverlay() {
 
   return (
     <div className="fixed inset-0 z-[120] overflow-y-auto bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center px-4 py-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center px-4 py-8 sm:px-8">
         {/* Header lock strip — the only thing visible above the wizard card. */}
         <div className="flex w-full items-center gap-4 pb-4">
           <SwitchGlyph />
@@ -1282,7 +1286,9 @@ function EmployeesStep(props: {
                 </div>
                 <div>
                   <div className="mb-2 text-xs font-medium text-muted-foreground">
-                    Map each system field to a spreadsheet column — unmapped fields are ignored
+                    Map each system field to a spreadsheet column — unmapped fields are ignored.
+                    For Department you can also pick one of the departments created in the wizard
+                    (every row will then be placed in that department, whatever your columns say).
                   </div>
                   <div className="space-y-2">
                     {SYSTEM_FIELDS.map((f) => (
@@ -1291,18 +1297,27 @@ function EmployeesStep(props: {
                           {f.label}
                           {f.required && <span className="ml-0.5 text-destructive">*</span>}
                         </Label>
-                        <Select
-                          value={String(mapping[f.key] ?? -1)}
-                          onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: Number(v) }))}
-                        >
-                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="-1">— Ignore this field —</SelectItem>
-                            {sheet.headers.map((h, i) => (
-                              <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {f.key === "OrgUnitName" ? (
+                          <UnitMappingControl
+                            units={units.data ?? []}
+                            value={mapping[f.key] ?? -1}
+                            onChange={(v) => setMapping((m) => ({ ...m, [f.key]: v }))}
+                            headers={sheet.headers}
+                          />
+                        ) : (
+                          <Select
+                            value={String(mapping[f.key] ?? -1)}
+                            onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: Number(v) }))}
+                          >
+                            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="-1">— Ignore this field —</SelectItem>
+                              {sheet.headers.map((h, i) => (
+                                <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1382,6 +1397,49 @@ function UnknownStep(props: { stepKey: string; sending: boolean; onComplete: (p:
     <StepCard title="Step" description="This step completes the setup checklist.">
       <SubmitRow disabled={props.sending} sending={props.sending} label="Mark complete" onSubmit={() => props.onComplete({})} />
     </StepCard>
+  );
+}
+
+/* Department mapping with a choice of the REAL units created in the wizard.
+   Every row lands in that department regardless of what the spreadsheet
+   columns say — so the import can never reference a unit that doesn't exist. */
+function UnitMappingControl(props: {
+  units: string[];
+  value: number | string;
+  onChange: (v: number | string) => void;
+  headers: string[];
+}) {
+  const { units, value, onChange, headers } = props;
+  const asNumber = typeof value === "number" ? value : -1;
+  const asUnit = typeof value === "string" && value.startsWith(UNIT_PREFIX) ? value.slice(UNIT_PREFIX.length) : null;
+  return (
+    <div className="space-y-1.5">
+      <Select value={String(asNumber)} onValueChange={(v) => onChange(Number(v))}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="-1">— Ignore this field —</SelectItem>
+          {headers.map((h, i) => (
+            <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
+          ))}
+          {units.filter(Boolean).length > 0 && (
+            <SelectGroup>
+              <SelectLabel>Existing departments from this setup</SelectLabel>
+              {units.filter(Boolean).map((u) => (
+                <SelectItem key={UNIT_PREFIX + u} value={UNIT_PREFIX + u}>{u}</SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+        </SelectContent>
+      </Select>
+      {asUnit && (
+        <p className="text-[11px] text-muted-foreground">
+          Every row will be placed in <span className="font-medium">{asUnit}</span> — it can still be
+          changed per employee later on the employees page.
+        </p>
+      )}
+    </div>
   );
 }
 
