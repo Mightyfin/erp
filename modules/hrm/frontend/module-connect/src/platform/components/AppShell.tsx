@@ -380,7 +380,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       }),
       locations: (Array.isArray(locations) ? locations : []).map((raw) => {
         const l = raw as Record<string, unknown>;
-        return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? "") };
+        return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? ""), type: String(l.type ?? "branch") };
       }),
       notificationInbox,
       // M27 P0 UX audit: the approvals badge was a hardcoded mock "3". The
@@ -403,6 +403,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const entityLocations: { id: string; name: string }[] = USE_REAL
     ? liveLocations.filter((location) => !entity || location.legalEntityId === entity.id)
     : (entity as { branches?: string[] })?.branches?.map((name) => ({ id: String(name), name: String(name) })) ?? [];
+
+  /** Tree used by the organisation switcher: every legal entity with its branches nested underneath. */
+  const entityTree = (USE_REAL ? liveEntities : entities).map((e) => {
+    const raw = e as Record<string, unknown>;
+    const branches = USE_REAL
+      ? liveLocations
+          .filter((l) => l.legalEntityId === String(e.id))
+          .map((l) => ({ id: String(l.id), name: String(l.name ?? l.id), type: String(l.type ?? "branch") }))
+      : ((raw.branches as string[] | undefined) ?? []).map((name) => ({ id: String(name), name: String(name), type: "" }));
+    return {
+      entityId: String(e.id),
+      entityName: String(raw.registeredName ?? raw.tradingName ?? raw.name ?? e.id),
+      entityCode: String(raw.code ?? ""),
+      branches,
+    };
+  });
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   const inScope = isPathEnabled(pathname);
   const liveNotifications = shellState.data?.notificationInbox.items ?? [];
@@ -494,33 +510,46 @@ export function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
-                <span className="max-w-48 truncate">{String((entity as Record<string, unknown> | undefined)?.registeredName ?? (entity as Record<string, unknown> | undefined)?.name ?? "Organisation")}</span>
-                <span className="text-muted-foreground">· {branch}</span>
+                <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
+                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {branch}</span> : null}
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-80">
-              <DropdownMenuLabel>Legal entity</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
-                {(USE_REAL ? liveEntities : entities).map((e) => (
-                  <DropdownMenuRadioItem key={String(e.id)} value={String(e.id)}>
-                    <span className="min-w-0">
-                      <span className="block truncate">{String((e as Record<string, unknown>).registeredName ?? (e as Record<string, unknown>).name ?? e.id)}</span>
-                      <span className="block text-xs text-muted-foreground">{String((e as Record<string, unknown>).countryCode ?? (e as Record<string, unknown>).country ?? "")}</span>
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>Branch</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
-                {entityLocations.map((location) => {
-                  const name = String(location.name ?? location.id);
-                  return <DropdownMenuRadioItem key={String(location.id)} value={name}>
-                    {name}
-                  </DropdownMenuRadioItem>
-                })}
-              </DropdownMenuRadioGroup>
+            <DropdownMenuContent align="start" className="w-96 max-h-[60vh] overflow-y-auto">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Organisation context — entity and branch
+              </DropdownMenuLabel>
+              {entityTree.map((node) => (
+                <div key={node.entityId}>
+                  <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
+                    <DropdownMenuRadioItem value={node.entityId}>
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-1.5">
+                          <Building2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          <span className="block truncate font-medium">{node.entityName}</span>
+                        </span>
+                        {node.entityCode ? (
+                          <span className="block text-xs text-muted-foreground">{node.entityCode}</span>
+                        ) : null}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {node.branches.length > 0 ? (
+                    <div className="ml-5 border-l border-border pl-3 py-0.5">
+                      <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
+                        {node.branches.map((b) => (
+                          <DropdownMenuRadioItem key={b.id} value={b.name} className="text-sm">
+                            <span className="min-w-0 truncate">{b.name}</span>
+                            {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </div>
+                  ) : (
+                    <p className="ml-5 pl-4 pb-1.5 text-xs text-muted-foreground">No branches configured</p>
+                  )}
+                </div>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
