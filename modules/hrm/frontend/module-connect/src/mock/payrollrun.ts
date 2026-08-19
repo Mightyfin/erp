@@ -56,6 +56,8 @@ export interface PayRun {
   /** Segregation of duties: these two must never be the same person. */
   preparedBy: string;
   approvedBy?: string;
+  /** M46: the branch this run was prepared for (undefined = org-wide run). */
+  branchId?: string;
   /** The signed-in user, for the self-approval block. */
   totals: ControlTotals;
   priorTotals?: ControlTotals;

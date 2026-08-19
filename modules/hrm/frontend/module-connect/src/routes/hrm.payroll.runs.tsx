@@ -44,6 +44,7 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
       locked: "Draft",
       calculating: "Calculating",
       calculated: "Calculated",
+      "in-review": "In review",
       approved: "Approved",
       released: "Paid",
       closed: "Closed",
@@ -90,6 +91,7 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
       status,
       nextAction,
       dueDate: "controlled workflow",
+      branchId: r.locationId ? String(r.locationId) : undefined,
       owner: String(r.preparedBySubjectId ?? "Payroll officer"),
       preparedBy: String(r.preparedBySubjectId ?? ""),
       approvedBy: r.approvedBySubjectId ? String(r.approvedBySubjectId) : undefined,
@@ -97,9 +99,25 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
   });
 }
 
+let liveLocationsCache: { id: string; name: string }[] | null = null;
+
+function branchName(branchId: string): string | undefined {
+  const loc = liveLocationsCache?.find((l) => l.id === branchId);
+  return loc?.name;
+}
+
 function RunsList() {
   const state = useApi(async (): Promise<PayRun[]> => {
     if (!USE_REAL) return payrollRunApi.runs();
+    if (!liveLocationsCache) {
+      const raw = await realApi.locations().catch(() => ({ items: [] as unknown[] }));
+      liveLocationsCache = (Array.isArray(raw)
+        ? raw
+        : ((raw as Record<string, unknown>)?.items as unknown[]) ?? []).map((l) => ({
+        id: String((l as Record<string, unknown>).id ?? ""),
+        name: String((l as Record<string, unknown>).name ?? ""),
+      }));
+    }
     const result = await realApi.payrollRuns();
     return adaptRunRows(result.items ?? []);
   }, []);
@@ -149,6 +167,7 @@ function RunsList() {
                     "Draft",
                     "Calculating",
                     "Calculated",
+                    "In review",
                     "Approved",
                     "Paid",
                     "Closed",
@@ -190,6 +209,19 @@ function RunsList() {
                   id: "entity",
                   header: "Entity",
                   cell: (r) => <span className="block max-w-48 truncate">{r.entityName}</span>,
+                },
+                {
+                  id: "branch",
+                  header: "Branch",
+                  defaultVisible: true,
+                  cell: (r) =>
+                    r.branchId ? (
+                      <span className="block max-w-40 truncate text-xs text-muted-foreground">
+                        {branchName(r.branchId) ?? "Branch"}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Organisation-wide</span>
+                    ),
                 },
                 {
                   id: "people",

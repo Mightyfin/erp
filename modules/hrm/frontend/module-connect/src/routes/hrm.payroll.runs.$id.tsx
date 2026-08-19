@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { AlertTriangle, Ban, Check, CircleDashed, Info, Lock, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CURRENT_USER, isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
@@ -784,6 +784,7 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
   const statusMap: Record<string, string> = {
     draft: "Draft",
     calculated: "Calculated",
+    "in-review": "In review",
     approved: "Approved",
     released: "Paid",
     paid: "Paid",
@@ -803,8 +804,10 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
     owner: String(r.preparedBy ?? r.owner ?? "Payroll officer"),
     nextAction:
       status === "Calculated"
-        ? "Send for approval"
-        : status === "Approved"
+        ? "Send for review"
+        : status === "In review"
+          ? "Awaiting top-HR approval"
+          : status === "Approved"
           ? "Release payslips"
           : status === "Paid"
             ? "Complete payment workflow"
@@ -812,6 +815,7 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
               ? "Cycle complete"
               : "Calculate run",
     dueDate: String(r.cutoffDate ?? ""),
+    branchId: r.locationId ? String(r.locationId) : undefined,
     preparedBy: String(r.preparedBySubjectId ?? r.preparedBy ?? "Payroll officer"),
     approvedBy: r.approvedBySubjectId ? String(r.approvedBySubjectId) : undefined,
     totals: {
@@ -903,6 +907,30 @@ function RunDetail() {
       return null;
     }
   }, [id]);
+  // M46: branch names for the branch pill — fetched once per view, best effort.
+  const [scopeLocations, setScopeLocations] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!USE_REAL) return;
+    let live = true;
+    realApi
+      .locations()
+      .then((raw) => {
+        if (!live) return;
+        const items = Array.isArray(raw)
+          ? raw
+          : (((raw as Record<string, unknown>)?.items as unknown[]) ?? []);
+        setScopeLocations(
+          items.map((l) => ({
+            id: String((l as Record<string, unknown>).id ?? ""),
+            name: String((l as Record<string, unknown>).name ?? ""),
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   const exceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
   const lines = useApi(async (): Promise<RunLine[]> => {
     if (!USE_REAL) return payrollRunApi.linesFor(id);
@@ -922,6 +950,7 @@ function RunDetail() {
     }
   }, [id]);
   const [calculating, setCalculating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [locking, setLocking] = useState(false);
 
   // `/payroll/runs/$id/edit` is generated as a child of this route.
@@ -963,6 +992,12 @@ function RunDetail() {
                     ),
                   },
                   { label: "Currency", value: run.currency },
+                  run.branchId
+                    ? {
+                        label: "Branch",
+                        value: scopeLocations?.find((l) => l.id === run.branchId)?.name ?? run.branchId,
+                      }
+                    : { label: "Scope", value: "Organisation-wide" },
                 ]}
                 timeline={<StatusTimeline title="Audit trail" events={run.timeline} />}
               >
@@ -994,7 +1029,7 @@ function RunDetail() {
                               await realApi.calculatePayrollRun(run.id);
                               feedback.submitted(
                                 "Calculation complete.",
-                                "Review pay lines and variances before sending for approval.",
+                                "Review pay lines and variances before sending for review.",
                               );
                               await state.reload();
                               await lines.reload();
@@ -1009,6 +1044,36 @@ function RunDetail() {
                           }}
                         >
                           {calculating ? "Calculating…" : "Calculate run"}
+                        </Button>
+                        {/* M46: branch payroll drafts flow up for organisation-wide
+                            HR approval. Organisation-wide runs skip review and
+                            go straight to approval. */}
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={
+                            submitting || run.backendStatus !== "calculated" || !run.branchId
+                          }
+                          onClick={async () => {
+                            setSubmitting(true);
+                            try {
+                              await realApi.submitPayrollRun(run.id);
+                              feedback.submitted(
+                                "Branch run sent for review.",
+                                "Organisation-wide HR can now review and approve this draft.",
+                              );
+                              await state.reload();
+                            } catch (e) {
+                              feedback.blocked(
+                                "Submit failed",
+                                e instanceof Error ? e.message : "Unknown error.",
+                              );
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                        >
+                          {submitting ? "Sending…" : "Send for review"}
                         </Button>
                         <Button
                           variant="outline"
@@ -1260,7 +1325,11 @@ function RunDetail() {
                 {run.status !== "Closed" && run.status !== "Paid" ? (
                   <DetailSection
                     title="Approval"
-                    description="Segregation of duties is enforced here, not assumed."
+                    description={
+                      run.branchId
+                        ? "Branch payroll drafts flow up for organisation-wide HR approval. Top HR approves; branch HR cannot approve their own draft."
+                        : "Segregation of duties is enforced here, not assumed."
+                    }
                   >
                     {selfApproval ? (
                       <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
@@ -1322,7 +1391,9 @@ function RunDetail() {
                               await realApi.payrollRunApprove(run.id);
                               feedback.submitted(
                                 `${run.period} approved for ${run.included} employees.`,
-                                "Payslips can now be released. Releasing them does not pay anyone.",
+                                run.branchId
+                                  ? "Branch draft merged into the mainstream payroll. Payslips can now be released."
+                                  : "Payslips can now be released. Releasing them does not pay anyone.",
                               );
                               await state.reload();
                               return;
@@ -1339,6 +1410,22 @@ function RunDetail() {
                               `${run.period} approved for ${run.included} employees.`,
                               "Payslips can now be released. Releasing them does not pay anyone.",
                             );
+                          } else if (USE_REAL && decision === "reject") {
+                            try {
+                              await realApi.payrollRunReverse(run.id);
+                              feedback.submitted(
+                                `${run.period} rejected and reversed.`,
+                                "The preparer will see your reason in the audit trail and can recalculate.",
+                              );
+                              await state.reload();
+                              return;
+                            } catch (e) {
+                              feedback.blocked(
+                                "Rejection failed",
+                                e instanceof Error ? e.message : "Unknown error.",
+                              );
+                              return;
+                            }
                           } else if (decision === "return" || decision === "reject") {
                             feedback.submitted(
                               `${run.period} sent back to ${run.preparedBy}.`,

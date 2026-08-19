@@ -537,6 +537,9 @@ export const realApi = {
   calculatePayrollRun: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/calculate`, null),
   lockPayrollRun: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lock`, null),
+  /** M46: branch payroll drafts flow up for organisation-wide HR approval. */
+  submitPayrollRun: (id: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/submit-for-review`, null),
   payrollRunApprove: (id: string, note?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, { note }),
   payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
