@@ -27,6 +27,7 @@ export const ENABLED_SECTIONS = new Set([
   "offboarding", // M37 exit requests, checklists and exit interviews
   "configuration",
   "organization", // M39 org chart + reporting lines (nested under People)
+  "setup", // M49 first-time setup wizard — admin-only at runtime via the nav roles guard
 ]);
 
 /** Route prefixes included in this release. */
