@@ -357,6 +357,7 @@ export const realApi = {
         balanceReserved: boolean;
         crossesCutoff: boolean;
         createdAt: string;
+        locationId: string | null;
       }[];
       totalCount: number;
       page: number;
