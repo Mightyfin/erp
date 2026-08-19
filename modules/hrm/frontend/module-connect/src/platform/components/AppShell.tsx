@@ -365,9 +365,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
-    const [legalEntities, locations, notificationInbox, queue, leave, corrections] = await Promise.all([
+    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections] = await Promise.all([
       realApi.legalEntities().catch(() => []),
       realApi.locations().catch(() => ({ items: [] as unknown[] })),
+      realApi.shell().catch(() => null),
       realApi.myNotifications().catch(() => ({ items: [], unreadCount: 0 })),
       realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
       realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
@@ -391,6 +392,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         const l = raw as Record<string, unknown>;
         return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? ""), type: String(l.type ?? "branch") };
       }),
+      // M45: confinement metadata from the resolved scope — an operator WITH
+      // branch assignments can only switch inside those branches; operators
+      // WITHOUT assignments (top-level HR) keep the full tree.
+      assignedLocationIds: shellScope?.assignedLocationIds ?? [],
+      confined: Boolean(shellScope?.confined),
       notificationInbox,
       // M27 P0 UX audit: the approvals badge was a hardcoded mock "3". The
       // shell now counts everything still open for a decision, matching the
@@ -406,6 +412,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
+  const assignedIds = shellState.data?.assignedLocationIds ?? [];
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
     : entities.find((e) => e.id === entityId) ?? entities[0];
@@ -419,6 +426,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     const branches = USE_REAL
       ? liveLocations
           .filter((l) => l.legalEntityId === String(e.id))
+          // M45: a confined operator only sees their assigned branches in the switcher.
+          .filter((l) => !assignedIds.length || assignedIds.includes(String(l.id)))
           .map((l) => ({ id: String(l.id), name: String(l.name ?? l.id), type: String(l.type ?? "branch") }))
       : ((raw.branches as string[] | undefined) ?? []).map((name) => ({ id: String(name), name: String(name), type: "" }));
     return {

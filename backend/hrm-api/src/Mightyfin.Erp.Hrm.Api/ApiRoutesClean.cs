@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -18,6 +19,7 @@ using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Shared;
 using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
+using Mightyfin.Erp.Hrm.Infrastructure.Data;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
 // Minimal-API routes grouped by the frontend client interfaces (PeopleClient,
@@ -69,6 +71,10 @@ public static class Routes
             locationId = scope.LocationId,
             entityId = scope.EntityId,
             scopedToBranch = scope.IsScopedToBranch,
+            // M45: confinement metadata — the switcher hides branches the
+            // operator is not assigned to, and the badge reflects reality.
+            assignedLocationIds = scope.AllowedLocationIds,
+            confined = scope.IsConfined,
         }));
     }
 
@@ -956,6 +962,50 @@ public static class Routes
         });
 
         g.MapGet("/locations", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListLocationsAsync(ct));
+        // M45: branch access (confinement) — hr_admin maps platform users to the
+        // branches they are allowed to work in. Operators WITH assignments can
+        // never widen past them (middleware enforces); operators WITHOUT
+        // assignments stay org-wide (top-level HR).
+        g.MapGet("/branch-access", async (HrmDbContext db, CancellationToken ct) =>
+        {
+            var rows = await db.UserBranchAssignments.ToListAsync(ct);
+            var locs = await db.WorkLocations.Select(x => new { x.Id, x.Name, x.LegalEntityId }).ToListAsync(ct);
+            return Results.Ok(new
+            {
+                items = rows.Select(r => new { id = r.Id, userId = r.UserId, userEmail = r.UserEmail, locationId = r.LocationId,
+                    locationName = locs.FirstOrDefault(l => l.Id == r.LocationId)?.Name }).ToList(),
+                locations = locs,
+            });
+        });
+        g.MapPost("/branch-access", async (HttpContext http, ShellContext scope, HrmDbContext db, CancellationToken ct) =>
+        {
+            if (!http.User.IsInRole("hr_admin"))
+                throw new DomainException("forbidden", "Branch access management requires the hr_admin role.");
+            var request = await ReadBodyAsync<UserBranchAssignmentRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            if (request.UserId == Guid.Empty)
+                throw new DomainException("bad-request", "userId is required.");
+            var exists = await db.UserBranchAssignments.AnyAsync(x => x.UserId == request.UserId && x.LocationId == request.LocationId, ct);
+            if (exists)
+                return Results.Conflict(new { error = "duplicate", message = "User is already assigned to this branch." });
+            if (!await db.WorkLocations.AnyAsync(x => x.Id == request.LocationId, ct))
+                throw new DomainException("bad-request", "The target location does not exist.");
+            var row = new HrUserBranchAssignment { UserId = request.UserId, UserEmail = request.UserEmail ?? "" };
+            row.LocationId = request.LocationId;
+            db.UserBranchAssignments.Add(row);
+            await db.SaveChangesAsync(ct);
+            return Results.Created("", new { id = row.Id, userId = row.UserId, userEmail = row.UserEmail, locationId = row.LocationId });
+        });
+        g.MapDelete("/branch-access/{id:guid}", async (Guid id, HttpContext http, ShellContext scope, HrmDbContext db, CancellationToken ct) =>
+        {
+            if (!http.User.IsInRole("hr_admin"))
+                throw new DomainException("forbidden", "Branch access management requires the hr_admin role.");
+            var row = await db.UserBranchAssignments.FindAsync([id], ct)
+                ?? throw new DomainException("not-found", "Assignment not found.");
+            db.UserBranchAssignments.Remove(row);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { deleted = id });
+        });
         g.MapPost("/locations", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<WorkLocationCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

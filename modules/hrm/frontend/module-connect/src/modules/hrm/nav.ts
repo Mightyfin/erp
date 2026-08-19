@@ -280,6 +280,12 @@ export const configurationGroups: {
         to: "/hrm/configuration/organisation",
       },
       {
+        // M45: which platform users are confined to which branches.
+        label: "Branch access",
+        detail: "HR staff → branch assignment",
+        to: "/hrm/configuration/branch-access",
+      },
+      {
         label: "Departments and cost centres",
         detail: "12 departments",
         to: "/hrm/configuration/organisation",

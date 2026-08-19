@@ -14,6 +14,14 @@ public sealed class ShellContext
     /// <summary>True when the operator has deliberately narrowed work to one branch.</summary>
     public bool IsScopedToBranch => LocationId.HasValue;
 
+    /// <summary>M45: branch ids the operator is CONFINED to. Empty = top-level
+    /// HR with org-wide access; non-empty = the operator may only work inside
+    /// these branches (the middleware clamps/rejects scope headers to this set).</summary>
+    public List<Guid> AllowedLocationIds { get; } = [];
+
+    /// <summary>True when this operator has branch assignments (M45 confinement).</summary>
+    public bool IsConfined => AllowedLocationIds.Count > 0;
+
     public override string ToString() =>
         IsScopedToBranch ? $"branch:{LocationId}" : (EntityId.HasValue ? $"entity:{EntityId}" : "global");
 }

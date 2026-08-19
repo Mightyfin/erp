@@ -35,3 +35,16 @@ public interface ISecurityComplianceService
     Task<LegalHoldDto> ReleaseLegalHoldAsync(Guid id, LegalHoldReleaseRequest request, string actor, CancellationToken ct);
     Task<string> ExportAuditAsync(CancellationToken ct);
 }
+
+/// <summary>M45: a platform operator (Keycloak subject) confined to a specific
+/// work location (branch). Operators WITH assignments can only ever work
+/// inside their assigned branches; operators WITHOUT assignments are
+/// org-wide (top-level HR). The user id is the Keycloak `sub` claim;
+/// user email is stored redundantly for display since Keycloak subjects are
+/// opaque GUIDs in the admin UI.</summary>
+public sealed class HrUserBranchAssignment : Domain.Entities.Entity
+{
+    public Guid UserId { get; set; }
+    public string UserEmail { get; set; } = string.Empty;
+    public Guid LocationId { get; set; }
+}

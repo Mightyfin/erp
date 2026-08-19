@@ -810,7 +810,15 @@ export const realApi = {
     ),
 
   /** M44: echo of the resolved work scope (entity/branch) for the current request. */
-  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean }>("/hrm/shell"),
+  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean;
+    assignedLocationIds?: string[]; confined?: boolean }>("/hrm/shell"),
+
+  /** M45: branch access (confinement) — which platform users are confined to which branches. */
+  branchAccess: () => hrmApi.get<{ items: { id: string; userId: string; userEmail: string; locationId: string; locationName?: string | null }[];
+    locations: { id: string; name: string; legalEntityId: string }[] }>("/hrm/admin/branch-access"),
+  assignBranchAccess: (body: { userId: string; userEmail?: string; locationId: string }) =>
+    hrmApi.post<unknown>("/hrm/admin/branch-access", body),
+  removeBranchAccess: (id: string) => hrmApi.delete<unknown>(`/hrm/admin/branch-access/${id}`),
 
   /** Admin config: org tree, legal entities, calendars, holidays, capabilities. */
   orgTree: () => hrmApi.get<unknown>("/hrm/admin/org-units/tree"),

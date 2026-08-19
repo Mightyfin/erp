@@ -280,6 +280,10 @@ public sealed record LegalEntityDtoFull(
     string Currency, string CountryCode, bool IsDefault, DateTimeOffset CreatedAt);
 
 // ---------- Work locations ----------
+/// <summary>M45: assign a platform user (Keycloak subject) to a branch so the
+/// confinement middleware narrows their work scope to it.</summary>
+public sealed record UserBranchAssignmentRequest(Guid UserId, string? UserEmail, Guid LocationId);
+
 public sealed record WorkLocationCreateRequest(
     string Code, string Name, Guid LegalEntityId, string? AddressLine = null,
     string? Province = null, string? District = null, string? City = null,

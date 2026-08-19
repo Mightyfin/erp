@@ -71,6 +71,7 @@ const PRODUCTION = import.meta.env.VITE_USE_REAL_API === "true";
 const DEMO_ONLY_PREFIXES = [
   "/hrm/setup",
   "/hrm/configuration/business",
+  "/hrm/configuration/branch-access", // M45 branch confinement admin
   "/hrm/configuration/process",
   "/hrm/reports/builder",
   "/hrm/experience/knowledge",

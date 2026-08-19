@@ -63,6 +63,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PublicHoliday> PublicHolidays => Set<PublicHoliday>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<TenantRoleAssignment> TenantRoleAssignments => Set<TenantRoleAssignment>();
+    public DbSet<HrUserBranchAssignment> UserBranchAssignments => Set<HrUserBranchAssignment>();
     public DbSet<RetentionRule> RetentionRules => Set<RetentionRule>();
 
     // People & lifecycle
@@ -175,6 +176,8 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<PublicHoliday>(modelBuilder, "public_holidays");
         ConfigureEntity<Job>(modelBuilder, "jobs", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<TenantRoleAssignment>(modelBuilder, "tenant_role_assignments", e => e.HasIndex(x => new { x.TenantId, x.RoleKey }).IsUnique());
+        ConfigureEntity<HrUserBranchAssignment>(modelBuilder, "hr_user_branch_assignments",
+            e => e.HasIndex(x => new { x.TenantId, x.UserId, x.LocationId }).IsUnique());
         ConfigureEntity<RetentionRule>(modelBuilder, "retention_rules", e => e.HasIndex(x => new { x.TenantId, x.RecordType }).IsUnique());
         ConfigureEntity<Worker>(modelBuilder, "workers", e =>
         {
