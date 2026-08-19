@@ -77,11 +77,59 @@ const PAYE_BANDS = [
   { band: "Above ZMW 8,400", rate: "37.5%" },
 ];
 
-type Row = { first: string; last: string; email: string; phone: string; jobTitle: string; grade: string; startDate: string; department: string };
+// ---------- Employees step: user-driven column mapping ----------
+// System fields the import cares about (FirstName/LastName mandatory).
+type SystemField = { key: string; label: string; required: boolean };
+const SYSTEM_FIELDS: SystemField[] = [
+  { key: "FirstName", label: "First name", required: true },
+  { key: "LastName", label: "Last name", required: true },
+  { key: "Email", label: "Email", required: false },
+  { key: "Phone", label: "Phone", required: false },
+  { key: "JobTitle", label: "Job title", required: false },
+  { key: "Grade", label: "Grade", required: false },
+  { key: "StartDate", label: "Start date", required: false },
+  { key: "OrgUnitName", label: "Department", required: false },
+];
 
-const EMPLOYEE_COLS = ["First name", "Last name", "Email", "Phone", "Job title", "Grade", "Start date", "Department"];
-const EMPLOYEE_KEYS: (keyof Omit<Row, "first" | "last"> | "first" | "last")[] = ["first", "last", "email", "phone", "jobTitle", "grade", "startDate", "department"];
-const EMPTY_ROW: Row = { first: "", last: "", email: "", phone: "", jobTitle: "", grade: "", startDate: "", department: "" };
+// A snapshot of the parsed spreadsheet: raw header cells + data rows.
+type ParsedSheet = { headers: string[]; rows: string[][] };
+
+// Mapping state: which system field is fed by which spreadsheet column (-1 = ignore).
+type Mapping = Record<string, number>;
+
+function defaultMapping(headers: string[]): Mapping {
+  // Never guess required columns — but hint optional ones by fuzzy matching.
+  const map: Mapping = {};
+  const norm = headers.map((h) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+  const find = (...terms: string[]) => {
+    for (const t of terms) {
+      const i = norm.findIndex((n) => n.split(" ").includes(t));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  return {
+    FirstName: find("first", "firstname", "given"),
+    LastName: find("last", "lastname", "surname", "family"),
+    Email: find("email", "e-mail", "mail"),
+    Phone: find("phone", "mobile", "cell", "contact", "telephone", "tel"),
+    JobTitle: find("title", "job", "position", "designation", "role"),
+    Grade: find("grade", "level", "band", "rank"),
+    StartDate: find("start", "joined", "join"),
+    OrgUnitName: find("department", "dept", "unit", "branch"),
+  };
+}
+
+function buildCanonical(rows: string[][], mapping: Mapping): string[][] {
+  // Always emit 8 canonical columns in SYSTEM_FIELDS order, in CSV order.
+  return rows.map((r) =>
+    SYSTEM_FIELDS.map((f) => {
+      const col = mapping[f.key];
+      if (col < 0 || col >= r.length) return "";
+      return (r[col] ?? "").trim().replace(/^"|"$/g, "");
+    })
+  );
+}
 
 function slugify(v: string) {
   return v
@@ -1089,9 +1137,9 @@ function EmployeesStep(props: {
 }) {
   const [mode, setMode] = useState<"upload" | "manual">("upload");
   const [rows, setRows] = useState<Row[]>([EMPTY_ROW]);
-  const [preview, setPreview] = useState<Row[] | null>(null);
+  const [sheet, setSheet] = useState<ParsedSheet | null>(null);
+  const [mapping, setMapping] = useState<Mapping>({});
   const [pasteError, setPasteError] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
   // Departments already created in step 2 (backend returns { items }).
   const units = useApi(async () => {
@@ -1102,72 +1150,85 @@ function EmployeesStep(props: {
   const update = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  const parsePaste = (text: string) => {
+  // Parses whatever spreadsheet shape the operator pasted/uploads. We never
+  // assume the headers — every system field is mapped to a real column by the
+  // operator (required fields start unmapped on purpose).
+  const parseText = (text: string) => {
     setPasteError(null);
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
     if (lines.length < 2) {
-      setPasteError("Paste looks empty — the spreadsheet must have a header row plus at least one data row.");
+      setPasteError("The spreadsheet must have a header row plus at least one data row.");
+      setSheet(null);
       return;
     }
-    const header = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
-    const idx = (name: string) => header.findIndex((h) => h.includes(name));
-    const iFirst = idx("first"), iLast = idx("last"), iEmail = idx("email"), iPhone = idx("phone"),
-      iTitle = idx("title"), iJob = idx("job"), iGrade = idx("grade"), iStart = idx("start"), iDept = idx("dept");
-    const parsed: Row[] = [];
-    let bad = 0;
-    for (const line of lines.slice(1)) {
-      const cells = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-      const first = iFirst >= 0 ? cells[iFirst] ?? "" : cells[0] ?? "";
-      const last = iLast >= 0 ? cells[iLast] ?? "" : cells[1] ?? "";
-      if (!first && !last) { bad += 1; continue; }
-      parsed.push({
-        first, last,
-        email: iEmail >= 0 ? (cells[iEmail] ?? "") : "",
-        phone: iPhone >= 0 ? (cells[iPhone] ?? "") : "",
-        jobTitle: iTitle >= 0 ? (cells[iTitle] ?? "") : iJob >= 0 ? (cells[iJob] ?? "") : "",
-        grade: iGrade >= 0 ? (cells[iGrade] ?? "") : "",
-        startDate: iStart >= 0 ? (cells[iStart] ?? "") : "",
-        department: iDept >= 0 ? (cells[iDept] ?? "") : "",
-      });
-    }
-    if (parsed.length === 0) {
-      setPasteError("No readable employee rows found — check the header names (first, last, email, phone, job title, grade, start date, department).");
+    const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+    const dataRows = lines.slice(1).map((l) => l.split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
+    if (dataRows.every((r) => r.every((c) => !c))) {
+      setPasteError("No readable data rows found below the header.");
+      setSheet(null);
       return;
     }
-    setRows(parsed.concat(Array.from({ length: Math.max(0, 5 - parsed.length) }, () => EMPTY_ROW)));
-    setPreview(parsed.slice(0, 5));
-    setPasteError(bad > 0 ? `${bad} row(s) skipped (missing first and last name).` : null);
+    setSheet({ headers, rows: dataRows });
+    setMapping(defaultMapping(headers));
   };
 
   const onFile = (f: File) => {
     setPasteError(null);
     const reader = new FileReader();
-    reader.onload = () => parsePaste(String(reader.result ?? ""));
+    reader.onload = () => parseText(String(reader.result ?? ""));
     reader.readAsText(f);
   };
 
-  const valid = rows.every((r) => r.first.trim().length > 0 && r.last.trim().length > 0 && (!r.email || isValidEmail(r.email)));
-  const complete = () =>
-    props.onComplete({
-      Employees: rows
-        .filter((r) => r.first.trim() || r.last.trim())
-        .map((r) => ({
-          FirstName: r.first.trim(),
-          LastName: r.last.trim(),
-          Email: r.email?.trim() || null,
-          Phone: r.phone?.trim() || null,
-          JobTitle: r.jobTitle?.trim() || null,
-          Grade: r.grade?.trim() || null,
-          StartDate: r.startDate?.trim() || null,
-          OrgUnitName: r.department?.trim() || null,
-          WorkerType: null,
-        })),
+  // Canonical projection: what the backend will receive once Import is pressed.
+  const canonical = sheet ? buildCanonical(sheet.rows, mapping) : null;
+  const requiredMapped =
+    SYSTEM_FIELDS.filter((f) => f.required).every((f) => (mapping[f.key] ?? -1) >= 0);
+  const valid =
+    (mode === "manual"
+      ? rows.every((r) => r.first.trim().length > 0 && r.last.trim().length > 0 && (!r.email || isValidEmail(r.email)))
+      : !!canonical &&
+        canonical.length > 0 &&
+        requiredMapped &&
+        canonical.every((r) => r[0].length > 0 && r[1].length > 0) &&
+        canonical.every((r) => !r[2] || isValidEmail(r[2])));
+  const complete = () => {
+    if (mode === "manual") {
+      return props.onComplete({
+        Employees: rows
+          .filter((r) => r.first.trim() || r.last.trim())
+          .map((r) => ({
+            FirstName: r.first.trim(),
+            LastName: r.last.trim(),
+            Email: r.email?.trim() || null,
+            Phone: r.phone?.trim() || null,
+            JobTitle: r.jobTitle?.trim() || null,
+            Grade: r.grade?.trim() || null,
+            StartDate: r.startDate?.trim() || null,
+            OrgUnitName: r.department?.trim() || null,
+            WorkerType: null,
+          })),
+      });
+    }
+    const fields = SYSTEM_FIELDS.map((f) => f.key);
+    return props.onComplete({
+      Employees: canonical!.map((r) => ({
+        FirstName: r[fields.indexOf("FirstName")],
+        LastName: r[fields.indexOf("LastName")],
+        Email: r[fields.indexOf("Email")] || null,
+        Phone: r[fields.indexOf("Phone")] || null,
+        JobTitle: r[fields.indexOf("JobTitle")] || null,
+        Grade: r[fields.indexOf("Grade")] || null,
+        StartDate: r[fields.indexOf("StartDate")] || null,
+        OrgUnitName: r[fields.indexOf("OrgUnitName")] || null,
+        WorkerType: null,
+      })),
     });
+  };
 
   return (
     <StepCard
       title="Import employees"
-      description="Paste the spreadsheet contents here — the wizard maps columns automatically (first name and last name are the minimum; the rest are optional) and validates before saving."
+      description="Choose your staff spreadsheet (CSV) — the wizard shows its real column titles, and you map each one to a system field below. Anything unmapped is simply ignored. First name and last name are the only required fields."
     >
       <div className="space-y-4">
         <div className="flex gap-2 text-sm">
@@ -1193,17 +1254,88 @@ function EmployeesStep(props: {
               <Upload className="size-4" aria-hidden /> Choose CSV / text export from your spreadsheet
             </Button>
             <p className="text-xs text-muted-foreground">
-              Or paste below — a CSV with a header row. Expected columns (any order): first, last, email, phone, job
-              title, grade, start date, department. Minimum required: first and last name.
+              Or paste the spreadsheet contents below — any shape and any column titles. After loading, you
+              map each system field to your column, or leave it unmapped to ignore it.
             </p>
             <textarea
-              rows={8}
+              rows={6}
               className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-              placeholder={"first,last,email,phone,job title,grade,start date,department\nJane,Mwansa,jane@co.zm,0970000000,Accountant,Grade 2,2026-01-15,Finance"}
-              onChange={(e) => parsePaste(e.target.value)}
+              placeholder={"<your real headers>,<and data rows below>\nSurname,Jane,Mwansa,jane@co.zm,0970000000,Accountant,Grade 2,2026-01-15,Finance"}
+              onChange={(e) => parseText(e.target.value)}
               aria-label="Paste employee spreadsheet"
             />
             {pasteError && <p className="text-xs text-destructive">{pasteError}</p>}
+
+            {sheet && (
+              <div className="space-y-3 rounded-md border p-4">
+                <div>
+                  <div className="mb-2 text-xs font-medium text-muted-foreground">
+                    Columns found in your file ({sheet.headers.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sheet.headers.map((h, i) => (
+                      <Badge key={i} variant="outline" className="px-2 py-1 font-mono text-[11px]">
+                        {h || `Column ${i + 1}`}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-medium text-muted-foreground">
+                    Map each system field to a spreadsheet column — unmapped fields are ignored
+                  </div>
+                  <div className="space-y-2">
+                    {SYSTEM_FIELDS.map((f) => (
+                      <div key={f.key} className="grid gap-2 sm:grid-cols-[160px_1fr] sm:items-center">
+                        <Label className="text-sm">
+                          {f.label}
+                          {f.required && <span className="ml-0.5 text-destructive">*</span>}
+                        </Label>
+                        <Select
+                          value={String(mapping[f.key] ?? -1)}
+                          onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: Number(v) }))}
+                        >
+                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="-1">— Ignore this field —</SelectItem>
+                            {sheet.headers.map((h, i) => (
+                              <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {canonical && canonical.length > 0 && (
+                  <>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Preview — first 5 rows as the system will receive them ({canonical.length} total)
+                    </div>
+                    <div className="overflow-x-auto rounded-md border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            {SYSTEM_FIELDS.map((f) => (
+                              <th key={f.key} className="px-2 py-1.5 text-left font-medium whitespace-nowrap">
+                                {f.label}{f.required && <span className="ml-0.5 text-destructive">*</span>}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {canonical.slice(0, 5).map((r, i) => (
+                            <tr key={i} className="border-t">
+                              {r.map((c, j) => <td key={j} className="max-w-40 truncate px-2 py-1">{c}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
@@ -1232,22 +1364,6 @@ function EmployeesStep(props: {
             <Button type="button" variant="outline" size="sm" onClick={() => setRows((rs) => [...rs, EMPTY_ROW])}>
               <Plus className="size-4" aria-hidden /> Add employee
             </Button>
-          </div>
-        )}
-        {preview && (
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50">
-                <tr>{EMPLOYEE_COLS.map((c) => <th key={c} className="px-2 py-1.5 text-left font-medium">{c}</th>)}</tr>
-              </thead>
-              <tbody>
-                {preview.map((r, i) => (
-                  <tr key={i} className="border-t">
-                    {EMPLOYEE_KEYS.map((k) => <td key={k} className="px-2 py-1">{r[k]}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
         <div className="rounded-md bg-primary/5 p-3 text-xs text-muted-foreground">
