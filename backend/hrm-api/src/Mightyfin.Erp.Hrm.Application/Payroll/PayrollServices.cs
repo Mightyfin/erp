@@ -38,6 +38,9 @@ public interface IPayrollService
 
     // Run lifecycle
     Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
+    // M48: the top-HR approval queue — in-review branch runs with their
+    // control totals, branch name, and the moment each run was submitted.
+    Task<List<PayrollQueueItemDto>> ListPayrollQueueAsync(CancellationToken ct);
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
@@ -346,6 +349,31 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         if ((scope?.IsScopedToBranch ?? false))
             items = items.Where(r => r.LocationId == scope?.LocationId || r.LocationId == null).ToList();
         return new Paged<PayrollRunDto>(items.Select(MapRun).ToList(), items.Count, 1, 100);
+    }
+
+    // M48: the top-HR payroll approval queue. Only org-wide (non-confined)
+    // HR can review branch runs — confined branch HR get a plain 403 here.
+    // Each row carries the branch name (resolved once, for the whole result)
+    // and the exact moment the preparer submitted the run for review (the
+    // "submitted-for-review" audit event), so the approver sees how long a
+    // run has been waiting and can sanity-check the control totals at a glance.
+    public async Task<List<PayrollQueueItemDto>> ListPayrollQueueAsync(CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        if (scope is not null && scope.IsConfined)
+            throw new DomainException("payroll-queue-confined",
+                "The payroll approval queue is for organisation-wide HR only. Your account is confined to a branch — branch payroll runs must be submitted up to top HR for approval.");
+        // The repository resolves branch names, the parent legal entity, and the
+        // submitted-at stamp in one pass — the service keeps the confinement guard.
+        var rows = await repo.ListRunsInReviewAsync(ct);
+        return rows.Select(row => new PayrollQueueItemDto(
+            row.Run.Id, row.Run.Status, row.Run.PayPeriod?.PeriodLabel ?? "",
+            row.Run.LocationId, row.BranchName,
+            string.IsNullOrEmpty(row.LegalEntityId) ? Guid.Empty : Guid.Parse(row.LegalEntityId),
+            row.Run.EmployeeCount, row.Run.TotalGross, row.Run.TotalNet, row.Run.TotalDeductions, row.Run.TotalEmployerCost,
+            row.Run.ExceptionCount, row.Run.PreparedBySubjectId,
+            row.SubmittedAt,
+            row.Run.CreatedAt)).ToList();
     }
 
     public async Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system")
@@ -1350,6 +1378,9 @@ public interface IPayrollRepository
     Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct);
     Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct);
     Task<List<PayrollRun>> ListRunsAsync(CancellationToken ct);
+    // M48: runs awaiting approval pipeline action (in-review, or a calculated branch run not yet submitted). Each row
+    // carries the branch name and the moment the run was submitted, already resolved in one repository call.
+    Task<List<(PayrollRun Run, string? BranchName, string? LegalEntityId, DateTimeOffset? SubmittedAt)>> ListRunsInReviewAsync(CancellationToken ct);
     Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct);
     Task<PayrollRun?> FindOpenRunByPeriodAndLocationAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
     Task<PayrollRun?> FindOpenBranchRunForPeriodAsync(Guid payPeriodId, CancellationToken ct);

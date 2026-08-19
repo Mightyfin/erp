@@ -826,6 +826,10 @@ public static class Routes
             return Results.Created("", await svc.CreateRunAsync(request, ct, ResolveSubjectId(http) ?? "system"));
         });
         g.MapGet("/runs", async (IPayrollService svc, CancellationToken ct) => await svc.ListRunsAsync(ct));
+        // M48: the top-HR approval queue — branch runs awaiting review with
+        // control totals, branch names, and submission stamps. Confined users
+        // are refused inside the service (403).
+        g.MapGet("/queue", async (IPayrollService svc, CancellationToken ct) => await svc.ListPayrollQueueAsync(ct));
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
         g.MapPost("/runs/{id:guid}/lock", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>

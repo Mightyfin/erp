@@ -978,6 +978,43 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         => await db.PayrollRuns.AsNoTracking().Include(r => r.PayPeriod)
             .OrderByDescending(r => r.PayPeriod!.StartDate).ThenByDescending(r => r.CreatedAt).ToListAsync(ct);
 
+    // M48: rows for the top-HR approval queue — branch runs in review plus
+    // calculated branch runs not yet submitted. Organisation-wide runs never
+    // enter this queue (they are approved inline from the runs list).
+    // Each row carries the branch display name (resolved in one query) and the
+    // exact moment the preparer submitted the run for review (or null when the
+    // run is still just calculated and waiting for the branch HR to submit it).
+    public async Task<List<(PayrollRun Run, string? BranchName, string? LegalEntityId, DateTimeOffset? SubmittedAt)>> ListRunsInReviewAsync(CancellationToken ct)
+    {
+        // Status is a plain string (safe for SQLite), but DateTimeOffset ordering
+        // is not — sort the queue client-side instead.
+        var runs = (await db.PayrollRuns.AsNoTracking().Include(r => r.PayPeriod)
+            .Where(r => r.Status == "in-review" || (r.Status == "calculated" && r.LocationId.HasValue))
+            .ToListAsync(ct))
+            .OrderByDescending(r => r.CreatedAt).ToList();
+        var branchIds = runs.Select(r => r.LocationId).Where(l => l.HasValue).Select(l => l!.Value).Distinct().ToList();
+        var nameByBranch = branchIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await db.WorkLocations.AsNoTracking().Where(l => branchIds.Contains(l.Id)).ToListAsync(ct))
+                .ToDictionary(l => l.Id, l => l.Name);
+        var runIds = runs.Select(r => r.Id).ToList();
+        var submittedByRun = runIds.Count == 0
+            ? new Dictionary<Guid, DateTimeOffset>()
+            : (await db.PayrollRunEvents.AsNoTracking()
+                .Where(e => runIds.Contains(e.RunId) && e.Action == "submitted-for-review")
+                .ToListAsync(ct))
+                .GroupBy(e => e.RunId)
+                .ToDictionary(g => g.Key, g => g.Max(e => e.CreatedAt));
+        var legalEntityByBranch = (branchIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await db.WorkLocations.AsNoTracking().Where(l => branchIds.Contains(l.Id)).ToListAsync(ct))
+                .ToDictionary(l => l.Id, l => l.LegalEntityId.ToString()));
+        return runs.Select(r => (r,
+            r.LocationId.HasValue && nameByBranch.TryGetValue(r.LocationId.Value, out var n) ? n : null,
+            r.LocationId.HasValue && legalEntityByBranch.TryGetValue(r.LocationId.Value, out var lei) ? lei : null,
+            r.LocationId.HasValue && submittedByRun.TryGetValue(r.Id, out var sa) ? sa : (DateTimeOffset?)null)).ToList();
+    }
+
     public async Task<PayrollRun?> FindRunByPeriodAsync(Guid payPeriodId, CancellationToken ct)
         // Only an open (non-terminal) run blocks a new run: reversed/closed runs are
         // historical and a fresh replacement run may be created after reversal.

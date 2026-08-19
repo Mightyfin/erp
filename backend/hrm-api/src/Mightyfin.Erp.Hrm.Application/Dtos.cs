@@ -189,6 +189,22 @@ public sealed record PayrollReconciliationRequest(string Reference, decimal Actu
 public sealed record PayrollRunEventDto(Guid Id, string Action, string ActorSubjectId,
     string? FromStatus, string? ToStatus, string? Reason, string? DetailsJson, DateTimeOffset CreatedAt);
 
+// M48: one row in the top-HR payroll approval queue. Branch runs move through
+// in-review and land here; a calculated branch run waiting to be submitted also
+// appears (flagged as not-yet-submitted) so the approver can see the whole
+// pipeline at a glance. Control totals come straight off the run so the
+// approver can eyeball the period's liability in one table.
+public sealed record PayrollQueueItemDto(
+    Guid RunId, string Status, string PeriodLabel, Guid? BranchId, string? BranchName,
+    Guid EntityId, int EmployeeCount, decimal TotalGross, decimal TotalNet,
+    decimal TotalDeductions, decimal TotalEmployerCost, int ExceptionCount,
+    string? PreparedBySubjectId, DateTimeOffset? SubmittedAt, DateTimeOffset CreatedAt);
+
+// M48: queue-level control totals for the header cards.
+public sealed record PayrollQueueSummaryDto(int RunCount, int TotalEmployees,
+    decimal TotalGross, decimal TotalNet, decimal TotalDeductions,
+    decimal TotalEmployerCost);
+
 /// <summary>Aggregated statutory liability for one released payroll period
 /// (M23): PAYE, NAPSA and NHIMA split by employee/employer share, plus the
 /// employer's registration references carried on every statutory filing.</summary>
