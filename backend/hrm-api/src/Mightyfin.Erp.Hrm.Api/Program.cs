@@ -96,6 +96,9 @@ builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Analytics.IAnalyticsSer
 builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
+// M49: first-time setup wizard — state, step completion and the destructive reset
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupRepository, SetupRepository>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupService, Mightyfin.Erp.Hrm.Application.Setup.SetupServiceImpl>();
 // M41 Gap 6b: flexible benefit claims (types, allowances, claims)
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IBenefitRepository, Mightyfin.Erp.Hrm.Infrastructure.Benefits.BenefitRepository>();
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService, Mightyfin.Erp.Hrm.Application.Benefits.BenefitServiceImpl>();

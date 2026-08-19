@@ -147,6 +147,10 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<RelationsEvidence> RelationsEvidence => Set<RelationsEvidence>();
     public DbSet<ProtectedDisclosureEvent> ProtectedDisclosureEvents => Set<ProtectedDisclosureEvent>();
 
+    // M49: first-time setup state and per-step completion records
+    public DbSet<SetupState> SetupStates => Set<SetupState>();
+    public DbSet<SetupStepRecord> SetupStepRecords => Set<SetupStepRecord>();
+
     // Performance & goals (M36)
     public DbSet<PerformanceCycle> PerformanceCycles => Set<PerformanceCycle>();
     public DbSet<PerformanceGoal> PerformanceGoals => Set<PerformanceGoal>();
@@ -296,7 +300,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<RelationsCaseAction>(modelBuilder, "relations_case_actions");
         ConfigureEntity<RelationsEvidence>(modelBuilder, "relations_evidence");
         ConfigureEntity<ProtectedDisclosureEvent>(modelBuilder, "protected_disclosure_events");
-
+        ConfigureEntity<SetupState>(modelBuilder, "setup_states");
+        ConfigureEntity<SetupStepRecord>(modelBuilder, "setup_step_records",
+            e => e.HasIndex(x => new { x.TenantId, x.StepKey }).IsUnique());
         // Performance & goals (M36)
         ConfigureEntity<PerformanceCycle>(modelBuilder, "performance_cycles");
         ConfigureEntity<PerformanceGoal>(modelBuilder, "performance_goals");

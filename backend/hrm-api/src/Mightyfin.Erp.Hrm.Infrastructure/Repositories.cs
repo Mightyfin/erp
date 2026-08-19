@@ -9,7 +9,9 @@ using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
 using Mightyfin.Erp.Hrm.Application.Organization;
 using Mightyfin.Erp.Hrm.Application.Analytics;
+using Mightyfin.Erp.Hrm.Application.Setup;
 using Mightyfin.Erp.Hrm.Domain.Entities;
+using Microsoft.Data.Sqlite;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
 namespace Mightyfin.Erp.Hrm.Infrastructure;
@@ -2084,5 +2086,135 @@ public sealed class AnalyticsRepository(HrmDbContext db) : IAnalyticsRepository
         return rows.Where(a => a.WorkDate >= cutoff)
             .Select(r => ((decimal?)r.TotalHours, (decimal?)r.OvertimeHours))
             .ToList();
+    }
+}
+
+// ===================== Setup (M49: first-time setup wizard) =====================
+public sealed class SetupRepository(HrmDbContext db) : ISetupRepository
+{
+    public Task<SetupState?> GetStateAsync(CancellationToken ct) =>
+        db.SetupStates.FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlySet<string>> CompletedStepKeysAsync(CancellationToken ct) =>
+        new HashSet<string>(await db.SetupStepRecords
+            .Where(x => x.Completed)
+            .Select(x => x.StepKey)
+            .ToListAsync(ct));
+
+    public async Task CompleteStepAsync(string stepKey, string? dataJson, CancellationToken ct)
+    {
+        var existing = await db.SetupStepRecords.FirstOrDefaultAsync(x => x.StepKey == stepKey, ct);
+        if (existing is null)
+        {
+            db.SetupStepRecords.Add(new SetupStepRecord { StepKey = stepKey, Completed = true, DataJson = dataJson });
+        }
+        else
+        {
+            existing.Completed = true;
+            existing.DataJson = dataJson ?? existing.DataJson;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task FinishAsync(SetupState state, CancellationToken ct)
+    {
+        state.Status = "complete";
+        state.CompletedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Wipes every tenant data table in the hrm schema so a reset
+    /// leaves the system indistinguishable from a brand-new installation.</summary>
+    private string QualifiedTable(string table)
+    {
+        // Tests run on SQLite (no schema support) — the harness creates the
+        // tables as plain names, while production Postgres lives in `hrm`.
+        var provider = db.Database.ProviderName ?? "";
+        if (provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+            return $"\"{table}\"";
+        return $"hrm.\"{table}\"";
+    }
+
+    /// <summary>Actual data tables in insertion order (dependents before the
+    /// tables they reference). Derived from the DbContext model so the list
+    /// cannot drift out of sync with migrations — the SetupState/SetupStep
+    /// records are wiped separately afterwards.</summary>
+    private static readonly IReadOnlyList<string> DataTables =
+    [
+        // people & lifecycle
+        "emergency_contacts", "worker_bank_details", "education", "external_work_history",
+        "internal_work_history", "worker_documents", "assignments", "movements", "workers",
+        // policies & time
+        "leave_balance_ledger", "leave_balance_adjustments", "leave_encashments",
+        "leave_requests", "leave_types", "leave_accrual_runs", "attendance_records",
+        "attendance_corrections", "shift_definitions", "worker_shift_assignments",
+        "attendance_import_batches",
+        // workflows & experience
+        "workflow_requests", "workflow_decisions", "approval_delegations", "hr_requests",
+        "hr_request_messages", "hr_letters", "protected_disclosure_events",
+        // employment structure
+        "jobs", "org_units",
+        // payroll — runs/lines/payslips first, then configuration
+        "payslip_access_logs", "payslips", "payroll_line_components", "payroll_run_lines",
+        "payroll_run_events", "payroll_runs", "worker_component_values",
+        "worker_payroll_profiles", "salary_structure_items", "salary_structures",
+        "salary_components", "benefit_claims", "benefit_allowances", "benefit_types",
+        "pay_periods", "pay_groups", "tax_slabs", "contribution_rules",
+        // structure (branches/locations go AFTER payroll because runs reference them)
+        "work_locations", "work_calendars", "public_holidays",
+        // config, compliance and extras
+        "master_data_batches", "audit_entries", "retention_rules",
+        "capability_configs", "vacancies", "requisition_events", "requisitions",
+        "candidate_documents", "candidate_interviews", "candidate_stage_events", "candidates",
+        "offers", "preboarding_tasks", "preboarding_cases",
+        "relations_case_access", "relations_case_actions", "relations_case_events",
+        "relations_evidence", "relations_cases",
+        "performance_assessments", "performance_goals", "performance_cycles",
+        "offboarding_checklist_items", "offboarding_requests", "exit_interviews",
+        // privileges & signoffs
+        "privileged_action_events", "compliance_evidence", "go_live_signoffs",
+        "legal_holds", "outbox_messages", "integration_operations",
+        "tenant_role_assignments", "hr_user_branch_assignments",
+    ];
+
+    public async Task WipeAllDataAsync(CancellationToken ct)
+    {
+        // DELETE FROM in a schema-less SQLite harness tolerates missing
+        // tables via TryDelete; on Postgres every listed table must exist.
+        var provider = db.Database.ProviderName ?? "";
+        var existsOnly = provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
+        foreach (var table in DataTables)
+        {
+            if (existsOnly && !await TableExistsAsync(table, ct)) continue;
+            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {QualifiedTable(table)};", ct);
+        }
+
+        var states = await db.SetupStates.ToListAsync(ct);
+        db.SetupStates.RemoveRange(states);
+        var records = await db.SetupStepRecords.ToListAsync(ct);
+        db.SetupStepRecords.RemoveRange(records);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<bool> TableExistsAsync(string table, CancellationToken ct)
+    {
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync($"SELECT 1 FROM \"{table}\" LIMIT 0;", ct);
+            return true;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            return false;
+        }
+    }
+
+    public async Task<SetupState> SeedPendingStateAsync(CancellationToken ct)
+    {
+        var state = new SetupState { Status = "pending" };
+        db.SetupStates.Add(state);
+        await db.SaveChangesAsync(ct);
+        return state;
     }
 }

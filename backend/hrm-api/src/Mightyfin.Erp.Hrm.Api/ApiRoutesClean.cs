@@ -58,6 +58,7 @@ public static class Routes
         RegisterOffboarding(app);
         RegisterRequisitions(app);
         RegisterBenefits(app);
+        RegisterSetup(app);
         RegisterShell(app);
     }
 
@@ -77,7 +78,64 @@ public static class Routes
             confined = scope.IsConfined,
         }));
     }
-
+    // M49: first-time setup wizard — state machine for a new organisation.
+    // GET /hrm/setup/state is the single decision endpoint the shell polls on
+    // every render (pending → show the welcome overlay; complete → dashboard).
+    // Confined branch HR can never enter the wizard: top-level HR completes it.
+    public static void RegisterSetup(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/setup").RequireAuthorization();
+        g.MapGet("/state", async (HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
+            return Results.Ok(await svc.GetStateAsync(ct));
+        });
+        g.MapGet("/steps", async (HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
+            return Results.Ok(await svc.ListStepsAsync(ct));
+        });
+        g.MapPost("/steps/{key}", async (string key, HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
+            var dataJson = (string?)null;
+            if (http.Request.ContentLength > 0)
+            {
+                var elem = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+                dataJson = elem.ValueKind != System.Text.Json.JsonValueKind.Undefined ? elem.GetRawText() : null;
+            }
+            await svc.CompleteStepAsync(key, dataJson, ct);
+            return Results.Ok(new { key, completed = true });
+        });
+        g.MapPost("/finish", async (HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
+            await svc.FinishAsync(ct);
+            return Results.Ok(new { status = "complete" });
+        });
+        // DESTRUCTIVE — deliberate, guarded, explicit. Only hr_admin may call
+        // it and the body must contain { "confirm": "RESET" } verbatim; this
+        // keeps a stray POST from wiping an organisation by accident.
+        g.MapPost("/reset", async (HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (!http.User.IsInRole("hr_admin"))
+                throw new DomainException("forbidden", "Start-afresh reset requires the hr_admin role.");
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot reset the organisation.");
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind == System.Text.Json.JsonValueKind.Undefined
+                || body.TryGetProperty("confirm", out var confirm)
+                    is false || confirm.GetString() != "RESET")
+                throw new DomainException("reset-not-confirmed",
+                    "Reset the organisation only if you understand that ALL data will be permanently erased. Send {\"confirm\": \"RESET\"} to proceed.");
+            await svc.ResetAsync(ct);
+            return Results.Ok(new { reset = true });
+        });
+    }
     public static void RegisterNotifications(WebApplication app)
     {
         var g = app.MapGroup($"{HrmPrefix}/admin/notifications").RequireAuthorization();
