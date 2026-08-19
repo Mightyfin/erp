@@ -10,7 +10,8 @@ namespace Mightyfin.Erp.Hrm.Application.Benefits;
 public sealed class BenefitServiceImpl(
     IBenefitRepository repo,
     IAuthzService authz,
-    IWorkerRepository workers) : IBenefitService
+    IWorkerRepository workers,
+    Application.ShellContext? scope = null) : IBenefitService
 {
     private bool IsEmployeeOnly =>
         authz.IsRole("employee") && !authz.IsRole("hr_ops", "hr_admin", "manager", "payroll");
@@ -113,9 +114,14 @@ public sealed class BenefitServiceImpl(
             throw new DomainException("worker-access-denied", "Employees must list their own claims.");
         if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
         var (items, total) = await repo.ListClaimsAsync(workerId, status, page, pageSize, ct);
+        // M44 branch scoping: scoped operators see only their branch's claims.
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false))
+        {
+            items = items.Where(c => c.LocationId == scope?.LocationId || c.LocationId == null).ToList();
+            total = items.Count;
+        }
         return (items.Select(Map).ToList(), total);
     }
-
     public async Task<BenefitClaimDto> CreateClaimAsync(BenefitClaimCreateRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
@@ -150,6 +156,8 @@ public sealed class BenefitServiceImpl(
             Currency = string.IsNullOrWhiteSpace(request.Currency) ? "ZMW" : request.Currency,
             Note = request.Note,
             EvidenceAttached = request.EvidenceAttached,
+            // M44 branch scoping: claims inherit the operator's work scope!.
+            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null,
             Status = "submitted",
             CreatedBySubjectId = authz.CurrentSubjectId,
         };

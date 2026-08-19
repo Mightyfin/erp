@@ -112,10 +112,31 @@ function headers(extra?: Record<string, string>): Record<string, string> {
     const session = getSession();
     if (session) authHeaders.Authorization = `Bearer ${session.accessToken}`;
   }
+  // M44 branch scoping: the top-nav org switcher writes the selected scope
+  // into localStorage (`erp.shell.state.v1` → { entityId?, branch? }). When a
+  // branch is selected the operator works inside that branch; when only an
+  // entity is selected the operator sees the whole entity. The backend
+  // middleware validates the header against the DB, so an invalid guid is
+  // rejected with 400 rather than silently ignored.
+  const shellHeaders: Record<string, string> = {};
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem("erp.shell.state.v1") : null;
+    if (raw) {
+      const shell = JSON.parse(raw) as { entityId?: string; branch?: string } | null;
+      if (shell) {
+        if (shell.branch) shellHeaders["X-Shell-Location"] = shell.branch;
+        else if (shell.entityId) shellHeaders["X-Shell-Entity"] = shell.entityId;
+      }
+    }
+  } catch {
+    // Corrupt or missing shell state — send no scope and let the backend
+    // treat the operator as global (entity-wide) view.
+  }
   return {
     Accept: "application/json",
     "HRM-Default-TenantId": TENANT_ID,
     ...authHeaders,
+    ...shellHeaders,
     ...extra,
   };
 }

@@ -4,6 +4,7 @@ import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/payroll/")({
@@ -51,6 +52,7 @@ function PayrollHome() {
         eyebrow="Payroll"
         title="Payroll"
         description="This is the administrative workspace — running payroll, not just viewing a payslip. Restricted to Payroll and HR admin roles."
+        meta={<ScopeBadge />}
       />
 
       <Async state={config}>

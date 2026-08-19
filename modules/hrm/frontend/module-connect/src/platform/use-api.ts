@@ -808,6 +808,9 @@ export const realApi = {
       body,
     ),
 
+  /** M44: echo of the resolved work scope (entity/branch) for the current request. */
+  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean }>("/hrm/shell"),
+
   /** Admin config: org tree, legal entities, calendars, holidays, capabilities. */
   orgTree: () => hrmApi.get<unknown>("/hrm/admin/org-units/tree"),
   legalEntities: () => hrmApi.get<unknown[]>("/hrm/admin/legal-entities"),

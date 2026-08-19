@@ -137,6 +137,8 @@ public sealed class LeaveEffectApplierImpl(
                         DerivedStatus = DeriveStatus(c.ProposedClockIn, c.ProposedClockOut, c.ProposedStatus),
                         TotalHours = c.ProposedClockIn.HasValue && c.ProposedClockOut.HasValue
                             ? (decimal)(c.ProposedClockOut.Value - c.ProposedClockIn.Value).TotalHours : 0,
+                        // M44: inherit the branch of the correction that drove this.
+                        LocationId = c.LocationId,
                     }, ct);
                 }
                 else

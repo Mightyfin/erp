@@ -106,6 +106,8 @@ public class BenefitClaim : Entity
 {
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
+    // M44 branch scoping: branch the claim belongs to; null = global.
+    public Guid? LocationId { get; set; }
     public Guid BenefitTypeId { get; set; }
     public BenefitType? BenefitType { get; set; }
     public decimal AmountClaimed { get; set; }

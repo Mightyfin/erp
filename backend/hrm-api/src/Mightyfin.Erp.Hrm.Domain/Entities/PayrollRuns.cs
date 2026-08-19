@@ -11,6 +11,10 @@ public class PayrollRun : Entity
     public string Status { get; set; } = "draft";
     // draft | calculating | calculated | validating | in-review | approved | released | closed | reversed
 
+    // M44 branch scoping: a draft tagged with LocationId was prepared by branch
+    // HR and is scoped to that branch; null = organisation-wide run.
+    public Guid? LocationId { get; set; }
+
     // Control totals (computed) — the payroll work centre shows these
     public int EmployeeCount { get; set; }
     public decimal TotalGross { get; set; }
@@ -123,6 +127,8 @@ public class Payslip : Entity
     public string? YtdTax { get; set; }
     public string? YtdNet { get; set; }
     public string Status { get; set; } = "final";       // final | corrected | voided | superseded
+    // M44: inherited from the run's branch scope at generation time.
+    public Guid? LocationId { get; set; }
     public string? DocumentUrl { get; set; }
     public DateTimeOffset? ReleasedAt { get; set; }
 

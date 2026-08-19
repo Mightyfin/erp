@@ -56,6 +56,20 @@ public static class Routes
         RegisterOffboarding(app);
         RegisterRequisitions(app);
         RegisterBenefits(app);
+        RegisterShell(app);
+    }
+
+    // M44 branch scoping: echo the resolved work scope so the frontend can
+    // confirm which entity/branch its requests are executing under.
+    public static void RegisterShell(WebApplication app)
+    {
+        var g = app.MapGroup($"{HrmPrefix}/shell").RequireAuthorization();
+        g.MapGet("/", (ShellContext scope) => Results.Ok(new
+        {
+            locationId = scope.LocationId,
+            entityId = scope.EntityId,
+            scopedToBranch = scope.IsScopedToBranch,
+        }));
     }
 
     public static void RegisterNotifications(WebApplication app)

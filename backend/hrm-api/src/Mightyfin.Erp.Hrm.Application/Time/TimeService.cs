@@ -79,6 +79,7 @@ public sealed class TimeServiceImpl(
     IAuthzService authz,
     IWorkflowService workflow,
     IWorkerRepository workers,
+    Application.ShellContext? scope = null,
     IPayrollRepository? payroll = null,
     IOutboxWriter? outbox = null,
     IUnitOfWork? unitOfWork = null) : ITimeService
@@ -103,9 +104,16 @@ public sealed class TimeServiceImpl(
             throw new DomainException("worker-access-denied", "Employees must use their own leave inbox.");
         if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
         var (items, total) = await repo.ListLeaveRequestsAsync(workerId, status, ct);
+        // M44 branch scoping: an operator scoped to a branch sees only that
+        // branch's requests (plus branch-less/legacy rows); entity-level
+        // operators see everything.
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false))
+        {
+            items = items.Where(lr => lr.LocationId == scope?.LocationId || lr.LocationId == null).ToList();
+            total = items.Count;
+        }
         return new Paged<LeaveRequestDto>(items.Select(Map).ToList(), total, 1, 50);
     }
-
     public async Task<LeaveRequestDto> CreateLeaveAsync(LeaveRequestCreate request, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
@@ -140,6 +148,8 @@ public sealed class TimeServiceImpl(
             EvidenceAttached = request.EvidenceAttached,
             CreatedForPeriod = cutoff ?? start,
             CrossesCutoff = crosses,
+            // M44 branch scoping: requests inherit the operator's work scope!.
+            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null,
             Status = "submitted",
         };
         var worker = await workers.GetByIdAsync(request.WorkerId, ct)
@@ -190,6 +200,12 @@ public sealed class TimeServiceImpl(
             throw new DomainException("worker-access-denied", "Employees must use their own attendance inbox.");
         if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
         var (items, total) = await repo.ListCorrectionsAsync(workerId, status, ct);
+        // M44 branch scoping: scoped operators see only their branch's corrections.
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false))
+        {
+            items = items.Where(c => c.LocationId == scope?.LocationId || c.LocationId == null).ToList();
+            total = items.Count;
+        }
         return new Paged<AttendanceCorrectionDto>(items.Select(c => new AttendanceCorrectionDto(
             c.Id, c.WorkerId, c.Worker?.FullName ?? "", c.WorkDate.ToString(), c.IssueType,
             c.ProposedClockIn?.ToString(), c.ProposedClockOut?.ToString(), c.ProposedStatus,
@@ -209,6 +225,8 @@ public sealed class TimeServiceImpl(
             ProposedClockOut = request.ProposedClockOut is null ? null : TimeOnly.Parse(request.ProposedClockOut),
             ProposedStatus = request.ProposedStatus,
             Reason = request.Reason,
+            // M44 branch scoping: corrections inherit the operator's work scope!.
+            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null,
             Status = "submitted",
         };
         var created = await repo.CreateCorrectionAsync(c, ct);
@@ -494,9 +512,11 @@ public sealed class TimeServiceImpl(
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var (items, _) = await repo.ListEncashmentsAsync(workerId, status, ct);
+        // M44 branch scoping: scoped operators see only their branch's encashments.
+        if ((scope?.IsScopedToBranch ?? false))
+            items = items.Where(e => e.LocationId == scope?.LocationId || e.LocationId == null).ToList();
         return items.Select(MapEncashment).ToList();
     }
-
     public async Task<LeaveEncashmentRateQuote> GetEncashmentRateAsync(Guid workerId, string leaveTypeCode, decimal days, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
@@ -529,6 +549,8 @@ public sealed class TimeServiceImpl(
             MonthlyRate = quote.MonthlyBasic,
             GrossAmount = quote.EstimatedGross,
             Note = request.Note ?? "",
+            // M44 branch scoping: encashments inherit the operator's work scope!.
+            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null,
             Status = "submitted",
             CreatedBySubjectId = actorSubjectId,
         };
@@ -599,6 +621,8 @@ public sealed class TimeServiceImpl(
                         WorkerId = c.WorkerId, WorkDate = c.WorkDate,
                         ClockIn = c.ProposedClockIn, ClockOut = c.ProposedClockOut,
                         Source = "corrected", DerivedStatus = c.ProposedStatus ?? "unknown",
+                        // M44: inherit the branch of the correction that produced it.
+                        LocationId = c.LocationId,
                     };
                     await ApplyHoursAsync(corrected, ct);
                     await repo.CreateAttendanceAsync(corrected, ct);
@@ -680,7 +704,9 @@ public sealed class TimeServiceImpl(
         var rec = await repo.GetAttendanceAsync(workerId, date, ct);
         if (rec is null)
         {
-            rec = new AttendanceRecord { WorkerId = workerId, WorkDate = date, Source = "self-service" };
+            rec = new AttendanceRecord { WorkerId = workerId, WorkDate = date, Source = "self-service",
+                // M44: self-service punches inherit the operator's work scope (employees punch at their branch).
+                LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null };
             rec = await repo.CreateAttendanceAsync(rec, ct);
         }
 

@@ -81,7 +81,7 @@ public sealed class M26NotificationOutboxTests
             new WorkflowRepository(ctx), new PermissiveAuthz(), new NoOpEffects());
         var service = new TimeServiceImpl(
             new TimeRepository(ctx), new PermissiveAuthz(), workflow, new WorkerRepository(ctx),
-            null, writer ?? Writer(ctx), new EfUnitOfWork(ctx));
+            null, null, writer ?? Writer(ctx), new EfUnitOfWork(ctx));
         return (service, ctx, worker);
     }
 
@@ -103,7 +103,7 @@ public sealed class M26NotificationOutboxTests
 
         var service = new PayrollServiceImpl(
             new PayrollRepository(ctx), new PermissiveAuthz(), new FakeDocumentService(),
-            Writer(ctx), new EfUnitOfWork(ctx));
+            null, Writer(ctx), new EfUnitOfWork(ctx));
         var runId = await PrepareApprovedRunAsync(service, period.Id, group.Id);
 
         await service.ReleaseRunAsync(runId, CancellationToken.None);
@@ -163,7 +163,7 @@ public sealed class M26NotificationOutboxTests
         var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
         var service = new PayrollServiceImpl(
             new PayrollRepository(ctx), new PermissiveAuthz(), new FakeDocumentService(),
-            new ThrowingOutboxWriter(), new EfUnitOfWork(ctx));
+            null, new ThrowingOutboxWriter(), new EfUnitOfWork(ctx));
         var runId = await PrepareApprovedRunAsync(service, period.Id, group.Id);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>

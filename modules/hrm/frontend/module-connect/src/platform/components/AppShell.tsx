@@ -530,7 +530,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
                 <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
-                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {branch}</span> : null}
+                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span> : null}
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -557,7 +557,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <div className="ml-5 border-l border-border pl-3 py-0.5">
                       <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
                         {node.branches.map((b) => (
-                          <DropdownMenuRadioItem key={b.id} value={b.name} className="text-sm">
+                          <DropdownMenuRadioItem key={b.id} value={b.id} className="text-sm">
                             <span className="min-w-0 truncate">{b.name}</span>
                             {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
                           </DropdownMenuRadioItem>

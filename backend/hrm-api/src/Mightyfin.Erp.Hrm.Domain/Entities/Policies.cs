@@ -41,6 +41,8 @@ public class LeaveRequest : Entity
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
     public Guid? ApproverId { get; set; }
+    // M44 branch scoping: location the request was raised under; null = global.
+    public Guid? LocationId { get; set; }
     public string LeaveTypeCode { get; set; } = null!;
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
@@ -62,6 +64,8 @@ public class AttendanceRecord : Entity
 {
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
+    // M44 branch scoping: branch the attendance event belongs to.
+    public Guid? LocationId { get; set; }
     public DateOnly WorkDate { get; set; }
     public TimeOnly? ClockIn { get; set; }
     public TimeOnly? ClockOut { get; set; }
@@ -83,6 +87,8 @@ public class AttendanceCorrection : Entity
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
     public Guid? OriginalRecordId { get; set; }
+    // M44 branch scoping: branch the correction belongs to.
+    public Guid? LocationId { get; set; }
     public DateOnly WorkDate { get; set; }
     public string IssueType { get; set; } = null!;   // missing-clock-in | missing-clock-out | wrong-time | wrong-shift | duty | leave | other
     public TimeOnly? ProposedClockIn { get; set; }

@@ -8,6 +8,7 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 
@@ -74,6 +75,7 @@ function AttendanceList() {
         eyebrow="Attendance"
         title="Attendance corrections"
         description="Every correction shows the recorded clock data next to what's claimed, so nothing gets approved blind."
+        meta={<ScopeBadge />}
         primaryAction={
           <div className="flex items-center gap-2">
             <ImportDialog typeKey="attendance" onDone={() => state.reload()} />

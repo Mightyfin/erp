@@ -72,6 +72,8 @@ public class LeaveEncashmentRequest : Entity
 {
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
+    // M44 branch scoping: branch the encashment belongs to; null = global.
+    public Guid? LocationId { get; set; }
     public string LeaveTypeCode { get; set; } = null!;
     public decimal Days { get; set; }
     public decimal MonthlyRate { get; set; }            // basic monthly amount quoted at encashment time

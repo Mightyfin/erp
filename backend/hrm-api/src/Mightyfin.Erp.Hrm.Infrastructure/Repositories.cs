@@ -1183,6 +1183,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 YtdNet = ytdNet.ToString("F2"),
                 Status = "final",
                 ReleasedAt = DateTimeOffset.UtcNow,
+                // M44: payslips inherit the branch of the run that produced them.
+                LocationId = run.LocationId,
                 // M24: snapshot the worker's statutory identity pack at payment
                 // time — the payslip keeps these values even if the worker
                 // record is updated later.

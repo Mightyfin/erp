@@ -75,7 +75,7 @@ public class M41Gap6EncashmentTests
         var wf = new WorkflowServiceImpl(wfRepo, authz, new RealLeaveEffectApplier(ctx));
         var workerRepo = new WorkerRepository(ctx);
         var payrollRepo = new PayrollRepository(ctx);
-        var time = new TimeServiceImpl(timeRepo, authz, wf, workerRepo, payrollRepo);
+        var time = new TimeServiceImpl(timeRepo, authz, wf, workerRepo, null, payrollRepo);
 
         var worker = new Worker
         {
@@ -169,7 +169,7 @@ public class M41Gap6EncashmentTests
         var authz = new PermissiveAuthz();
         var time = new TimeServiceImpl(new TimeRepository(ctx), authz,
             new WorkflowServiceImpl(new WorkflowRepository(ctx), authz, new RealLeaveEffectApplier(ctx)),
-            new WorkerRepository(ctx), new PayrollRepository(ctx));
+            new WorkerRepository(ctx), null, new PayrollRepository(ctx));
         var worker = new Worker
         {
             EmployeeNo = "EMP-NO-PAY", FirstName = "No", LastName = "Payroll",

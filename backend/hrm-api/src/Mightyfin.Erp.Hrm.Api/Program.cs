@@ -59,6 +59,9 @@ builder.Services.AddDbContext<HrmDbContext>((services, options) =>
 // ---------- Tenant / auth principal ----------
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantAccessor, PrincipalTenantAccessor>();
+// M44 branch scoping: per-request work scope (entity + branch) resolved from
+// X-Shell-Location / X-Shell-Entity headers before any handler runs.
+builder.Services.AddScoped<ShellContext>();
 builder.Services.AddScoped<IAuthzService, AuthzServiceImpl>();
 builder.Services.AddSingleton<IIdProvider, IdProvider>();
 
@@ -208,6 +211,8 @@ if (args.Contains("--run-outbox-publisher"))
 
 // ---------- Cross-cutting middleware ----------
 app.UseCors();
+// M44 branch scoping: populate ShellContext from frontend shell-state headers.
+app.UseMiddleware<Mightyfin.Erp.Hrm.Api.ShellContextMiddleware>();
 
 // Assign a per-request id (client-supplied X-Request-Id preferred) and log
 // every request with method/path/status/duration for observability.

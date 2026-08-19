@@ -25,6 +25,7 @@ import {
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/benefits")({ component: Benefits });
@@ -252,6 +253,7 @@ function Benefits() {
           eyebrow="Time and leave"
           title="Benefits"
           description="Flexible benefit types with annual caps, optional per-employee annual allowance overrides, and a claims inbox that approves, returns and pays each claim."
+          meta={<ScopeBadge />}
         />
         <div className="grid gap-6 xl:grid-cols-2">
           <Card>

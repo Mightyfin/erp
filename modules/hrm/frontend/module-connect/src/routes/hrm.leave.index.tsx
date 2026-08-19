@@ -17,6 +17,7 @@ import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import {
   hrmApi,
   type MyLeave,
@@ -142,6 +143,7 @@ function MyLeavePage() {
             eyebrow="Leave"
             title="My leave"
             description="Your leave balances, open requests and what happens next."
+            meta={<ScopeBadge />}
             primaryAction={
               <Button asChild>
                 <Link to="/hrm/leave/new">
@@ -190,6 +192,7 @@ function MyLeavePage() {
           eyebrow="Leave"
           title="My leave"
           description="Your balances, open requests and what happens next — one self-service page."
+          meta={<ScopeBadge />}
           primaryAction={
             <Button asChild>
               <Link to="/hrm/leave/new">

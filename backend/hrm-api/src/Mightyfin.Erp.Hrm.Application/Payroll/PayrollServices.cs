@@ -107,6 +107,7 @@ public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string F
 
 public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService authz,
     IPayslipDocumentService payslipDocument,
+    Application.ShellContext? scope = null,
     IOutboxWriter? outbox = null,
     IUnitOfWork? unitOfWork = null) : IPayrollService
 {
@@ -337,6 +338,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var items = await repo.ListRunsAsync(ct);
+        // M44 branch scoping: scoped operators see only their branch's runs.
+        if ((scope?.IsScopedToBranch ?? false))
+            items = items.Where(r => r.LocationId == scope?.LocationId || r.LocationId == null).ToList();
         return new Paged<PayrollRunDto>(items.Select(MapRun).ToList(), items.Count, 1, 100);
     }
 
@@ -350,7 +354,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var existing = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
         if (existing is not null)
             throw new DomainException("run-already-exists", "A payroll run already exists for this period.");
-        var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId, Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId };
+        // M44 branch scoping: a run created while scoped to a branch is that branch's run (draft flows up).
+        var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId,
+            Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId,
+            LocationId = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null };
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
@@ -721,6 +728,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             Status = "draft",
             IsReversal = true,
             ReversesRunId = run.Id,
+            // M44: the reversal belongs to the same branch as the run it reverses.
+            LocationId = run.LocationId,
         };
         await repo.CreateRunAsync(reversal, ct);
         reversal.PreparedBySubjectId = actorSubjectId;
@@ -984,6 +993,12 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         if (authz.IsRole("employee") && !authz.IsRole("payroll", "hr_admin", "hr_ops"))
             await GuardOwnWorkerAsync(workerId, callerSubject, ct, "payslips");
         var (items, total) = await repo.ListPayslipsAsync(workerId, ct);
+        // M44 branch scoping: scoped operators see only their branch's payslips.
+        if ((scope?.IsScopedToBranch ?? false) && authz.IsRole("payroll", "hr_admin"))
+        {
+            items = items.Where(s => s.LocationId == scope?.LocationId || s.LocationId == null).ToList();
+            total = items.Count;
+        }
         return new Paged<PayslipDto>(items.Select(MapPayslip).ToList(), total, 1, 50);
     }
 
