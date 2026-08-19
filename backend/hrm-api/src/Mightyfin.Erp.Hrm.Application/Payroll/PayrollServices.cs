@@ -21,6 +21,8 @@ public interface IPayrollService
 
     // M20: payroll setup admin (write surface)
     Task<List<PayGroupFullDto>> ListPayGroupsFullAsync(CancellationToken ct);
+    // M50: wizard provisions the first pay group (no create endpoint existed before).
+    Task<PayGroupFullDto> CreatePayGroupAsync(PayGroupCreateRequest request, CancellationToken ct);
     Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct);
     Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct);
     Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct);
@@ -154,6 +156,38 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return items.Select(g => new PayGroupFullDto(g.Id, g.Code, g.Name, g.Frequency, g.Currency,
             g.CalendarDayOfMonth, g.InputCutoffDaysBeforePayday, g.IsDefault,
             g.IsArchived ? "archived" : "active")).ToList();
+    }
+
+    /// <summary>M50: the setup wizard provisions the organisation's first pay
+    /// group. Before this milestone no create surface existed — groups could
+    /// only be updated — so the wizard could never complete the payroll chain.
+    /// Creating a group as the default silently demotes any existing default.</summary>
+    public async Task<PayGroupFullDto> CreatePayGroupAsync(PayGroupCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var code = (request.Code ?? "").Trim();
+        if (code.Length is < 2 or > 24)
+            throw new DomainException("pay-group-code-invalid", "Pay group code must be 2-24 characters.");
+        var groups = await repo.ListPayGroupsAllAsync(ct);
+        if (groups.Any(g => g.Code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            throw new DomainException("pay-group-code-duplicate", $"A pay group with code {code} already exists.");
+        var name = (request.Name ?? "").Trim();
+        if (name.Length is < 2 or > 60)
+            throw new DomainException("pay-group-name-invalid", "Pay group name must be 2-60 characters.");
+        if (request.CalendarDayOfMonth is < 1 or > 31)
+            throw new DomainException("pay-group-payday-invalid", "Payday (day of month) must be between 1 and 31.");
+        var group = new PayGroup
+        {
+            Code = code, Name = name, Frequency = request.Frequency, Currency = request.Currency,
+            CalendarDayOfMonth = request.CalendarDayOfMonth,
+            InputCutoffDaysBeforePayday = request.InputCutoffDaysBeforePayday,
+            IsDefault = request.IsDefault,
+        };
+        if (group.IsDefault)
+            await repo.UnsetDefaultPayGroupsAsync(ct, group.Id);
+        await repo.CreatePayGroupAsync(group, ct);
+        return new PayGroupFullDto(group.Id, group.Code, group.Name, group.Frequency, group.Currency,
+            group.CalendarDayOfMonth, group.InputCutoffDaysBeforePayday, group.IsDefault, "active");
     }
 
     public async Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct)
@@ -1374,6 +1408,17 @@ public interface IPayrollRepository
     Task<ContributionRule?> GetContributionRuleAsync(Guid id, CancellationToken ct);
     Task UpdateContributionRuleAsync(ContributionRule rule, CancellationToken ct);
     Task UnsetDefaultPayGroupsAsync(CancellationToken ct, Guid keepId);
+    // M50: wizard provisioning — the setup wizard creates the first pay group
+    // and provisions statutory components, contribution rules, tax slabs and
+    // the opening pay period so payroll can run end-to-end immediately.
+    Task<PayGroup> CreatePayGroupAsync(PayGroup group, CancellationToken ct);
+    Task<SalaryComponent> CreateComponentAsync(SalaryComponent component, CancellationToken ct);
+    Task<ContributionRule> CreateContributionRuleAsync(ContributionRule rule, CancellationToken ct);
+    Task<TaxSlab> CreateTaxSlabAsync(TaxSlab slab, CancellationToken ct);
+    Task<PayPeriod> CreatePeriodAsync(PayPeriod period, CancellationToken ct);
+    // M50: workers freshly created by the wizard import — matched back to the
+    // mapped spreadsheet rows so a payroll profile can be attached to each.
+    Task<List<Worker>> ListWorkersCreatedAfterAsync(DateTimeOffset since, CancellationToken ct);
     Task UpdatePayGroupAsync(PayGroup group, CancellationToken ct);
     Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct);
     Task<PayrollRun?> GetRunAsync(Guid id, CancellationToken ct);

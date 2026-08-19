@@ -967,6 +967,51 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         await db.SaveChangesAsync(ct);
     }
 
+    // M50: wizard provisioning — before this milestone no create surface existed
+    // for any of these entities, so the payroll chain (group → components →
+    // rules → slabs → structure → period → profiles) could never be fully
+    // provisioned by a first-time user.
+    public async Task<PayGroup> CreatePayGroupAsync(PayGroup group, CancellationToken ct)
+    {
+        db.PayGroups.Add(group);
+        await db.SaveChangesAsync(ct);
+        return group;
+    }
+    public async Task<SalaryComponent> CreateComponentAsync(SalaryComponent component, CancellationToken ct)
+    {
+        db.SalaryComponents.Add(component);
+        await db.SaveChangesAsync(ct);
+        return component;
+    }
+    public async Task<ContributionRule> CreateContributionRuleAsync(ContributionRule rule, CancellationToken ct)
+    {
+        db.ContributionRules.Add(rule);
+        await db.SaveChangesAsync(ct);
+        return rule;
+    }
+    public async Task<TaxSlab> CreateTaxSlabAsync(TaxSlab slab, CancellationToken ct)
+    {
+        db.TaxSlabs.Add(slab);
+        await db.SaveChangesAsync(ct);
+        return slab;
+    }
+    public async Task<PayPeriod> CreatePeriodAsync(PayPeriod period, CancellationToken ct)
+    {
+        db.PayPeriods.Add(period);
+        await db.SaveChangesAsync(ct);
+        return period;
+    }
+
+    /// M50: workers freshly created by the wizard import — matched back to the
+    /// mapped spreadsheet rows so a payroll profile can be attached to each.
+    public async Task<List<Worker>> ListWorkersCreatedAfterAsync(DateTimeOffset since, CancellationToken ct)
+    {
+        return await db.Workers
+            .Where(w => !w.IsArchived && w.CreatedAt >= since)
+            .OrderByDescending(w => w.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public async Task UpdateComponentAsync(SalaryComponent component, CancellationToken ct)
     {
         if (db.Entry(component).State == EntityState.Detached)

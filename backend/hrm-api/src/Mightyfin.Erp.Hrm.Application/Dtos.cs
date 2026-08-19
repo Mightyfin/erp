@@ -472,3 +472,66 @@ public sealed record RoleUpdateRequest(bool Active);
 public sealed record DataRetentionCreateRequest(string RecordType, int RetentionMonths, string? Description = null);
 public sealed record DataRetentionUpdateRequest(int? RetentionMonths = null, string? Description = null, bool? Active = null);
 public sealed record DataRetentionDto(Guid Id, string RecordType, string? Description, int RetentionMonths, bool Active);
+
+// ===================== M50 setup wizard step inputs =====================
+// Each wizard step POSTs its own strongly-typed JSON to POST /setup/steps/{key}.
+// Records use positional construction only (the .NET 10 SDK compiler is broken
+// for named arguments on record ctors — CS1739).
+
+/// Step 1 — Organisation: the legal entity the wizard provisions.
+public sealed record WizardOrgInput(
+    string RegisteredName, string? TradingName, string? PacraNumber, string? Tpin,
+    string? NapsaEmployerRef, string? NhimaEmployerRef, string Currency = "ZMW");
+
+/// Step 2 — Structure: one row per branch and one row per department.
+public sealed record WizardBranchInput(
+    string Name, string? Code, string? AddressLine, string? City,
+    string? Province, string? District, string Type = "branch");
+public sealed record WizardDeptInput(string Name, string UnitType = "department", string? ManagerName = null);
+public sealed record WizardStructureInput(List<WizardBranchInput> Branches, List<WizardDeptInput> Departments);
+
+/// Step 3 — Employment: grades and positions stored as JSON for dropdown use.
+public sealed record WizardGradeInput(string Name);
+public sealed record WizardPositionInput(string Name, string? GradeName = null);
+public sealed record WizardEmploymentInput(List<WizardGradeInput> Grades, List<WizardPositionInput> Positions);
+
+/// Step 4 — Working time (optional): weekly hours, weekend days, public holidays.
+public sealed record WizardHolidayInput(string Name, string Date, bool IsRecurring = true);
+public sealed record WizardWorkingTimeInput(
+    int StandardWeeklyHours = 45, string WeekendDays = "sat,sun",
+    List<WizardHolidayInput>? PublicHolidays = null);
+
+/// Step 5 — Leave: leave types with Zambian defaults (Annual 24, Sick 30, …).
+public sealed record WizardLeaveTypeInput(
+    string Name, string? Code, string Category, int DaysPerYear,
+    bool RequiresEvidence = false, int CarryForwardDays = 0);
+public sealed record WizardLeaveInput(List<WizardLeaveTypeInput> LeaveTypes);
+
+/// Step 6 — Payroll: pay cycle, payday, pay basis and statutory confirmation.
+public sealed record WizardPayrollInput(
+    string Frequency = "monthly", int PaydayDay = 25, string Currency = "ZMW",
+    bool PayBasisTimesheet = false, bool ConfirmStatutory = false,
+    decimal? BasicDefaultAmount = null);
+
+/// Step 7 — Policies (optional): contract types with probation and notice periods.
+public sealed record WizardContractTypeInput(string Name, int ProbationDays = 0, int NoticeDays = 0);
+public sealed record WizardPolicyInput(List<WizardContractTypeInput> ContractTypes);
+
+/// Step 8 — Roles: platform users to onboard as HR administrators.
+public sealed record WizardRolesInput(List<string> AdminEmails);
+
+/// Step 9 — Employees: mapped rows built client-side from spreadsheet upload.
+public sealed record WizardEmployeeRow(
+    string FirstName, string LastName, string? Email = null, string? Phone = null,
+    string? JobTitle = null, string? Grade = null, string? StartDate = null,
+    string? OrgUnitName = null, string? WorkerType = null);
+public sealed record WizardEmployeesInput(List<WizardEmployeeRow> Employees);
+
+/// Outcome returned by the employees step so the UI can summarise the import.
+public sealed record WizardEmployeesResult(int Created, int Skipped, int ProfilesCreated, List<WizardEmployeeError> Errors);
+public sealed record WizardEmployeeError(int Row, string Detail);
+
+/// Pay group creation surface (M50: wizard + future admin UI).
+public sealed record PayGroupCreateRequest(
+    string Code, string Name, string Frequency = "monthly", string Currency = "ZMW",
+    int CalendarDayOfMonth = 25, int InputCutoffDaysBeforePayday = 5, bool IsDefault = true);

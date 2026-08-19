@@ -105,7 +105,21 @@ public static class Routes
             if (http.Request.ContentLength > 0)
             {
                 var elem = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
-                dataJson = elem.ValueKind != System.Text.Json.JsonValueKind.Undefined ? elem.GetRawText() : null;
+                if (elem.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+                {
+                    // M50: the frontend client wraps the step payload in
+                    // { "dataJson": "<escaped-payload>" }; unwrap when present.
+                    if (elem.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                        elem.TryGetProperty("dataJson", out var dj) &&
+                        dj.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        dataJson = dj.GetString();
+                    }
+                    else
+                    {
+                        dataJson = elem.GetRawText();
+                    }
+                }
             }
             await svc.CompleteStepAsync(key, dataJson, ct);
             return Results.Ok(new { key, completed = true });

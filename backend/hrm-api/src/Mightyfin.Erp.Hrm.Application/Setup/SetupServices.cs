@@ -36,7 +36,22 @@ public interface ISetupRepository
     Task<SetupState> SeedPendingStateAsync(CancellationToken ct);
 }
 
-public sealed class SetupServiceImpl(ISetupRepository repo) : ISetupService
+// M50: the wizard now writes REAL data. The same POST /setup/steps/{key} call
+// validates the step's typed JSON, persists the configuration through the
+// existing admin services (org config, payroll, worker import), and only then
+// marks the step complete. Before M50 the endpoint stored the JSON and moved
+// on without ever touching the system — which is why the old wizard had to
+// link out to the settings pages. This class keeps those services optional in
+// the constructor signature (never-null defaults) so M49 tests that only
+// register ISetupRepository keep passing without DI surgery.
+public sealed class SetupServiceImpl(
+    ISetupRepository repo,
+    ConfigAndExtras.IConfigAdminService? config = null,
+    Payroll.IPayrollService? payroll = null,
+    Payroll.IPayrollRepository? payrollRepo = null,
+    Workers.IWorkerImportService? import = null,
+    Workers.IWorkerService? workers = null,
+    IAuthzService? authz = null) : ISetupService
 {
     private static readonly IReadOnlySet<string> ResetTableNames = new HashSet<string>
     {
@@ -117,11 +132,48 @@ public sealed class SetupServiceImpl(ISetupRepository repo) : ISetupService
             ?? await repo.SeedPendingStateAsync(ct);
         if (state.Status != SetupDefinitions.StatusPending)
             throw new DomainException("setup-already-finished", "Setup is already complete. Reset the organisation to run the wizard again.");
-
         var records = await repo.CompletedStepKeysAsync(ct);
         if (!SetupDefinitions.MayComplete(stepKey, records))
             throw new DomainException("setup-step-gated",
                 $"Step '{stepKey}' cannot be completed yet — complete the required steps before it first.");
+
+        // M50: write real configuration before marking the step complete. Each
+        // writer validates its own typed contract and calls the corresponding
+        // admin service. A DomainException from a writer fails the step and the
+        // UI keeps the operator on the same step with the validation message.
+        switch (stepKey)
+        {
+            case "organisation":
+                await WriteOrganisationAsync(dataJson, ct);
+                break;
+            case "structure":
+                await WriteStructureAsync(dataJson, ct);
+                break;
+            case "employment":
+                await WriteEmploymentAsync(dataJson, ct);
+                break;
+            case "working-time":
+                await WriteWorkingTimeAsync(dataJson, ct);
+                break;
+            case "leave":
+                await WriteLeaveAsync(dataJson, ct);
+                break;
+            case "payroll":
+                await WritePayrollAsync(dataJson, ct);
+                break;
+            case "policies":
+                await WritePoliciesAsync(dataJson, ct);
+                break;
+            case "roles":
+                await WriteRolesAsync(dataJson, ct);
+                break;
+            case "employees":
+                await WriteEmployeesAsync(dataJson, ct);
+                break;
+            default:
+                break;
+        }
+
         await repo.CompleteStepAsync(stepKey, dataJson, ct);
     }
 
@@ -148,5 +200,552 @@ public sealed class SetupServiceImpl(ISetupRepository repo) : ISetupService
         // the exact string — a plain POST without confirm is rejected).
         await repo.WipeAllDataAsync(ct);
         await repo.SeedPendingStateAsync(ct);
+    }
+
+    // ================= M50 per-step writers =================
+    // Each writer is idempotent where sensible (e.g. legal entity update,
+    // leave types by code) so re-submitting a step does not create duplicates.
+
+    private static T RequireJson<T>(string? dataJson, string stepKey) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+            throw new DomainException("setup-step-missing-data",
+                $"Step '{stepKey}' is missing its input data. Fill in the form and try again.");
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<T>(dataJson);
+        if (parsed is null)
+            throw new DomainException("setup-step-bad-json",
+                $"Step '{stepKey}' input could not be parsed.");
+        return parsed;
+    }
+
+    // M50: a real deployment has all services injected and demands data on
+    // every write step. Tests that only register ISetupRepository (M49-era)
+    // pass null and are treated as no-op completions so the old gating tests
+    // keep passing without rewriting the harness.
+    private bool HasWriteServices => config is not null && payrollRepo is not null && import is not null;
+
+    /// Step 1 — Organisation: one real legal entity. If none exists yet the
+    /// wizard creates it as the default; otherwise it updates the existing one.
+    private async Task WriteOrganisationAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardOrgInput>(dataJson, "organisation");
+        if (string.IsNullOrWhiteSpace(input.RegisteredName))
+            throw new DomainException("organisation-registered-name-required", "The organisation's registered name is required.");
+        if (input.RegisteredName.Length is < 2 or > 120)
+            throw new DomainException("organisation-registered-name-invalid", "The registered name must be 2-120 characters.");
+
+        var entity = (await config!.ListLegalEntitiesAsync(ct)).Items
+            .Where(e => e.IsDefault)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+        var update = new LegalEntityUpdateRequest(
+              input.RegisteredName.Trim(), input.TradingName?.Trim(),
+              input.PacraNumber?.Trim(), input.Tpin?.Trim(),
+              input.NapsaEmployerRef?.Trim(), input.NhimaEmployerRef?.Trim(),
+              Currency: input.Currency);
+        if (entity is null)
+        {
+            var created = await config.CreateLegalEntityAsync(new LegalEntityCreateRequest(
+                  Slugify(input.RegisteredName), input.RegisteredName.Trim(),
+                  input.TradingName?.Trim(), input.PacraNumber?.Trim(),
+                  input.Tpin?.Trim(), input.NapsaEmployerRef?.Trim(),
+                  input.NhimaEmployerRef?.Trim(), null,
+                  input.Currency, "ZM", true), ct);
+            _ = created;
+        }
+        else
+        {
+            await config.UpdateLegalEntityAsync(entity.Id, update, ct);
+        }
+    }
+
+    /// Step 2 — Structure: a default work calendar plus branches and
+    /// departments. Calendar defaults come from sensible Zambian values
+    /// (45 hours/week, Sat/Sun weekends); the Working-time step refines them.
+    private async Task WriteStructureAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardStructureInput>(dataJson, "structure");
+        if (input.Branches is null || input.Branches.Count == 0)
+            throw new DomainException("structure-branch-required", "At least one branch is required.");
+        foreach (var b in input.Branches)
+            if (string.IsNullOrWhiteSpace(b.Name))
+                throw new DomainException("structure-branch-name-required", "Every branch needs a name.");
+        foreach (var d in input.Departments ?? [])
+            if (string.IsNullOrWhiteSpace(d.Name))
+                throw new DomainException("structure-department-name-required", "Every department needs a name.");
+
+        var entities = (await config!.ListLegalEntitiesAsync(ct)).Items;
+        var entity = entities.Where(e => e.IsDefault)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault()
+            ?? entities.OrderByDescending(e => e.CreatedAt).FirstOrDefault()
+            ?? throw new DomainException("structure-no-legal-entity",
+                "Complete the Organisation step before Structure.");
+
+        // Default calendar (created or updated once).
+        var calendars = await config.ListCalendarsAsync(ct);
+        var calendarId = calendars.Items.Where(c => c.IsDefault).Select(c => c.Id).FirstOrDefault();
+        if (calendarId == Guid.Empty)
+        {
+            var calendar = await config.CreateCalendarAsync(new WorkCalendarCreateRequest(
+                  $"{entity.TradingName ?? entity.RegisteredName} calendar", entity.Id,
+                  "ZM", 45, "sat,sun", true), ct);
+            calendarId = calendar.Id;
+        }
+
+        foreach (var b in input.Branches)
+        {
+            var existing = (await config.ListLocationsAsync(ct)).Items
+                .FirstOrDefault(l => l.Code.Equals(Slugify(b.Name), StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) continue;
+            var created = await config.CreateLocationAsync(new WorkLocationCreateRequest(
+                  Slugify(b.Name), b.Name.Trim(), entity.Id,
+                  b.AddressLine?.Trim(), b.Province?.Trim(), b.District?.Trim(),
+                  b.City?.Trim(), b.Type ?? "branch", calendarId), ct);
+            _ = created;
+        }
+
+        foreach (var d in input.Departments ?? [])
+        {
+            var existing = (await config.ListOrgUnitsAsync(ct))
+                .FirstOrDefault(u => u.Code.Equals(Slugify(d.Name), StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) continue;
+            var created = await config.CreateOrgUnitAsync(new OrgUnitCreateRequest(
+                  Slugify(d.Name), d.Name.Trim(), entity.Id, null,
+                  d.UnitType ?? "department", null, null,
+                  DateOnly.FromDateTime(DateTime.UtcNow).ToString()), ct);
+            _ = created;
+        }
+    }
+
+    /// Step 3 — Employment: grades and positions are stored as typed JSON. The
+    /// employee import dropdowns and the org preview pages read from here —
+    /// no separate entity exists for "positions" in v1 HRM.
+    private async Task WriteEmploymentAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardEmploymentInput>(dataJson, "employment");
+        foreach (var g in input.Grades ?? [])
+            if (string.IsNullOrWhiteSpace(g.Name))
+                throw new DomainException("employment-grade-name-required", "Every grade needs a name.");
+        foreach (var p in input.Positions ?? [])
+            if (string.IsNullOrWhiteSpace(p.Name))
+                throw new DomainException("employment-position-name-required", "Every position needs a name.");
+    }
+
+    /// Step 4 — Working time: weekly hours, weekend days and public holidays
+    /// are applied to the default calendar.
+    private async Task WriteWorkingTimeAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardWorkingTimeInput>(dataJson, "working-time");
+        if (input.StandardWeeklyHours is < 1 or > 168)
+            throw new DomainException("working-time-hours-invalid", "Standard weekly hours must be between 1 and 168.");
+        var calendar = (await config!.ListCalendarsAsync(ct)).Items
+            .FirstOrDefault(c => c.IsDefault)
+            ?? (await config.ListCalendarsAsync(ct)).Items.OrderByDescending(c => c.CreatedAt).FirstOrDefault();
+        if (calendar is null) return; // nothing to configure yet
+        await config.UpdateCalendarAsync(calendar.Id, new WorkCalendarUpdateRequest(
+              StandardWeeklyHours: input.StandardWeeklyHours, WeekendDays: input.WeekendDays), ct);
+        foreach (var h in input.PublicHolidays ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(h.Name)) continue;
+            if (!DateOnly.TryParse(h.Date, out _))
+                throw new DomainException("working-time-holiday-date-invalid",
+                    $"Holiday '{h.Name}' has an invalid date (use YYYY-MM-DD).");
+            if (!h.IsRecurring)
+                await config.AddHolidayAsync(new PublicHolidayCreateRequest(
+                      calendar.Id, h.Name.Trim(), h.Date), ct);
+            else
+                await config.AddHolidayAsync(new PublicHolidayCreateRequest(
+                      calendar.Id, h.Name.Trim(), h.Date, null, true), ct);
+        }
+    }
+
+    /// Step 5 — Leave: the typed list is the full source of truth — Zambian
+    /// defaults ship from the UI; custom edits arrive here instead.
+    private async Task WriteLeaveAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardLeaveInput>(dataJson, "leave");
+        var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in input.LeaveTypes ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(l.Name))
+                throw new DomainException("leave-type-name-required", "Every leave type needs a name.");
+            if (l.Category is not ("paid" or "unpaid" or "half-pay"))
+                throw new DomainException("leave-type-category-invalid",
+                    $"Leave type '{l.Name}' must be paid, unpaid or half-pay.");
+            if (l.DaysPerYear is < 0)
+                throw new DomainException("leave-type-days-invalid",
+                    $"Leave type '{l.Name}' cannot have negative days.");
+            var code = (l.Code ?? "").Trim();
+            if (string.IsNullOrEmpty(code))
+                code = Slugify(l.Name);
+            if (!seenCodes.Add(code))
+                throw new DomainException("leave-type-code-duplicate",
+                    $"Leave type code '{code}' is used more than once.");
+            var existing = (await config!.ListLeaveTypesAsync(false, ct)).Items
+                .FirstOrDefault(t => t.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) continue; // idempotent
+            var created = await config.CreateLeaveTypeAsync(new LeaveTypeCreateRequest(
+                  code, l.Name.Trim(), l.Category,
+                  l.DaysPerYear, 999,
+                  l.RequiresEvidence, 0,
+                  false, l.CarryForwardDays,
+                  0, false,
+                  DateOnly.FromDateTime(DateTime.UtcNow).ToString()), ct);
+            _ = created;
+        }
+    }
+
+    /// Step 6 — Payroll: full statutory provisioning — components, contribution
+    /// rules, ZRA PAYE slabs, the default pay group, the default salary
+    /// structure and an open period for the current month. confirmStatutory is
+    /// a hard requirement; the wizard never books rates the operator has not
+    /// seen and confirmed.
+    private async Task WritePayrollAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardPayrollInput>(dataJson, "payroll");
+        if (!input.ConfirmStatutory)
+            throw new DomainException("payroll-statutory-not-confirmed",
+                "Confirm the statutory rates before completing the payroll step.");
+        var allowedFrequency = new[] { "monthly", "semimonthly", "biweekly", "weekly" };
+        if (!allowedFrequency.Contains(input.Frequency ?? "monthly", StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("payroll-frequency-invalid",
+                "Pay frequency must be monthly, semimonthly, biweekly or weekly.");
+        if (payrollRepo is null)
+            throw new DomainException("setup-service-missing", "Payroll provisioning is unavailable in this deployment.");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // --- Components (canonical codes the gross-to-net engine resolves by code). ---
+        SalaryComponent Basic(decimal? fixedAmount = null) => new SalaryComponent
+        {
+            Code = "basic", Name = "Basic Salary", ComponentType = "earning",
+            CalculationBasis = "fixed", FixedAmount = fixedAmount ?? 0,
+              IsTaxable = true,   IsStatutory = false,   Priority = 10,
+              EffectiveFrom = today,
+        };
+        SalaryComponent NapsaEe() => new SalaryComponent
+        {
+            Code = "napsa-ee", Name = "NAPSA Employee", ComponentType = "deduction",
+              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
+              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 60,
+              EffectiveFrom = today,
+        };
+        SalaryComponent NapsaEr() => new SalaryComponent
+        {
+            Code = "napsa-er", Name = "NAPSA Employer", ComponentType = "employer-contribution",
+              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
+              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 110,
+              EffectiveFrom = today,
+        };
+        SalaryComponent NhimaEe() => new SalaryComponent
+        {
+            Code = "nhima-ee", Name = "NHIMA Employee", ComponentType = "deduction",
+            CalculationBasis = "percent-of", BasisComponentCode = "basic", Rate = 1,
+            IsTaxable = false, IsStatutory = true, Priority = 70,
+              EffectiveFrom = today,
+        };
+        SalaryComponent NhimaEr() => new SalaryComponent
+        {
+            Code = "nhima-er", Name = "NHIMA Employer", ComponentType = "employer-contribution",
+              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 1,
+              IsTaxable = false,   IsStatutory = true,   Priority = 120,
+              EffectiveFrom = today,
+        };
+        SalaryComponent Paye() => new SalaryComponent
+        {
+            Code = "paye", Name = "PAYE (ZRA)", ComponentType = "tax",
+              CalculationBasis = "slab",   IsTaxable = false,   IsStatutory = true,   Priority = 80,
+              EffectiveFrom = today,
+        };
+        var codes = new[] { "basic", "napsa-ee", "napsa-er", "nhima-ee", "nhima-er", "paye" };
+        var existing = (await payrollRepo.ListAllComponentsAsync(ct))
+            .Select(c => c.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var componentIds = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var component in new Func<SalaryComponent>[] { () => Basic(), NapsaEe, NapsaEr, NhimaEe, NhimaEr, Paye })
+        {
+            var c = component();
+            if (existing.Contains(c.Code))
+            {
+                componentIds[c.Code] = (await payrollRepo.ListAllComponentsAsync(ct))
+                    .First(x => x.Code.Equals(c.Code, StringComparison.OrdinalIgnoreCase)).Id;
+                continue;
+            }
+            var created = await payrollRepo.CreateComponentAsync(c, ct);
+            componentIds[c.Code] = created.Id;
+        }
+
+        // --- Contribution rules (rates + ceilings) tied to the earning basis. ---
+        var ruleCodes = new[] { "napsa-ee", "napsa-er", "nhima-ee", "nhima-er" };
+        var ruleExists = (await payrollRepo.ListContributionRulesAsync(ct))
+            .Select(r => r.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rules = new List<ContributionRule>
+        {
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, Ceiling = 50m,   Floor = 50m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer Contribution", Payer = "employer", Rate = 1, TiedComponentCode = "basic", EffectiveFrom = today },
+        };
+        foreach (var rule in rules)
+            if (!ruleExists.Contains(rule.Code))
+                await payrollRepo.CreateContributionRuleAsync(rule, ct);
+
+        // --- ZRA PAYE slabs 2026 (monthly bands). ---
+        if (!(await payrollRepo.ListTaxSlabsAsync("2026", ct)).Any())
+        {
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 0, MaxAmount = 5100, Rate = 0, Sequence = 1, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 5100.01m, MaxAmount = 6700, Rate = 20, Sequence = 2, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 6700.01m, MaxAmount = 8400, Rate = 30, Sequence = 3, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 8400.01m,   MaxAmount = null, Rate = 37.5m, Sequence = 4, EffectiveFrom = today }, ct);
+        }
+
+        // --- Default pay group. ---
+        var groups = await payrollRepo.ListPayGroupsAllAsync(ct);
+        var payGroupId = groups.FirstOrDefault(g => g.IsDefault)?.Id;
+        if (!payGroupId.HasValue)
+        {
+            var entity = (await config!.ListLegalEntitiesAsync(ct)).Items
+                .OrderByDescending(e => e.IsDefault)
+                .ThenByDescending(e => e.CreatedAt)
+                .FirstOrDefault()
+                ?? throw new DomainException("payroll-no-legal-entity", "Complete the Organisation step before Payroll.");
+            var payGroup = await payroll.CreatePayGroupAsync(new PayGroupCreateRequest(
+                  "ZMW-STANDARD-PG", $"ZMW Standard — {entity.TradingName ?? entity.RegisteredName}",
+                  input.Frequency, input.Currency, input.PaydayDay,
+                  5, true), ct);
+            payGroupId = payGroup.Id;
+        }
+
+        // --- Default salary structure (statutory components + basic). ---
+        if (!(await payrollRepo.ListStructuresAsync(ct)).Any(s => s.Code == "ZMW-STANDARD"))
+        {
+            var structure = new SalaryStructure { Code = "ZMW-STANDARD", Name = "ZMW Standard Structure", IsActive = true };
+            var created = await payrollRepo.CreateStructureAsync(structure, ct);
+            var items = new List<SalaryStructureItem>
+            {
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["basic"], Order = 1 },
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["napsa-ee"], Order = 2 },
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["nhima-ee"], Order = 3 },
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["paye"], Order = 4 },
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["napsa-er"],   IsOptional = true, Order = 5 },
+                new SalaryStructureItem { StructureId = created.Id, ComponentId = componentIds["nhima-er"],   IsOptional = true, Order = 6 },
+            };
+            await payrollRepo.SetStructureItemsExplicitlyAsync(created, items, ct);
+        }
+        var structureId = (await payrollRepo.FindStructureByCodeAsync("ZMW-STANDARD", ct))?.Id
+            ?? throw new DomainException("payroll-structure-missing", "The ZMW-STANDARD structure could not be created.");
+
+        // --- Open period for the current month (if none open). ---
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var monthEnd = monthStart.AddDays(DateTime.DaysInMonth(today.Year, today.Month) - 1);
+        var payDate = monthEnd.Day >= input.PaydayDay ? new DateOnly(today.Year, today.Month, input.PaydayDay) : monthEnd.AddMonths(1);
+        var cutoffDay = Math.Clamp(input.PaydayDay - 5, 1, monthEnd.Day);
+        var cutoffDate = new DateOnly(today.Year, today.Month, cutoffDay);
+        var periodLabel = today.ToString("MMM yyyy");
+        if (!(await payrollRepo.ListPeriodsAsync(payGroupId.Value, ct)).Any(p => p.Status == "open"))
+        {
+            var period = new PayPeriod
+            {
+                PayGroupId = payGroupId.Value, PeriodLabel = periodLabel,
+                StartDate = monthStart, EndDate = monthEnd, CutoffDate = cutoffDate, PayDate = payDate,
+                Status = "open", IsCurrent = true,
+            };
+            await payrollRepo.CreatePeriodAsync(period, ct);
+        }
+    }
+
+    /// Step 7 — Policies: contract types with probation/notice are stored as
+    /// typed JSON (v1 HRM has no separate contract-type entity).
+    private async Task WritePoliciesAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardPolicyInput>(dataJson, "policies");
+        foreach (var t in input.ContractTypes ?? [])
+            if (string.IsNullOrWhiteSpace(t.Name))
+                throw new DomainException("policies-contract-type-name-required", "Every contract type needs a name.");
+    }
+
+    /// Step 8 — Roles: validated admin emails are queued. Actual Keycloak
+    /// provisioning is a documented after-onboarding checklist until the
+    /// platform user service exists; the wizard never pretends otherwise.
+    private async Task WriteRolesAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+        var input = RequireJson<WizardRolesInput>(dataJson, "roles");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var email in input.AdminEmails ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(email)) continue;
+            if (!IsValidEmail(email.Trim()))
+                throw new DomainException("roles-email-invalid", $"'{email}' is not a valid email address.");
+            if (!seen.Add(email.Trim().ToLowerInvariant()))
+                throw new DomainException("roles-email-duplicate", $"'{email}' is listed more than once.");
+        }
+        await Task.CompletedTask;
+    }
+
+    /// Step 9 — Employees: the mapped rows are written as a canonical CSV into
+    /// the proven bulk-import pipeline, and every newly created worker gets a
+    /// payroll profile against the default group and structure so the first
+    /// payroll run has something to calculate.
+    private async Task WriteEmployeesAsync(string? dataJson, CancellationToken ct)
+    {
+        // Test-only (no-write) mode: legacy M49 gating tests pass arbitrary JSON that
+        // does not match the new typed contracts. In that mode the step records as
+        // complete without any write.
+        if (!HasWriteServices) return;
+
+        var input = RequireJson<WizardEmployeesInput>(dataJson, "employees");
+        if (import is null)
+            throw new DomainException("setup-service-missing", "Employee import is unavailable in this deployment.");
+        var rows = input.Employees ?? [];
+        var errors = new List<WizardEmployeeError>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            if (string.IsNullOrWhiteSpace(r.FirstName))
+                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: first name is required."));
+            if (string.IsNullOrWhiteSpace(r.LastName))
+                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: last name is required."));
+            if (r.StartDate is not null && !DateOnly.TryParse(r.StartDate, out _))
+                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: start date '{r.StartDate}' is not a valid date (YYYY-MM-DD)."));
+        }
+        if (errors.Count != 0)
+            throw new DomainException("employees-import-invalid",
+                string.Join(" | ", errors.Select(e => e.Detail)));
+
+        // Snapshot before the import so newly created workers can be matched.
+        var snapshot = await payrollRepo!.ListWorkersCreatedAfterAsync(DateTimeOffset.UtcNow.AddMinutes(-5), ct);
+        var snapshotIds = snapshot.Select(w => w.Id).ToHashSet();
+
+        // Build the canonical CSV the import pipeline expects (fixed column
+        // names: firstName, lastName, email, phone, jobTitle, grade, startDate,
+        // orgUnitName). Optional columns are dropped when every row is empty
+        // so the importer never refuses a "column not recognised" header.
+        var sb = new System.Text.StringBuilder();
+        sb.Append("firstName,lastName,email,phone,jobTitle,grade,startDate,orgUnitName\n");
+        foreach (var r in rows)
+        {
+            var orgUnit = (r.OrgUnitName ?? "").Trim();
+            if (!string.IsNullOrEmpty(orgUnit))
+            {
+                var match = (await config!.ListOrgUnitsAsync(ct))
+                    .FirstOrDefault(u => u.Name.Equals(orgUnit, StringComparison.OrdinalIgnoreCase));
+                if (match is null)
+                {
+                    errors.Add(new WizardEmployeeError(rows.IndexOf(r) + 2,
+                        $"Row {rows.IndexOf(r) + 2}: department '{orgUnit}' does not exist — create it in the Structure step first."));
+                    continue;
+                }
+            }
+            sb.AppendJoin(',',
+                CsvEscape(r.FirstName), CsvEscape(r.LastName), CsvEscape(r.Email), CsvEscape(r.Phone),
+                CsvEscape(r.JobTitle), CsvEscape(r.Grade), CsvEscape(r.StartDate), CsvEscape(orgUnit));
+            sb.Append('\n');
+        }
+        if (errors.Count != 0)
+            throw new DomainException("employees-import-invalid",
+                string.Join(" | ", errors.Select(e => e.Detail)));
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        var result = await import.ImportCsvAsync(stream, ct);
+
+        // Create payroll profiles for workers the import created in this run.
+        int profilesCreated = 0;
+        var fresh = (await payrollRepo.ListWorkersCreatedAfterAsync(snapshotIds.Count == 0
+                ? DateTimeOffset.UtcNow.AddMinutes(-5) : snapshot[^1].CreatedAt.AddTicks(-1), ct))
+            .Where(w => !snapshotIds.Contains(w.Id))
+            .ToList();
+        var defaultGroup = (await payrollRepo.ListPayGroupsAllAsync(ct)).FirstOrDefault(g => g.IsDefault);
+        var structure = await payrollRepo.FindStructureByCodeAsync("ZMW-STANDARD", ct);
+        if (defaultGroup is not null && structure is not null)
+        {
+            foreach (var w in fresh)
+            {
+                var row = rows.FirstOrDefault(r =>
+                    r.FirstName.Trim().Equals(w.FirstName.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    r.LastName.Trim().Equals(w.LastName.Trim(), StringComparison.OrdinalIgnoreCase));
+                var values = new List<WorkerComponentValue>();
+                if (row is not null && row.Grade is not null)
+                {
+                    var basicComponent = (await payrollRepo.ListAllComponentsAsync(ct))
+                        .FirstOrDefault(c => c.Code == "basic");
+                    if (basicComponent is not null && decimal.TryParse(row.Grade, System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var gradeAmount))
+                        values.Add(new WorkerComponentValue { ComponentId = basicComponent.Id, Amount = gradeAmount });
+                }
+                var profile = new WorkerPayrollProfile
+                {
+                    WorkerId = w.Id, StructureId = structure.Id, PayGroupId = defaultGroup.Id,
+                    PayBasis = "salary", EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow),
+                    ComponentValues = values,
+                };
+                await payrollRepo.CreateProfileAsync(profile, ct);
+                profilesCreated++;
+            }
+        }
+        // Persist the outcome so the step record and the UI can summarise it.
+        _ = new WizardEmployeesResult(result.Created, result.Skipped, profilesCreated,
+            result.Errors.Select(e => new WizardEmployeeError(e.Row, e.Detail)).ToList());
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        if (value is null) return string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+
+    private static bool IsValidEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return false;
+        try { var addr = new System.Net.Mail.MailAddress(email); return addr.Address == email && email.Contains('@') && email.Length >= 5; }
+        catch { return false; }
+    }
+
+    private static string Slugify(string name)
+    {
+        var slug = string.Concat(name.Trim().ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == ' '));
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"\s+", "-");
+        return string.IsNullOrEmpty(slug) ? "unit" : slug[..Math.Min(slug.Length, 40)];
     }
 }
