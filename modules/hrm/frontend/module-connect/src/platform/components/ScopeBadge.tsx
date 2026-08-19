@@ -18,14 +18,20 @@ export function ScopeBadge() {
     () => (USE_REAL ? realApi.shell().catch(() => null) : Promise.resolve(null)),
     [],
   );
+  const locationsState = useApi(
+    () => (USE_REAL ? realApi.locations().catch(() => null) : Promise.resolve(null)),
+    [],
+  );
   const shell = shellState.data;
   const scopedToBranch = shell?.scopedToBranch ?? Boolean(branch);
-  const scopeName =
-    shell?.scopedToBranch && shell?.locationId
-      ? undefined
-      : Boolean(branch)
-        ? undefined
-        : undefined;
+  const locations = Array.isArray(locationsState.data)
+    ? locationsState.data
+    : ((locationsState.data as Record<string, unknown>)?.items as unknown[] | undefined) ?? [];
+  const locationId = shell?.locationId ?? (branch || null);
+  const locationName = locationId
+    ? (locations as Record<string, unknown>[]).find((l) => l.id === locationId)?.name
+    : undefined;
+  const displayName = locationName ? String(locationName) : locationId ? `Branch ${String(locationId).slice(0, 8)}…` : "Branch selected";
 
   if (!USE_REAL) return null;
   if (!scopedToBranch) {
@@ -39,7 +45,7 @@ export function ScopeBadge() {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
       <MapPin className="size-3.5" aria-hidden />
-      {shellState.loading ? "Branch…" : shell?.locationId ? `Branch ${String(shell.locationId).slice(0, 8)}…` : `Branch ${branch ? branch.slice(0, 8) : "selected"}`}
+      {(shellState.loading || locationsState.loading) && !locationName ? "Branch…" : displayName}
     </span>
   );
 }
