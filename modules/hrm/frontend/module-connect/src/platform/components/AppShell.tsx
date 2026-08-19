@@ -50,7 +50,6 @@ import { hrmModule } from "@/modules/hrm/nav";
 import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
-import { WelcomeOverlay } from "./WelcomeOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
 import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
@@ -451,9 +450,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   // M47 scope-switch overlay label: resolves the human target name from the
   // currently persisted shell scope so "Switching to …" stays accurate when
   // the operator flips between entity-wide and branch views.
-  // M49: the welcome overlay only covers non-confined operators; confined
-  // branch HR can never run the wizard, and an already-complete org is
-  // passed straight through by the backend's "complete" status.
+  // M50.11: the welcome overlay was replaced by a dedicated /hrm/setup page.
+  // While setup is PENDING the shell keeps non-confined operators on that
+  // route so first-time operators land on the wizard; an already-complete
+  // org is passed straight through by the backend's "complete" status.
   const setupPending =
     USE_REAL && !shellState.data?.confined && Boolean(shellState.data?.setupState) && (shellState.data?.setupState as { status?: string } | null)?.status === "pending";
 
@@ -515,15 +515,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  // M50.11: first-time gate — while setup is PENDING, keep non-confined
+  // operators on the dedicated /hrm/setup wizard page (a full route, no
+  // overlay). Avoids rendering side-effects during render by using an effect.
+  useEffect(() => {
+    if (setupPending && pathname !== "/hrm/setup") {
+      router.navigate({ to: "/hrm/setup" });
+    }
+  }, [setupPending, pathname, router]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* M47: full-screen frosted overlay with a rotating switch mark and
           "Switching to …" label while the org switcher changes scope. */}
       <ScopeSwitchOverlay targetLabel={switchTargetLabel} />
-      {/* M49: welcome gate — a full-screen frosted cover steers first-time
-          operators to the setup wizard while the org's setup state is
-          pending. */}
-      {setupPending && <WelcomeOverlay onContinue={() => router.navigate({ to: "/hrm/setup" })} />}
+
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"

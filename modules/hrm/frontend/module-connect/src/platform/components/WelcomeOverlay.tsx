@@ -194,7 +194,7 @@ function SwitchGlyph() {
   );
 }
 
-export function WelcomeOverlay() {
+export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}) {
   const api = useApi(async () => {
     const [state, steps] = await Promise.all([realApi.setupState(), realApi.setupSteps()]);
     return { state, steps: steps as StepDto[] };
@@ -235,8 +235,9 @@ export function WelcomeOverlay() {
   }, [isComplete, api]);
 
   // Minimal focus trap: keep focus inside the modal while the cover is up.
+  // Skipped in page mode — a full page must never trap the whole document.
   useEffect(() => {
-    if (isComplete || fading) return;
+    if (isComplete || fading || pageMode) return;
     const el = dialogRef.current;
     if (!el) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -315,15 +316,17 @@ export function WelcomeOverlay() {
   const mandatoryAllDone = stepsByCompletion.filter((s) => s.mandatory).every((s) => s.done);
 
   return (
-    <div className="fixed inset-0 z-[120] overflow-y-auto bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center px-4 py-8 sm:px-8">
+    <div className={pageMode ? "min-h-screen bg-background" : "fixed inset-0 z-[120] overflow-y-auto bg-white/90 backdrop-blur-xl"}>
+      <div className={pageMode ? "mx-auto w-full max-w-6xl px-4 py-8 sm:px-8" : "mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center px-4 py-8 sm:px-8"}>
         {/* Header lock strip — the only thing visible above the wizard card. */}
         <div className="flex w-full items-center gap-4 pb-4">
           <SwitchGlyph />
           <div>
             <h1 className="text-lg font-semibold text-foreground sm:text-xl">Set up your organisation</h1>
             <p className="text-sm text-muted-foreground">
-              The HRM stays locked until first-time setup is finished.
+              {pageMode
+                ? "Configure your organisation step by step — the HRM unlocks when setup is finished."
+                : "The HRM stays locked until first-time setup is finished."}
             </p>
           </div>
           <Button variant="ghost" className="ml-auto" asChild>
@@ -366,12 +369,12 @@ export function WelcomeOverlay() {
         {/* The active step form — the only interactive surface on screen. */}
         <div
           ref={dialogRef}
-          role="dialog"
-          aria-modal="true"
+          role={pageMode ? undefined : "dialog"}
+          aria-modal={pageMode ? undefined : true}
           aria-label={`Setup step: ${current?.label}`}
           tabIndex={-1}
           className="w-full outline-none"
-          style={{ animation: "wizardModalIn 260ms ease-out both" }}
+          style={pageMode ? undefined : { animation: "wizardModalIn 260ms ease-out both" }}
         >
           <StepRenderer
             key={active}
@@ -413,7 +416,12 @@ export function WelcomeOverlay() {
                 <ArrowLeft className="size-4" aria-hidden /> Back
               </Button>
               {mandatoryAllDone && (
-                <Button onClick={finishWizard} disabled={sending} className="ml-2">
+                <Button
+                  onClick={finishWizard}
+                  disabled={sending}
+                  className="ml-2"
+                  data-testid="finish-setup"
+                >
                   <ShieldCheck className="size-4" aria-hidden /> Finish setup
                 </Button>
               )}
