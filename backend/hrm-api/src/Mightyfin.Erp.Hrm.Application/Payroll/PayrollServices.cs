@@ -1228,6 +1228,8 @@ public interface IPayrollRepository
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
     // M34: payslips for a specific run (HR admin surface).
     Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
+    // M41: legal entities for payroll report company headers.
+    Task<List<LegalEntity>> ListLegalEntitiesAsync(CancellationToken ct);
 }
 
 public sealed record PayrollPaymentRow(Guid WorkerId, string EmployeeNo, string WorkerName,

@@ -15,6 +15,7 @@ import { CalculationExplainer } from "@/platform/components/CalculationExplainer
 import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail";
 import { RestrictedState } from "@/platform/components/States";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
+import { hrmApi } from "@/platform/api-client";
 import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
@@ -448,6 +449,21 @@ function PaymentWorkflow({
     URL.revokeObjectURL(url);
   };
 
+  // M41: accounting-facing reports — the accounts team books the salary from
+  // these (JV = debits/credits per transaction; dept = net per department).
+  const downloadReport = async (kind: string, format: "csv" | "pdf") => {
+    const blob = await hrmApi.getBlob(
+      `/hrm/payroll/runs/${run.id}/reports/${kind}`,
+      { format },
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `payroll-report-${kind}-${run.id}.${format}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="mt-4 rounded-lg border p-4" data-testid="payment-workflow">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -462,6 +478,67 @@ function PaymentWorkflow({
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
           Export audit CSV
         </Button>
+      </div>
+
+      {/* M41: accounting reports for the accounts team. The run must be
+          released first — the backend enforces the same rule server-side. */}
+      <div className="mt-4 border-t pt-4">
+        <p className="text-sm font-medium">Accounting reports</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          JV = debits and credits by transaction; department reports = net pay per
+          department with bank details. Reports are only available once the run is
+          released or closed. GL accounts marked * need mapping before booking.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("jv-summary", "csv")}
+          >
+            JV summary CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("jv-summary", "pdf")}
+          >
+            JV summary PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("jv-detailed", "csv")}
+          >
+            JV detailed CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("jv-detailed", "pdf")}
+          >
+            JV detailed PDF
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("dept-summary", "csv")}
+          >
+            By department CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={run.status !== "Released" && run.status !== "Closed"}
+            onClick={() => void downloadReport("dept-detailed", "pdf")}
+          >
+            By department PDF
+          </Button>
+        </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {status === "not-created" ? (

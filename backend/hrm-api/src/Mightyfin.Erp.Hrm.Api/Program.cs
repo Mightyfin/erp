@@ -93,6 +93,9 @@ builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
 builder.Services.AddScoped<IPayslipDocumentService, PayslipDocumentServiceImpl>();
+// M41: accounting-facing payroll reports (JV + payroll by department, CSV/PDF)
+builder.Services.AddScoped<IPayrollReportService, PayrollReportServiceImpl>();
+builder.Services.AddScoped<IPayrollReportPdfRenderer, PayrollReportPdfRendererImpl>();
 builder.Services.AddScoped<IConfigRepository, ConfigRepository>();
 builder.Services.AddScoped<IConfigService, ConfigServiceImpl>();
 builder.Services.AddScoped<IConfigAdminService, ConfigAdminServiceImpl>();

@@ -998,7 +998,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     public async Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct)
     {
         var items = await db.PayrollRunLines
-            .Include(l => l.Worker).Include(l => l.Components)
+            .Include(l => l.Worker).ThenInclude(w => w!.BankDetails)
+            .Include(l => l.Components)
             .Where(l => l.RunId == runId).OrderBy(l => l.Worker!.EmployeeNo).ToListAsync(ct);
         return (items, items.Count);
     }
@@ -1217,6 +1218,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(p => slipIds.Contains(p.RunLineId))
             .ToListAsync(ct);
     }
+    public async Task<List<LegalEntity>> ListLegalEntitiesAsync(CancellationToken ct)
+        => await db.LegalEntities.ToListAsync(ct);
 }
 
 // ===================== Config / extras =====================

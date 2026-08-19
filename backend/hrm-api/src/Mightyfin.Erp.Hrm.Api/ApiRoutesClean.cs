@@ -828,6 +828,39 @@ public static class Routes
             Results.Ok(await svc.GetRunAuditAsync(id, ct)));
         g.MapGet("/runs/{id:guid}/audit/export", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             Results.Text(await svc.ExportRunAuditAsync(id, ct), "text/csv", Encoding.UTF8));
+        // M41: accounting-facing reports (JV detailed/summary, payroll by dept)
+        // for the accounts team to book the salary into their own ledgers.
+        g.MapGet("/runs/{id:guid}/reports/{kind}", async (Guid id, string kind,
+            [FromQuery] string? format, IPayrollReportService svc,
+            IPayrollReportPdfRenderer pdf, CancellationToken ct) =>
+        {
+            var reportKind = kind.ToLowerInvariant() switch
+            {
+                "jv-detailed" => PayrollReportKind.JvDetailed,
+                "jv-summary" => PayrollReportKind.JvSummary,
+                "dept-summary" => PayrollReportKind.DeptSummary,
+                "dept-detailed" => PayrollReportKind.DeptDetailed,
+                _ => throw new DomainException("report-kind-not-supported",
+                    "kind must be jv-detailed, jv-summary, dept-summary or dept-detailed"),
+            };
+            var fmt = (format ?? "csv").ToLowerInvariant();
+            var payload = await svc.GetAsync(reportKind, id, fmt, ct);
+            var periodSlug = string.IsNullOrWhiteSpace(payload.PeriodLabel)
+                ? id.ToString("D")[..8]
+                : payload.PeriodLabel.Replace(" ", "-").Replace(",", "").ToLowerInvariant();
+            if (fmt == "csv")
+            {
+                var filename = $"payroll-report-{kind}-{periodSlug}.csv";
+                return Results.Text(PayrollReportFormatter.ToCsv(payload, reportKind), "text/csv", Encoding.UTF8);
+            }
+            if (fmt == "pdf")
+            {
+                var filename = $"payroll-report-{kind}-{periodSlug}.pdf";
+                return Results.File(await pdf.RenderPdfAsync(PayrollReportFormatter.ToHtml(payload, reportKind), ct),
+                    "application/pdf", filename);
+            }
+            throw new DomainException("report-format-not-supported", "format must be csv or pdf");
+        });
         // M24: per-worker statutory identity readiness — the checklist the
         // release gate above enforces; inspectable before attempting release.
         g.MapGet("/runs/{id:guid}/statutory-readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
