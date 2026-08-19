@@ -14,13 +14,16 @@ ENV ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 # M25/M41: HTML-to-PDF rendering (payslip documents + accounting reports)
 # needs weasyprint with a headless chromium renderer and fonts, all owned by
-# the nonroot app user (base image has apt available on noble).
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        python3 python3-weasyprint chromium fonts-noto-core fonts-noto-cjk \
+# the nonroot app user. python3-weasyprint is not in Noble, so pip it with
+# the pango/cairo text-rendering libs.
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        python3 python3-pip chromium fonts-noto-core fonts-noto-cjk \
         libgssapi-krb5-2 libnss3 libatk-bridge2.0-0 libxkbcommon0 libgbm1 \
+        libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 libharfbuzz0b \
+        libgdk-pixbuf-2.0-0 libffi8 libcairo2 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/chromium /usr/bin/chrome \
-    && python3 -c "import weasyprint" && echo weasyprint-ok
+    && python3 -m pip install --break-system-packages -q weasyprint
 COPY --from=build /app/publish .
 EXPOSE 8080
 USER app
