@@ -163,6 +163,10 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
     public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        // Apply runs on a fresh schema instance (per-request DI) — the component
+        // list is only populated when a preview/field request touched it first,
+        // so reload here instead of trusting another request's lazy load.
+        EnsureComponents();
         var workerId = Guid.Parse(row["__workerId"]);
         var payGroupId = Guid.Parse(row["__payGroupId"]);
         var effectiveFrom = DateOnly.ParseExact(row["__effectiveFrom"], "yyyy-MM-dd");
