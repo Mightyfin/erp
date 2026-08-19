@@ -29,6 +29,7 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { realApi, useApi } from "@/platform/use-api";
 
@@ -107,6 +108,7 @@ function LeaveApprovals() {
           eyebrow="Leave"
           title="Leave approvals"
           description="Company-wide leave requests waiting on an HR decision."
+          meta={<ScopeBadge />}
           primaryAction={
             <Button asChild>
               <Link to="/hrm/leave">
