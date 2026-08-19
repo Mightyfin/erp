@@ -531,6 +531,10 @@ export const realApi = {
     hrmApi.put<unknown>(`/hrm/payroll/profiles/${workerId}/pay-basis`, { payBasis }),
   /** M27 operational run list with live totals and workflow state. */
   payrollRuns: () => hrmApi.get<{ items: unknown[]; totalCount: number }>("/hrm/payroll/runs"),
+  /** M48: the top-HR approval queue — branch runs awaiting review with
+   * control totals, branch names, and submission stamps. Confined (branch-only)
+   * HR are refused here with 403. */
+  payrollQueue: () => hrmApi.get<unknown[]>("/hrm/payroll/queue"),
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),

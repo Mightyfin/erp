@@ -64,6 +64,7 @@ import { Route as HrmOffboardingIdRouteImport } from './routes/hrm.offboarding.$
 import { Route as HrmPayCompensationRouteImport } from './routes/hrm.pay.compensation'
 import { Route as HrmPayrollIndexRouteImport } from './routes/hrm.payroll.index'
 import { Route as HrmPayrollExceptionsRouteImport } from './routes/hrm.payroll.exceptions'
+import { Route as HrmPayrollQueueRouteImport } from './routes/hrm.payroll.queue'
 import { Route as HrmPayrollRunsRouteImport } from './routes/hrm.payroll.runs'
 import { Route as HrmPayslipsIndexRouteImport } from './routes/hrm.payslips.index'
 import { Route as HrmPayslipsIdRouteImport } from './routes/hrm.payslips.$id'
@@ -401,6 +402,11 @@ const HrmPayrollIndexRoute = HrmPayrollIndexRouteImport.update({
 const HrmPayrollExceptionsRoute = HrmPayrollExceptionsRouteImport.update({
   id: '/hrm/payroll/exceptions',
   path: '/hrm/payroll/exceptions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmPayrollQueueRoute = HrmPayrollQueueRouteImport.update({
+  id: '/hrm/payroll/queue',
+  path: '/hrm/payroll/queue',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmPayrollRunsRoute = HrmPayrollRunsRouteImport.update({
@@ -742,6 +748,7 @@ export interface FileRoutesByFullPath {
   '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
@@ -855,6 +862,7 @@ export interface FileRoutesByTo {
   '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
@@ -969,6 +977,7 @@ export interface FileRoutesById {
   '/hrm/offboarding/$id': typeof HrmOffboardingIdRoute
   '/hrm/pay/compensation': typeof HrmPayCompensationRoute
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
+  '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
@@ -1084,6 +1093,7 @@ export interface FileRouteTypes {
     | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
@@ -1197,6 +1207,7 @@ export interface FileRouteTypes {
     | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
@@ -1310,6 +1321,7 @@ export interface FileRouteTypes {
     | '/hrm/offboarding/$id'
     | '/hrm/pay/compensation'
     | '/hrm/payroll/exceptions'
+    | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
@@ -1424,6 +1436,7 @@ export interface RootRouteChildren {
   HrmOffboardingIdRoute: typeof HrmOffboardingIdRoute
   HrmPayCompensationRoute: typeof HrmPayCompensationRoute
   HrmPayrollExceptionsRoute: typeof HrmPayrollExceptionsRoute
+  HrmPayrollQueueRoute: typeof HrmPayrollQueueRoute
   HrmPayrollRunsRoute: typeof HrmPayrollRunsRouteWithChildren
   HrmPayslipsIdRoute: typeof HrmPayslipsIdRoute
   HrmPeopleDataQualityRoute: typeof HrmPeopleDataQualityRoute
@@ -1862,6 +1875,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/payroll/exceptions'
       fullPath: '/hrm/payroll/exceptions'
       preLoaderRoute: typeof HrmPayrollExceptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/payroll/queue': {
+      id: '/hrm/payroll/queue'
+      path: '/hrm/payroll/queue'
+      fullPath: '/hrm/payroll/queue'
+      preLoaderRoute: typeof HrmPayrollQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/payroll/runs': {
@@ -2447,6 +2467,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmOffboardingIdRoute: HrmOffboardingIdRoute,
   HrmPayCompensationRoute: HrmPayCompensationRoute,
   HrmPayrollExceptionsRoute: HrmPayrollExceptionsRoute,
+  HrmPayrollQueueRoute: HrmPayrollQueueRoute,
   HrmPayrollRunsRoute: HrmPayrollRunsRouteWithChildren,
   HrmPayslipsIdRoute: HrmPayslipsIdRoute,
   HrmPeopleDataQualityRoute: HrmPeopleDataQualityRoute,

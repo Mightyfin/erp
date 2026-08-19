@@ -22,6 +22,26 @@ export type RunStatus =
   | "Closed"
   | "Reversed";
 
+/** M48: one row on the top-HR approval queue — a branch run awaiting review
+ * (or a calculated branch run not yet submitted). Maps PayrollQueueItemDto. */
+export interface PayQueueItem {
+  runId: string;
+  status: string; // "in-review" | "calculated" | ...
+  periodLabel: string;
+  branchId?: string;
+  branchName?: string;
+  entityId: string;
+  employeeCount: number;
+  totalGross: number;
+  totalNet: number;
+  totalDeductions: number;
+  totalEmployerCost: number;
+  exceptionCount: number;
+  preparedBySubjectId?: string;
+  submittedAt?: string;
+  createdAt: string;
+}
+
 export type StageState = "done" | "current" | "blocked" | "pending";
 
 export interface RunStage {

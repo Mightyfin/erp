@@ -161,6 +161,15 @@ export const hrmModule: ModuleDefinition = {
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
         { label: "Pay runs", to: "/hrm/payroll/runs", roles: ["payroll", "hr_admin"] },
         {
+          // M48: the top-HR approval queue. Rendered regardless of confinement
+          // in the static nav; the page itself checks the live shell scope and
+          // shows the confinement explanation to branch-confined HR instead of
+          // the queue. (Roles guard the nav rail; confinement is dynamic.)
+          label: "Approval queue",
+          to: "/hrm/payroll/queue",
+          roles: ["payroll", "hr_admin"],
+        },
+        {
           label: "Payroll exceptions",
           to: "/hrm/payroll/exceptions",
           roles: ["payroll", "hr_admin"],
