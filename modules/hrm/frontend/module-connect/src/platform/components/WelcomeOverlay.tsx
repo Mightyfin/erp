@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,11 +24,11 @@ import {
 } from "lucide-react";
 
 /**
- * M50: true input setup wizard. While the organisation's setup state is
- * "pending", the ENTIRE app is covered by an intense-but-slightly-transparent
- * white blur and this wizard is the only thing on screen — the background is
- * inaccessible (role="dialog", focus trap, no navigation out except "Skip to
- * dashboard" which itself returns here while pending).
+ * M50 (+M50.11): true input setup wizard. Now rendered as a full page route
+ * (/hrm/setup) — M50.11 removed the full-screen overlay cover (pageMode
+ * prop); the shell keeps pending operators on this route instead. While the
+ * organisation's setup state is "pending", the wizard is the only thing
+ * reachable; the shell's gate re-steers anyone who lands on /hrm back here.
  *
  * Each step collects REAL configuration data through inline forms and writes
  * it to the backend via POST /hrm/setup/steps/{key}. Steps only advance on a
@@ -205,6 +206,9 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   const [message, setMessage] = useState<{ text: string; kind: "error" | "info" } | null>(null);
   const [fading, setFading] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Stable router reference so the completion effect (below) can navigate
+  // so the completion effect can navigate once setup finishes.
+  const routerRef = useRef(useRouter());
 
   const state = api.data?.state;
   const steps = api.data?.steps ?? [];
@@ -224,12 +228,20 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
     }
   }, [stepsByCompletion, active]);
 
-  // Lift the cover with a short fade-out as soon as the backend confirms
-  // setup completion. The shell then stops rendering this overlay.
+  // M50.12: once the backend confirms setup completion, fade out and leave
+  // the wizard page for the now-unlocked dashboard (the shell's pending-gate
+  // only applies while setup is PENDING, so /hrm is reachable afterward).
   useEffect(() => {
     if (isComplete) {
       setFading(true);
-      const t = setTimeout(() => api.reload(), 600);
+      const t = setTimeout(async () => {
+        await api.reload();
+        try {
+          routerRef.current.navigate({ to: "/hrm", replace: true });
+        } catch {
+          window.location.href = "/hrm";
+        }
+      }, 900);
       return () => clearTimeout(t);
     }
   }, [isComplete, api]);
