@@ -100,6 +100,19 @@ type ParsedSheet = { headers: string[]; rows: string[][] };
 const UNIT_PREFIX = "unit:";
 type Mapping = Record<string, number | string>;
 
+// One blank manual-entry row — first/last are mandatory, the rest optional.
+type Row = {
+  first: string;
+  last: string;
+  email: string;
+  phone: string;
+  jobTitle: string;
+  grade: string;
+  startDate: string;
+  orgUnitName: string;
+};
+const EMPTY_ROW: Row = { first: "", last: "", email: "", phone: "", jobTitle: "", grade: "", startDate: "", orgUnitName: "" };
+
 function defaultMapping(headers: string[]): Mapping {
   // Never guess required columns — but hint optional ones by fuzzy matching.
   const map: Mapping = {};
