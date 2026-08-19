@@ -1,17 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Component, Suspense, lazy, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Briefcase,
@@ -21,7 +9,6 @@ import {
   GraduationCap,
   Users,
 } from "lucide-react";
-import { useApi } from "@/platform/use-api";
 import { getSession } from "@/platform/oidc";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
@@ -104,6 +91,18 @@ interface Dashboard {
 }
 
 /* ------------------------------------------------------------------ */
+/* Lazy chart bundle — recharts is only ever imported AFTER mount, so
+   it never participates in SSR/hydration and cannot crash the page.  */
+/* ------------------------------------------------------------------ */
+
+const Charts = lazy(
+  async () => {
+    const mod = await import(/* webpackChunkName: "hrm-analytics-charts" */ "@/routes/hrm.analytics.charts");
+    return { default: mod.Charts };
+  },
+);
+
+/* ------------------------------------------------------------------ */
 /* Small display helpers                                                */
 /* ------------------------------------------------------------------ */
 
@@ -123,9 +122,6 @@ const RATING_COLORS: Record<string, string> = {
   "4": "#65a30d",
   "5": "#15803d",
 };
-function ratingColor(rating: string) {
-  return RATING_COLORS[rating] ?? "#64748b";
-}
 
 function KpiCard({
   icon,
@@ -172,7 +168,7 @@ function PanelCard({
   );
 }
 
-/** A plain fallback rendered while the real backend is unreachable or loading. */
+/** Plain skeleton rendered while data is loading. */
 function EmptyDashboard() {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -184,300 +180,35 @@ function EmptyDashboard() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Panels                                                               */
+/* Charts error boundary — a chart failure must degrade gracefully,
+   never take the whole page down.                                     */
 /* ------------------------------------------------------------------ */
 
-function WorkforcePanel({ wf }: { wf: Workforce }) {
-  const trend = wf.monthlyTrend ?? [];
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard icon={<Users className="h-4 w-4" />} label="Active workers" value={fmt.format(wf.activeCount)} />
-        <KpiCard icon={<GraduationCap className="h-4 w-4" />} label="Pre-hire" value={fmt.format(wf.preHireCount)} />
-        <KpiCard
-          icon={<Building2 className="h-4 w-4" />}
-          label="Archived"
-          value={fmt.format(wf.archivedCount)}
-        />
-        <KpiCard
-          icon={<Briefcase className="h-4 w-4" />}
-          label="Turnover (annualised)"
-          value={`${fmtDec.format(wf.turnoverRatePct)}%`}
-          sub="Leavers over trailing 12 months ÷ average headcount"
-        />
-      </div>
-      <PanelCard
-        title="Headcount trend — trailing 12 months"
-        empty={!trend.length ? "No monthly headcount data yet." : undefined}>
-        {trend.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Line type="monotone" dataKey="activeCount" name="Active" stroke="#2563eb" strokeWidth={2} />
-                <Line type="monotone" dataKey="joined" name="Joined" stroke="#16a34a" strokeWidth={2} />
-                <Line type="monotone" dataKey="left" name="Left" stroke="#dc2626" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-    </div>
-  );
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}
+interface ErrorBoundaryState {
+  error: Error | null;
 }
 
-function LeavePanelView({ leave }: { leave: LeavePanel }) {
-  const rows = leave.byType ?? [];
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard
-          icon={<CalendarClock className="h-4 w-4" />}
-          label="Requests"
-          value={fmt.format(rows.reduce((s, r) => s + r.requests, 0))}
-          sub={`${fmt.format(rows.reduce((s, r) => s + r.approved, 0))} approved`}
-        />
-        <KpiCard
-          icon={<Clock4 className="h-4 w-4" />}
-          label="Requested days"
-          value={fmtDec.format(rows.reduce((s, r) => s + r.requestedDays, 0))}
-        />
-        <KpiCard
-          icon={<CalendarClock className="h-4 w-4" />}
-          label="Approved days"
-          value={fmtDec.format(rows.reduce((s, r) => s + r.approvedDays, 0))}
-        />
-        <KpiCard
-          icon={<Briefcase className="h-4 w-4" />}
-          label="Approval rate"
-          value={`${fmtDec.format(leave.approvalRatePct)}%`}
-        />
-      </div>
-      <PanelCard
-        title="Leave taken by type (days)"
-        empty={!rows.length ? "No leave requests recorded yet." : undefined}>
-        {rows.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="leaveType" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="requestedDays" name="Requested" fill="#94a3b8" />
-                <Bar dataKey="approvedDays" name="Approved" fill="#2563eb" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-    </div>
-  );
-}
-
-function PayrollPanelView({ payroll }: { payroll: PayrollPanel }) {
-  const runs = payroll.runs ?? [];
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-2">
-        <KpiCard
-          icon={<Briefcase className="h-4 w-4" />}
-          label="Gross — last 6 runs"
-          value={fmtMoney(payroll.grossTotalLast6)}
-        />
-        <KpiCard
-          icon={<Building2 className="h-4 w-4" />}
-          label="Employer cost — last 6 runs"
-          value={fmtMoney(payroll.employerCostTotalLast6)}
-        />
-      </div>
-      <PanelCard
-        title="Payroll cost per run (last 6 runs)"
-        empty={!runs.length ? "No completed payroll runs yet." : undefined}>
-        {runs.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={runs} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="periodLabel" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => fmtMoney(v)} />
-                <Bar dataKey="totalEmployerCost" name="Employer cost" fill="#7c3aed" />
-                <Bar dataKey="totalGross" name="Gross" fill="#0ea5e9" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-      {runs.length ? (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b bg-muted/50 text-left">
-                <th className="p-2 font-semibold">Period</th>
-                <th className="p-2 font-semibold">Status</th>
-                <th className="p-2 text-right font-semibold">Employees</th>
-                <th className="p-2 text-right font-semibold">Gross</th>
-                <th className="p-2 text-right font-semibold">Deductions</th>
-                <th className="p-2 text-right font-semibold">Net</th>
-                <th className="p-2 text-right font-semibold">Employer cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.periodLabel} className="border-b last:border-0">
-                  <td className="p-2 font-medium">{r.periodLabel}</td>
-                  <td className="p-2 capitalize">{r.status}</td>
-                  <td className="p-2 text-right">{fmt.format(r.employeeCount)}</td>
-                  <td className="p-2 text-right">{fmtMoney(r.totalGross)}</td>
-                  <td className="p-2 text-right">{fmtMoney(r.totalDeductions)}</td>
-                  <td className="p-2 text-right">{fmtMoney(r.totalNet)}</td>
-                  <td className="p-2 text-right">{fmtMoney(r.totalEmployerCost)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PerformancePanelView({ perf }: { perf: PerformancePanel }) {
-  const rows = perf.byRating ?? [];
-  const empty = !rows.length || !perf.cycles;
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard icon={<Briefcase className="h-4 w-4" />} label="Cycles" value={fmt.format(perf.cycles)} />
-        <KpiCard icon={<Users className="h-4 w-4" />} label="Assessments" value={fmt.format(perf.assessments)} />
-        <KpiCard icon={<GraduationCap className="h-4 w-4" />} label="Finalized" value={fmt.format(perf.finalized)} />
-        <KpiCard
-          icon={<CalendarClock className="h-4 w-4" />}
-          label="Completion rate"
-          value={`${fmtDec.format(perf.completionRatePct)}%`}
-        />
-      </div>
-      <PanelCard
-        title="Assessment distribution by final rating"
-        empty={empty ? "No finalized assessments yet — ratings populate as cycles close." : undefined}>
-        {rows.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="rating" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="count" name="Count" fill="#64748b">
-                  {rows.map((row) => (
-                    <Cell key={row.rating} fill={ratingColor(row.rating)} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-    </div>
-  );
-}
-
-function RecruitmentPanelView({ rec }: { rec: RecruitmentPanel }) {
-  const funnel = rec.stageFunnel ?? [];
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <KpiCard
-          icon={<Briefcase className="h-4 w-4" />}
-          label="Open requisitions"
-          value={fmt.format(rec.openRequisitions)}
-        />
-        <KpiCard
-          icon={<Building2 className="h-4 w-4" />}
-          label="Open vacancies"
-          value={fmt.format(rec.openVacancies)}
-        />
-        <KpiCard
-          icon={<Users className="h-4 w-4" />}
-          label="In pipeline"
-          value={fmt.format(rec.candidatesInPipeline)}
-        />
-        <KpiCard
-          icon={<CalendarClock className="h-4 w-4" />}
-          label="Offers pending"
-          value={fmt.format(rec.offersPending)}
-        />
-        <KpiCard icon={<GraduationCap className="h-4 w-4" />} label="Hired" value={fmt.format(rec.hired)} tone="good" />
-      </div>
-      <PanelCard
-        title="Candidate funnel by stage"
-        empty={!funnel.length ? "No candidates recorded yet." : undefined}>
-        {funnel.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={funnel} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="count" name="Candidates" fill="#0891b2" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-    </div>
-  );
-}
-
-function AttendancePanelView({ att }: { att: AttendancePanel }) {
-  const rows = att.byStatus ?? [];
-  const empty = !rows.length;
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <KpiCard
-          icon={<Clock4 className="h-4 w-4" />}
-          label="Avg daily hours"
-          value={fmtDec.format(att.averageDailyHours)}
-          sub="Trailing 30 days"
-        />
-        <KpiCard
-          icon={<CalendarClock className="h-4 w-4" />}
-          label="Overtime hours"
-          value={fmtDec.format(att.totalOvertimeHours)}
-          sub="Trailing 30 days"
-        />
-        <KpiCard
-          icon={<Users className="h-4 w-4" />}
-          label="Status splits"
-          value={fmt.format(rows.length)}
-          sub="Presence statuses recorded"
-        />
-      </div>
-      <PanelCard
-        title="Attendance by status (trailing 30 days)"
-        empty={empty ? "No attendance records yet." : undefined}>
-        {rows.length ? (
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="derivedStatus" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="days" name="Days" fill="#059669" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : null}
-      </PanelCard>
-    </div>
-  );
+class ChartsErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  override state: ErrorBoundaryState = { error: null };
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+  override render() {
+    if (this.state.error) {
+      return (
+        this.props.fallback ?? (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+            Charts could not be rendered. The data tables below remain available.
+          </p>
+        )
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,60 +216,64 @@ function AttendancePanelView({ att }: { att: AttendancePanel }) {
 /* ------------------------------------------------------------------ */
 
 function AnalyticsPage() {
-  // Self-contained fetcher: avoids coupling to the `realApi` helper object,
-  // whose export layout has been known to shift between client bundles after
-  // build (code-splitting placed `realApi` in a chunk the route does not
-  // import, producing runtime `undefined.get` crashes).
-  const state = useApi<Dashboard | null>(
-    async () => {
-      const apiBase = (import.meta.env.VITE_HRM_API_BASE as string | undefined) ?? "/api";
-      const token = getSession()?.accessToken;
-      const res = await fetch(`${apiBase}/hrm/analytics/dashboard`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return (await res.json()) as Dashboard;
-    },
-    [],
-  );
-  // Charts are client-only: recharts' ResponsiveContainer relies on
-  // ResizeObserver and must not render during server-side hydration.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // Self-contained fetcher: avoids coupling to shared API-helper chunks
+  // whose export layout has been known to shift between client builds.
+  const apiBase = (import.meta.env.VITE_HRM_API_BASE as string | undefined) ?? "/api";
+  const [state, setState] = useState<{
+    data: Dashboard | null;
+    error: Error | null;
+    loading: boolean;
+  }>({ data: null, error: null, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getSession()?.accessToken;
+        const res = await fetch(`${apiBase}/hrm/analytics/dashboard`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as Dashboard;
+        if (!cancelled) setState({ data, error: null, loading: false });
+      } catch (e) {
+        if (!cancelled) setState({ data: null, error: e as Error, loading: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
+
   return (
     <AppShell>
-      <AuthGate roles={["hr_ops", "hr_admin"]}>
+      <AuthGate>
         <PageHeader
           title="HR analytics"
           description="Company-wide HR indicators drawn live from the payroll, time, recruitment and performance records."
         />
-        <Async state={state}>
-          {state.data ? (
-            <div className="space-y-6">
-              <p className="text-xs text-muted-foreground">
-                Data as at{" "}
-                {new Date(state.data.asAt).toLocaleString(undefined, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
-              </p>
-              {mounted ? (
-                <>
-                  <WorkforcePanel wf={state.data.workforce} />
-                  <LeavePanelView leave={state.data.leave} />
-                  <PayrollPanelView payroll={state.data.payroll} />
-                  <PerformancePanelView perf={state.data.performance} />
-                  <RecruitmentPanelView rec={state.data.recruitment} />
-                  <AttendancePanelView att={state.data.attendance} />
-                </>
-              ) : (
-                <EmptyDashboard />
-              )}
-            </div>
-          ) : (
-            <EmptyDashboard />
-          )}
-        </Async>
+        {state.loading ? (
+          <EmptyDashboard />
+        ) : state.error ? (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Could not load the analytics dashboard ({state.error.message}). Please try again.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            <p className="text-xs text-muted-foreground">
+              Data as at{" "}
+              {new Date(state.data!.asAt).toLocaleString(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </p>
+            <ChartsErrorBoundary>
+              <Suspense fallback={<EmptyDashboard />}>
+                <Charts data={state.data!} />
+              </Suspense>
+            </ChartsErrorBoundary>
+          </div>
+        )}
       </AuthGate>
     </AppShell>
   );

@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, hrmApi } from "@/platform/api-client";
+import type { EducationRecord } from "@/mock/employeeprofile";
 
 export interface ApiState<T> {
   data: T | null;
@@ -236,7 +237,16 @@ export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeepr
     paymentMethod: text(bank?.paymentMethod), bankName: text(bank?.bankName),
     bankBranch: text(bank?.branchCode), bankAccount: text(bank?.accountNumber),
     tpin: text(raw.tpin), napsaNumber: text(raw.napsaNumber), nhimaNumber: text(raw.nhimaNumber),
-    education: Array.isArray(raw.education) ? raw.education as Record<string, unknown>[] : [],
+    education: (Array.isArray(raw.education)
+      ? (raw.education as Record<string, unknown>[]).map((item) => ({
+          id: text(item.id),
+          qualification: text(item.qualification ?? item.degree ?? ""),
+          institution: text(item.institution ?? item.school ?? ""),
+          field: text(item.field ?? ""),
+          completedYear: text(item.completedYear ?? item.endDate ?? item.to ?? ""),
+          verified: Boolean(item.verified),
+        }))
+      : []) as EducationRecord[],
     previousEmployment: Array.isArray(raw.externalWorkHistory)
       ? (raw.externalWorkHistory as Record<string, unknown>[]).map((item) => ({
           id: text(item.id), employer: text(item.company), jobTitle: text(item.role ?? ""),
@@ -1107,19 +1117,19 @@ export const realApi = {
   offboardingRequest: (id: string) =>
     hrmApi.get<Record<string, unknown>>(`/hrm/offboarding/${id}`),
   approveOffboarding: (id: string) =>
-    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/approve`),
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/approve`, {}),
   rejectOffboarding: (id: string, reason: string) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/reject`, { reason }),
   cancelOffboarding: (id: string, reason: string) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/cancel`, { reason }),
   markFinalPay: (id: string) =>
-    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/final-pay`),
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${id}/final-pay`, {}),
   addChecklistItem: (requestId: string, body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist`, body),
   updateChecklistItem: (requestId: string, itemId: string, body: Record<string, unknown>) =>
     hrmApi.patch<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist/${itemId}`, body),
   completeChecklistItem: (requestId: string, itemId: string) =>
-    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist/${itemId}/complete`),
+    hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/checklist/${itemId}/complete`, {}),
   createExitInterview: (requestId: string, body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/offboarding/${requestId}/exit-interview`, body),
   getExitInterview: (requestId: string) =>
