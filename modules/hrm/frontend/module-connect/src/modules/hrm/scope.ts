@@ -36,6 +36,7 @@ const ENABLED_PREFIXES = [
   "/hrm/attendance", // hours feeding the run
   "/hrm/leave", // paid and unpaid absence
   "/hrm/time", // timesheets, TOIL, utilisation, travel and expenses
+  "/hrm/benefits", // M41 Gap 6b flexible benefit claims — real backend live
   "/hrm/payslips",
   "/hrm/pay",
   "/hrm/payroll",
