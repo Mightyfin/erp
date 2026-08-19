@@ -74,6 +74,54 @@ public class WorkerComponentValue : Entity
     public decimal Amount { get; set; }
 }
 
+/// <summary>M41 Gap 6b: flexible benefit claims. A BenefitType is an org-wide
+/// claim category (e.g. medical reimbursement, airtime, transport) with an
+/// optional default annual cap. A WorkerBenefitAllowance sets the annual
+/// amount an individual worker may claim for a type. A BenefitClaim is a
+/// single reimbursement request against that allowance.</summary>
+public class BenefitType : Entity
+{
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    /// <summary>Optional org-level ceiling per worker per year when no
+    /// worker-specific allowance exists. 0 = no cap configured.</summary>
+    public decimal AnnualCap { get; set; }
+    public bool RequiresEvidence { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public class WorkerBenefitAllowance : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public Guid BenefitTypeId { get; set; }
+    public BenefitType? BenefitType { get; set; }
+    /// <summary>Annual claimable amount for this worker and type. 0 = nothing claimable.</summary>
+    public decimal AnnualAmount { get; set; }
+    public int Year { get; set; }
+}
+
+public class BenefitClaim : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public Guid BenefitTypeId { get; set; }
+    public BenefitType? BenefitType { get; set; }
+    public decimal AmountClaimed { get; set; }
+    public string Currency { get; set; } = "ZMW";
+    public string? Note { get; set; }
+    public bool EvidenceAttached { get; set; }
+    public string Status { get; set; } = "submitted"; // submitted | approved | returned | rejected | paid
+    public string? DecisionReason { get; set; }
+    public decimal? ApprovedAmount { get; set; }
+    public string? CreatedBySubjectId { get; set; }
+    public string? DecidedBySubjectId { get; set; }
+    public DateTimeOffset? DecidedAt { get; set; }
+    public string? PaidBySubjectId { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
+}
+
 /// <summary>J-groups 03-04: Pay group defining frequency, calendar and currency.</summary>
 public class PayGroup : Entity
 {

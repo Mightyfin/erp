@@ -105,6 +105,10 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<SalaryStructureItem> SalaryStructureItems => Set<SalaryStructureItem>();
     public DbSet<WorkerPayrollProfile> WorkerPayrollProfiles => Set<WorkerPayrollProfile>();
     public DbSet<WorkerComponentValue> WorkerComponentValues => Set<WorkerComponentValue>();
+    // Flexible benefit claims (M41 Gap 6b)
+    public DbSet<BenefitType> BenefitTypes => Set<BenefitType>();
+    public DbSet<WorkerBenefitAllowance> WorkerBenefitAllowances => Set<WorkerBenefitAllowance>();
+    public DbSet<BenefitClaim> BenefitClaims => Set<BenefitClaim>();
     public DbSet<PayGroup> PayGroups => Set<PayGroup>();
     public DbSet<PayPeriod> PayPeriods => Set<PayPeriod>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
@@ -221,6 +225,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<SalaryStructureItem>(modelBuilder, "salary_structure_items");
         ConfigureEntity<WorkerPayrollProfile>(modelBuilder, "worker_payroll_profiles");
         ConfigureEntity<WorkerComponentValue>(modelBuilder, "worker_component_values");
+        ConfigureEntity<BenefitType>(modelBuilder, "benefit_types", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
+        ConfigureEntity<WorkerBenefitAllowance>(modelBuilder, "benefit_allowances",
+            e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.BenefitTypeId, x.Year }).IsUnique());
+        ConfigureEntity<BenefitClaim>(modelBuilder, "benefit_claims",
+            e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status }));
         ConfigureEntity<PayGroup>(modelBuilder, "pay_groups");
         ConfigureEntity<PayPeriod>(modelBuilder, "pay_periods", e => e.HasIndex(x => new { x.TenantId, x.PayGroupId, x.PeriodLabel }).IsUnique());
         ConfigureEntity<TaxSlab>(modelBuilder, "tax_slabs");

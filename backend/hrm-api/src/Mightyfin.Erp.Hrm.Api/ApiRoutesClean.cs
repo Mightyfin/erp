@@ -55,6 +55,7 @@ public static class Routes
         RegisterPerformance(app);
         RegisterOffboarding(app);
         RegisterRequisitions(app);
+        RegisterBenefits(app);
     }
 
     public static void RegisterNotifications(WebApplication app)
@@ -1655,6 +1656,73 @@ public static void RegisterRequisitions(WebApplication app)
     // recruitment and attendance panels in a single call for HR/HRM users.
     app.MapGet($"{HrmPrefix}/analytics/dashboard", async (IAnalyticsService svc, CancellationToken ct) =>
         Results.Ok(await svc.GetDashboardAsync(ct))).RequireAuthorization();
+}
+
+public static void RegisterBenefits(WebApplication app)
+{
+    var g = app.MapGroup($"{HrmPrefix}/benefits").RequireAuthorization();
+
+    // Benefit types (hr_admin configures claim categories)
+    g.MapGet("/types", async (Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+        Results.Ok(await svc.ListBenefitTypesAsync(ct)));
+    g.MapPost("/types", async (HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.BenefitTypeCreateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.CreateBenefitTypeAsync(request, ct));
+    });
+    g.MapPut("/types/{id:guid}", async (Guid id, HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.BenefitTypeUpdateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.UpdateBenefitTypeAsync(id, request, ct));
+    });
+    g.MapDelete("/types/{id:guid}", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        await svc.DeleteBenefitTypeAsync(id, ct);
+        return Results.Ok();
+    });
+
+    // Per-worker annual allowances (hr_admin / hr_ops)
+    g.MapGet("/allowances", async (Guid? workerId,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+        Results.Ok(await svc.ListAllowancesAsync(workerId, ct)));
+    g.MapPost("/allowances", async (HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.AllowanceSetRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        await svc.SetAllowanceAsync(request, ct);
+        return Results.Ok();
+    });
+
+    // Claims (submit by employee/hr, decide by HR, pay by payroll)
+    g.MapGet("/claims", async (Guid? workerId, string? status, int? page, int? pageSize,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var (items, total) = await svc.ListClaimsAsync(workerId, status, page ?? 1, pageSize ?? 50, ct);
+        return Results.Ok(new { Items = items, Total = total, Page = page ?? 1, PageSize = pageSize ?? 50 });
+    });
+    g.MapPost("/claims", async (HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.BenefitClaimCreateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.CreateClaimAsync(request, ct));
+    });
+    g.MapPost("/claims/{id:guid}/decide", async (Guid id, HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.ClaimDecideRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        return Results.Ok(await svc.DecideClaimAsync(id, request, ct));
+    });
+    g.MapPost("/claims/{id:guid}/pay", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+        Results.Ok(await svc.PayClaimAsync(id, ct)));
 }
 }
 

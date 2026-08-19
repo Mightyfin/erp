@@ -93,6 +93,9 @@ builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Analytics.IAnalyticsSer
 builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
+// M41 Gap 6b: flexible benefit claims (types, allowances, claims)
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IBenefitRepository, Mightyfin.Erp.Hrm.Infrastructure.Benefits.BenefitRepository>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService, Mightyfin.Erp.Hrm.Application.Benefits.BenefitServiceImpl>();
 builder.Services.AddScoped<IPayslipDocumentService, PayslipDocumentServiceImpl>();
 // M41: accounting-facing payroll reports (JV + payroll by department, CSV/PDF)
 builder.Services.AddScoped<IPayrollReportService, PayrollReportServiceImpl>();
