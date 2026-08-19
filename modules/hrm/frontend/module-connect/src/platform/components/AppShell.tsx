@@ -379,14 +379,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       // switcher stuck with no rows.
       legalEntities: (Array.isArray(legalEntities)
         ? legalEntities
-        : ((legalEntities as Record<string, unknown>)?.items ?? [])
+        : ((legalEntities as Record<string, unknown>)?.items as unknown[]) ?? []
       ).map((raw) => {
         const e = raw as Record<string, unknown>;
         return { id: String(e.id ?? ""), registeredName: String(e.registeredName ?? ""), countryCode: String(e.countryCode ?? e.country ?? "") };
       }),
       locations: (Array.isArray(locations)
         ? locations
-        : ((locations as Record<string, unknown>)?.items ?? [])
+        : ((locations as Record<string, unknown>)?.items as unknown[]) ?? []
       ).map((raw) => {
         const l = raw as Record<string, unknown>;
         return { id: String(l.id ?? ""), name: String(l.name ?? ""), legalEntityId: String(l.legalEntityId ?? ""), type: String(l.type ?? "branch") };
