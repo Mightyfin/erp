@@ -1157,6 +1157,32 @@ function EmployeesStep(props: {
   const [sheet, setSheet] = useState<ParsedSheet | null>(null);
   const [mapping, setMapping] = useState<Mapping>({});
   const [pasteError, setPasteError] = useState<string | null>(null);
+  // Switches entry mode while keeping the spreadsheet data — the manual grid
+  // is seeded from the imported rows so nothing typed or pasted is lost.
+  const switchMode = (next: "upload" | "manual") => {
+    setMode(next);
+    if (next === "manual" && sheet) {
+      const canonical = buildCanonical(sheet.rows, mapping);
+      const seeded: Row[] = canonical.slice(0, 20).map((r) => ({
+        first: r[0] ?? "",
+        last: r[1] ?? "",
+        email: r[2] ?? "",
+        phone: r[3] ?? "",
+        jobTitle: r[4] ?? "",
+        grade: r[5] ?? "",
+        startDate: r[6] ?? "",
+        orgUnitName: r[7] ?? "",
+      }));
+      setRows(seeded.length > 0 ? seeded : [EMPTY_ROW]);
+    }
+  };
+  // Clears the imported spreadsheet so the operator can upload/paste again.
+  const clearSheet = () => {
+    setSheet(null);
+    setMapping({});
+    setPasteError(null);
+    if (fileInput.current) fileInput.current.value = "";
+  };
 
   // Departments already created in step 2 (backend returns { items }).
   const fileInput = useRef<HTMLInputElement>(null);
@@ -1200,7 +1226,10 @@ function EmployeesStep(props: {
   // Canonical projection: what the backend will receive once Import is pressed.
   const canonical = sheet ? buildCanonical(sheet.rows, mapping) : null;
   const requiredMapped =
-    SYSTEM_FIELDS.filter((f) => f.required).every((f) => (mapping[f.key] ?? -1) >= 0);
+    SYSTEM_FIELDS.filter((f) => f.required).every((f) => {
+      const v = mapping[f.key] ?? -1;
+      return typeof v === "number" && v >= 0;
+    });
   const valid =
     (mode === "manual"
       ? rows.every((r) => r.first.trim().length > 0 && r.last.trim().length > 0 && (!r.email || isValidEmail(r.email)))
@@ -1222,7 +1251,7 @@ function EmployeesStep(props: {
             JobTitle: r.jobTitle?.trim() || null,
             Grade: r.grade?.trim() || null,
             StartDate: r.startDate?.trim() || null,
-            OrgUnitName: r.department?.trim() || null,
+            OrgUnitName: r.orgUnitName?.trim() || null,
             WorkerType: null,
           })),
       });
@@ -1253,14 +1282,14 @@ function EmployeesStep(props: {
           <button
             type="button"
             className={`rounded-md px-3 py-1.5 ${mode === "upload" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-            onClick={() => setMode("upload")}
+            onClick={() => switchMode("upload")}
           >
             Upload spreadsheet
           </button>
           <button
             type="button"
             className={`rounded-md px-3 py-1.5 ${mode === "manual" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-            onClick={() => setMode("manual")}
+            onClick={() => switchMode("manual")}
           >
             Enter manually
           </button>
@@ -1287,8 +1316,18 @@ function EmployeesStep(props: {
             {sheet && (
               <div className="space-y-3 rounded-md border p-4">
                 <div>
-                  <div className="mb-2 text-xs font-medium text-muted-foreground">
-                    Columns found in your file ({sheet.headers.length})
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Columns found in your file ({sheet.headers.length})
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={clearSheet}
+                      aria-label="Remove spreadsheet and upload again"
+                    >
+                      <X className="size-4" aria-hidden />
+                    </button>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {sheet.headers.map((h, i) => (
@@ -1324,7 +1363,7 @@ function EmployeesStep(props: {
                             onValueChange={(v) => setMapping((m) => ({ ...m, [f.key]: Number(v) }))}
                           >
                             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                            <SelectContent>
+                            <SelectContent position="popper" side="bottom" collisionPadding={8} avoidCollisions={false}>
                               <SelectItem value="-1">— Ignore this field —</SelectItem>
                               {sheet.headers.map((h, i) => (
                                 <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
@@ -1381,9 +1420,9 @@ function EmployeesStep(props: {
                 <Input value={r.grade} onChange={(e) => update(i, { grade: e.target.value })} placeholder="Grade" />
                 <Input value={r.startDate} onChange={(e) => update(i, { startDate: e.target.value })} placeholder="Start date YYYY-MM-DD" />
                 <div className="md:col-span-2">
-                  <Select value={r.department || undefined} onValueChange={(v) => update(i, { department: v })}>
+                  <Select value={r.orgUnitName || undefined} onValueChange={(v) => update(i, { orgUnitName: v })}>
                     <SelectTrigger className="w-full"><SelectValue placeholder="Department (optional)" /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" side="bottom" collisionPadding={8} avoidCollisions={false}>
                       {units.data?.filter(Boolean).map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -1432,7 +1471,7 @@ function UnitMappingControl(props: {
         <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper" side="bottom" collisionPadding={8} avoidCollisions={false}>
           <SelectItem value="-1">— Ignore this field —</SelectItem>
           {headers.map((h, i) => (
             <SelectItem key={i} value={String(i)}>{h || `Column ${i + 1}`}</SelectItem>
