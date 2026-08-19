@@ -122,7 +122,7 @@ public static class Routes
         // keeps a stray POST from wiping an organisation by accident.
         g.MapPost("/reset", async (HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
         {
-            if (!http.User.IsInRole("hr_admin"))
+            if (!WorkerPrincipal.FromClaims(http.User.Claims).IsRole("hr_admin"))
                 throw new DomainException("forbidden", "Start-afresh reset requires the hr_admin role.");
             if (scope.IsConfined)
                 throw new DomainException("setup-confined", "Branch-confined HR cannot reset the organisation.");
@@ -760,7 +760,8 @@ public static class Routes
         g.MapPost("/requests", async (HttpContext http, IExperienceService svc, IWorkerService ws, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            if (!http.User.IsInRole("hr_ops") && !http.User.IsInRole("hr_admin"))
+            var _p = WorkerPrincipal.FromClaims(http.User.Claims);
+            if (!_p.IsRole("hr_ops") && !_p.IsRole("hr_admin"))
                 return Results.Created("", await svc.CreateMyRequestAsync(ResolveSubjectId(http) ?? "", request, ct));
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             // M22: without a worker_id claim, resolve the caller via the M14
@@ -778,7 +779,7 @@ public static class Routes
         g.MapPost("/requests/{id:guid}/messages", async (Guid id, HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrRequestMessageCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            var actorRole = http.User.IsInRole("hr_ops") || http.User.IsInRole("hr_admin") ? "hr_ops" : "employee";
+            var actorRole = WorkerPrincipal.FromClaims(http.User.Claims).IsRole("hr_ops", "hr_admin") ? "hr_ops" : "employee";
             if (actorRole == "employee")
                 await svc.AddMyRequestMessageAsync(id, ResolveSubjectId(http) ?? "", request, ct);
             else
@@ -794,7 +795,8 @@ public static class Routes
         g.MapPost("/letters", async (HttpContext http, IExperienceService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<HrLetterCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-            if (!http.User.IsInRole("hr_ops") && !http.User.IsInRole("hr_admin"))
+            var _p = WorkerPrincipal.FromClaims(http.User.Claims);
+            if (!_p.IsRole("hr_ops") && !_p.IsRole("hr_admin"))
                 return Results.Created("", await svc.CreateMyLetterAsync(ResolveSubjectId(http) ?? "", request, ct));
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             if (workerId is null)
@@ -1046,7 +1048,7 @@ public static class Routes
         });
         g.MapPost("/branch-access", async (HttpContext http, ShellContext scope, HrmDbContext db, CancellationToken ct) =>
         {
-            if (!http.User.IsInRole("hr_admin"))
+            if (!WorkerPrincipal.FromClaims(http.User.Claims).IsRole("hr_admin"))
                 throw new DomainException("forbidden", "Branch access management requires the hr_admin role.");
             var request = await ReadBodyAsync<UserBranchAssignmentRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -1065,7 +1067,7 @@ public static class Routes
         });
         g.MapDelete("/branch-access/{id:guid}", async (Guid id, HttpContext http, ShellContext scope, HrmDbContext db, CancellationToken ct) =>
         {
-            if (!http.User.IsInRole("hr_admin"))
+            if (!WorkerPrincipal.FromClaims(http.User.Claims).IsRole("hr_admin"))
                 throw new DomainException("forbidden", "Branch access management requires the hr_admin role.");
             var row = await db.UserBranchAssignments.FindAsync([id], ct)
                 ?? throw new DomainException("not-found", "Assignment not found.");
