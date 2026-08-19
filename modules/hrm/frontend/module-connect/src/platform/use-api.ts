@@ -404,6 +404,24 @@ export const realApi = {
     hrmApi.post<Record<string, unknown>>("/hrm/time/leave/balances/adjust", body),
   escalateTimeApprovals: () =>
     hrmApi.post<Record<string, unknown>>("/hrm/time/escalations/run", null),
+
+  /** Leave encashment (M41 Gap 6a): HR converts unused leave to a cash payout. */
+  encashmentRate: (workerId: string, leaveTypeCode: string, days: number) =>
+    hrmApi.get<{
+      monthlyBasic: number;
+      dailyRate: number;
+      estimatedGross: number;
+      currency: string;
+    }>(`/hrm/time/leave/encashments/rate/${workerId}`, { leaveTypeCode, days }),
+  encashments: (params?: Record<string, unknown>) =>
+    hrmApi.get<{ items: Record<string, unknown>[] }>(
+      "/hrm/time/leave/encashments",
+      params ?? {},
+    ),
+  createEncashment: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/leave/encashments", body),
+  decideEncashment: (id: string, body: Record<string, unknown>) =>
+    hrmApi.post<unknown>(`/hrm/time/leave/encashments/${id}/decide`, body),
   timeOperationsHistory: () =>
     hrmApi.get<{
       imports: Record<string, unknown>[];

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/platform/components/AppShell";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { realApi, useApi } from "@/platform/use-api";
@@ -17,6 +18,10 @@ type Result = Record<string, unknown>;
 
 function TimeOperations() {
   const history = useApi(realApi.timeOperationsHistory, []);
+  const leaveTypes = useApi(() =>
+    realApi.leaveTypes ? realApi.leaveTypes({ includeInactive: false }) : Promise.resolve({ items: [] as unknown[] }),
+  );
+  const encashments = useApi(() => realApi.encashments({ pageSize: 25 }), []);
   const [rows, setRows] = useState("EMP-0001,2026-08-15,08:00,17:30");
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [workerId, setWorkerId] = useState("");
@@ -32,6 +37,64 @@ function TimeOperations() {
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Leave encashment form state (M41 Gap 6a).
+  const [encWorker, setEncWorker] = useState("");
+  const [encLeaveType, setEncLeaveType] = useState("ANNUAL");
+  const [encDays, setEncDays] = useState("1");
+  const [encNote, setEncNote] = useState("");
+  const [encQuote, setEncQuote] = useState<Record<string, unknown> | null>(null);
+  const [encBusy, setEncBusy] = useState(false);
+
+  const quoteEncashment = async () => {
+    if (!encWorker || !encLeaveType) return;
+    setEncBusy(true);
+    try {
+      const quote = await realApi.encashmentRate(encWorker, encLeaveType, Number(encDays) || 0);
+      setEncQuote(quote);
+    } catch (error) {
+      setEncQuote(null);
+      toast.error(error instanceof Error ? error.message : "Rate quote failed");
+    } finally {
+      setEncBusy(false);
+    }
+  };
+
+  const submitEncashment = async () => {
+    if (!encWorker || !encLeaveType) return;
+    setEncBusy(true);
+    try {
+      const created = await realApi.createEncashment({
+        workerId: encWorker,
+        leaveTypeCode: encLeaveType,
+        days: Number(encDays) || 0,
+        note: encNote || undefined,
+      });
+      toast.success("Encashment request created — approval is required before the payout is posted.");
+      setResult(created);
+      encashments.reload();
+      setEncDays("1");
+      setEncNote("");
+      setEncQuote(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Encashment request failed");
+    } finally {
+      setEncBusy(false);
+    }
+  };
+
+  const decideEncashment = async (id: string, action: string) => {
+    setEncBusy(true);
+    try {
+      await realApi.decideEncashment(id, { action, reason: action === "approve" ? "Approved by HR" : undefined });
+      toast.success(`Encashment ${action === "approve" ? "approved" : "rejected"}`);
+      encashments.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Decision failed");
+    } finally {
+      setEncBusy(false);
+    }
+  };
 
   const run = async (name: string, operation: () => Promise<Result>) => {
     setBusy(name);
@@ -294,6 +357,95 @@ function TimeOperations() {
           </Card>
           <Card>
             <CardHeader>
+              <CardTitle>Leave encashment</CardTitle>
+              <CardDescription>
+                Convert a worker's unused leave balance into a cash payout at their daily rate
+                (basic monthly salary ÷ 26 working days). The request needs approval before the
+                balance deduction is posted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Label htmlFor="enc-worker">Employee ID</Label>
+                <Input
+                  id="enc-worker"
+                  value={encWorker}
+                  onChange={(event) => setEncWorker(event.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="enc-leave-type">Leave type</Label>
+                {leaveTypes.data && leaveTypes.data.items.length ? (
+                  <Select value={encLeaveType} onValueChange={setEncLeaveType}>
+                    <SelectTrigger id="enc-leave-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {leaveTypes.data.items.map((item) => (
+                        <SelectItem key={String(item.id)} value={String(item.code)}>
+                          {String(item.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="enc-leave-type"
+                    value={encLeaveType}
+                    onChange={(event) => setEncLeaveType(event.target.value)}
+                  />
+                )}
+              </div>
+              <div>
+                <Label htmlFor="enc-days">Days to convert</Label>
+                <Input
+                  id="enc-days"
+                  type="number"
+                  step="0.25"
+                  min="0.25"
+                  value={encDays}
+                  onChange={(event) => setEncDays(event.target.value)}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="enc-note">Note (optional)</Label>
+                <Input
+                  id="enc-note"
+                  value={encNote}
+                  onChange={(event) => setEncNote(event.target.value)}
+                  placeholder="e.g. December leave payout"
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="sm:col-span-1"
+                onClick={quoteEncashment}
+                disabled={busy !== null || encBusy || !encWorker || !encLeaveType}
+              >
+                Quote payout
+              </Button>
+              <Button
+                className="sm:col-span-1"
+                onClick={submitEncashment}
+                disabled={busy !== null || encBusy || !encWorker || !encLeaveType || !encQuote}
+              >
+                Submit encashment request
+              </Button>
+              {encQuote ? (
+                <p className="text-sm text-muted-foreground sm:col-span-2">
+                  Estimated payout: {String(encQuote.estimatedGross)} {String(encQuote.currency)} ·
+                  daily rate {String(encQuote.dailyRate)} · monthly basic {String(encQuote.monthlyBasic)}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground sm:col-span-2">
+                  Quote the payout first to see the estimated amount and confirm the available
+                  balance.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
               <CardTitle>Approval escalation</CardTitle>
               <CardDescription>
                 Reassigns overdue leave and attendance-correction approvals up the manager chain and
@@ -372,6 +524,54 @@ function TimeOperations() {
                     ))
                   ) : (
                     <p className="text-muted-foreground">No adjustments yet.</p>
+                  )}
+                </div>
+                <div>
+                  <p className="font-medium">Leave encashments</p>
+                  {encashments.data && encashments.data.items.length ? (
+                    encashments.data.items.map((item) => (
+                      <div key={String(item.id)} className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                        <span>
+                          {String(item.workerName ?? "—")} · {String(item.leaveTypeCode)} ·{" "}
+                          {String(item.days)} day(s) · {String(item.grossAmount)} {String(item.currency ?? "ZMW")}
+                        </span>
+                        <span
+                          className={
+                            item.status === "approved"
+                              ? "rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700"
+                              : item.status === "rejected"
+                                ? "rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700"
+                                : "rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+                          }
+                        >
+                          {String(item.status)}
+                        </span>
+                        {item.status === "submitted" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs"
+                              onClick={() => decideEncashment(String(item.id), "approve")}
+                              disabled={busy !== null || encBusy}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs"
+                              onClick={() => decideEncashment(String(item.id), "reject")}
+                              disabled={busy !== null || encBusy}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-muted-foreground">No encashment requests yet.</p>
                   )}
                 </div>
               </>
