@@ -703,12 +703,17 @@ public sealed class SetupServiceImpl(
                     r.FirstName.Trim().Equals(w.FirstName.Trim(), StringComparison.OrdinalIgnoreCase) &&
                     r.LastName.Trim().Equals(w.LastName.Trim(), StringComparison.OrdinalIgnoreCase));
                 var values = new List<WorkerComponentValue>();
-                if (row is not null && row.Grade is not null)
+                if (row is not null && !string.IsNullOrWhiteSpace(row.Grade))
                 {
+                    // A bare number in the grade slot (e.g. "1000") is treated as
+                    // a basic-salary hint so the first run has something to
+                    // compute; named bands ("Grade 1", "Manager") are kept as
+                    // the worker's Grade string and left blank here so the HR
+                    // officer sets real amounts on the payroll screen.
                     var basicComponent = (await payrollRepo.ListAllComponentsAsync(ct))
                         .FirstOrDefault(c => c.Code == "basic");
                     if (basicComponent is not null && decimal.TryParse(row.Grade, System.Globalization.NumberStyles.Any,
-                            System.Globalization.CultureInfo.InvariantCulture, out var gradeAmount))
+                            System.Globalization.CultureInfo.InvariantCulture, out var gradeAmount) && gradeAmount > 0)
                         values.Add(new WorkerComponentValue { ComponentId = basicComponent.Id, Amount = gradeAmount });
                 }
                 var profile = new WorkerPayrollProfile
