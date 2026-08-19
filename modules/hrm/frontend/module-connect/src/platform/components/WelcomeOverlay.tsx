@@ -830,7 +830,7 @@ function PayrollStep(props: { sending: boolean; onComplete: (p: Record<string, u
               <SelectTrigger id="py-freq" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="semi-monthly">Semi-monthly</SelectItem>
+                <SelectItem value="semimonthly">Semi-monthly</SelectItem>
                 <SelectItem value="biweekly">Bi-weekly</SelectItem>
                 <SelectItem value="weekly">Weekly</SelectItem>
               </SelectContent>
