@@ -83,9 +83,26 @@ function PayslipDetail() {
     if (!USE_REAL) return null;
     const raw = (await realApi.myPayslipById(id)) as Record<string, unknown> | null;
     if (!raw) return null;
+    // M43: the backend component snapshot is sparse (code, name, type, amount,
+    // explanation). CalculationExplainer requires the full CalculationLine
+    // shape, so fill the gaps with sensible defaults instead of throwing on
+    // `undefined.map`.
     const components = Array.isArray(raw.components)
       ? (raw.components as Record<string, unknown>[]).map((component) => ({
           ...component,
+          code: String(component.componentCode ?? component.componentName ?? ""),
+          label: String(component.componentName ?? component.componentCode ?? ""),
+          amount: Number(component.amount ?? 0),
+          explanation: String(component.explanation ?? ""),
+          inputs: Array.isArray(component.inputs)
+            ? (component.inputs as { label: string; value: string }[])
+            : [
+                { label: "Amount", value: new Intl.NumberFormat(undefined, { style: "currency", currency: String(raw.currency ?? "ZMW") }).format(Number(component.amount ?? 0)) },
+                { label: "Rule", value: String(component.explanation ?? "Fixed amount") },
+              ],
+          ruleVersion: String(component.ruleVersion ?? "current"),
+          effectiveFrom: String(component.effectiveFrom ?? ""),
+          priorAmount: component.priorAmount === undefined ? undefined : Number(component.priorAmount),
           name: component.componentName,
           kind:
             component.componentType === "earning"
