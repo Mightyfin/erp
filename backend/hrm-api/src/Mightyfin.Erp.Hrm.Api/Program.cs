@@ -211,8 +211,6 @@ if (args.Contains("--run-outbox-publisher"))
 
 // ---------- Cross-cutting middleware ----------
 app.UseCors();
-// M44 branch scoping: populate ShellContext from frontend shell-state headers.
-app.UseMiddleware<Mightyfin.Erp.Hrm.Api.ShellContextMiddleware>();
 
 // Assign a per-request id (client-supplied X-Request-Id preferred) and log
 // every request with method/path/status/duration for observability.
@@ -347,6 +345,14 @@ app.Use(async (ctx, next) =>
     }
 });
 app.UseAuthorization();
+
+// M44 branch scoping + M45 branch confinement: populate ShellContext from
+// frontend shell-state headers and restrict confined operators to their
+// assigned branches. MUST run after UseAuthentication — it reads the token
+// subject from http.User to load branch assignments; registered before auth
+// it always saw an anonymous principal and confinement was silently skipped
+// (M45 smoke test root cause).
+app.UseMiddleware<Mightyfin.Erp.Hrm.Api.ShellContextMiddleware>();
 
 // ---------- Route registrations ----------
 // URL-based API versioning: the current version is served at /api/v{n}/hrm
