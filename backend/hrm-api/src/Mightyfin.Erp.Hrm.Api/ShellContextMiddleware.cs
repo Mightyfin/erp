@@ -29,10 +29,15 @@ public sealed class ShellContextMiddleware(RequestDelegate next, ILogger<ShellCo
         Guid operatorId = Guid.Empty;
         if (!string.IsNullOrEmpty(rawSubject) && Guid.TryParse(rawSubject, out operatorId))
         {
-            var allowed = await db.UserBranchAssignments
+            // TEMP M45 diagnostics — remove after smoke test passes
+            var q = db.UserBranchAssignments
                 .Where(x => x.UserId == operatorId)
-                .Select(x => x.LocationId)
-                .ToListAsync(http.RequestAborted);
+                .Select(x => x.LocationId);
+            logger.LogWarning("M45-DEBUG op={Op} tenant={Tenant} sql={Sql}", operatorId, tenantId, q.ToQueryString());
+            var allowed = await q.ToListAsync(http.RequestAborted);
+            var totalAll = await db.UserBranchAssignments.CountAsync(http.RequestAborted);
+            logger.LogWarning("M45-DEBUG allowed={N} totalRows={Total}", allowed.Count, totalAll);
+            // END TEMP M45 diagnostics
             scope.AllowedLocationIds.AddRange(allowed);
         }
 
