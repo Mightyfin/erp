@@ -63,3 +63,24 @@ public class LeaveBalanceAdjustment : Entity
     public string AdjustedBySubjectId { get; set; } = null!;
     public Guid LedgerEntryId { get; set; }
 }
+
+/// <summary>M41 Gap 6a: leave encashment request. HR converts unused leave
+/// balance into a cash payout at the worker's daily rate (basic monthly /
+/// 26 working days). Approval posts a permanent "encashment" ledger entry
+/// that reduces the leave balance; rejection leaves the balance untouched.</summary>
+public class LeaveEncashmentRequest : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public string LeaveTypeCode { get; set; } = null!;
+    public decimal Days { get; set; }
+    public decimal MonthlyRate { get; set; }            // basic monthly amount quoted at encashment time
+    public decimal GrossAmount { get; set; }            // Days / 26 * MonthlyRate, rounded to 2 decimals
+    public string Note { get; set; } = "";
+    public string Status { get; set; } = "submitted";   // submitted | approved | rejected | cancelled
+    public string? DecisionReason { get; set; }
+    public string CreatedBySubjectId { get; set; } = null!;
+    public string? DecidedBySubjectId { get; set; }
+    public DateTimeOffset? DecidedAt { get; set; }
+    public Guid? LedgerEntryId { get; set; }
+}

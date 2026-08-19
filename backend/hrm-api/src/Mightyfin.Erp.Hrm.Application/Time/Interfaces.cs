@@ -43,6 +43,11 @@ public interface ITimeRepository
     Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct);
     Task<LeaveBalanceAdjustment> CreateAdjustmentAsync(LeaveBalanceAdjustment adjustment, CancellationToken ct);
     Task<List<LeaveBalanceAdjustment>> ListAdjustmentsAsync(CancellationToken ct);
+    // M41 Gap 6a: leave encashment
+    Task<(List<LeaveEncashmentRequest> Items, int Total)> ListEncashmentsAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<LeaveEncashmentRequest?> GetEncashmentAsync(Guid id, CancellationToken ct);
+    Task<LeaveEncashmentRequest> CreateEncashmentAsync(LeaveEncashmentRequest request, CancellationToken ct);
+    Task<LeaveEncashmentRequest> UpdateEncashmentAsync(LeaveEncashmentRequest request, CancellationToken ct);
 }
 
 /// <summary>Workflow/approval engine interface: every approvable action opens a

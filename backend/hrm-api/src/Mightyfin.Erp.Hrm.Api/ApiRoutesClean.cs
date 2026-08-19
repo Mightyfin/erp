@@ -632,6 +632,23 @@ public static class Routes
             => Results.Ok(await svc.EscalateOverdueAsync(ct)));
         g.MapGet("/operations/history", async (ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.GetOperationsHistoryAsync(ct)));
+
+        // M41 Gap 6a: leave encashment — HR converts unused leave balance into
+        // a cash payout at the worker's daily rate (basic monthly / 26).
+        g.MapGet("/leave/encashments", async ([FromQuery] Guid? workerId, [FromQuery] string? status, ITimeService svc, CancellationToken ct)
+            => await svc.ListEncashmentsAsync(workerId, status, ct));
+        g.MapGet("/leave/encashments/rate/{workerId:guid}", async (Guid workerId, [FromQuery] string leaveTypeCode, [FromQuery] decimal days, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetEncashmentRateAsync(workerId, leaveTypeCode, days, ct)));
+        g.MapPost("/leave/encashments", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveEncashmentCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateEncashmentAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/leave/encashments/{id:guid}/decide", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<LeaveEncashmentDecideRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideEncashmentAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
     }
 
     public static void RegisterWorkflow(WebApplication app)

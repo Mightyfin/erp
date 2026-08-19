@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Mightyfin.Erp.Hrm.Domain.Entities;
+using Mightyfin.Erp.Hrm.Application.Payroll;
 
 namespace Mightyfin.Erp.Hrm.Application.Time;
 
@@ -42,6 +43,12 @@ public interface ITimeService
     Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request, string actorSubjectId, CancellationToken ct);
     Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
     Task<TimeOperationsHistoryDto> GetOperationsHistoryAsync(CancellationToken ct);
+    // M41 Gap 6a: leave encashment — HR converts unused leave balance into a cash
+    // payout at the worker's daily rate (basic monthly / 26 working days).
+    Task<List<LeaveEncashmentRequestDto>> ListEncashmentsAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<LeaveEncashmentRequestDto> CreateEncashmentAsync(LeaveEncashmentCreateRequest request, string actorSubjectId, CancellationToken ct);
+    Task<LeaveEncashmentRequestDto> DecideEncashmentAsync(Guid id, LeaveEncashmentDecideRequest request, string actorSubjectId, CancellationToken ct);
+    Task<LeaveEncashmentRateQuote> GetEncashmentRateAsync(Guid workerId, string leaveTypeCode, decimal days, CancellationToken ct);
 }
 
 public sealed record LeaveRequestDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
@@ -72,6 +79,7 @@ public sealed class TimeServiceImpl(
     IAuthzService authz,
     IWorkflowService workflow,
     IWorkerRepository workers,
+    IPayrollRepository? payroll = null,
     IOutboxWriter? outbox = null,
     IUnitOfWork? unitOfWork = null) : ITimeService
 {
@@ -469,8 +477,107 @@ public sealed class TimeServiceImpl(
             adjustment.Id, adjustment.WorkerId, adjustment.Worker?.FullName ?? "",
             adjustment.LeaveTypeCode, adjustment.Days, adjustment.Reason,
             adjustment.AdjustedBySubjectId, adjustment.CreatedAt)).ToList();
-        return new TimeOperationsHistoryDto(imports, accruals, adjustments);
+        var encashments = (await repo.ListEncashmentsAsync(null, null, ct)).Items
+            .Select(e => new LeaveEncashmentHistoryDto(
+                e.Id, e.WorkerId, e.Worker?.FullName ?? "", e.LeaveTypeCode, e.Days,
+                e.GrossAmount, e.Status, e.CreatedBySubjectId, e.CreatedAt)).ToList();
+        return new TimeOperationsHistoryDto(imports, accruals, adjustments, encashments);
     }
+
+    // ===================== M41 Gap 6a: leave encashment =====================
+    /// <summary>Standard workdays divisor used to derive a daily rate from the
+    /// basic monthly salary. 26 days matches the common Zambian payroll
+    /// convention (monthly / 26).</summary>
+    internal const decimal DailyRateDivisor = 26m;
+
+    public async Task<List<LeaveEncashmentRequestDto>> ListEncashmentsAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var (items, _) = await repo.ListEncashmentsAsync(workerId, status, ct);
+        return items.Select(MapEncashment).ToList();
+    }
+
+    public async Task<LeaveEncashmentRateQuote> GetEncashmentRateAsync(Guid workerId, string leaveTypeCode, decimal days, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
+        await RequireWorkerScopeAsync(workerId, ct);
+        var quote = await ComputeEncashmentQuoteAsync(workerId, days, ct);
+        return quote;
+    }
+
+    public async Task<LeaveEncashmentRequestDto> CreateEncashmentAsync(LeaveEncashmentCreateRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager");
+        await RequireWorkerScopeAsync(request.WorkerId, ct);
+        if (request.Days <= 0)
+            throw new DomainException("encashment-invalid-days", "Encashment days must be greater than zero.");
+        var worker = await workers.GetByIdAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", $"Worker {request.WorkerId} does not exist.");
+        var leaveType = await repo.GetLeaveTypeAsync(request.LeaveTypeCode, ct)
+            ?? throw new DomainException("leave-type-not-found", $"Leave type {request.LeaveTypeCode} is not configured.");
+        var quote = await ComputeEncashmentQuoteAsync(request.WorkerId, request.Days, ct);
+        var balances = await GetBalancesAsync(request.WorkerId, ct);
+        var available = balances.FirstOrDefault(b => string.Equals(b.LeaveTypeCode, request.LeaveTypeCode, StringComparison.OrdinalIgnoreCase))?.Available ?? 0;
+        if (available < request.Days - 0.0001m)
+            throw new DomainException("encashment-insufficient-balance",
+                $"Available {leaveType.Name} balance ({available:F1} days) is less than requested for encashment ({request.Days:F1} days).");
+        var enc = new LeaveEncashmentRequest
+        {
+            WorkerId = request.WorkerId,
+            LeaveTypeCode = request.LeaveTypeCode,
+            Days = request.Days,
+            MonthlyRate = quote.MonthlyBasic,
+            GrossAmount = quote.EstimatedGross,
+            Note = request.Note ?? "",
+            Status = "submitted",
+            CreatedBySubjectId = actorSubjectId,
+        };
+        var created = await repo.CreateEncashmentAsync(enc, ct);
+        await workflow.OpenAsync("leave-encashment", created.Id, created.WorkerId,
+            JsonSerializer.Serialize(new { created.LeaveTypeCode, created.Days, created.MonthlyRate, created.GrossAmount }), ct);
+        return MapEncashment(created);
+    }
+
+    public async Task<LeaveEncashmentRequestDto> DecideEncashmentAsync(Guid id, LeaveEncashmentDecideRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var enc = await repo.GetEncashmentAsync(id, ct)
+            ?? throw new DomainException("encashment-not-found", $"Encashment request {id} does not exist.");
+        if (enc.Status != "submitted")
+            throw new DomainException("encashment-not-reviewable", $"Encashment request is {enc.Status} and cannot be decided.");
+        // decisions always flow through the workflow engine so approvals,
+        // returns and rejections get the same audit trail as leave requests;
+        // the effect applier posts the ledger deduction on approval.
+        var actorWorker = await workers.FindBySubjectIdAsync(actorSubjectId, ct);
+        var actorId = actorWorker?.Id ?? Guid.Empty;
+        if (actorId == Guid.Empty)
+            throw new DomainException("encashment-decider-not-linked", "The decider's account is not linked to an employee record.");
+        var workflowRequest = await workflow.GetOpenBySubjectAsync("leave-encashment", enc.WorkerId, ct);
+        if (workflowRequest is null)
+            throw new DomainException("encashment-no-workflow", "No open approval workflow exists for this encashment request.");
+        await workflow.DecideAsync(workflowRequest.Id, actorId, new WorkflowDecisionRequest(request.Action, request.Reason), ct);
+        var decided = await repo.GetEncashmentAsync(id, ct)
+            ?? throw new DomainException("encashment-not-found", $"Encashment request {id} does not exist.");
+        return MapEncashment(decided);
+    }
+
+    /// <summary>Worker's basic monthly amount and derived daily rate, or a
+    /// zero-rate quote when no basic component exists on the open profile.</summary>
+    private async Task<LeaveEncashmentRateQuote> ComputeEncashmentQuoteAsync(Guid workerId, decimal days, CancellationToken ct)
+    {
+        var profile = payroll is null ? null : await payroll.FindOpenProfileAsync(workerId, ct);
+        var currency = profile?.PayGroup?.Currency ?? "ZMW";
+        var basic = profile?.ComponentValues
+            .FirstOrDefault(v => string.Equals(v.Component?.Code, "basic", StringComparison.OrdinalIgnoreCase))?.Amount ?? 0;
+        var daily = basic > 0 ? Math.Round(basic / DailyRateDivisor, 2) : 0;
+        var gross = Math.Round(days / DailyRateDivisor * basic, 2);
+        return new LeaveEncashmentRateQuote(basic, daily, gross, currency);
+    }
+
+    private static LeaveEncashmentRequestDto MapEncashment(LeaveEncashmentRequest e) =>
+        new(e.Id, e.WorkerId, e.Worker?.FullName ?? "", e.Worker?.EmployeeNo,
+            e.LeaveTypeCode, e.Days, e.MonthlyRate, e.GrossAmount, e.Note, e.Status,
+            e.CreatedBySubjectId, e.DecisionReason, e.CreatedAt);
 
     public async Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct)
     {

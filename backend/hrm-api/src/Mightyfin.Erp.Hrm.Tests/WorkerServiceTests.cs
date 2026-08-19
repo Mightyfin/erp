@@ -49,7 +49,6 @@ internal static class TestDbContextFactory
         conn.Open();
         var opts = new DbContextOptionsBuilder<HrmDbContext>()
             .UseSqlite(conn)
-            
             .Options;
         var ctx = new HrmDbContext(opts, new FixedTenantAccessor(tenant));
         ctx.Database.EnsureCreated();

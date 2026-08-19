@@ -64,6 +64,56 @@ public sealed class LeaveEffectApplierImpl(
                     ct);
             }
         }
+        else if (workflowType == "leave-encashment" && request.SubjectWorkerId.HasValue)
+        {
+            // M41 Gap 6a: approving an encashment posts a permanent ledger
+            // deduction so the converted days leave the available balance; the
+            // request record (rate, gross amount) was already quoted at
+            // submission time so rejection/cancellation touch nothing else.
+            var (items, _) = await timeRepo.ListEncashmentsAsync(request.SubjectWorkerId, null, ct);
+            var enc = items.FirstOrDefault(i => i.Status == "submitted");
+            if (enc is null) return;
+            switch (decisionAction)
+            {
+                case "approve":
+                    enc.Status = "approved";
+                    enc.DecisionReason = request.RejectionReason ?? enc.DecisionReason;
+                    var ledger = await timeRepo.AddLedgerEntryAsync(new LeaveBalanceLedger
+                    {
+                        WorkerId = enc.WorkerId,
+                        LeaveTypeCode = enc.LeaveTypeCode,
+                        Days = -enc.Days,
+                        Reason = "encashment",
+                        ReferenceId = enc.Id,
+                        ReferenceType = "encashment",
+                        Note = $"Leave encashment approved — {enc.Days} day(s) at {enc.GrossAmount} (quoted rate {enc.MonthlyRate}/month)",
+                    }, ct);
+                    enc.LedgerEntryId = ledger.Id;
+                    break;
+                case "reject":
+                    enc.Status = "rejected";
+                    enc.DecisionReason = request.RejectionReason;
+                    break;
+                case "return":
+                    enc.Status = "returned";
+                    enc.DecisionReason = request.ReturnNote;
+                    break;
+                case "cancel":
+                    enc.Status = "cancelled";
+                    break;
+                case "delegate":
+                    return; // no state change on the subject
+            }
+            // attribute the decision to the most recent decider's actor id;
+            // the decider's linked worker (if any) carries the subject id used
+            // for attribution and downstream notifications.
+            var lastDecision = request.Decisions
+                .OrderByDescending(d => d.CreatedAt).FirstOrDefault();
+            if (lastDecision?.ActorId is not null && lastDecision.ActorId != default)
+                enc.DecidedBySubjectId = lastDecision.ActorId.ToString("D");
+            enc.DecidedAt = enc.DecidedAt ?? DateTimeOffset.UtcNow;
+            await timeRepo.UpdateEncashmentAsync(enc, ct);
+        }
         else if (workflowType == "attendance-correction" && request.SubjectWorkerId.HasValue)
         {
             var (items, _) = await timeRepo.ListCorrectionsAsync(request.SubjectWorkerId, null, ct);

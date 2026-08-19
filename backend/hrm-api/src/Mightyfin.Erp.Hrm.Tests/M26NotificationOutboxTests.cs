@@ -81,7 +81,7 @@ public sealed class M26NotificationOutboxTests
             new WorkflowRepository(ctx), new PermissiveAuthz(), new NoOpEffects());
         var service = new TimeServiceImpl(
             new TimeRepository(ctx), new PermissiveAuthz(), workflow, new WorkerRepository(ctx),
-            writer ?? Writer(ctx), new EfUnitOfWork(ctx));
+            null, writer ?? Writer(ctx), new EfUnitOfWork(ctx));
         return (service, ctx, worker);
     }
 

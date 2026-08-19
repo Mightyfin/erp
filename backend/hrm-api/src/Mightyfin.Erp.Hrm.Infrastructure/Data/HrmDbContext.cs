@@ -88,6 +88,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<AttendanceImportBatch> AttendanceImportBatches => Set<AttendanceImportBatch>();
     public DbSet<LeaveAccrualRun> LeaveAccrualRuns => Set<LeaveAccrualRun>();
     public DbSet<LeaveBalanceAdjustment> LeaveBalanceAdjustments => Set<LeaveBalanceAdjustment>();
+    public DbSet<LeaveEncashmentRequest> LeaveEncashmentRequests => Set<LeaveEncashmentRequest>();
 
     // Workflows & experience
     public DbSet<WorkflowRequest> WorkflowRequests => Set<WorkflowRequest>();
@@ -207,6 +208,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<AttendanceImportBatch>(modelBuilder, "attendance_import_batches");
         ConfigureEntity<LeaveAccrualRun>(modelBuilder, "leave_accrual_runs", e => e.HasIndex(x => new { x.TenantId, x.Period }).IsUnique());
         ConfigureEntity<LeaveBalanceAdjustment>(modelBuilder, "leave_balance_adjustments");
+        ConfigureEntity<LeaveEncashmentRequest>(modelBuilder, "leave_encashments");
         ConfigureEntity<WorkflowRequest>(modelBuilder, "workflow_requests");
         ConfigureEntity<WorkflowDecision>(modelBuilder, "workflow_decisions");
         ConfigureEntity<ApprovalDelegation>(modelBuilder, "approval_delegations");
@@ -322,6 +324,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         modelBuilder.Entity<WorkerShiftAssignment>().HasOne(x => x.Shift).WithMany().HasForeignKey(x => x.ShiftId);
         modelBuilder.Entity<WorkerShiftAssignment>().HasOne(x => x.Calendar).WithMany().HasForeignKey(x => x.CalendarId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<LeaveBalanceAdjustment>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+        modelBuilder.Entity<LeaveEncashmentRequest>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         modelBuilder.Entity<WorkflowRequest>().HasMany(x => x.Decisions).WithOne(x => x.Request).HasForeignKey(x => x.RequestId);
         modelBuilder.Entity<HrRequest>().HasMany(x => x.Messages).WithOne(x => x.Request).HasForeignKey(x => x.RequestId);
         modelBuilder.Entity<HrLetter>().HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);

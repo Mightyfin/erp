@@ -585,6 +585,35 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
     public async Task<List<LeaveBalanceAdjustment>> ListAdjustmentsAsync(CancellationToken ct)
         => (await db.LeaveBalanceAdjustments.Include(adjustment => adjustment.Worker).Take(50).ToListAsync(ct))
             .OrderByDescending(adjustment => adjustment.CreatedAt).ToList();
+
+    // M41 Gap 6a: leave encashment
+    public async Task<(List<LeaveEncashmentRequest> Items, int Total)> ListEncashmentsAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        var q = db.LeaveEncashmentRequests.AsQueryable();
+        if (workerId.HasValue) q = q.Where(e => e.WorkerId == workerId.Value);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(e => e.Status == status);
+        var items = (await q.Include(e => e.Worker).Take(100).ToListAsync(ct))
+            .OrderByDescending(e => e.CreatedAt).ToList();
+        return (items, items.Count);
+    }
+
+    public async Task<LeaveEncashmentRequest?> GetEncashmentAsync(Guid id, CancellationToken ct)
+        => await db.LeaveEncashmentRequests.Include(e => e.Worker).FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public async Task<LeaveEncashmentRequest> CreateEncashmentAsync(LeaveEncashmentRequest request, CancellationToken ct)
+    {
+        db.LeaveEncashmentRequests.Add(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
+
+    public async Task<LeaveEncashmentRequest> UpdateEncashmentAsync(LeaveEncashmentRequest request, CancellationToken ct)
+    {
+        if (db.Entry(request).State == EntityState.Detached)
+            db.LeaveEncashmentRequests.Update(request);
+        await db.SaveChangesAsync(ct);
+        return request;
+    }
 }
 
 // ===================== Workflow =====================

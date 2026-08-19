@@ -418,8 +418,19 @@ public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTy
 public sealed record LeaveBalanceAdjustmentDto(Guid Id, Guid WorkerId, string WorkerName,
     string LeaveTypeCode, decimal Days, string Reason, string AdjustedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record EscalationRunDto(int Reviewed, int Escalated, DateTimeOffset RunAt);
+
+// M41 Gap 6a: leave encashment request/response contracts.
+public sealed record LeaveEncashmentCreateRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string? Note);
+public sealed record LeaveEncashmentDecideRequest(string Action, string? Reason);
+public sealed record LeaveEncashmentRateQuote(decimal MonthlyBasic, decimal DailyRate, decimal EstimatedGross, string Currency);
+public sealed record LeaveEncashmentRequestDto(Guid Id, Guid WorkerId, string WorkerName, string? EmployeeNo,
+    string LeaveTypeCode, decimal Days, decimal MonthlyRate, decimal GrossAmount, string Note,
+    string Status, string CreatedBySubjectId, string? DecisionReason, DateTimeOffset CreatedAt);
+public sealed record LeaveEncashmentHistoryDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
+    decimal Days, decimal GrossAmount, string Status, string CreatedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record TimeOperationsHistoryDto(List<AttendanceImportHistoryDto> Imports,
-    List<LeaveAccrualRunDto> Accruals, List<LeaveBalanceAdjustmentDto> Adjustments);
+    List<LeaveAccrualRunDto> Accruals, List<LeaveBalanceAdjustmentDto> Adjustments,
+    List<LeaveEncashmentHistoryDto> Encashments);
 
 /// <summary>Roster day for the worker: expected shift, attendance, exceptions, cutoff.</summary>
 public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDay, string? ClockIn, string? ClockOut,

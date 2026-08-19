@@ -30,7 +30,8 @@ public class LeaveBalanceLedger : Entity
     public decimal Days { get; set; }                  // + accrual, - taken, - expired
     public string Reason { get; set; } = null!;        // annual-accrual | request | carry-forward | forfeiture | manual-adjustment
     public Guid? ReferenceId { get; set; }             // linked leave request if applicable
-    public string ReferenceType { get; set; } = "";    // leave-request | adjustment
+    public string ReferenceType { get; set; } = "";    // leave-request | adjustment | encashment
+    public string Note { get; set; } = "";             // M41 Gap 6a: human-readable note (e.g. encashment gross amount)
     public DateOnly ForDate { get; set; }
 }
 
