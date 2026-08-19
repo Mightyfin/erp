@@ -39,6 +39,13 @@ function NotFoundComponent() {
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
+  if (typeof window !== "undefined") {
+    (window as unknown as Record<string, unknown>).__pageLoadError = {
+      message: error?.message ?? String(error),
+      stack: error?.stack,
+      route: window.location.pathname,
+    };
+  }
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
