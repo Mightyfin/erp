@@ -226,5 +226,5 @@ public sealed class BenefitServiceImpl(
             c.BenefitType?.Name ?? "?", c.AmountClaimed, c.Currency, c.Note,
             c.EvidenceAttached, c.Status, c.DecisionReason, c.ApprovedAmount,
             c.CreatedBySubjectId, c.DecidedBySubjectId, c.DecidedAt,
-            c.PaidBySubjectId, c.PaidAt, c.CreatedAt);
+            c.PaidBySubjectId, c.PaidAt, c.CreatedAt, c.LocationId);
 }

@@ -53,7 +53,7 @@ public interface ITimeService
 
 public sealed record LeaveRequestDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
     string StartDate, string EndDate, decimal RequestedDays, string Status, bool BalanceReserved,
-    bool CrossesCutoff, DateTimeOffset CreatedAt);
+    bool CrossesCutoff, DateTimeOffset CreatedAt, Guid? LocationId = null);
 
 /// <summary>M16: the signed-in worker's own leave request row, including the
 /// rejection/return reason so the UI can explain why a request was sent back.</summary>
@@ -72,7 +72,7 @@ public sealed record SelfDashboardDto(Guid WorkerId, string WorkerName, string? 
     PunchResultDto? TodayPunch, List<LeaveBalanceDto> Balances);
 public sealed record AttendanceCorrectionDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
     string IssueType, string? ProposedClockIn, string? ProposedClockOut, string? ProposedStatus,
-    string Reason, string Status, DateTimeOffset CreatedAt);
+    string Reason, string Status, DateTimeOffset CreatedAt, Guid? LocationId = null);
 
 public sealed class TimeServiceImpl(
     ITimeRepository repo,
@@ -209,7 +209,7 @@ public sealed class TimeServiceImpl(
         return new Paged<AttendanceCorrectionDto>(items.Select(c => new AttendanceCorrectionDto(
             c.Id, c.WorkerId, c.Worker?.FullName ?? "", c.WorkDate.ToString(), c.IssueType,
             c.ProposedClockIn?.ToString(), c.ProposedClockOut?.ToString(), c.ProposedStatus,
-            c.Reason, c.Status, c.CreatedAt)).ToList(), total, 1, 50);
+            c.Reason, c.Status, c.CreatedAt, c.LocationId)).ToList(), total, 1, 50);
     }
 
     public async Task<AttendanceCorrectionDto> CreateCorrectionAsync(AttendanceCorrectionCreate request, CancellationToken ct)
@@ -234,7 +234,7 @@ public sealed class TimeServiceImpl(
             JsonSerializer.Serialize(new { created.WorkDate, created.IssueType, created.ProposedClockIn, created.ProposedClockOut, created.ProposedStatus }), ct);
         return new AttendanceCorrectionDto(created.Id, created.WorkerId, created.Worker?.FullName ?? "",
             created.WorkDate.ToString(), created.IssueType, created.ProposedClockIn?.ToString(),
-            created.ProposedClockOut?.ToString(), created.ProposedStatus, created.Reason, created.Status, created.CreatedAt);
+            created.ProposedClockOut?.ToString(), created.ProposedStatus, created.Reason, created.Status, created.CreatedAt, created.LocationId);
     }
 
     // ===================== M3: attendance, roster, decisions =====================
@@ -599,7 +599,7 @@ public sealed class TimeServiceImpl(
     private static LeaveEncashmentRequestDto MapEncashment(LeaveEncashmentRequest e) =>
         new(e.Id, e.WorkerId, e.Worker?.FullName ?? "", e.Worker?.EmployeeNo,
             e.LeaveTypeCode, e.Days, e.MonthlyRate, e.GrossAmount, e.Note, e.Status,
-            e.CreatedBySubjectId, e.DecisionReason, e.CreatedAt);
+            e.CreatedBySubjectId, e.DecisionReason, e.CreatedAt, e.LocationId);
 
     public async Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct)
     {
@@ -653,7 +653,7 @@ public sealed class TimeServiceImpl(
         return new AttendanceCorrectionDto(decided.Id, decided.WorkerId, decided.Worker?.FullName ?? "",
             decided.WorkDate.ToString(), decided.IssueType, decided.ProposedClockIn?.ToString(),
             decided.ProposedClockOut?.ToString(), decided.ProposedStatus, decided.Reason,
-            decided.Status, decided.CreatedAt);
+            decided.Status, decided.CreatedAt, decided.LocationId);
     }
 
     public async Task<LeaveRequestDto> DecideLeaveAsync(Guid id, TimeDecisionRequest request, CancellationToken ct)
@@ -878,7 +878,7 @@ public sealed class TimeServiceImpl(
 
     private static LeaveRequestDto Map(LeaveRequest r) => new(
         r.Id, r.WorkerId, r.Worker?.FullName ?? "", r.LeaveTypeCode, r.StartDate.ToString(),
-        r.EndDate.ToString(), r.RequestedDays, r.Status, r.BalanceReserved, r.CrossesCutoff, r.CreatedAt);
+        r.EndDate.ToString(), r.RequestedDays, r.Status, r.BalanceReserved, r.CrossesCutoff, r.CreatedAt, r.LocationId);
 
     private static AttendanceRecordDto MapAttendance(AttendanceRecord a) => new(
         a.Id, a.WorkerId, a.Worker?.FullName ?? "", a.WorkDate.ToString(),

@@ -61,4 +61,4 @@ public sealed record BenefitClaimDto(
     string? Note, bool EvidenceAttached, string Status, string? DecisionReason,
     decimal? ApprovedAmount,     string? CreatedBySubjectId, string? DecidedBySubjectId,
     DateTimeOffset? DecidedAt, string? PaidBySubjectId, DateTimeOffset? PaidAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt, Guid? LocationId = null);

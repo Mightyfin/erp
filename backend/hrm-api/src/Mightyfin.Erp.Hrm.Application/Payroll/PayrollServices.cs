@@ -1082,7 +1082,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         p.RunLine?.Worker?.FullName, p.RunLine?.Worker?.EmployeeNo,
         p.RunLine?.Run?.PayPeriod?.PeriodLabel, p.RunLine?.Run?.PayPeriod?.PayDate.ToString("yyyy-MM-dd"),
         p.RunLine?.RunId, "ZMW",
-        p.RunLine?.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList());
+        p.RunLine?.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
+        p.LocationId);
 
     /// <summary>M24: per-worker statutory identity readiness for the run. The
     /// four Zambian identity references (NRC, TPIN, NAPSA, NHIMA) must all be
@@ -1109,7 +1110,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId,
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
         r.PaymentFileReference, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
-        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt);
+        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),

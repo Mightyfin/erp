@@ -161,7 +161,7 @@ public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, i
     string? ReleasedBySubjectId = null, string PaymentStatus = "not-created",
     string? PaymentFileReference = null, string? PaymentApprovedBySubjectId = null,
     string? PaymentReleasedBySubjectId = null, string? ReconciliationReference = null,
-    decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null);
+    decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,
@@ -180,7 +180,7 @@ public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal 
     string? WorkerNapsaNumber = null, string? WorkerNhimaNumber = null,
     string? WorkerName = null, string? EmployeeNo = null, string? PeriodLabel = null,
     string? PayDate = null, Guid? RunId = null, string Currency = "ZMW",
-    List<PayrollLineComponentDto>? Components = null);
+    List<PayrollLineComponentDto>? Components = null, Guid? LocationId = null);
 public sealed record PayrollRunReverseCreate(string? Reason = null);
 public sealed record PayrollExceptionDecisionRequest(string Decision, string Reason);
 public sealed record PayrollCorrectionRequest(string ComponentCode, decimal Amount, string Reason);
@@ -425,7 +425,7 @@ public sealed record LeaveEncashmentDecideRequest(string Action, string? Reason)
 public sealed record LeaveEncashmentRateQuote(decimal MonthlyBasic, decimal DailyRate, decimal EstimatedGross, string Currency);
 public sealed record LeaveEncashmentRequestDto(Guid Id, Guid WorkerId, string WorkerName, string? EmployeeNo,
     string LeaveTypeCode, decimal Days, decimal MonthlyRate, decimal GrossAmount, string Note,
-    string Status, string CreatedBySubjectId, string? DecisionReason, DateTimeOffset CreatedAt);
+    string Status, string CreatedBySubjectId, string? DecisionReason, DateTimeOffset CreatedAt, Guid? LocationId = null);
 public sealed record LeaveEncashmentHistoryDto(Guid Id, Guid WorkerId, string WorkerName, string LeaveTypeCode,
     decimal Days, decimal GrossAmount, string Status, string CreatedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record TimeOperationsHistoryDto(List<AttendanceImportHistoryDto> Imports,
