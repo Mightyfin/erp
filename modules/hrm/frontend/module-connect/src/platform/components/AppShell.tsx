@@ -366,9 +366,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
     const [legalEntities, locations, notificationInbox, queue, leave, corrections] = await Promise.all([
-      realApi.legalEntities(),
-      realApi.locations(),
-      realApi.myNotifications(),
+      realApi.legalEntities().catch(() => []),
+      realApi.locations().catch(() => ({ items: [] as unknown[] })),
+      realApi.myNotifications().catch(() => ({ items: [], unreadCount: 0 })),
       realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
       realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
       realApi.timeCorrections({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
@@ -431,6 +431,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!liveEntities.some((candidate) => String(candidate.id) === entityId))
       setEntityId(String(liveEntities[0].id));
   }, [entityId, liveEntities, setEntityId]);
+
+  // M42: if the shell data fetch failed (e.g. a transient 401 during a session
+  // refresh) the switcher would otherwise stay stuck with an empty entity
+  // tree. Retry periodically while in real-API mode and errored.
+  useEffect(() => {
+    if (!USE_REAL) return;
+    if (!shellState.error) return;
+    const t = setTimeout(() => shellState.reload(), 3000);
+    return () => clearTimeout(t);
+  }, [shellState.error, shellState.reload]);
 
   useEffect(() => {
     if (!USE_REAL || !entityLocations.length) return;
