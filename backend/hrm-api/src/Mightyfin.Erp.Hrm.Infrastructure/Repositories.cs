@@ -12,6 +12,7 @@ using Mightyfin.Erp.Hrm.Application.Analytics;
 using Mightyfin.Erp.Hrm.Application.Setup;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
 namespace Mightyfin.Erp.Hrm.Infrastructure;
@@ -2184,18 +2185,26 @@ public sealed class SetupRepository(HrmDbContext db) : ISetupRepository
         // tables via TryDelete; on Postgres every listed table must exist.
         var provider = db.Database.ProviderName ?? "";
         var existsOnly = provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
-        // M49: FK order — cross-reference deletes happen in two passes so a
-        // table referenced by another (e.g. workers ← hr_requests) is never
-        // deleted before its dependants. Referencing tables are listed first.
-        foreach (var table in DataTables)
+        // M49: FK order — cross-reference deletes happen in multiple passes
+        // with per-table error isolation: a table blocked by a FK (e.g.
+        // workers ← hr_requests) is deferred to the next pass instead of
+        // aborting the whole wipe. Three passes clear any dependency depth.
+        foreach (var pass in Enumerable.Range(0, 3))
         {
-            if (existsOnly && !await TableExistsAsync(table, ct)) continue;
-            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {QualifiedTable(table)};", ct);
-        }
-        foreach (var table in DataTables)
-        {
-            if (existsOnly && !await TableExistsAsync(table, ct)) continue;
-            await db.Database.ExecuteSqlRawAsync($"DELETE FROM {QualifiedTable(table)};", ct);
+            foreach (var table in DataTables)
+            {
+                if (existsOnly && !await TableExistsAsync(table, ct)) continue;
+                try
+                {
+                    await db.Database.ExecuteSqlRawAsync($"DELETE FROM {QualifiedTable(table)};", ct);
+                }
+                catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
+                {
+                    // FK conflict — the referencing rows will be removed in a
+                    // later pass iteration; never fail the wipe for this.
+                    if (pass == 2) throw; // depth exceeded — surface it.
+                }
+            }
         }
 
         var states = await db.SetupStates.ToListAsync(ct);
