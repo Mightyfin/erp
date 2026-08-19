@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
   Building2,
@@ -50,6 +50,7 @@ import { hrmModule } from "@/modules/hrm/nav";
 import { isPathEnabled, isSectionEnabled } from "@/modules/hrm/scope";
 import { ComingSoon } from "./ComingSoon";
 import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
+import { WelcomeOverlay } from "./WelcomeOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
 import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
@@ -362,6 +363,7 @@ function countOpen(items: unknown[]): number {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
@@ -398,6 +400,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       // WITHOUT assignments (top-level HR) keep the full tree.
       assignedLocationIds: shellScope?.assignedLocationIds ?? [],
       confined: Boolean(shellScope?.confined),
+      // M49: first-time setup gate — pending orgs see the welcome overlay on
+      // every HRM page until the wizard finishes. Confined branch HR are
+      // excluded: they can never run the wizard (the backend refuses it).
+      setupState: await realApi.setupState().catch(() => null),
       notificationInbox,
       // M27 P0 UX audit: the approvals badge was a hardcoded mock "3". The
       // shell now counts everything still open for a decision, matching the
@@ -445,6 +451,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   // M47 scope-switch overlay label: resolves the human target name from the
   // currently persisted shell scope so "Switching to …" stays accurate when
   // the operator flips between entity-wide and branch views.
+  // M49: the welcome overlay only covers non-confined operators; confined
+  // branch HR can never run the wizard, and an already-complete org is
+  // passed straight through by the backend's "complete" status.
+  const setupPending =
+    USE_REAL && !shellState.data?.confined && Boolean(shellState.data?.setupState) && (shellState.data?.setupState as { status?: string } | null)?.status === "pending";
+
   const switchTargetLabel = (() => {
     try {
       const raw = typeof localStorage !== "undefined" ? localStorage.getItem("erp.shell.state.v1") : null;
@@ -508,6 +520,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* M47: full-screen frosted overlay with a rotating switch mark and
           "Switching to …" label while the org switcher changes scope. */}
       <ScopeSwitchOverlay targetLabel={switchTargetLabel} />
+      {/* M49: welcome gate — a full-screen frosted cover steers first-time
+          operators to the setup wizard while the org's setup state is
+          pending. */}
+      {setupPending && <WelcomeOverlay onContinue={() => router.navigate({ to: "/hrm/setup" })} />}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"

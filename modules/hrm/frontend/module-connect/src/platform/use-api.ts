@@ -535,6 +535,36 @@ export const realApi = {
    * control totals, branch names, and submission stamps. Confined (branch-only)
    * HR are refused here with 403. */
   payrollQueue: () => hrmApi.get<unknown[]>("/hrm/payroll/queue"),
+  /** M49: first-time setup wizard — single decision endpoint the shell polls
+   * on every render (pending → welcome overlay; complete → dashboard). */
+  setupState: () =>
+    hrmApi.get<{
+      status: string;
+      resumeStepKey: string | null;
+      completedSteps: string[];
+      optionalSteps: string[];
+      completionPercent: number;
+    }>("/hrm/setup/state"),
+  /** M49: wizard step catalog with completion/open status for rendering. */
+  setupSteps: () =>
+    hrmApi.get<
+      {
+        key: string;
+        label: string;
+        description: string;
+        mandatory: boolean;
+        completed: boolean;
+        open: boolean;
+      }[]
+    >("/hrm/setup/steps"),
+  /** M49: mark a wizard step complete with optional context payload. */
+  completeSetupStep: (key: string, dataJson?: string) =>
+    hrmApi.post<unknown>(`/hrm/setup/steps/${key}`, { dataJson: dataJson ?? null }),
+  /** M49: finish the wizard — refuses while the mandatory prefix is open. */
+  finishSetup: () => hrmApi.post<unknown>("/hrm/setup/finish", null),
+  /** M49: destructive start-afresh reset — hr_admin only, explicit confirm. */
+  resetSetup: () =>
+    hrmApi.post<unknown>("/hrm/setup/reset", { confirm: "RESET" }),
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),

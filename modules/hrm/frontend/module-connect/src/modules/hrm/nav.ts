@@ -11,6 +11,7 @@ import {
   Sparkles,
   UserCog,
   Users,
+  WandSparkles,
 } from "lucide-react";
 import type { ModuleDefinition } from "@/platform/nav";
 
@@ -28,6 +29,9 @@ export const hrmModule: ModuleDefinition = {
   shortName: "HRM",
   sections: [
     { id: "home", label: "Home", icon: Home, to: "/hrm" },
+    // M49: first-time setup wizard — admins complete it once; the page itself
+    // reads the live setup state and re-routes to the dashboard when done.
+    { id: "setup", label: "First-time setup", icon: WandSparkles, to: "/hrm/setup", roles: ["hr_admin", "hr_ops"] },
     { id: "self-service", label: "My HR", icon: UserCog, to: "/hrm/self-service" },
     {
       id: "people",
