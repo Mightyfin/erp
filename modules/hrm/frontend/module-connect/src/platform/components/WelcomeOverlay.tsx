@@ -340,6 +340,62 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       />
     );
   }
+  // M50.13: completion view — once setup is finished, /hrm/setup shows a
+  // "You are all set up" card instead of redirecting. It lists every step
+  // with its status, offers "Go to home" (dashboard) and "Make changes"
+  // (re-open the wizard at the first step). Page-mode only: the original
+  // overlay path still fades out and navigates away after a fresh run.
+  if (isComplete && pageMode) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
+          <Card className="w-full shadow-lg">
+            <CardHeader className="items-center text-center">
+              <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-primary/15">
+                <CheckCircle2 className="size-9 text-primary" aria-hidden />
+              </div>
+              <Badge variant="default" className="mb-3 bg-emerald-600 text-white hover:bg-emerald-600">
+                You are all set up
+              </Badge>
+              <CardTitle className="text-2xl">The HRM is ready to use</CardTitle>
+              <CardDescription className="max-w-lg">
+                Every step of the setup wizard has been completed. Your organisation
+                is configured and the workspace is unlocked — head to the dashboard
+                to start working, or come back here any time to update information.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mx-auto w-full max-w-lg">
+              <div className="flex flex-wrap gap-1.5">
+                {stepsByCompletion.map((s) => (
+                  <span
+                    key={s.key}
+                    className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                      s.done ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {s.done ? <CheckCircle2 className="size-3" aria-hidden /> : <Sparkles className="size-3" aria-hidden />}
+                    {s.label}
+                  </span>
+                ))}
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-center gap-3 pb-8">
+              <Button size="lg" onClick={() => routerRef.current.navigate({ to: "/hrm" })}>
+                Go to home
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setActive(stepsByCompletion[0]?.key ?? null)}
+              >
+                Make changes
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   if (isComplete || !state || !active) return null;
 
   const current = stepsByCompletion.find((s) => s.key === active);
