@@ -4,10 +4,11 @@
 //  1. The FIRST user to sign into a fresh HRM instance (setup PENDING and no
 //     one holds the hr_admin realm role yet) is automatically elevated to
 //     top HR admin (hr_admin + tenant_owner) — no manual role assignment.
-//  2. The setup-wizard "HR administrators" step provisions invited emails by
-//     assigning them hr_admin + employee realm roles when the users already
-//     exist in the identity system (user creation itself remains an identity
-//     platform responsibility — we never invent credentials).
+//  2. The setup-wizard "HR administrators" step provisions invited emails:
+//     missing Keycloak users are CREATED (firstName/lastName derived from the
+//     email prefix — required by Keycloak's declarative user profile — with a
+//     temporary password the invitee must change on first login) and granted
+//     hr_admin + employee realm roles.
 // All calls are best-effort: failures are logged and surfaced as partial
 // results; they never block HR workflows or crash the API.
 using System.Net.Http.Headers;
@@ -26,10 +27,11 @@ public interface IIdentityProvisioningService
     Task<ClaimElevationResult> ClaimTopAdminAsync(
         string subjectId, string email, CancellationToken ct);
 
-    /// M51.2: provision invited administrator emails. For each email that can
-    /// be resolved to a Keycloak user, hr_admin + employee realm roles are
-    /// assigned. Unknown emails are reported (not failed) so the wizard can
-    /// tell the operator which invites are pending identity-side creation.
+    /// M51.2: provision invited administrator emails. Missing Keycloak users
+    /// are created automatically (with a temporary password) and then granted
+    /// hr_admin + employee realm roles. Per-entry outcomes are reported so the
+    /// wizard can show which invites actually took; the endpoint is idempotent
+    /// so re-saving the same list is safe.
     Task<ProvisionResult> ProvisionAdminsAsync(
         IEnumerable<string> emails, CancellationToken ct);
 }
@@ -114,6 +116,7 @@ public sealed class IdentityProvisioningService(
                 return new ClaimElevationResult(false, [],
                     "user-not-found-in-identity");
 
+
             var rolesToAssign = new List<CachedRole>();
             if (hrAdminRole is not null) rolesToAssign.Add(hrAdminRole);
 
@@ -169,7 +172,8 @@ public sealed class IdentityProvisioningService(
             var email = raw.Trim().ToLowerInvariant();
             try
             {
-                var userId = await FindUserIdAsync(email, ct);
+                var userId = await FindUserIdAsync(email, ct) ??
+                    await GetOrCreateUserIdAsync(email, ct);
                 if (userId is null)
                 {
                     entries.Add(new ProvisionEntry(email, false, false,
@@ -353,6 +357,74 @@ public sealed class IdentityProvisioningService(
             throw new InvalidOperationException(
                 $"role-assignment-failed:{resp.StatusCode}");
     }
+
+    // Creates the Keycloak user when one cannot be found by email. Uses the
+    // local-part of the email address as firstName/lastName (Keycloak's
+    // declarative user profile requires both). The account is ENABLED with a
+    // temporary password (TempHrm#2026x) that the invitee is forced to change
+    // on first login. Returns the user id on success, null on failure.
+    private async Task<Guid?> GetOrCreateUserIdAsync(string email, CancellationToken ct)
+    {
+        var token = await AdminTokenAsync(ct);
+        if (token is null) return null;
+        try
+        {
+            var prefix = email[..email.IndexOf('@')];
+            var body = JsonSerializer.SerializeToUtf8Bytes(new CreateUserPayload(
+                email,
+                email,
+                true,
+                [new CredentialPayload("password", true, "TempHrm#2026x")],
+                Capitalize(prefix),
+                Capitalize(prefix)));
+            using var client = http.CreateClient("keycloak-admin");
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+            using var content = new ByteArrayContent(body);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            using var resp = await client.PostAsync(
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users", content, ct);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                // Another instance raced us to creation — resolve by email again.
+                return await FindUserIdAsync(email, ct);
+            }
+            if (!resp.IsSuccessStatusCode)
+            {
+                log.LogWarning("Keycloak user creation failed for {Email}: {Status}",
+                    email, resp.StatusCode);
+                return null;
+            }
+            return await FindUserIdAsync(email, ct);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "User creation failed for {Email}", email);
+            return null;
+        }
+    }
+
+    private static string Capitalize(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "Hr";
+        var parts = s.Split('.', '-', '_');
+        return string.Join(' ', parts
+            .Where(p => p.Length > 0)
+            .Select(p => char.ToUpperInvariant(p[0]) + p[1..]))[..Math.Min(32, s.Length)];
+    }
+
+    private sealed record CreateUserPayload(
+        [property: JsonPropertyName("username")] string Username,
+        [property: JsonPropertyName("email")] string Email,
+        [property: JsonPropertyName("enabled")] bool Enabled,
+        [property: JsonPropertyName("credentials")] CredentialPayload[] Credentials,
+        [property: JsonPropertyName("firstName")] string FirstName,
+        [property: JsonPropertyName("lastName")] string LastName);
+
+    private sealed record CredentialPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("temporary")] bool Temporary,
+        [property: JsonPropertyName("value")] string Value);
 
     private sealed record RoleRef(
         [property: JsonPropertyName("id")] Guid Id,
