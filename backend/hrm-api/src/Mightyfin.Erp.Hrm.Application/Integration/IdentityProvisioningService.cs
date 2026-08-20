@@ -12,6 +12,7 @@
 // All calls are best-effort: failures are logged and surfaced as partial
 // results; they never block HR workflows or crash the API.
 using System.Net.Http.Headers;
+using System.Text.Json.Nodes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -358,6 +359,42 @@ public sealed class IdentityProvisioningService(
                 $"role-assignment-failed:{resp.StatusCode}");
     }
 
+    // Clears requiredActions (UPDATE_PASSWORD etc.) on a newly created user
+    // so direct-grant login with the temp password is not blocked by
+    // "Account is not fully set up".
+    private async Task ClearRequiredActionsAsync(Guid userId, CancellationToken ct)
+    {
+        var token = await AdminTokenAsync(ct);
+        if (token is null) return;
+        try
+        {
+            // GET the full user representation, wipe requiredActions, PUT back.
+            using var client = http.CreateClient("keycloak-admin");
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+            using var getResp = await client.GetAsync(
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{userId}", ct);
+            if (!getResp.IsSuccessStatusCode) return;
+            using var repStream = await getResp.Content.ReadAsStreamAsync(ct);
+            var mutable = await JsonSerializer.DeserializeAsync<JsonNode>(
+                repStream, cancellationToken: ct);
+            if (mutable is null) return;
+            mutable["requiredActions"] = JsonSerializer.SerializeToNode(Array.Empty<string>());
+            using var content = new StringContent(mutable.ToJsonString(),
+                System.Text.Encoding.UTF8,
+                new MediaTypeHeaderValue("application/json"));
+            using var putResp = await client.PutAsync(
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{userId}", content, ct);
+            if (!putResp.IsSuccessStatusCode)
+                log.LogWarning("Clearing requiredActions failed for {UserId}: {Status}",
+                    userId, putResp.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Clearing requiredActions failed for {UserId}", userId);
+        }
+    }
+
     // Creates the Keycloak user when one cannot be found by email. Uses the
     // local-part of the email address as firstName/lastName (Keycloak's
     // declarative user profile requires both). The account is ENABLED with a
@@ -395,7 +432,15 @@ public sealed class IdentityProvisioningService(
                     email, resp.StatusCode);
                 return null;
             }
-            return await FindUserIdAsync(email, ct);
+            // Keycloak blocks direct-grant login ("Account is not fully set
+            // up") while UPDATE_PASSWORD sits in requiredActions. Erp-web
+            // users sign in with the operator-supplied temp password, so
+            // clear requiredActions after creation — the invitation message
+            // tells the invitee the temp password they received.
+            var newId = await FindUserIdAsync(email, ct);
+            if (newId is not null)
+                await ClearRequiredActionsAsync(newId.Value, ct);
+            return newId;
         }
         catch (Exception ex)
         {
