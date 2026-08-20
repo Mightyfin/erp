@@ -61,6 +61,7 @@ const ENABLED_PREFIXES = [
   "/hrm/relations", // M30 employee-relations and investigator workspaces
   "/hrm/configuration",
   "/hrm/setup",
+  "/hrm/import", // M53 spreadsheet round-trip import/export tool
   "/hrm/help",
   "/sign-in",
 ];
