@@ -8,8 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAuth } from "@/platform/auth";
-import { isSessionValid } from "@/platform/oidc";
 import { realApi, useApi } from "@/platform/use-api";
 import {
   AlertCircle,
@@ -198,11 +196,6 @@ function SwitchGlyph() {
 }
 
 export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}) {
-  // M50.16e: the setup page renders without the app shell's auth gate, so an
-  // unauthenticated visitor (expired or missing session) would otherwise sit
-  // on the loading shell forever while the setup-state request returns 401.
-  // Redirect to the sign-in page instead, exactly like every other /hrm route.
-  const { loading: authLoading, session, signInInteractive } = useAuth();
   const api = useApi(async () => {
     const [state, steps] = await Promise.all([realApi.setupState(), realApi.setupSteps()]);
     return { state, steps: steps as StepDto[] };
@@ -210,10 +203,6 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   const [active, setActive] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  // M50.14: explicit "editing again" flag — Make changes switches back to the
-  // wizard even when every step is already marked done (the resume effect
-  // alone would keep picking the first INCOMPLETE step, which is none).
-  const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<{ text: string; kind: "error" | "info" } | null>(null);
   const [fading, setFading] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -234,12 +223,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   useEffect(() => {
     if (!active && stepsByCompletion.length) {
-      // Resume at the first incomplete step when returning to the wizard.
-      // When editing after full completion, fall back to the first step.
-      const resume = stepsByCompletion.find((s) => !s.done) ?? (editing ? stepsByCompletion[0] : undefined);
+      const resume = stepsByCompletion.find((s) => !s.done);
       setActive(resume?.key ?? null);
     }
-  }, [stepsByCompletion, active, editing]);
+  }, [stepsByCompletion, active]);
 
   // M50.12: once the backend confirms setup completion, fade out and leave
   // the wizard page for the now-unlocked dashboard (the shell's pending-gate
@@ -360,7 +347,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   // with its status, offers "Go to home" (dashboard) and "Make changes"
   // (re-open the wizard at the first step). Page-mode only: the original
   // overlay path still fades out and navigates away after a fresh run.
-  if (isComplete && pageMode && !editing) {
+  if (isComplete && pageMode) {
     return (
       <div className="min-h-screen bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
@@ -401,10 +388,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
               <Button
                 size="lg"
                 variant="outline"
-                onClick={() => {
-                  setEditing(true);
-                  setActive(null); // resume effect picks step 1 via the editing flag
-                }}
+                onClick={() => setActive(stepsByCompletion[0]?.key ?? null)}
               >
                 Make changes
               </Button>
@@ -414,40 +398,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       </div>
     );
   }
-  // Page mode must keep rendering the wizard even after full completion
-  // when the operator pressed "Make changes" (editing === true).
-  if ((isComplete && !editing) || (isComplete && !pageMode)) return null;
-
-  // M50.16e: when the auth gate has finished booting and there is no valid
-  // session, send the visitor to sign-in instead of waiting on a 401 forever.
-  if (!authLoading && pageMode && !isSessionValid(session)) {
-    signInInteractive();
-  }
-
-  // M50.15: the page must NEVER render nothing. During server rendering
-  // `useApi` has not fired yet (its data fetch lives in a useEffect, which
-  // is client-only), so `state` and `active` are null here. Returning null
-  // made /hrm/setup stream a completely empty <body> — React then failed to
-  // hydrate and the page stayed blank forever. Render the same loading
-  // shell on server and client instead, so hydration has a stable tree and
-  // the visitor sees a visible "preparing the wizard" state until the
-  // setup state arrives.
-  if (!state || !active) {
-    return (
-      <div
-        className={
-          pageMode
-            ? "flex min-h-screen items-center justify-center bg-background"
-            : "fixed inset-0 z-[120] flex items-center justify-center bg-white/90 backdrop-blur-xl"
-        }
-      >
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <SwitchGlyph />
-          <p className="text-sm">Preparing the setup wizard…</p>
-        </div>
-      </div>
-    );
-  }
+  if (isComplete || !state || !active) return null;
 
   const current = stepsByCompletion.find((s) => s.key === active);
   const idx = stepsByCompletion.findIndex((s) => s.key === active);
