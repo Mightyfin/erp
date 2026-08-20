@@ -203,6 +203,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   const [active, setActive] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // M50.14: explicit "editing again" flag — Make changes switches back to the
+  // wizard even when every step is already marked done (the resume effect
+  // alone would keep picking the first INCOMPLETE step, which is none).
+  const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<{ text: string; kind: "error" | "info" } | null>(null);
   const [fading, setFading] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -223,10 +227,12 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   useEffect(() => {
     if (!active && stepsByCompletion.length) {
-      const resume = stepsByCompletion.find((s) => !s.done);
+      // Resume at the first incomplete step when returning to the wizard.
+      // When editing after full completion, fall back to the first step.
+      const resume = stepsByCompletion.find((s) => !s.done) ?? (editing ? stepsByCompletion[0] : undefined);
       setActive(resume?.key ?? null);
     }
-  }, [stepsByCompletion, active]);
+  }, [stepsByCompletion, active, editing]);
 
   // M50.12: once the backend confirms setup completion, fade out and leave
   // the wizard page for the now-unlocked dashboard (the shell's pending-gate
@@ -347,7 +353,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   // with its status, offers "Go to home" (dashboard) and "Make changes"
   // (re-open the wizard at the first step). Page-mode only: the original
   // overlay path still fades out and navigates away after a fresh run.
-  if (isComplete && pageMode) {
+  if (isComplete && pageMode && !editing) {
     return (
       <div className="min-h-screen bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
@@ -388,7 +394,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
               <Button
                 size="lg"
                 variant="outline"
-                onClick={() => setActive(stepsByCompletion[0]?.key ?? null)}
+                onClick={() => {
+                  setEditing(true);
+                  setActive(null); // resume effect picks step 1 via the editing flag
+                }}
               >
                 Make changes
               </Button>
@@ -398,16 +407,31 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       </div>
     );
   }
-  if (isComplete || !state || !active) {
-    // M50.16h: the page must NEVER render nothing. During server rendering
-    // `useApi` has not fired yet (its data fetch lives in a useEffect, which
-    // is client-only), so `state` and `active` are null here. Returning null
-    // streamed a completely empty <body> — React then failed to hydrate and
-    // the page stayed blank forever. Render a plain loading line instead; it
-    // disappears the moment the wizard or completion view renders.
+  // Page mode must keep rendering the wizard even after full completion
+  // when the operator pressed "Make changes" (editing === true).
+  if ((isComplete && !editing) || (isComplete && !pageMode)) return null;
+
+  // M50.15: the page must NEVER render nothing. During server rendering
+  // `useApi` has not fired yet (its data fetch lives in a useEffect, which
+  // is client-only), so `state` and `active` are null here. Returning null
+  // made /hrm/setup stream a completely empty <body> — React then failed to
+  // hydrate and the page stayed blank forever. Render the same loading
+  // shell on server and client instead, so hydration has a stable tree and
+  // the visitor sees a visible "preparing the wizard" state until the
+  // setup state arrives.
+  if (!state || !active) {
     return (
-      <div className={pageMode ? "flex min-h-screen items-center justify-center bg-background" : "fixed inset-0 z-[120] flex items-center justify-center bg-white/90 backdrop-blur-xl"}>
-        <p className="text-sm text-muted-foreground">Preparing the setup wizard…</p>
+      <div
+        className={
+          pageMode
+            ? "flex min-h-screen items-center justify-center bg-background"
+            : "fixed inset-0 z-[120] flex items-center justify-center bg-white/90 backdrop-blur-xl"
+        }
+      >
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <SwitchGlyph />
+          <p className="text-sm">Preparing the setup wizard…</p>
+        </div>
       </div>
     );
   }
