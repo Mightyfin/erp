@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Info } from "lucide-react";
 import { feedback } from "@/platform/feedback";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,11 @@ export const Route = createFileRoute("/hrm/employees/new")({
 
 const employmentTypes = ["Permanent", "Fixed term", "Part time", "Contractor", "Intern"] as const;
 
+/** Zambian NRC: six digits, two digits, one digit — 123456/78/9. */
+const NRC = /^\d{6}\/\d{2}\/\d$/;
+
+const emergencyRelationships = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
+
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 function NewEmployee() {
@@ -45,7 +50,18 @@ function NewEmployee() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [nrc, setNrc] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [tpin, setTpin] = useState("");
+  const [napsaNumber, setNapsaNumber] = useState("");
+  const [nhimaNumber, setNhimaNumber] = useState("");
+  const [grade, setGrade] = useState("");
+  const [emergencyName, setEmergencyName] = useState("");
+  const [emergencyRelationship, setEmergencyRelationship] = useState("");
+  const [emergencyPhone, setEmergencyPhone] = useState("");
   const [entityId, setEntityId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [jobTitle, setJobTitle] = useState("");
@@ -56,12 +72,13 @@ function NewEmployee() {
   const [endDate, setEndDate] = useState("");
 
   const references = useApi(async () => {
-    if (!USE_REAL) return { legalEntities: [], orgUnits: [], locations: [], workers: [] };
-    const [legalEntities, orgUnits, locations, workerPage] = await Promise.all([
+    if (!USE_REAL) return { legalEntities: [], orgUnits: [], locations: [], workers: [], grades: [] as string[] };
+    const [legalEntities, orgUnits, locations, workerPage, stepData] = await Promise.all([
       realApi.legalEntities(),
       realApi.orgUnits(),
       realApi.locations(),
       realApi.employees({ page: 1, pageSize: 500, status: "active" }),
+      realApi.setupStepData("employment").catch(() => null),
     ]);
     return {
       legalEntities: (Array.isArray(legalEntities) ? legalEntities : []).map((raw) => {
@@ -77,8 +94,14 @@ function NewEmployee() {
         return { id: String(l.id ?? ""), name: String(l.name ?? ""), code: String(l.code ?? ""), legalEntityId: l.legalEntityId ? String(l.legalEntityId) : "" };
       }),
       workers: adaptWorkers(workerPage),
+      grades: parseStepGrades(stepData?.dataJson ?? null),
     };
   }, []);
+
+  const gradeOptions = useMemo(() => {
+    const mock = (USE_REAL ? references.data?.grades ?? [] : ["Grade 1", "Grade 2", "Manager"]);
+    return Array.from(new Set(mock.filter(Boolean)));
+  }, [USE_REAL, references.data?.grades]);
   const legalEntities = USE_REAL ? references.data?.legalEntities ?? [] : entities.map((e) => ({ id: e.id, registeredName: e.name, name: e.name, countryCode: e.country }));
   const orgUnits = USE_REAL ? references.data?.orgUnits ?? [] : ["Operations", "Manufacturing", "Logistics", "Finance", "People"].map((name) => ({ id: name, name, code: "", legalEntityId: "" }));
   const locations = USE_REAL ? references.data?.locations ?? [] : entities.flatMap((e) => e.branches.map((name) => ({ id: name, name, code: "", legalEntityId: e.id })));
@@ -146,14 +169,25 @@ function buildOrgTree(
     if (entityUnits.length && !entityUnits.some((u) => String(u.id) === orgUnitId))
       setOrgUnitId(String(entityUnits[0].id));
   }, [entityId, entityLocations, entityUnits, locationId, orgUnitId]);
-  const fullName = [firstName, lastName].filter(Boolean).join(" ");
+  const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
   const needsEndDate = employmentType === "Fixed term" || employmentType === "Intern";
+  const nrcInvalid = nrc.trim() && !NRC.test(nrc.trim());
+  const hasEmergency = emergencyName.trim().length > 0;
+
+  function parseStepGrades(dataJson: string | null): string[] {
+    if (!dataJson) return [];
+    try {
+      const p = JSON.parse(dataJson);
+      return (Array.isArray(p?.Grades) ? p.Grades : [])
+        .map((g: { Name?: unknown }) => String(g?.Name ?? "")).filter(Boolean);
+    } catch { return []; }
+  }
 
   const steps: FlowStep[] = [
     {
       id: "identity",
       title: "Who is joining",
-      purpose: "The minimum needed to create a record. Personal details they can complete themselves later.",
+      purpose: "The details HR collects at the door. Payroll-critical IDs can still be completed later on the profile.",
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div>
@@ -165,17 +199,88 @@ function buildOrgTree(
             <Input id="last" className="mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} />
           </div>
           <div className="sm:col-span-2">
+            <Label htmlFor="middle">Middle name (optional)</Label>
+            <Input id="middle" className="mt-1" value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="phone">Phone number</Label>
+            <Input id="phone" className="mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <p className="mt-1 text-xs text-muted-foreground">For payroll mobile-money payments and notifications.</p>
+          </div>
+          <div>
             <Label htmlFor="email">Work email (optional)</Label>
             <Input id="email" type="email" className="mt-1" value={email} onChange={(e) => setEmail(e.target.value)} />
             <p className="mt-1 text-xs text-muted-foreground">
               Leave blank if IT will issue it during onboarding.
             </p>
           </div>
+          <div>
+            <Label htmlFor="nrc">NRC number</Label>
+            <Input
+              id="nrc"
+              className={"mt-1" + (nrcInvalid ? " border-danger" : "")}
+              placeholder="123456/78/9"
+              value={nrc}
+              onChange={(e) => setNrc(e.target.value)}
+            />
+            {nrcInvalid ? (
+              <p className="mt-1 text-xs text-danger">An NRC looks like 123456/78/9 — six digits, two, then one.</p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">Payroll and the bank both check the legal identity against it.</p>
+            )}
+          </div>
+          <div>
+            <Label htmlFor="dob">Date of birth</Label>
+            <Input id="dob" type="date" className="mt-1" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "statutory",
+      title: "Statutory registrations",
+      purpose: "Zambian registrations a pay run cannot run without — complete them now, or finish them on the profile later.",
+      render: () => (
+        <div className="grid max-w-lg gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="tpin">TPIN (ZRA) (optional)</Label>
+            <Input id="tpin" className="mt-1" value={tpin} onChange={(e) => setTpin(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="napsa">NAPSA number (optional)</Label>
+            <Input id="napsa" className="mt-1" value={napsaNumber} onChange={(e) => setNapsaNumber(e.target.value)} />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="nhima">NHIMA number (optional)</Label>
+            <Input id="nhima" className="mt-1" value={nhimaNumber} onChange={(e) => setNhimaNumber(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="emergency-name">Emergency contact name</Label>
+            <Input id="emergency-name" className="mt-1" value={emergencyName} onChange={(e) => setEmergencyName(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="emergency-rel">Relationship</Label>
+            <Select value={emergencyRelationship || "none"} onValueChange={(v) => setEmergencyRelationship(v === "none" ? "" : v)}>
+              <SelectTrigger id="emergency-rel" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select</SelectItem>
+                {emergencyRelationships.map((r) => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="emergency-phone">Emergency contact phone</Label>
+            <Input id="emergency-phone" className="mt-1" value={emergencyPhone} onChange={(e) => setEmergencyPhone(e.target.value)} />
+          </div>
           <p className="sm:col-span-2 flex gap-2 rounded-md border border-info/30 bg-info-soft p-3 text-xs text-info">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>
-              Do not enter bank details, national identifiers or health information here. The
-              employee supplies those themselves during onboarding, under their own consent.
+              Bank details are collected on the profile under Pay and bank — a pay run needs a
+              payment account before it can include this employee.
             </span>
           </p>
         </div>
@@ -267,12 +372,29 @@ function buildOrgTree(
     {
       id: "employment",
       title: "Employment terms",
-      purpose: "What kind of engagement this is, and when it starts.",
+      purpose: "What kind of engagement this is, what level they join at, and when it starts.",
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="title">Job title</Label>
             <Input id="title" className="mt-1" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="grade">Grade</Label>
+            <Select value={grade || "none"} onValueChange={(v) => setGrade(v === "none" ? "" : v)}>
+              <SelectTrigger id="grade" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No grade assigned</SelectItem>
+                {gradeOptions.map((g) => (
+                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Grades are managed in the setup wizard — they drive the pay range.
+            </p>
           </div>
           <div>
             <Label htmlFor="type">Employment type</Label>
@@ -326,6 +448,7 @@ function buildOrgTree(
             {[
               ["Name", fullName || "Not given"],
               ["Job title", jobTitle || "Not given"],
+              ["Grade", grade || "Not assigned"],
               ["Employment type", employmentType],
               ["Entity", String(entity?.registeredName ?? "Not selected")],
               ["Work location", String(selectedLocation?.name ?? "Not selected")],
@@ -333,6 +456,13 @@ function buildOrgTree(
               ["Reports to", managerOptions.find((e) => e.id === managerId)?.fullName ?? "—"],
               ["Start date", startDate],
               ...(needsEndDate ? [["End date", endDate || "Not set"]] : []),
+              ["Phone", phone.trim() || "Not given"],
+              ["NRC", nrc.trim() || "Not given"],
+              ["Date of birth", dateOfBirth || "Not given"],
+              ["TPIN", tpin.trim() || "Not given"],
+              ["NAPSA", napsaNumber.trim() || "Not given"],
+              ["NHIMA", nhimaNumber.trim() || "Not given"],
+              ["Emergency contact", hasEmergency ? `${emergencyName.trim()}${emergencyRelationship ? ` (${emergencyRelationship})` : ""}${emergencyPhone.trim() ? `, ${emergencyPhone.trim()}` : ""}` : "Not recorded"],
             ].map(([k, v]) => (
               <div key={k} className="rounded-md border bg-surface-muted px-3 py-2">
                 <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -350,10 +480,16 @@ function buildOrgTree(
               Still needed before this person can be paid
             </p>
             <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-xs text-foreground">
-              <li>NRC number and date of birth</li>
-              <li>Bank name, branch and account number</li>
-              <li>TPIN, NAPSA and NHIMA registration numbers</li>
-              <li>An emergency contact</li>
+              {["Bank name, branch and account number",
+                ...(nrc.trim() ? [] : ["NRC number"]),
+                ...(dateOfBirth ? [] : ["Date of birth"]),
+                ...(tpin.trim() ? [] : ["TPIN"]),
+                ...(napsaNumber.trim() ? [] : ["NAPSA number"]),
+                ...(nhimaNumber.trim() ? [] : ["NHIMA number"]),
+                ...(hasEmergency ? [] : ["An emergency contact"]),
+              ].map((missing) => (
+                <li key={missing}>{missing}</li>
+              ))}
             </ul>
             <p className="mt-1.5 text-xs text-muted-foreground">
               A pay run will not include an employee missing any of these. You can complete them on
@@ -399,7 +535,7 @@ function buildOrgTree(
       <PageHeader
         eyebrow="People"
         title="Add an employee"
-        description="Four short steps. This creates the record only — onboarding is a separate, tracked process."
+        description="Five short steps. This creates the record only — onboarding is a separate, tracked process."
         primaryAction={
           <Button variant="ghost" asChild>
             <Link to="/hrm/employees">Cancel</Link>
@@ -413,6 +549,11 @@ function buildOrgTree(
         onSubmit={async () => {
           if (!firstName.trim() || !lastName.trim()) {
             feedback.blocked("First and last name are required to create the record.", "Go back to the first step and complete the name fields.");
+            setCreating(false);
+            return;
+          }
+          if (nrcInvalid) {
+            feedback.blocked("The NRC number is not valid.", "Go back to the first step and enter it as 123456/78/9 (six digits, two, then one).");
             setCreating(false);
             return;
           }
@@ -436,26 +577,28 @@ function buildOrgTree(
               const created = await realApi.createWorker({
                 employeeNo: "",
                 firstName: firstName.trim(),
-                middleName: "",
+                middleName: middleName.trim() || null,
                 lastName: lastName.trim(),
                 email: email.trim() || null,
-                phone: null,
-                nrc: null,
+                phone: phone.trim() || null,
+                nrc: nrc.trim() || null,
                 passportNo: null,
-                tpin: null,
-                napsaNumber: null,
-                nhimaNumber: null,
+                tpin: tpin.trim() || null,
+                napsaNumber: napsaNumber.trim() || null,
+                nhimaNumber: nhimaNumber.trim() || null,
                 nationality: "Zambian",
-                dateOfBirth: null,
+                dateOfBirth: dateOfBirth || null,
                 orgUnitId,
                 locationId,
                 managerId: managerId || null,
-                grade: null,
+                grade: grade || null,
                 jobTitle: jobTitle.trim() || null,
                 startDate,
                 workerType:
                   employmentType === "Contractor" ? "contractor" : employmentType === "Intern" ? "intern" : "employee",
-                emergencyContacts: [],
+                emergencyContacts: hasEmergency
+                  ? [{ relationship: emergencyRelationship || "Other", fullName: emergencyName.trim(), phone: emergencyPhone.trim() || null, isPrimary: true }]
+                  : [],
                 bankDetails: [],
               });
               await realApi.createWorkerAssignment(String(created.id), {
@@ -467,7 +610,7 @@ function buildOrgTree(
                 startDate,
                 endDate: needsEndDate ? endDate : null,
                 jobTitle: jobTitle.trim() || null,
-                grade: null,
+                grade: grade || null,
                 contractType:
                   employmentType === "Fixed term"
                     ? "fixed-term"
