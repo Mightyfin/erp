@@ -14,6 +14,7 @@ using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
 using Mightyfin.Erp.Hrm.Infrastructure;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
+using Mightyfin.Erp.Hrm.Application.Integration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,6 +59,11 @@ builder.Services.AddDbContext<HrmDbContext>((services, options) =>
 
 // ---------- Tenant / auth principal ----------
 builder.Services.AddHttpContextAccessor();
+// M51: identity provisioning (first-user auto-elevation + admin invitation
+// role assignment) talks to the organisation's Keycloak admin REST API
+// through the internal docker network. Best-effort by design.
+builder.Services.AddHttpClient("keycloak-admin");
+builder.Services.AddScoped<IIdentityProvisioningService, IdentityProvisioningService>();
 builder.Services.AddScoped<ITenantAccessor, PrincipalTenantAccessor>();
 // M44 branch scoping: per-request work scope (entity + branch) resolved from
 // X-Shell-Location / X-Shell-Entity headers before any handler runs.

@@ -141,6 +141,47 @@ public static class Routes
             await svc.FinishAsync(ct);
             return Results.Ok(new { status = "complete" });
         });
+        // M51: first-user auto-elevation. The first signed-in operator of a
+        // fresh tenant (setup PENDING, no hr_admin holders in the realm yet)
+        // claims top-HR-admin elevation for themselves. Idempotent, best-
+        // effort: the caller always receives their current role set even when
+        // nothing changed. Confined branch HR can never elevate themselves.
+        g.MapGet("/first-user/claim", async (HttpContext http, ShellContext scope, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot claim organisation elevation.");
+            var principal = WorkerPrincipal.FromClaims(http.User.Claims);
+            var email = http.User.FindFirst("preferred_username")?.Value ?? "";
+            var svc = http.RequestServices
+                .GetRequiredService<Mightyfin.Erp.Hrm.Application.Integration.IIdentityProvisioningService>();
+            return Results.Ok(await svc.ClaimTopAdminAsync(
+                principal.SubjectId, email, ct));
+        });
+        // M51: HR administrator invitation provisioning. Called by the wizard
+        // "Roles & access" step after Save administrators: every listed email
+        // that resolves to a Keycloak user is granted hr_admin + employee
+        // realm roles. Unknown emails are reported (never failed) because
+        // user creation itself is an identity-platform responsibility.
+        g.MapPost("/provision-admins", async (HttpContext http, ShellContext scope, CancellationToken ct) =>
+        {
+            if (!WorkerPrincipal.FromClaims(http.User.Claims).IsRole("hr_admin"))
+                throw new DomainException("forbidden", "Provisioning administrators requires the hr_admin role.");
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot provision organisation administrators.");
+            var emails = new List<string>();
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                body.TryGetProperty("emails", out var arr) &&
+                arr.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                emails.AddRange(arr.EnumerateArray()
+                    .Select(e => e.GetString() ?? "")
+                    .Where(s => s.Length > 0));
+            }
+            var svc = http.RequestServices
+                .GetRequiredService<Mightyfin.Erp.Hrm.Application.Integration.IIdentityProvisioningService>();
+            return Results.Ok(await svc.ProvisionAdminsAsync(emails, ct));
+        });
         // DESTRUCTIVE — deliberate, guarded, explicit. Only hr_admin may call
         // it and the body must contain { "confirm": "RESET" } verbatim; this
         // keeps a stray POST from wiping an organisation by accident.
