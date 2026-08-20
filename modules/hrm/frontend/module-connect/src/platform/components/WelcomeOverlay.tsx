@@ -579,6 +579,38 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
 /* ---------- per-step inline forms ---------- */
 
+/*
+ * M50.19: hydration — when the operator re-enters a completed step via
+ * "Make changes", the step form must remember what was entered before.
+ * Each completed step has its full payload persisted in the step record
+ * (DataJson), readable through GET /setup/steps/{key}/data. This hook
+ * fetches it once and returns the parsed JSON (null when the step is not
+ * yet complete or the payload cannot be parsed), allowing each step to
+ * seed its local state from its own saved answer.
+ */
+function useStepHydration(stepKey: string): { data: Record<string, unknown> | null } {
+  const hydr = useApi(async () => {
+    const d = await realApi.setupStepData(stepKey).catch(() => null);
+    if (!d?.dataJson) return null;
+    try {
+      const p = JSON.parse(d.dataJson);
+      return p && typeof p === "object" ? (p as Record<string, unknown>) : null;
+    } catch {
+      return null; // malformed saved payload — treat the step as un-filled
+    }
+  }, [stepKey]);
+  return { data: hydr.data ?? null };
+}
+
+// Safe array access over saved payloads — never throws, never guesses.
+function safeList(p: Record<string, unknown> | null, key: string): Array<Record<string, unknown>> {
+  const v = p?.[key];
+  return Array.isArray(v) ? (v as Array<Record<string, unknown>>) : [];
+}
+function s(v: unknown): string {
+  return v == null ? "" : String(v);
+}
+
 function StepRenderer(props: {
   stepKey: string;
   step: StepDto | undefined;
@@ -631,6 +663,19 @@ function OrganisationStep(props: { sending: boolean; onComplete: (p: Record<stri
   const [tpin, setTpin] = useState("");
   const [napsa, setNapsa] = useState("");
   const [nhima, setNhima] = useState("");
+  // M50.19: remember what was entered before — re-opens with the saved answer.
+  const { data: saved } = useStepHydration("organisation");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    setName(s(saved.RegisteredName));
+    setTrading(s(saved.TradingName));
+    setPacra(s(saved.PacraNumber));
+    setTpin(s(saved.Tpin));
+    setNapsa(s(saved.NapsaEmployerRef));
+    setNhima(s(saved.NhimaEmployerRef));
+  }, [saved]);
   const valid = name.trim().length >= 2 && name.trim().length <= 120;
   return (
     <StepCard
@@ -693,6 +738,28 @@ function OrganisationStep(props: { sending: boolean; onComplete: (p: Record<stri
 function StructureStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [branches, setBranches] = useState([{ name: "", code: "", address: "", city: "" }]);
   const [departments, setDepartments] = useState([{ name: "" }]);
+  // M50.19: re-opens with the branches and departments saved previously.
+  const { data: saved } = useStepHydration("structure");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const b = safeList(saved, "Branches");
+    const d = safeList(saved, "Departments");
+    if (b.length > 0) {
+      setBranches(
+        b.map((x) => ({
+          name: s(x.Name),
+          code: s(x.Code),
+          address: s(x.AddressLine),
+          city: s(x.City),
+        })),
+      );
+    }
+    if (d.length > 0) {
+      setDepartments(d.map((x) => ({ name: s(x.Name) } as { name: string })));
+    }
+  }, [saved]);
   const valid = branches.every((b) => b.name.trim().length > 0) && branches.length > 0 && departments.every((d) => d.name.trim().length > 0);
 
   const updateBranch = (i: number, patch: Partial<(typeof branches)[0]>) =>
@@ -794,6 +861,18 @@ function StructureStep(props: { sending: boolean; onComplete: (p: Record<string,
 function EmploymentStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [grades, setGrades] = useState([{ name: "Grade 1" }, { name: "Grade 2" }, { name: "Manager" }]);
   const [positions, setPositions] = useState([{ name: "" }]);
+  // M50.19: re-opens with the grades and positions saved previously — the
+  // friendly seeded defaults only apply when the step has never been saved.
+  const { data: saved } = useStepHydration("employment");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const g = safeList(saved, "Grades");
+    const p = safeList(saved, "Positions");
+    if (g.length > 0) setGrades(g.map((x) => ({ name: s(x.Name) })));
+    if (p.length > 0) setPositions(p.map((x) => ({ name: s(x.Name) })));
+  }, [saved]);
   const valid = grades.every((g) => g.name.trim().length > 0) && positions.every((p) => p.name.trim().length > 0);
   return (
     <StepCard
@@ -895,6 +974,25 @@ function WorkingTimeStep(props: { sending: boolean; onComplete: (p: Record<strin
   const [weekends, setWeekends] = useState<string[]>(["sat", "sun"]);
   const [useHolidays, setUseHolidays] = useState(true);
   const [holidays, setHolidays] = useState<{ name: string; date: string }[]>(ZAMBIAN_HOLIDAYS);
+  // M50.19: re-opens with the previously saved working-time configuration.
+  const { data: saved } = useStepHydration("working-time");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const hrs = saved.StandardWeeklyHours;
+    if (typeof hrs === "number") setHours(String(Math.max(1, Math.min(80, hrs))));
+    const days = s(saved.WeekendDays);
+    if (days) setWeekends(days.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean));
+    const hl = safeList(saved, "PublicHolidays");
+    if (hl.length > 0) {
+      setUseHolidays(true);
+      setHolidays(hl.map((h) => ({ name: s(h.Name), date: s(h.Date) })));
+    } else if (saved.PublicHolidays != null && Array.isArray(saved.PublicHolidays) && hl.length === 0) {
+      setUseHolidays(false);
+      setHolidays(ZAMBIAN_HOLIDAYS);
+    }
+  }, [saved]);
   const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
   const toggle = (d: string) =>
     setWeekends((ws) => (ws.includes(d) ? ws.filter((x) => x !== d) : [...ws, d]));
@@ -1016,6 +1114,25 @@ function LeaveStep(props: { sending: boolean; onComplete: (p: Record<string, unk
   const [types, setTypes] = useState(
     LEAVE_DEFAULTS.map((d) => ({ name: d.name, category: d.category, days: d.days, evidence: d.evidence, carry: d.carry })),
   );
+  // M50.19: re-opens with the previously saved leave types instead of defaults.
+  const { data: saved } = useStepHydration("leave");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const lt = safeList(saved, "LeaveTypes");
+    if (lt.length > 0) {
+      setTypes(
+        lt.map((t) => ({
+          name: s(t.Name),
+          category: ["paid", "unpaid", "half-pay"].includes(String(t.Category ?? "")) ? String(t.Category) : "paid",
+          days: Math.max(0, Number(t.DaysPerYear) || 0),
+          evidence: t.RequiresEvidence === true,
+          carry: Math.max(0, Number(t.CarryForwardDays) || 0),
+        })),
+      );
+    }
+  }, [saved]);
   const valid = types.every((t) => t.name.trim().length > 0 && t.days >= 0);
   const update = (i: number, patch: Partial<(typeof types)[0]>) =>
     setTypes((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -1097,6 +1214,19 @@ function PayrollStep(props: { sending: boolean; onComplete: (p: Record<string, u
   const [payday, setPayday] = useState("25");
   const [basis, setBasis] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  // M50.19: re-opens with the previously chosen payroll configuration.
+  const { data: saved } = useStepHydration("payroll");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const f = String(saved.Frequency ?? "");
+    if (["monthly", "semimonthly", "biweekly", "weekly"].includes(f)) setFrequency(f);
+    const day = Number(saved.PaydayDay);
+    if (Number.isFinite(day)) setPayday(String(Math.max(1, Math.min(31, day))));
+    setBasis(saved.PayBasisTimesheet === true);
+    setConfirm(saved.ConfirmStatutory === true);
+  }, [saved]);
   const valid = confirm;
   return (
     <StepCard
@@ -1177,6 +1307,23 @@ function PayrollStep(props: { sending: boolean; onComplete: (p: Record<string, u
 /* Step 7 — Policies (optional) */
 function PoliciesStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [types, setTypes] = useState(CONTRACT_DEFAULTS.map((c) => ({ ...c })));
+  // M50.19: re-opens with the previously saved contract types instead of defaults.
+  const { data: saved } = useStepHydration("policies");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const ct = safeList(saved, "ContractTypes");
+    if (ct.length > 0) {
+      setTypes(
+        ct.map((t) => ({
+          name: s(t.Name),
+          probation: Math.max(0, Number(t.ProbationDays) || 0),
+          notice: Math.max(0, Number(t.NoticeDays) || 0),
+        })),
+      );
+    }
+  }, [saved]);
   const valid = types.every((t) => t.name.trim().length > 0 && t.probation >= 0 && t.notice >= 0);
   const update = (i: number, patch: Partial<(typeof types)[0]>) =>
     setTypes((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -1240,6 +1387,15 @@ function PoliciesStep(props: { sending: boolean; onComplete: (p: Record<string, 
 function RolesStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [input, setInput] = useState("");
   const [emails, setEmails] = useState<string[]>([]);
+  // M50.19: re-opens with the previously added administrator emails.
+  const { data: saved } = useStepHydration("roles");
+  const appliedRef = useRef(false);
+  useEffect(() => {
+    if (!saved || appliedRef.current) return;
+    appliedRef.current = true;
+    const ae = safeList(saved, "AdminEmails");
+    if (ae.length > 0) setEmails(ae.map((x) => String(x).toLowerCase()).filter(isValidEmail));
+  }, [saved]);
   const addEmail = () => {
     const e = input.trim().toLowerCase();
     if (!e || emails.includes(e) || !isValidEmail(e)) return;
@@ -1331,6 +1487,31 @@ function EmployeesStep(props: {
     const res = await realApi.orgUnits();
     return (Array.isArray(res) ? res : (res as { items?: unknown[] })?.items ?? []).map((u) => String((u as { name?: unknown }).name ?? ""));
   }, []);
+
+  // M50.19: Make changes must remember the employees entered previously —
+  // when the saved employees payload exists, the step opens in manual mode
+  // pre-filled with the exact rows that were imported last time.
+  const { data: savedEmps } = useStepHydration("employees");
+  const empsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!savedEmps || empsAppliedRef.current) return;
+    empsAppliedRef.current = true;
+    const es = safeList(savedEmps, "Employees");
+    if (es.length > 0) {
+      const seeded: Row[] = es.map((r) => ({
+        first: s(r.FirstName),
+        last: s(r.LastName),
+        email: s(r.Email),
+        phone: s(r.Phone),
+        jobTitle: s(r.JobTitle),
+        grade: s(r.Grade),
+        startDate: s(r.StartDate),
+        orgUnitName: s(r.OrgUnitName),
+      }));
+      setMode("manual");
+      setRows(seeded);
+    }
+  }, [savedEmps]);
 
   // M50.18: grades and positions from the completed Employment step (step 3)
   // seed the Grade / Job title dropdowns below; any value typed that is not in
