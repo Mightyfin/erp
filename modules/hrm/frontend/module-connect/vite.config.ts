@@ -18,9 +18,6 @@ export default ({ mode }: { mode: string }) => {
 
   return {
     define,
-    build: {
-      outDir: ".output",
-    },
     plugins: [
       tailwindcss(),
       tanstackStart({
@@ -31,6 +28,10 @@ export default ({ mode }: { mode: string }) => {
             specifiers: ["server-only"],
           },
         },
+        // Match the previous Lovable config: route the TanStack Start server
+        // entry through src/server.ts (our SSR error wrapper that converts
+        // h3-swallowed 500 JSON bodies into a friendly error page).
+        server: { entry: "server" },
       }),
       react(),
     ],
@@ -40,6 +41,7 @@ export default ({ mode }: { mode: string }) => {
       preset: "node-server",
     },
     build: {
+      outDir: ".output",
       // vite 8 uses Rolldown for production builds. Rolldown's chunk splitting
       // can produce circular chunk references where a chunk's top-level code
       // calls the `__exportAll` helper before the chunk that defines it has
