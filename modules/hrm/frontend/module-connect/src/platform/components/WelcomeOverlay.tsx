@@ -481,7 +481,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
                   key={s.key}
                   type="button"
                   onClick={() => setActive(s.key)}
-                  disabled={s.done || sending}
+                  // M50.19: in a full-revision run (Make changes after completion)
+                  // every step must stay reachable so the operator can revise
+                  // any answer; chips are only disabled while saving.
+                  disabled={sending || (!editing && !isComplete && s.done)}
                   className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                     s.key === active
                       ? "bg-primary text-primary-foreground"
