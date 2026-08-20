@@ -25,6 +25,7 @@ import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { feedback } from "@/platform/feedback";
 import { useAuth } from "@/platform/auth";
@@ -296,6 +297,7 @@ function EmployeesPage() {
         <PageHeader
           eyebrow="People"
           title="Employees"
+          meta={<ScopeBadge />}
           description={
             USE_REAL
               ? archived

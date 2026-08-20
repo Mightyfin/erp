@@ -498,8 +498,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [shellState.error, shellState.reload]);
 
+  // M54: the operator can deliberately pick the entity-wide scope (branch
+  // cleared). Only re-select a default branch when the current branch value
+  // is stale for a DIFFERENT entity, never when scope was cleared on purpose.
   useEffect(() => {
     if (!USE_REAL || !entityLocations.length) return;
+    if (!branch) return;
     if (!entityLocations.some((candidate) => String(candidate.name ?? candidate.id) === branch))
       setBranch(String(entityLocations[0].name ?? entityLocations[0].id));
   }, [branch, entityLocations, setBranch]);
@@ -590,7 +594,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
                 <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
-                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span> : null}
+                {branch ? (
+                  <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span>
+                ) : (
+                  <span className="max-w-32 truncate text-muted-foreground">· all branches</span>
+                )}
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -600,33 +608,47 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuLabel>
               {entityTree.map((node) => (
                 <div key={node.entityId}>
-                  <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
-                    <DropdownMenuRadioItem value={node.entityId}>
+                  <DropdownMenuRadioGroup
+                    value={
+                      // M54: branch-level picks are stored in `branch`; the
+                      // entity-wide option lives in the same group with an
+                      // empty value so the radio visually tracks the active scope.
+                      node.branches.some((b) => b.id === branch) ? branch : ""
+                    }
+                    onValueChange={(v) => {
+                      // Picking the entity row (empty) or any branch of THIS
+                      // entity first scopes the work context to the entity,
+                      // then narrows to the branch if one was picked.
+                      // M45: branch-confined operators can never clear scope
+                      // (the backend would reject them anyway).
+                      setEntityId(String(node.entityId));
+                      if (v) setBranch(v);
+                      else if (!assignedIds.length) setBranch("");
+                    }}
+                  >
+                    <DropdownMenuRadioItem value="">
                       <span className="min-w-0">
                         <span className="flex items-center gap-1.5">
                           <Building2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                           <span className="block truncate font-medium">{node.entityName}</span>
                         </span>
                         {node.entityCode ? (
-                          <span className="block text-xs text-muted-foreground">{node.entityCode}</span>
-                        ) : null}
+                          <span className="block text-xs text-muted-foreground">{node.entityCode} · organisation-wide</span>
+                        ) : (
+                          <span className="block text-xs text-muted-foreground">organisation-wide</span>
+                        )}
                       </span>
                     </DropdownMenuRadioItem>
+                    {node.branches.map((b) => (
+                      <DropdownMenuRadioItem key={b.id} value={b.id} className="ml-2 text-sm">
+                        <span className="min-w-0 truncate">└ {b.name}</span>
+                        {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
+                      </DropdownMenuRadioItem>
+                    ))}
                   </DropdownMenuRadioGroup>
-                  {node.branches.length > 0 ? (
-                    <div className="ml-5 border-l border-border pl-3 py-0.5">
-                      <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
-                        {node.branches.map((b) => (
-                          <DropdownMenuRadioItem key={b.id} value={b.id} className="text-sm">
-                            <span className="min-w-0 truncate">{b.name}</span>
-                            {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </div>
-                  ) : (
+                  {node.branches.length === 0 ? (
                     <p className="ml-5 pl-4 pb-1.5 text-xs text-muted-foreground">No branches configured</p>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </DropdownMenuContent>
