@@ -83,6 +83,17 @@ function EmployeesPage() {
 
   // Real backend: filters ride on the query params the ASP.NET list endpoint
   // already honours (search, status, workerType, includeArchived).
+  // M54.3: the operator's persisted shell scope (set by the switcher) is an
+  // org-unit id — send it explicitly so the list narrows when a branch is
+  // active; without it the page would always render the org-wide roster.
+  const shellScope = (() => {
+    try {
+      const raw = typeof localStorage !== "undefined" ? localStorage.getItem("erp.shell.state.v1") : null;
+      return raw ? (JSON.parse(raw) as { entityId?: string; branch?: string } | null) : null;
+    } catch {
+      return null;
+    }
+  })();
   const state = useApi(
     () =>
       USE_REAL
@@ -92,6 +103,7 @@ function EmployeesPage() {
               ...(statusFilter ? { status: statusFilter } : {}),
               ...(typeFilter ? { workerType: typeFilter } : {}),
               ...(archived ? { includeArchived: "true" } : {}),
+              ...(shellScope?.branch ? { orgUnitId: shellScope.branch } : {}),
               pageSize: 100,
             })
             .then(
@@ -107,7 +119,7 @@ function EmployeesPage() {
                 ) as EmployeeRow[],
             )
         : Promise.resolve([] as EmployeeRow[]),
-    [search, statusFilter, typeFilter, archived],
+    [search, statusFilter, typeFilter, archived, shellScope?.branch ?? ""],
   );
 
   const mockState = useMock(() => api.employees());
