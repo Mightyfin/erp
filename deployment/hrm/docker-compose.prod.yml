@@ -26,6 +26,7 @@ services:
       - hrm_employee_documents:/tmp/erp-docs
     networks:
       - erp_default
+      - mightyfin-efaas_identity
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
@@ -108,6 +109,8 @@ services:
 
 networks:
   erp_default:
+    external: true
+  mightyfin-efaas_identity:
     external: true
   communications:
     external: true

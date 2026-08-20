@@ -97,11 +97,14 @@ public sealed class IdentityProvisioningService(
             // Fresh-tenant guard: only elevate when no one holds hr_admin in
             // the realm yet AND setup is still pending for this tenant. Both
             // conditions must hold — otherwise a later user could hijack the
-            // elevation after a real admin was assigned manually.
+            // elevation after a real admin was assigned manually. Failure to
+            // count holders is treated conservatively: the elevation is
+            // refused rather than risk granting top-HR access.
+            var holders = await CountHrAdminHoldersAsync(ct);
+            if (holders < 0)
+                return new ClaimElevationResult(false, [],
+                    "tenant-admin-count-unavailable");
             var hrAdminRole = await RoleAsync("hr_admin", ct);
-            var holders = hrAdminRole is null
-                ? 0
-                : await CountRoleHoldersAsync(hrAdminRole.Id, ct);
             if (holders > 0)
                 return new ClaimElevationResult(false, [],
                     "tenant-already-has-administrators");
@@ -277,7 +280,11 @@ public sealed class IdentityProvisioningService(
         lock (_rolesLock) { _roles?.Remove(name); }
     }
 
-    private async Task<int> CountRoleHoldersAsync(Guid roleId, CancellationToken ct)
+    // Counts how many users currently hold the realm-level hr_admin role.
+    // Uses the role-by-NAME members endpoint because the roles-by-id members
+    // endpoint can be unexposed to the identity admin token in some Keycloak
+    // configurations (404), while the name-scoped endpoint works reliably.
+    private async Task<int> CountHrAdminHoldersAsync(CancellationToken ct)
     {
         var token = await AdminTokenAsync(ct);
         if (token is null) return -1;
@@ -286,16 +293,17 @@ public sealed class IdentityProvisioningService(
             using var client = http.CreateClient("keycloak-admin");
             client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", token);
+            var name = Uri.EscapeDataString("hr_admin");
             using var resp = await client.GetAsync(
-                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/roles-by-id/{roleId}/users?max=10", ct);
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/roles/{name}/users?max=10", ct);
             if (!resp.IsSuccessStatusCode) return -1;
             var doc = await JsonSerializer.DeserializeAsync<JsonElement>(
                 await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            return doc.ValueKind == JsonValueKind.Array ? doc.GetArrayLength() : 0;
+            return doc.ValueKind == JsonValueKind.Array ? doc.GetArrayLength() : -1;
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "Role holder count failed");
+            log.LogWarning(ex, "hr_admin holder count failed");
             return -1;
         }
     }
