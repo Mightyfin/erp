@@ -566,6 +566,17 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/setup/steps/${key}`, { dataJson: dataJson ?? null }),
   /** M49: finish the wizard — refuses while the mandatory prefix is open. */
   finishSetup: () => hrmApi.post<unknown>("/hrm/setup/finish", null),
+  /** M51: provision invited wizard emails with hr_admin + employee roles in
+   *  the identity system. Returns per-email outcomes so the roles step can
+   *  show which invitations actually took. */
+  provisionAdmins: (emails: string[]) =>
+    hrmApi.post<{ entries: Array<{ email: string; found: boolean; assigned: boolean; error?: string }>; assigned: number }>(
+      "/hrm/setup/provision-admins",
+      { emails },
+    ),
+  /** M51: first signed-in operator of a fresh tenant claims top-HR access.
+   *  `{elevated: false, reason: "..."}` when already elevated or refused. */
+  claimFirstUser: () => hrmApi.get<{ elevated: boolean; roles: string[]; reason?: string }>("/hrm/setup/first-user/claim"),
   /** M49: destructive start-afresh reset — hr_admin only, explicit confirm. */
   resetSetup: () =>
     hrmApi.post<unknown>("/hrm/setup/reset", { confirm: "RESET" }),

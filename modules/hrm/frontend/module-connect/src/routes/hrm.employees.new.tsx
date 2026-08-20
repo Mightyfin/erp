@@ -39,6 +39,26 @@ const employmentTypes = ["Permanent", "Fixed term", "Part time", "Contractor", "
 /** Zambian NRC: six digits, two digits, one digit — 123456/78/9. */
 const NRC = /^\d{6}\/\d{2}\/\d$/;
 
+/** Realistic date-of-birth window: 1900-01-01 … today (YYYY-MM-DD). */
+const MIN_DOB = "1900-01-01";
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+const ISO8601 = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Returns the stored YYYY-MM-DD string for a typed date input. Reading
+ * `value` from a native date input returns whatever the user typed in the
+ * browser's locale (MDY on US locales — typing 2001-01-25 can store a year
+ * like 0115). `valueAsDate` always parses the control's value in the input's
+ * local time zone and is locale-independent for well-formed strings; we fall
+ * back to the raw string only when it is already ISO. */
+function readDateInput(el: HTMLInputElement): string {
+  if (el.valueAsDate instanceof Date && !Number.isNaN(el.valueAsDate.getTime())) {
+    const iso = el.valueAsDate.toISOString().slice(0, 10);
+    if (ISO8601.test(iso)) return iso;
+  }
+  return ISO8601.test(el.value) ? el.value : "";
+}
+
 const emergencyRelationships = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
@@ -188,6 +208,10 @@ function buildOrgTree(
   const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
   const needsEndDate = employmentType === "Fixed term" || employmentType === "Intern";
   const nrcInvalid = nrc.trim() && !NRC.test(nrc.trim());
+
+  /** DOB must be present, well-formed, and within the realistic window. */
+  const dobInvalid = Boolean(dateOfBirth) &&
+    (!ISO8601.test(dateOfBirth) || dateOfBirth < MIN_DOB || dateOfBirth > TODAY_ISO);
   const hasEmergency = emergencyName.trim().length > 0;
 
   function parseStepGrades(dataJson: string | null): string[] {
@@ -247,7 +271,20 @@ function buildOrgTree(
           </div>
           <div>
             <Label htmlFor="dob">Date of birth</Label>
-            <Input id="dob" type="date" className="mt-1" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+            <Input
+              id="dob"
+              type="date"
+              className={"mt-1" + (dobInvalid ? " border-danger" : "")}
+              min={MIN_DOB}
+              max={TODAY_ISO}
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(readDateInput(e.currentTarget))}
+            />
+            {dobInvalid ? (
+              <p className="mt-1 text-xs text-danger">Pick a realistic date of birth (1900 – today).</p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">Use the calendar to avoid typed-value mix-ups.</p>
+            )}
           </div>
         </div>
       ),
@@ -429,14 +466,14 @@ function buildOrgTree(
           </div>
           <div>
             <Label htmlFor="start">Start date</Label>
-            <Input id="start" type="date" className="mt-1" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Input id="start" type="date" className="mt-1" value={startDate} onChange={(e) => setStartDate(readDateInput(e.currentTarget))} />
           </div>
           {needsEndDate ? (
             <div className="sm:col-span-2">
               <Label htmlFor="end">
                 End date <span className="text-danger">(required for {employmentType.toLowerCase()})</span>
               </Label>
-              <Input id="end" type="date" className="mt-1" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <Input id="end" type="date" className="mt-1" value={endDate} onChange={(e) => setEndDate(readDateInput(e.currentTarget))} />
               <p className="mt-1 text-xs text-muted-foreground">
                 An expiry alert is raised 60 days before this date.
               </p>
@@ -570,6 +607,11 @@ function buildOrgTree(
           }
           if (nrcInvalid) {
             feedback.blocked("The NRC number is not valid.", "Go back to the first step and enter it as 123456/78/9 (six digits, two, then one).");
+            setCreating(false);
+            return;
+          }
+          if (dobInvalid) {
+            feedback.blocked("The date of birth is not valid.", "Go back to Personal details and pick the date from the calendar (1900 – today).");
             setCreating(false);
             return;
           }

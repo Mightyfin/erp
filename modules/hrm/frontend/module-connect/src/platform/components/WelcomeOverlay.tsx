@@ -1390,6 +1390,14 @@ function PoliciesStep(props: { sending: boolean; onComplete: (p: Record<string, 
 function RolesStep(props: { sending: boolean; onComplete: (p: Record<string, unknown>) => Promise<void> }) {
   const [input, setInput] = useState("");
   const [emails, setEmails] = useState<string[]>([]);
+  const [provisioning, setProvisioning] = useState(false);
+  // M51: result of POST /setup/provision-admins — shown inline under the step
+  // so the operator sees which admins were actually created in the identity
+  // system. Re-opening the step clears it and allows re-provisioning.
+  const [provisionResult, setProvisionResult] = useState<{
+    assigned: number;
+    entries: Array<{ email: string; found: boolean; assigned: boolean; error?: string }>;
+  } | null>(null);
   // M50.19: re-opens with the previously added administrator emails.
   const { data: saved } = useStepHydration("roles");
   const appliedRef = useRef(false);
@@ -1405,6 +1413,9 @@ function RolesStep(props: { sending: boolean; onComplete: (p: Record<string, unk
     setEmails((xs) => [...xs, e]);
     setInput("");
   };
+  // M51: actually provision the listed admins in the identity system. The
+  // step save only persists the emails; the endpoint fires afterwards.
+  // Partial failure stays inline (endpoint is idempotent for re-sends).
   return (
     <StepCard
       title="HR administrators"
@@ -1435,11 +1446,50 @@ function RolesStep(props: { sending: boolean; onComplete: (p: Record<string, unk
             </Badge>
           ))}
         </div>
+        {provisionResult ? (
+          <div className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <ShieldCheck className="size-4 text-primary" aria-hidden />
+              Provisioned {provisionResult.assigned} administrator{provisionResult.assigned === 1 ? "" : "s"} in the identity system.
+            </div>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+              {provisionResult.entries.map((r) => (
+                <li key={r.email} className={r.assigned ? undefined : "text-destructive"}>
+                  {r.email}{r.found ? " — user existed, role assigned" : r.assigned ? " — account created, role assigned (temporary password set)" : ` — not provisioned${r.error ? ` (${r.error})` : ""}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <SubmitRow
-          disabled={props.sending}
-          sending={props.sending}
+          disabled={props.sending || provisioning}
+          sending={props.sending || provisioning}
           label={emails.length ? "Save administrators" : "Skip — I'll add administrators later"}
-          onSubmit={() => props.onComplete({ AdminEmails: emails })}
+          onSubmit={async () => {
+            // Persist the step payload first (existing contract), then call the
+            // identity provisioning endpoint. Failure of provisioning is
+            // surfaced inline without dropping the saved emails.
+            await props.onComplete({ AdminEmails: emails });
+            if (!emails.length) return;
+            setProvisioning(true);
+            setProvisionResult(null);
+            try {
+              const res = await realApi.provisionAdmins(emails);
+              setProvisionResult({
+                assigned: res?.assigned ?? 0,
+                entries: (res?.entries ?? []) as Array<{ email: string; found: boolean; assigned: boolean; error?: string }>,
+              });
+            } catch {
+              // Transient identity-side failure: the emails are still saved in
+              // the step, so the operator can re-open it and re-send.
+              setProvisionResult({
+                assigned: 0,
+                entries: emails.map((e) => ({ email: e, found: false, assigned: false, error: "identity system could not be reached" })),
+              });
+            } finally {
+              setProvisioning(false);
+            }
+          }}
         />
       </div>
     </StepCard>
