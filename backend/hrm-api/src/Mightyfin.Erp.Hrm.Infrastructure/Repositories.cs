@@ -129,6 +129,11 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
             match = await db.Workers.FirstOrDefaultAsync(w => w.NapsaNumber != null && w.NapsaNumber == napsaNumber && !w.IsArchived, ct);
         return match;
     }
+    // M54 import re-locate: rows without any natural keys fall back to their
+    // (required) work email to find the just-created record.
+    public async Task<Worker?> FindByEmailAsync(string email, CancellationToken ct) =>
+        await db.Workers.FirstOrDefaultAsync(w => w.Email != null &&
+            w.Email == email && !w.IsArchived, ct);
 
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {

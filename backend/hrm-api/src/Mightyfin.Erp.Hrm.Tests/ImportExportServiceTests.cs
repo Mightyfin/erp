@@ -225,7 +225,7 @@ public class ImportExportServiceTests
         var db = TestDbContextFactory.Create(tenant);
         var repo = new WorkerRepository(db);
         var workers = new WorkerServiceImpl(repo, new PermissiveAuthz(), new UlidIdProvider());
-        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz());
+        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz(), new Application.ShellContext());
         return new ImportExportServiceImpl(new[] { schema });
     }
 
@@ -241,7 +241,7 @@ public class ImportExportServiceTests
         db.SaveChanges();
         var repo = new WorkerRepository(db);
         var workers = new WorkerServiceImpl(repo, new PermissiveAuthz(), new UlidIdProvider());
-        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz());
+        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz(), new Application.ShellContext());
         return new ImportExportServiceImpl(new[] { schema });
     }
 
@@ -263,7 +263,7 @@ public class ImportExportServiceTests
         db.SaveChanges();
         var repo = new WorkerRepository(db);
         var workers = new WorkerServiceImpl(repo, new PermissiveAuthz(), new UlidIdProvider());
-        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz());
+        var schema = new WorkersImportSchema(repo, workers, new PermissiveAuthz(), new Application.ShellContext());
         return new ImportExportServiceImpl(new[] { schema });
     }
 }

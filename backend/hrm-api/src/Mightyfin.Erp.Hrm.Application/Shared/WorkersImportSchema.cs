@@ -12,12 +12,14 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private readonly IWorkerRepository repo;
     private readonly IWorkerService workers;
     private readonly IAuthzService authz;
+    private readonly ShellContext scope;
 
-    public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz)
+    public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz, ShellContext scope)
     {
         this.repo = repo;
         this.workers = workers;
         this.authz = authz;
+        this.scope = scope;
     }
 
     public string TypeKey => "workers";
@@ -38,6 +40,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("grade", "Grade", false, Example: "G5"),
         new("jobTitle", "Job title", false, Example: "Accounts Officer"),
         new("startDate", "Start date", false, FormatNote: "YYYY-MM-DD"),
+        new("locationId", "Branch", false, FormatNote: "guid of the work location, optional — current work scope is used when empty"),
         new("workerType", "Employment type", true, Example: "employee | contingent | intern | volunteer"),
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
 
@@ -223,6 +226,16 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     // ZRA TPIN: exactly 10 digits.
     private static bool TpinValid(string tpin) => System.Text.RegularExpressions.Regex.IsMatch(tpin, @"^\d{10}$");
 
+    /// Locates a worker by the row's natural keys, falling back to the work
+    /// email when none of the keys were supplied. Preview already refused
+    /// duplicate emails inside the file and against existing records, so the
+    /// email uniquely identifies the just-created row.
+    private async Task<Worker?> FindByNaturalOrEmailAsync(string? email, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        return await repo.FindByEmailAsync(email, ct);
+    }
+
     public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
@@ -261,6 +274,11 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         else
         {
             // Insert mode — full lifecycle via the same service the UI uses.
+            // M54: an explicit `locationId` column wins; otherwise the row is
+            // hired into the operator's current work scope (branch switcher / confinement).
+            Guid? locationId = Guid.TryParse(OrNull(row.Get("locationId")), out var lid)
+                ? lid
+                : scope.LocationId;
             var request = new WorkerCreateRequest(
                 OrNull(row.Get("employeeNo")),
                 OrNull(row.Get("firstName")), OrNull(row.Get("lastName")),
@@ -275,14 +293,17 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 JobTitle: OrNull(row.Get("jobTitle")),
                 StartDate: OrNull(row.Get("startDate")),
                 WorkerType: workerType,
-                OrgUnitId: orgUnitId);
+                OrgUnitId: orgUnitId,
+                LocationId: locationId);
             await workers.CreateAsync(request, ct);
             // The freshly created worker is located again by the same natural
             // keys the import row was built with (CreateAsync returns a DTO,
-            // not the id). Insert mode always carries a required email.
+            // not the id). Insert mode always carries a required email, so a
+            // row without any natural keys falls back to locating by email.
             var created = await repo.FindByNaturalKeyAsync(
                 OrNull(row.Get("employeeNo")), OrNull(row.Get("nrc")),
                 OrNull(row.Get("napsaNumber")), ct)
+                ?? await FindByNaturalOrEmailAsync(OrNull(row.Get("email")), ct)
                 ?? throw new DomainException("import-create-lost",
                     "The worker row was applied but could not be re-located for history records — report this to support.");
             await ApplyChildRowsAsync(created.Id, row, orgUnits, ct);

@@ -480,18 +480,31 @@ public static class Routes
     {
         var g = app.MapGroup($"{HrmPrefix}/workers").RequireAuthorization();
 
-        g.MapGet("/", async ([AsParameters] WorkerListFilters filters, IWorkerService svc, CancellationToken ct)
-            => await svc.ListAsync(filters, ct));
+        g.MapGet("/", async ([AsParameters] WorkerListFilters filters, ShellContext scope, IWorkerService svc, CancellationToken ct) =>
+        {
+            // M54: when the operator is working inside one branch (either by
+            // confinement or by picking a branch in the top-nav switcher), the
+            // list defaults to that branch so they cannot see organisation-
+            // wide records by accident. Org-wide top HR (no header) sees all.
+            if (scope.LocationId.HasValue && !filters.LocationId.HasValue)
+                filters = filters with { LocationId = scope.LocationId };
+            return await svc.ListAsync(filters, ct);
+        });
 
         g.MapGet("/{id:guid}", async (Guid id, IWorkerService svc, CancellationToken ct)
             => await svc.GetByIdAsync(id, ct));
 
-        g.MapPost("/", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
+        g.MapPost("/", async (HttpContext http, ShellContext scope, IWorkerService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<WorkerCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var errors = ValidateWorkerCreate(request);
             if (errors.Count != 0)
                 return Results.UnprocessableEntity(new ApiError("validation-failed", string.Join("; ", errors), []));
+            // M54: stamp the current work scope onto records created without
+            // an explicit location — a branch-scoped operator always hires
+            // into their own branch.
+            if (!request.LocationId.HasValue && scope.LocationId.HasValue)
+                request = request with { LocationId = scope.LocationId };
             var created = await svc.CreateAsync(request, ct);
             return Results.Created($"{HrmPrefix}/workers/{created.Id}", created);
         });

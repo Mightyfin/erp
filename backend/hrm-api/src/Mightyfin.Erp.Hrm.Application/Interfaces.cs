@@ -25,6 +25,9 @@ public interface IWorkerRepository
     // M31 import/export: natural-key lookup used by Update-mode matching
     // (employee number first, then NRC, then NAPSA number).
     Task<Worker?> FindByNaturalKeyAsync(string employeeNo, string? nrc, string? napsaNumber, CancellationToken ct);
+    // M54 import re-locate: rows without any natural keys fall back to their
+    // (required) work email to find the just-created record.
+    Task<Worker?> FindByEmailAsync(string email, CancellationToken ct);
     Task ArchiveAsync(Guid id, CancellationToken ct);
     Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct);
     Task<Assignment> CreateAssignmentAsync(Assignment assignment, CancellationToken ct);
