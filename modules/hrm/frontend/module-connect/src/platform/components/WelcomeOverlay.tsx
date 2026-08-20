@@ -8,12 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Command, CommandEmpty, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { realApi, useApi } from "@/platform/use-api";
 import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Plus,
   ShieldCheck,
@@ -1325,6 +1332,44 @@ function EmployeesStep(props: {
     return (Array.isArray(res) ? res : (res as { items?: unknown[] })?.items ?? []).map((u) => String((u as { name?: unknown }).name ?? ""));
   }, []);
 
+  // M50.18: grades and positions from the completed Employment step (step 3)
+  // seed the Grade / Job title dropdowns below; any value typed that is not in
+  // the list is offered as "Create '…' as a new …" and persists because the
+  // wizard step record is re-saved with the merged reference list.
+  type EmploymentRefs = { grades: string[]; positions: string[] };
+  const [newRefs, setNewRefs] = useState<EmploymentRefs | null>(null);
+  const empRefs = useApi(async () => {
+    const d = await realApi.setupStepData("employment").catch(() => null);
+    let parsed: EmploymentRefs = { grades: [], positions: [] };
+    if (d?.dataJson) {
+      try {
+        const p = JSON.parse(d.dataJson);
+        parsed = {
+          grades: (Array.isArray(p?.Grades) ? p.Grades : []).map((g: { Name?: unknown }) => String(g?.Name ?? "")).filter(Boolean),
+          positions: (Array.isArray(p?.Positions) ? p.Positions : []).map((p0: { Name?: unknown }) => String(p0?.Name ?? "")).filter(Boolean),
+        };
+      } catch { /* malformed step payload — treat as empty reference list */ }
+    }
+    return parsed;
+  }, []);
+  const allGrades = useMemo(() => Array.from(new Set([...(empRefs.data?.grades ?? []), ...(newRefs?.grades ?? [])])), [empRefs.data, newRefs]);
+  const allPositions = useMemo(() => Array.from(new Set([...(empRefs.data?.positions ?? []), ...(newRefs?.positions ?? [])])), [empRefs.data, newRefs]);
+  // Persist a newly-created grade/position back into the employment step so
+  // every future wizard visit and every HR operator sees it in the dropdown.
+  const saveNewRef = async (kind: "grade" | "position", name: string) => {
+    const prev = empRefs.data ?? { grades: [], positions: [] };
+    const next = kind === "grade"
+      ? { grades: [...prev.grades, name], positions: prev.positions }
+      : { grades: prev.grades, positions: [...prev.positions, name] };
+    setNewRefs(next);
+    try {
+      await realApi.completeSetupStep("employment", JSON.stringify({
+        Grades: next.grades.map((g) => ({ Name: g })),
+        Positions: next.positions.map((p0) => ({ Name: p0, GradeName: null })),
+      }));
+    } catch { /* network hiccup — the new value still applies to this session */ }
+  };
+
   const update = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
@@ -1550,9 +1595,32 @@ function EmployeesStep(props: {
                   <Trash2 className="size-4 text-muted-foreground" aria-hidden />
                 </Button>
                 <Input value={r.phone} onChange={(e) => update(i, { phone: e.target.value })} placeholder="Phone" />
-                <Input value={r.jobTitle} onChange={(e) => update(i, { jobTitle: e.target.value })} placeholder="Job title" />
-                <Input value={r.grade} onChange={(e) => update(i, { grade: e.target.value })} placeholder="Grade" />
-                <Input value={r.startDate} onChange={(e) => update(i, { startDate: e.target.value })} placeholder="Start date YYYY-MM-DD" />
+                <RefSelect
+                  label="Job title"
+                  placeholder="Job title"
+                  options={allPositions}
+                  value={r.jobTitle}
+                  onAddNew={(v) => { saveNewRef("position", v); update(i, { jobTitle: v }); }}
+                  onChange={(v) => update(i, { jobTitle: v })}
+                />
+                <RefSelect
+                  label="Grade"
+                  placeholder="Grade"
+                  options={allGrades}
+                  value={r.grade}
+                  onAddNew={(v) => { saveNewRef("grade", v); update(i, { grade: v }); }}
+                  onChange={(v) => update(i, { grade: v })}
+                />
+                {/* Native date input — the browser only ever emits a valid
+                    YYYY-MM-DD value or an empty string, so the backend's
+                    strict date gate can no longer be tripped by a typo. */}
+                <input
+                  type="date"
+                  aria-label="Start date"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={r.startDate}
+                  onChange={(e) => update(i, { startDate: e.target.value })}
+                />
                 <div className="md:col-span-2">
                   <Select value={r.orgUnitName || undefined} onValueChange={(v) => update(i, { orgUnitName: v })}>
                     <SelectTrigger className="w-full"><SelectValue placeholder="Department (optional)" /></SelectTrigger>
@@ -1631,6 +1699,83 @@ function UnitMappingControl(props: {
 }
 
 /* ---------- small shared pieces ---------- */
+
+// M50.18: a searchable combobox for grade / job-title that is seeded by the
+// reference lists created in the wizard's Employment step. Typing anything
+// not in the list surfaces a "Create '…' as a new …" item; picking it adds
+// the value to the organisation's reference list (onAddNew) and selects it.
+function RefSelect(props: {
+  label: string;
+  placeholder: string;
+  options: string[];
+  value: string;
+  onAddNew: (value: string) => void;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { options, value, onAddNew, onChange } = props;
+  const chosen = options.includes(value) ? value : value || null;
+  const filter = useMemo(() => {
+    const needle = open ? value.toLowerCase() : null;
+    return options.filter((o) => !needle || o.toLowerCase().includes(needle));
+  }, [options, value, open]);
+  const createCandidate = open && value.trim() && !chosen ? value.trim() : null;
+  return (
+    <div className="flex-1 min-w-0">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            aria-label={props.label}
+            className={cn("w-full h-9 justify-between font-normal", !chosen && "text-muted-foreground")}
+          >
+            <span className="truncate">{chosen ?? props.placeholder}</span>
+            <ChevronDown className="h-3 w-3 opacity-50" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" side="bottom">
+          <Command>
+            <CommandInput
+              placeholder={`Search ${props.label.toLowerCase()}…`}
+              value={value}
+              onValueChange={(v) => { onChange(v); }}
+            />
+            <CommandList>
+              <CommandEmpty>
+                {createCandidate ? (
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent"
+                    onClick={() => { onAddNew(createCandidate); setOpen(false); }}
+                  >
+                    <Plus className="size-3.5" aria-hidden />
+                    Create “{createCandidate}” as a new {props.label.toLowerCase()}
+                  </button>
+                ) : (
+                  <span className="px-2 py-1.5 text-sm text-muted-foreground">No {props.label.toLowerCase()}s found</span>
+                )}
+              </CommandEmpty>
+              {filter.map((o) => (
+                <CommandItem
+                  key={o}
+                  value={o}
+                  onSelect={() => { onChange(o); setOpen(false); }}
+                  className="flex items-center gap-2"
+                >
+                  <Check className={cn("size-3.5", o === value ? "opacity-100" : "opacity-0")} aria-hidden />
+                  {o}
+                </CommandItem>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
 
 function SubmitRow(props: { disabled: boolean; sending: boolean; label: string; onSubmit: () => void }) {
   return (

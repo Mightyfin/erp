@@ -16,6 +16,10 @@ public interface ISetupService
 {
     Task<SetupStateDto> GetStateAsync(CancellationToken ct);
     Task<IReadOnlyList<SetupStepDto>> ListStepsAsync(CancellationToken ct);
+    /// <summary>M50.18: the saved input payload of a completed wizard step — the
+    /// employees step reads step 3's grades and positions from here so the
+    /// manual-entry grid can offer them as dropdowns instead of free text.</summary>
+    Task<string?> GetStepDataAsync(string stepKey, CancellationToken ct);
     Task CompleteStepAsync(string stepKey, string? dataJson, CancellationToken ct);
     Task FinishAsync(CancellationToken ct);
     /// <summary>DESTRUCTIVE: wipes all tenant data so the system behaves like
@@ -30,6 +34,8 @@ public interface ISetupRepository
 {
     Task<SetupState?> GetStateAsync(CancellationToken ct);
     Task<IReadOnlySet<string>> CompletedStepKeysAsync(CancellationToken ct);
+    /// <summary>M50.18: the saved input payload of a completed step.</summary>
+    Task<string?> DataForStepAsync(string stepKey, CancellationToken ct);
     Task CompleteStepAsync(string stepKey, string? dataJson, CancellationToken ct);
     Task FinishAsync(SetupState state, CancellationToken ct);
     Task WipeAllDataAsync(CancellationToken ct);
@@ -126,6 +132,18 @@ public sealed class SetupServiceImpl(
         return result;
     }
 
+    public async Task<string?> GetStepDataAsync(string stepKey, CancellationToken ct)
+    {
+        // Only the steps the wizard itself persists are addressable; an unknown
+        // key is refused rather than leaking an empty string.
+        if (!SetupDefinitions.Steps.Any(s => s.Key == stepKey))
+            throw new DomainException("setup-step-unknown", $"Setup step '{stepKey}' does not exist.");
+        var records = await repo.CompletedStepKeysAsync(ct);
+        if (!records.Contains(stepKey))
+            throw new DomainException("setup-step-not-complete",
+                $"Setup step '{stepKey}' has no saved data yet — complete it in the wizard first.");
+        return await repo.DataForStepAsync(stepKey, ct);
+    }
     public async Task CompleteStepAsync(string stepKey, string? dataJson, CancellationToken ct)
     {
         var state = await repo.GetStateAsync(ct)

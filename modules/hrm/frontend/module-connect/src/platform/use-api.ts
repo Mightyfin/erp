@@ -545,6 +545,10 @@ export const realApi = {
       optionalSteps: string[];
       completionPercent: number;
     }>("/hrm/setup/state"),
+  /** M50.18: the saved input payload of a completed wizard step — the
+   *  employees step reads step 3's grades and positions from here. */
+  setupStepData: (key: string) =>
+    hrmApi.get<{ dataJson: string | null }>(`/hrm/setup/steps/${key}/data`),
   /** M49: wizard step catalog with completion/open status for rendering. */
   setupSteps: () =>
     hrmApi.get<

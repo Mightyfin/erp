@@ -97,6 +97,16 @@ public static class Routes
                 throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
             return Results.Ok(await svc.ListStepsAsync(ct));
         });
+        // M50.18: the saved input payload of a completed wizard step — the
+        // employees step reads step 3's grades and positions from here so the
+        // manual-entry grid can offer them as dropdowns instead of free text.
+        // Confined branch HR are refused like the rest of the wizard surface.
+        g.MapGet("/steps/{key}/data", async (string key, HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
+        {
+            if (scope.IsConfined)
+                throw new DomainException("setup-confined", "Branch-confined HR cannot run the setup wizard — organisation-wide HR completes it.");
+            return Results.Ok(new { dataJson = await svc.GetStepDataAsync(key, ct) });
+        });
         g.MapPost("/steps/{key}", async (string key, HttpContext http, ShellContext scope, Mightyfin.Erp.Hrm.Application.Setup.ISetupService svc, CancellationToken ct) =>
         {
             if (scope.IsConfined)

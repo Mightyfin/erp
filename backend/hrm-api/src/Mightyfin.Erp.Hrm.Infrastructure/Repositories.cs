@@ -2147,6 +2147,11 @@ public sealed class SetupRepository(HrmDbContext db) : ISetupRepository
             .Select(x => x.StepKey)
             .ToListAsync(ct));
 
+    /// <summary>M50.18: the saved input payload of a completed step (grades,
+    /// positions, …) so later wizard steps can reuse the reference lists.</summary>
+    public async Task<string?> DataForStepAsync(string stepKey, CancellationToken ct) =>
+        (await db.SetupStepRecords.FirstOrDefaultAsync(x => x.StepKey == stepKey, ct))?.DataJson;
+
     public async Task CompleteStepAsync(string stepKey, string? dataJson, CancellationToken ct)
     {
         var existing = await db.SetupStepRecords.FirstOrDefaultAsync(x => x.StepKey == stepKey, ct);
