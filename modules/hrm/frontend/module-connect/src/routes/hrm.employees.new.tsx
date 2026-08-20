@@ -80,20 +80,36 @@ function NewEmployee() {
       realApi.employees({ page: 1, pageSize: 500, status: "active" }),
       realApi.setupStepData("employment").catch(() => null),
     ]);
+    // The /admin/* list endpoints return paged envelopes {items:[...]}; the
+    // reference helpers return whatever the API returned, so unwrap defensively.
+    const unwrapItems = (v: unknown): unknown[] => {
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === "object") {
+        const o = v as Record<string, unknown>;
+        if (Array.isArray(o.items)) return o.items;
+        // setupStepData nests the JSON string under { dataJson }
+        if (typeof o.dataJson === "string") return [o];
+      }
+      return [];
+    };
+    const toPage = (v: unknown) => {
+      if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+      return { items: Array.isArray(v) ? v : [] };
+    };
     return {
-      legalEntities: (Array.isArray(legalEntities) ? legalEntities : []).map((raw) => {
+      legalEntities: unwrapItems(legalEntities).map((raw) => {
         const e = raw as Record<string, unknown>;
         return { id: String(e.id ?? ""), registeredName: String(e.registeredName ?? ""), countryCode: String(e.countryCode ?? e.country ?? "") };
       }),
-      orgUnits: (Array.isArray(orgUnits) ? orgUnits : []).map((raw) => {
+      orgUnits: unwrapItems(orgUnits).map((raw) => {
         const u = raw as Record<string, unknown>;
         return { id: String(u.id ?? ""), name: String(u.name ?? ""), code: String(u.code ?? ""), legalEntityId: u.legalEntityId ? String(u.legalEntityId) : "" };
       }),
-      locations: (Array.isArray(locations) ? locations : []).map((raw) => {
+      locations: unwrapItems(locations).map((raw) => {
         const l = raw as Record<string, unknown>;
         return { id: String(l.id ?? ""), name: String(l.name ?? ""), code: String(l.code ?? ""), legalEntityId: l.legalEntityId ? String(l.legalEntityId) : "" };
       }),
-      workers: adaptWorkers(workerPage),
+      workers: adaptWorkers(toPage(workerPage)),
       grades: parseStepGrades(stepData?.dataJson ?? null),
     };
   }, []);

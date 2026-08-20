@@ -327,7 +327,7 @@ export const realApi = {
   locations: async () => {
     // Config endpoints return a paginated envelope { items, totalCount, ... }
     const page = await hrmApi.get<{ items?: unknown[] }>("/hrm/admin/locations");
-    return page.items ?? page;
+    return (page.items ?? []) as unknown[];
   },
   /** Download a document and return { url, fileName }. Caller revokes url. */
   downloadDocument: async (documentId: string, fileName: string) => {

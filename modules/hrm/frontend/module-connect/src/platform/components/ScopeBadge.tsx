@@ -24,9 +24,8 @@ export function ScopeBadge() {
   );
   const shell = shellState.data;
   const scopedToBranch = shell?.scopedToBranch ?? Boolean(branch);
-  const locations = Array.isArray(locationsState.data)
-    ? locationsState.data
-    : ((locationsState.data as Record<string, unknown>)?.items as unknown[] | undefined) ?? [];
+  // realApi.locations() always returns an array (it unwraps the { items } envelope)
+  const locations = Array.isArray(locationsState.data) ? locationsState.data : [];
   const locationId = shell?.locationId ?? (branch || null);
   const locationName = locationId
     ? (locations as Record<string, unknown>[]).find((l) => l.id === locationId)?.name
