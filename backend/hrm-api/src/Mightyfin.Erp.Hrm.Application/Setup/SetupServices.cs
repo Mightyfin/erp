@@ -130,7 +130,13 @@ public sealed class SetupServiceImpl(
     {
         var state = await repo.GetStateAsync(ct)
             ?? await repo.SeedPendingStateAsync(ct);
-        if (state.Status != SetupDefinitions.StatusPending)
+
+        // M50.17 — "Make changes" mode: once the setup is complete the
+        // operator can revisit any step from the completion view. Re-saves
+        // update the persisted data and keep the step recorded as complete
+        // (idempotent upsert). Only a non-final intermediate status would be
+        // unexpected, and that is what remains gated.
+        if (state.Status != SetupDefinitions.StatusPending && state.Status != SetupDefinitions.StatusComplete)
             throw new DomainException("setup-already-finished", "Setup is already complete. Reset the organisation to run the wizard again.");
         var records = await repo.CompletedStepKeysAsync(ct);
         if (!SetupDefinitions.MayComplete(stepKey, records))
