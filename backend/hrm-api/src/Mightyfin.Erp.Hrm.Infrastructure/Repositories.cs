@@ -2234,10 +2234,20 @@ public sealed class SetupRepository(HrmDbContext db) : ISetupRepository
         // with per-table error isolation: a table blocked by a FK (e.g.
         // workers ← hr_requests) is deferred to the next pass instead of
         // aborting the whole wipe. Three passes clear any dependency depth.
+        // M50.17b: identity tables are never wiped. tenant_role_assignments
+        // holds the Keycloak-linked roles that grant users access to HRM and
+        // hr_user_branch_assignments holds their branch scoping; wiping them
+        // would lock every HR user out after a data reset. Data only.
+        var identityTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "tenant_role_assignments",
+            "hr_user_branch_assignments",
+        };
         foreach (var pass in Enumerable.Range(0, 3))
         {
             foreach (var table in DataTables)
             {
+                if (identityTables.Contains(table)) continue;
                 if (existsOnly && !await TableExistsAsync(table, ct)) continue;
                 try
                 {
