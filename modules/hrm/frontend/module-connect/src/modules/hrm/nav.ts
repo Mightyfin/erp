@@ -75,6 +75,13 @@ export const hrmModule: ModuleDefinition = {
           roles: ["hr_ops", "hr_admin"],
         },
         { label: "Data quality", to: "/hrm/people/data-quality", roles: ["hr_ops", "hr_admin"] },
+        {
+          // M53: dedicated import/export landing page — direction picker, type
+          // picker, column mapping, preview and apply, plus round-trip export.
+          label: "Import & export",
+          to: "/hrm/import",
+          roles: ["hr_ops", "hr_admin"],
+        },
       ],
     },
     {
@@ -404,7 +411,7 @@ export const configurationGroups: {
     label: "Technical",
     description: "Integrations and data movement. Rarely changed after go-live.",
     items: [
-      { label: "Import and export", detail: "CSV templates", to: "/hrm/configuration/technical" },
+      { label: "Import and export", detail: "Spreadsheet round-trip tool", to: "/hrm/import" },
       {
         label: "Payroll interface",
         detail: "Finance, banking and statutory hand-offs",

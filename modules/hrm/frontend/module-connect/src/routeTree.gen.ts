@@ -17,6 +17,7 @@ import { Route as HrmAnalyticsRouteImport } from './routes/hrm.analytics'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmBenefitsRouteImport } from './routes/hrm.benefits'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
+import { Route as HrmImportRouteImport } from './routes/hrm.import'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
 import { Route as HrmMyOffboardingRouteImport } from './routes/hrm.my-offboarding'
 import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
@@ -160,6 +161,11 @@ const HrmBenefitsRoute = HrmBenefitsRouteImport.update({
 const HrmHelpRoute = HrmHelpRouteImport.update({
   id: '/hrm/help',
   path: '/hrm/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmImportRoute = HrmImportRouteImport.update({
+  id: '/hrm/import',
+  path: '/hrm/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
@@ -707,6 +713,7 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -821,6 +828,7 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -936,6 +944,7 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -1052,6 +1061,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1166,6 +1176,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1280,6 +1291,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1395,6 +1407,7 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmBenefitsRoute: typeof HrmBenefitsRoute
   HrmHelpRoute: typeof HrmHelpRoute
+  HrmImportRoute: typeof HrmImportRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
   HrmMyOffboardingRoute: typeof HrmMyOffboardingRoute
   HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
@@ -1546,6 +1559,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/help'
       fullPath: '/hrm/help'
       preLoaderRoute: typeof HrmHelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/import': {
+      id: '/hrm/import'
+      path: '/hrm/import'
+      fullPath: '/hrm/import'
+      preLoaderRoute: typeof HrmImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-documents': {
@@ -2426,6 +2446,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmBenefitsRoute: HrmBenefitsRoute,
   HrmHelpRoute: HrmHelpRoute,
+  HrmImportRoute: HrmImportRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
   HrmMyOffboardingRoute: HrmMyOffboardingRoute,
   HrmMyPerformanceRoute: HrmMyPerformanceRoute,
