@@ -231,8 +231,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   // M50.12: once the backend confirms setup completion, fade out and leave
   // the wizard page for the now-unlocked dashboard (the shell's pending-gate
   // only applies while setup is PENDING, so /hrm is reachable afterward).
+  // M50.14: in page mode the completion view (below) replaces the redirect —
+  // only the original overlay run fades out and navigates away.
   useEffect(() => {
-    if (isComplete) {
+    if (isComplete && !pageMode) {
       setFading(true);
       const t = setTimeout(async () => {
         await api.reload();
@@ -244,7 +246,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       }, 900);
       return () => clearTimeout(t);
     }
-  }, [isComplete, api]);
+  }, [isComplete, api, pageMode]);
 
   // Minimal focus trap: keep focus inside the modal while the cover is up.
   // Skipped in page mode — a full page must never trap the whole document.
