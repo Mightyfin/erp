@@ -397,7 +397,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
                 onClick={() => {
                   setEditing(true);
                   setActive(null); // resume effect picks step 1 via the editing flag
-                }
+                }}
               >
                 Make changes
               </Button>
@@ -407,7 +407,34 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       </div>
     );
   }
-  if (isComplete || !state || !active) return null;
+  // Page mode must keep rendering the wizard even after full completion
+  // when the operator pressed "Make changes" (editing === true).
+  if ((isComplete && !editing) || (isComplete && !pageMode)) return null;
+
+  // M50.15: the page must NEVER render nothing. During server rendering
+  // `useApi` has not fired yet (its data fetch lives in a useEffect, which
+  // is client-only), so `state` and `active` are null here. Returning null
+  // made /hrm/setup stream a completely empty <body> — React then failed to
+  // hydrate and the page stayed blank forever. Render the same loading
+  // shell on server and client instead, so hydration has a stable tree and
+  // the visitor sees a visible "preparing the wizard" state until the
+  // setup state arrives.
+  if (!state || !active) {
+    return (
+      <div
+        className={
+          pageMode
+            ? "flex min-h-screen items-center justify-center bg-background"
+            : "fixed inset-0 z-[120] flex items-center justify-center bg-white/90 backdrop-blur-xl"
+        }
+      >
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <SwitchGlyph />
+          <p className="text-sm">Preparing the setup wizard…</p>
+        </div>
+      </div>
+    );
+  }
 
   const current = stepsByCompletion.find((s) => s.key === active);
   const idx = stepsByCompletion.findIndex((s) => s.key === active);
