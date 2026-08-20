@@ -419,6 +419,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       // live under organisational units, so a location id may need an
       // org-unit name when no work-location row exists).
       orgUnits: flattenOrgUnits(orgUnitsTree),
+      // M54.3: keep the raw entity tree (recursive) so the switcher can build
+      // its branch rows directly from org units instead of work locations.
+      orgUnitsTreeRaw: orgUnitsTree,
     };
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
@@ -427,6 +430,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
   const orgUnits = shellState.data?.orgUnits ?? [];
+  const orgUnitsTree = (shellState.data?.orgUnitsTreeRaw as unknown[]) ?? [];
   const assignedIds = shellState.data?.assignedLocationIds ?? [];
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
@@ -451,11 +455,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const entityTree = (USE_REAL ? liveEntities : entities).map((e) => {
     const raw = e as Record<string, unknown>;
     const branches = USE_REAL
-      ? liveLocations
-          .filter((l) => l.legalEntityId === String(e.id))
-          // M45: a confined operator only sees their assigned branches in the switcher.
-          .filter((l) => !assignedIds.length || assignedIds.includes(String(l.id)))
-          .map((l) => ({ id: String(l.id), name: String(l.name ?? l.id), type: String(l.type ?? "branch") }))
+      ? // M54.3: the switcher's branches are org units from the entity tree
+        // (workers belong to org units, not work locations). Live branch rows
+        // come from realApi.orgUnitsTree() nested under each legal entity;
+        // direct children of the entity are shown as switchable branches,
+        // with the assigned-id confinement check applied to both the tree
+        // branch ids and any of their descendant ids.
+        collectEntityBranches(orgUnitsTree, String(e.id), assignedIds)
       : ((raw.branches as string[] | undefined) ?? []).map((name) => ({ id: String(name), name: String(name), type: "" }));
     return {
       entityId: String(e.id),
@@ -464,6 +470,48 @@ export function AppShell({ children }: { children: ReactNode }) {
       branches,
     };
   });
+  /** M54.3: collect the switchable branch rows for an entity from the org-unit tree. */
+  function collectEntityBranches(
+    tree: unknown[],
+    entityId: string,
+    assignedIds: string[],
+  ): Array<{ id: string; name: string; type: string }> {
+    const out: Array<{ id: string; name: string; type: string }> = [];
+    const walk = (node: Record<string, unknown>, depth: number) => {
+      const nid = String(node.id ?? "");
+      const kind = String((node.unitType ?? "")).toLowerCase();
+      if (depth === 1) {
+        // Direct children of the legal entity (typically branches / regions).
+        out.push({ id: nid, name: String(node.name ?? nid), type: kind || "branch" });
+      }
+      const children = Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : [];
+      for (const child of children) walk(child, depth + 1);
+    };
+    for (const root of tree) {
+      const r = root as Record<string, unknown>;
+      if (String(r.legalEntityId ?? "") === entityId || String(r.id ?? "") === entityId) walk(r, 0);
+    }
+    // M45: a confined operator only sees their assigned ids anywhere in the subtree.
+    return !assignedIds.length ? out : out.filter((b) => idsInSubtree(tree, b.id).some((id) => assignedIds.includes(id)));
+  }
+  /** M54.3: every org-unit id reachable from a given subtree root (inclusive). */
+  function idsInSubtree(tree: unknown[], rootId: string): string[] {
+    const ids: string[] = [];
+    const walk = (node: Record<string, unknown>) => {
+      const nid = String(node.id ?? "");
+      if (nid === rootId) {
+        const collect = (n: Record<string, unknown>) => {
+          ids.push(String(n.id ?? ""));
+          for (const c of Array.isArray(n?.children) ? (n.children as Record<string, unknown>[]) : []) collect(c);
+        };
+        collect(node);
+        return;
+      }
+      for (const c of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(c);
+    };
+    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
+    return ids;
+  }
   const pathname = useRouterState({ select: (st) => st.location.pathname });
 
   const inScope = isPathEnabled(pathname);
@@ -528,11 +576,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   // cleared). Only re-select a default branch when the current branch value
   // is stale for a DIFFERENT entity, never when scope was cleared on purpose.
   useEffect(() => {
-    if (!USE_REAL || !entityLocations.length) return;
-    if (!branch) return;
-    if (!entityLocations.some((candidate) => String(candidate.name ?? candidate.id) === branch))
-      setBranch(String(entityLocations[0].name ?? entityLocations[0].id));
-  }, [branch, entityLocations, setBranch]);
+    // M54.3: branch ids are org-unit ids — if the currently persisted branch
+    // no longer exists in THIS entity's org-unit tree, reset it (only when a
+    // stale branch is set, never to force a default while scope is cleared).
+    if (!USE_REAL) return;
+    const node = entityTree.find((n) => n.entityId === entityId);
+    if (!branch || !node || node.branches.length === 0) return;
+    if (!node.branches.some((candidate) => candidate.id === branch)) setBranch(String(node.branches[0].id));
+  }, [branch, entityId, entityTree, setBranch]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
