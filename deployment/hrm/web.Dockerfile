@@ -12,12 +12,13 @@ COPY modules/hrm/frontend/module-connect/ ./
 ENV VITE_HRM_API_BASE=/api \
     VITE_USE_REAL_API=true \
     VITE_HRM_TENANT_ID=019ffa8b-0fb0-71e6-849a-f76e5a28e0b5
-RUN pnpm build
+RUN pnpm build && mv /app/dist/client /app/dist/public && mv /app/dist/server/server.js /app/dist/server/index.mjs
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
-COPY --from=build /app/.output ./
+COPY --from=build /app/dist/public /app/public
+COPY --from=build /app/dist/server /app/server
 EXPOSE 3000
 CMD ["node", "server/index.mjs"]
