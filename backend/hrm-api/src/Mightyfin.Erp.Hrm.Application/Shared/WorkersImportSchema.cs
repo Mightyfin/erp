@@ -73,6 +73,27 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 !string.IsNullOrWhiteSpace(employeeNo) ? $"Employee number '{employeeNo}' is already assigned to an existing employee ({target.FullName}). Insert mode never overwrites — review the spreadsheet or switch to Update mode."
                 : !string.IsNullOrWhiteSpace(nrc) ? $"NRC '{nrc}' is already registered to an existing employee ({target.FullName}). Insert mode never overwrites — review the spreadsheet or switch to Update mode."
                 : $"NAPSA number '{napsa}' is already registered to an existing employee ({target.FullName}). Insert mode never overwrites — review the spreadsheet or switch to Update mode.");
+        // ---- Child rows (education / previous employment / internal moves) —
+        // optional, but when supplied they must be self-consistent (e.g. an
+        // education end year may not precede its start year). ----
+        if (IsNonBlank(row.Get("edu.institution")) || IsNonBlank(row.Get("edu.qualification")) ||
+            IsNonBlank(row.Get("edu.startYear")) || IsNonBlank(row.Get("edu.endYear")))
+        {
+            var inst = row.Get("edu.institution").Trim();
+            var qual = row.Get("edu.qualification").Trim();
+            if (IsNonBlank(inst) || IsNonBlank(qual))
+            {
+                if (string.IsNullOrWhiteSpace(inst) || string.IsNullOrWhiteSpace(qual))
+                    return new ImportRowOutcome("error",
+                        string.IsNullOrWhiteSpace(inst) ? "Education row: Institution is empty — both Institution and Qualification must be filled for an education record."
+                        : "Education row: Qualification is empty — both Institution and Qualification must be filled for an education record.");
+                if (int.TryParse(row.Get("edu.startYear").Trim(), out var sy) &&
+                    int.TryParse(row.Get("edu.endYear").Trim(), out var ey) && ey < sy)
+                    return new ImportRowOutcome("error",
+                        $"Education row: end year '{ey}' is before start year '{sy}' — an education record cannot end before it begins.");
+            }
+        }
+
         if (isUpdate && target is null)
         {
             var key = !string.IsNullOrWhiteSpace(employeeNo) ? $"employee number '{employeeNo}'"
@@ -230,6 +251,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 JobTitle: OrNull(row.Get("jobTitle")),
                 OrgUnitId: orgUnitId);
             await workers.UpdateAsync(target.Id, patch, ct);
+            await ApplyChildRowsAsync(target.Id, row, orgUnits, ct);
         }
 
         // NOTE on blank-update semantics: ApplyRowAsync is only ever reached for
@@ -255,7 +277,84 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 WorkerType: workerType,
                 OrgUnitId: orgUnitId);
             await workers.CreateAsync(request, ct);
+            // The freshly created worker is located again by the same natural
+            // keys the import row was built with (CreateAsync returns a DTO,
+            // not the id). Insert mode always carries a required email.
+            var created = await repo.FindByNaturalKeyAsync(
+                OrNull(row.Get("employeeNo")), OrNull(row.Get("nrc")),
+                OrNull(row.Get("napsaNumber")), ct)
+                ?? throw new DomainException("import-create-lost",
+                    "The worker row was applied but could not be re-located for history records — report this to support.");
+            await ApplyChildRowsAsync(created.Id, row, orgUnits, ct);
         }
+    }
+
+    /// Applies the optional education / external / internal history child rows
+    /// that the flattened import layout exposes (edu.*, ext.*, int.* keys).
+    /// Only creates — never deletes — matching the blank-values-mean-unchanged
+    /// contract documented above. A single child row per type is supported per
+    /// import row, which matches the flattened export shape this schema reads.
+    private async Task ApplyChildRowsAsync(Guid workerId, IDictionary<string, string> row,
+        List<OrgUnit> orgUnits, CancellationToken ct)
+    {
+        // Education: both of the two visible columns must be present — a
+        // half-filled education row silently imported would produce junk data.
+        var eduInst = OrNull(row.Get("edu.institution"));
+        var eduQual = OrNull(row.Get("edu.qualification"));
+        if (eduInst is not null && eduQual is not null)
+        {
+            int.TryParse(OrNull(row.Get("edu.startYear")), out var sy);
+            int.TryParse(OrNull(row.Get("edu.endYear")), out var ey);
+            await repo.AddEducationAsync(new WorkerEducation
+            {
+                WorkerId = workerId,
+                Institution = eduInst.Trim(),
+                Qualification = eduQual.Trim(),
+                StartYear = sy != 0 ? sy : null,
+                EndYear = ey != 0 ? ey : null,
+            }, ct);
+        }
+
+        // Previous employment (external work history) — company is the anchor.
+        var extCompany = OrNull(row.Get("ext.company"));
+        if (extCompany is not null)
+        {
+            await repo.AddExternalWorkHistoryAsync(new ExternalWorkHistory
+            {
+                WorkerId = workerId,
+                Company = extCompany.Trim(),
+                Role = OrNull(row.Get("ext.role"))?.Trim(),
+                StartDate = NormalizedIso(row.Get("ext.startDate")),
+                EndDate = NormalizedIso(row.Get("ext.endDate")),
+            }, ct);
+        }
+
+        // Internal move — the resolved department name is what history stores.
+        var intOrg = OrNull(row.Get("int.orgUnitName"));
+        var intRole = OrNull(row.Get("int.role"));
+        if (intOrg is not null || intRole is not null)
+        {
+            var resolved = orgUnits
+                .FirstOrDefault(u => u.Name.Equals(intOrg ?? "", StringComparison.OrdinalIgnoreCase))?.Name ?? intOrg;
+            if (string.IsNullOrWhiteSpace(resolved)) return; // nothing meaningful to record
+            await repo.AddInternalWorkHistoryAsync(new InternalWorkHistory
+            {
+                WorkerId = workerId,
+                OrgUnitName = resolved.Trim(),
+                Role = intRole?.Trim(),
+                StartDate = NormalizedIso(row.Get("int.startDate")),
+            }, ct);
+        }
+    }
+
+    private static bool IsNonBlank(string v) => !string.IsNullOrWhiteSpace(v);
+
+    /// Passes through a YYYY-MM-DD value unchanged if it parses, otherwise null.
+    private static string? NormalizedIso(string v)
+    {
+        var t = v?.Trim();
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        return DateTime.TryParseExact(t, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _) ? t : null;
     }
 
     public async Task<List<Dictionary<string, string>>> ExportRowsAsync(string? filter, CancellationToken ct)
