@@ -477,22 +477,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     assignedIds: string[],
   ): Array<{ id: string; name: string; type: string }> {
     const out: Array<{ id: string; name: string; type: string }> = [];
-    const walk = (node: Record<string, unknown>, depth: number) => {
-      const nid = String(node.id ?? "");
-      const kind = String((node.unitType ?? "")).toLowerCase();
-      if (depth === 1) {
-        // Direct children of the legal entity (typically branches / regions).
-        out.push({ id: nid, name: String(node.name ?? nid), type: kind || "branch" });
-      }
-      const children = Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : [];
-      for (const child of children) walk(child, depth + 1);
-    };
+    // NOTE (M54.3): the backend's entity-tree endpoint returns the legal
+    // entity's direct children WITHOUT the entity root itself — so every
+    // top-level node in the response IS one of this entity's branches
+    // (org units such as Lusaka/Ndola).
     for (const root of tree) {
       const r = root as Record<string, unknown>;
-      if (String(r.legalEntityId ?? "") === entityId || String(r.id ?? "") === entityId) walk(r, 0);
+      out.push({ id: String(r.id ?? ""), name: String(r.name ?? r.id), type: String(r.unitType ?? "branch") || "branch" });
+      // M45: a confined operator only sees branches whose subtree overlaps their assignments.
+      if (!assignedIds.length || idsInSubtree(tree, String(r.id)).some((id) => assignedIds.includes(id))) {
+        const children = Array.isArray(r?.children) ? (r.children as Record<string, unknown>[]) : [];
+        const walk = (node: Record<string, unknown>) => {
+          out.push({ id: String(node.id ?? ""), name: String(node.name ?? node.id), type: String(node.unitType ?? "").toLowerCase() || "unit" });
+          for (const child of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(child);
+        };
+        for (const child of children) walk(child);
+      }
     }
-    // M45: a confined operator only sees their assigned ids anywhere in the subtree.
-    return !assignedIds.length ? out : out.filter((b) => idsInSubtree(tree, b.id).some((id) => assignedIds.includes(id)));
+    return out;
   }
   /** M54.3: every org-unit id reachable from a given subtree root (inclusive). */
   function idsInSubtree(tree: unknown[], rootId: string): string[] {
