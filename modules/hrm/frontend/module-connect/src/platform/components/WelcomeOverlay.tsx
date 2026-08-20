@@ -398,7 +398,19 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
       </div>
     );
   }
-  if (isComplete || !state || !active) return null;
+  if (isComplete || !state || !active) {
+    // M50.16h: the page must NEVER render nothing. During server rendering
+    // `useApi` has not fired yet (its data fetch lives in a useEffect, which
+    // is client-only), so `state` and `active` are null here. Returning null
+    // streamed a completely empty <body> — React then failed to hydrate and
+    // the page stayed blank forever. Render a plain loading line instead; it
+    // disappears the moment the wizard or completion view renders.
+    return (
+      <div className={pageMode ? "flex min-h-screen items-center justify-center bg-background" : "fixed inset-0 z-[120] flex items-center justify-center bg-white/90 backdrop-blur-xl"}>
+        <p className="text-sm text-muted-foreground">Preparing the setup wizard…</p>
+      </div>
+    );
+  }
 
   const current = stepsByCompletion.find((s) => s.key === active);
   const idx = stepsByCompletion.findIndex((s) => s.key === active);
