@@ -228,6 +228,16 @@ function buildOrgTree(
       id: "identity",
       title: "Who is joining",
       purpose: "The details HR collects at the door. Payroll-critical IDs can still be completed later on the profile.",
+      validate: () => {
+        if (!firstName.trim()) return "First name is required — the record needs a name.";
+        if (!lastName.trim()) return "Last name is required — the record needs a name.";
+        if (!phone.trim()) return "Phone number is required — payroll and notifications depend on it.";
+        if (!dateOfBirth) return "Date of birth is required — pick it from the calendar.";
+        if (dobInvalid) return "The date of birth is not valid — pick a realistic date (1900 – today) from the calendar.";
+        if (!nrc.trim()) return "The NRC number is required for a Zambian employee record.";
+        if (nrcInvalid) return "The NRC number is not valid — enter it as 123456/78/9 (six digits, two, then one).";
+        return null;
+      },
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div>
@@ -293,6 +303,12 @@ function buildOrgTree(
       id: "statutory",
       title: "Statutory registrations",
       purpose: "Zambian registrations a pay run cannot run without — complete them now, or finish them on the profile later.",
+      validate: () => {
+        if (!emergencyName.trim()) return "Emergency contact name is required.";
+        if (!emergencyRelationship) return "Choose how the emergency contact relates to the employee.";
+        if (!emergencyPhone.trim()) return "Emergency contact phone is required — it is the number called in an emergency.";
+        return null;
+      },
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div>
@@ -343,6 +359,15 @@ function buildOrgTree(
       id: "placement",
       title: "Where they sit",
       purpose: "Entity and branch decide which policies, calendar and statutory rules apply.",
+      validate: () => {
+        if (!entityId) return "A legal entity is required — choose it from the list.";
+        if (!locationId) return "A work location is required — pick the branch this employee works at.";
+        if (!orgUnitId) return "A department is required — pick the department (or team) this employee belongs to.";
+        // Tree options use the plain unit id, but legacy entity: prefixed values
+        // would bypass the backend org-unit lookup too.
+        if (orgUnitId.startsWith("entity:")) return "A department is required — an entity-level placement is not enough; pick a department or team.";
+        return null;
+      },
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -426,6 +451,14 @@ function buildOrgTree(
       id: "employment",
       title: "Employment terms",
       purpose: "What kind of engagement this is, what level they join at, and when it starts.",
+      validate: () => {
+        if (!jobTitle.trim()) return "Job title is required — the contract needs a role.";
+        if (!startDate) return "A start date is required.";
+        if (!ISO8601.test(startDate) || startDate > TODAY_ISO) return "The start date is not valid — pick a date from the calendar (today at the latest).";
+        if (needsEndDate && !endDate) return `An end date is required for ${employmentType.toLowerCase()} engagements.`;
+        if (needsEndDate && endDate && (startDate && endDate <= startDate)) return "The end date must come after the start date.";
+        return null;
+      },
       render: () => (
         <div className="grid max-w-lg gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

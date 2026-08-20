@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertCircle, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,14 @@ export interface FlowStep {
   purpose: string;
   render: () => ReactNode;
   optional?: boolean;
+  /**
+   * Optional per-step gate: returns null when the step is complete, or an
+   * error message explaining what is still missing. While this returns a
+   * message, the Continue button is disabled and a small inline hint is
+   * shown — the user cannot reach the next step (or the final submit) until
+   * the required fields are filled.
+   */
+  validate?: () => string | null;
 }
 
 /**
@@ -37,6 +45,9 @@ export function GuidedFlow({
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  // Which step is currently showing a blocking validation message. Keys are
+  // step indices; the message is recomputed live as the user types.
+  const [stepError, setStepError] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = sessionStorage.getItem(`flow:${flowId}`);
@@ -46,6 +57,19 @@ export function GuidedFlow({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowId]);
+
+  // Recompute the current step's blocking error on every render so the hint
+  // and Continue button stay in sync as the user types. Skipping optional
+  // steps (and the review step, which has nothing to fill) is allowed.
+  useEffect(() => {
+    if (index >= steps.length - 1 || steps[index]?.optional) {
+      setStepError(null);
+      return;
+    }
+    const check = steps[index]?.validate?.();
+    setStepError(check ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   useEffect(() => {
     sessionStorage.setItem(`flow:${flowId}`, String(index));
@@ -102,6 +126,12 @@ export function GuidedFlow({
         <h2 className="mt-1 text-lg font-semibold">{step.title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{step.purpose}</p>
         <div className="mt-5">{step.render()}</div>
+        {stepError ? (
+          <p className="mt-4 flex gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2.5 text-sm text-warning">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>{stepError}</span>
+          </p>
+        ) : null}
 
         <div className="mt-6 flex flex-wrap items-center gap-2 border-t pt-4">
           <Button variant="outline" disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
@@ -110,7 +140,7 @@ export function GuidedFlow({
           </Button>
           {last ? (
             <Button
-              disabled={busy}
+              disabled={busy || Boolean(stepError)}
               onClick={async () => {
                 setBusy(true);
                 await onSubmit();
@@ -120,7 +150,7 @@ export function GuidedFlow({
               {busy ? "Submitting…" : submitLabel}
             </Button>
           ) : (
-            <Button onClick={() => setIndex((i) => i + 1)}>
+            <Button disabled={Boolean(stepError)} onClick={() => setIndex((i) => i + 1)}>
               Continue
               <ChevronRight className="size-4" aria-hidden />
             </Button>
