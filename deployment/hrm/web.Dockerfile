@@ -27,12 +27,24 @@ FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
-# The SSR fetch handler lives in /app/server/server.js and imports its chunks
-# from ./assets, so it is copied as a whole directory. The static site files
-# (client assets, favicon, etc.) must sit at /app/public for nitro's static
-# file serving. server-entry.js is resolved next to server/.
+# M50.16e: Rolldown keeps `react` / `@tanstack/*` as external specifiers in
+# the server chunks, so node_modules must exist at runtime to resolve them.
+COPY modules/hrm/frontend/module-connect/package.json modules/hrm/frontend/module-connect/pnpm-lock.yaml ./
+RUN corepack enable && corepack prepare pnpm@latest --activate && \
+    pnpm install --frozen-lockfile --prefer-offline --prod 2>/dev/null || \
+    pnpm install --frozen-lockfile --prefer-offline
+# M50.16d/16e: .output holds the production build. The SSR fetch handler lives
+# in /app/server/server.js and imports its chunks from ./assets, so it is
+# copied as a whole directory. Static site files (client assets, favicon, etc.)
+# must sit at /app/public for nitro's static file serving. server-entry.js is
+# resolved next to server/, so it lands in /app itself.
 COPY --from=build /app/.output/server /app/server
 COPY --from=build /app/.output/client /app/public
 COPY modules/hrm/frontend/module-connect/server-entry.js /app/server-entry.js
+# M50.16e: the Lovable vite wrapper's dedupe + import-protection config was
+# removed in M50.16, so server chunks no longer need the dev node_modules;
+# production deps copied above cover the external react/TanStack specifiers.
+# Drop all devDependencies artifacts to shrink the image.
+RUN rm -rf /usr/local/share/.cache /usr/local/share/.local
 EXPOSE 3000
 CMD ["node", "server-entry.js"]
