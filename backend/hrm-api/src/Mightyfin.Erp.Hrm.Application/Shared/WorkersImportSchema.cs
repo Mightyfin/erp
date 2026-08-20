@@ -274,11 +274,14 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         else
         {
             // Insert mode — full lifecycle via the same service the UI uses.
-            // M54: an explicit `locationId` column wins; otherwise the row is
-            // hired into the operator's current work scope (branch switcher / confinement).
+            // M54 / M54.3: an explicit `locationId` column wins; otherwise the
+            // row is hired into the operator's current work scope (branch
+            // switcher / confinement — which is an ORG UNIT, not a work
+            // location; the header may carry either).
             Guid? locationId = Guid.TryParse(OrNull(row.Get("locationId")), out var lid)
                 ? lid
                 : scope.LocationId;
+            orgUnitId = orgUnitId ?? scope.OrgUnitId;
             var request = new WorkerCreateRequest(
                 OrNull(row.Get("employeeNo")),
                 OrNull(row.Get("firstName")), OrNull(row.Get("lastName")),

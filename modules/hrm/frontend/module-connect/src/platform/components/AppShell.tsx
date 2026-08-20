@@ -367,7 +367,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
-    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections] = await Promise.all([
+    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections, orgUnitsTree] = await Promise.all([
       realApi.legalEntities().catch(() => []),
       realApi.locations().catch(() => ({ items: [] as unknown[] })),
       realApi.shell().catch(() => null),
@@ -375,6 +375,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
       realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
       realApi.timeCorrections({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
+      // M54.3: the switcher's branches are org units (entity-tree) — the shell
+      // needs their names to label the top bar / overlay when an org-unit id
+      // is the active scope.
+      realApi.orgUnitsTree().catch(() => [] as unknown[]),
     ]);
     return {
       // The backend wraps list endpoints in a `{ items: [...] }` envelope, so
@@ -411,6 +415,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         countOpen(Array.isArray(queue?.items) ? queue.items : []) +
         countOpen(Array.isArray(leave?.items) ? leave.items : []) +
         countOpen(Array.isArray(corrections?.items) ? corrections.items : []),
+      // M54.3: flattened org units for scope-name resolution (work locations
+      // live under organisational units, so a location id may need an
+      // org-unit name when no work-location row exists).
+      orgUnits: flattenOrgUnits(orgUnitsTree),
     };
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
@@ -418,6 +426,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
+  const orgUnits = shellState.data?.orgUnits ?? [];
   const assignedIds = shellState.data?.assignedLocationIds ?? [];
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
@@ -425,6 +434,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const entityLocations: { id: string; name: string }[] = USE_REAL
     ? liveLocations.filter((location) => !entity || location.legalEntityId === entity.id)
     : (entity as { branches?: string[] })?.branches?.map((name) => ({ id: String(name), name: String(name) })) ?? [];
+
+  /** M54.3: flatten the recursive org-unit tree into a single lookup list. */
+  function flattenOrgUnits(tree: unknown[]): { id: string; name: string }[] {
+    const out: { id: string; name: string }[] = [];
+    const walk = (node: Record<string, unknown>) => {
+      if (typeof node?.id === "string") out.push({ id: node.id, name: String(node.name ?? node.id) });
+      const children = Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : [];
+      for (const child of children) walk(child);
+    };
+    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
+    return out;
+  }
 
   /** Tree used by the organisation switcher: every legal entity with its branches nested underneath. */
   const entityTree = (USE_REAL ? liveEntities : entities).map((e) => {
@@ -463,8 +484,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (raw) {
         const shell = JSON.parse(raw) as { entityId?: string; branch?: string } | null;
         if (shell?.branch) {
+          // M54.3: the persisted branch id may be an org unit (entity-tree)
+          // rather than a work location — resolve against both name sources.
           const loc = liveLocations.find((l) => l.id === shell.branch);
-          return loc ? `Switching to ${loc.name}…` : "Switching to branch…";
+          if (loc) return `Switching to ${loc.name}…`;
+          const unit = orgUnits.find((u) => u.id === shell.branch);
+          if (unit) return `Switching to ${unit.name}…`;
+          return "Switching to branch…";
         }
         if (shell?.entityId) {
           const e = liveEntities.find((l) => String(l.id) === shell.entityId);
@@ -595,7 +621,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Building2 className="size-4 shrink-0" aria-hidden />
                 <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
                 {branch ? (
-                  <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span>
+                  <span className="max-w-32 truncate text-muted-foreground">· {(liveLocations.find((l) => l.id === branch)?.name ?? orgUnits.find((u) => u.id === branch)?.name ?? branch)}</span>
                 ) : (
                   <span className="max-w-32 truncate text-muted-foreground">· all branches</span>
                 )}

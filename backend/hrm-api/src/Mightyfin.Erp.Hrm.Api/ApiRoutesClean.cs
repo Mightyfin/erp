@@ -70,6 +70,7 @@ public static class Routes
         g.MapGet("/", (ShellContext scope) => Results.Ok(new
         {
             locationId = scope.LocationId,
+            orgUnitId = scope.OrgUnitId,
             entityId = scope.EntityId,
             scopedToBranch = scope.IsScopedToBranch,
             // M45: confinement metadata — the switcher hides branches the
@@ -486,8 +487,13 @@ public static class Routes
             // confinement or by picking a branch in the top-nav switcher), the
             // list defaults to that branch so they cannot see organisation-
             // wide records by accident. Org-wide top HR (no header) sees all.
+            // M54.3: the switcher's branches are org units, and the X-Shell-
+            // Location header can therefore carry either a work location or
+            // an org unit — one header, two scope meanings.
             if (scope.LocationId.HasValue && !filters.LocationId.HasValue)
                 filters = filters with { LocationId = scope.LocationId };
+            if (scope.OrgUnitId.HasValue && !filters.OrgUnitId.HasValue)
+                filters = filters with { OrgUnitId = scope.OrgUnitId };
             return await svc.ListAsync(filters, ct);
         });
 
@@ -502,9 +508,12 @@ public static class Routes
                 return Results.UnprocessableEntity(new ApiError("validation-failed", string.Join("; ", errors), []));
             // M54: stamp the current work scope onto records created without
             // an explicit location — a branch-scoped operator always hires
-            // into their own branch.
+            // into their own branch. M54.3: the switcher's branches are org
+            // units, so the unit scope is stamped the same way.
             if (!request.LocationId.HasValue && scope.LocationId.HasValue)
                 request = request with { LocationId = scope.LocationId };
+            if (!request.OrgUnitId.HasValue && scope.OrgUnitId.HasValue)
+                request = request with { OrgUnitId = scope.OrgUnitId };
             var created = await svc.CreateAsync(request, ct);
             return Results.Created($"{HrmPrefix}/workers/{created.Id}", created);
         });

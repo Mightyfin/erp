@@ -39,14 +39,42 @@ public sealed class ShellContextMiddleware(RequestDelegate next, ILogger<ShellCo
         var rawLocation = http.Request.Headers["X-Shell-Location"].FirstOrDefault()?.Trim();
         var rawEntity = http.Request.Headers["X-Shell-Entity"].FirstOrDefault()?.Trim();
 
+        // M54: the switcher's branches are organisational UNITS (departments,
+        // divisions — the entity-tree), while confinement assignments and
+        // payroll/attendance run scopes are WORK LOCATIONS. One header, two
+        // possible meanings: resolve against both, never silently widen.
         if (Guid.TryParse(rawLocation, out var locationId) && locationId != Guid.Empty)
         {
+            var isWorkLocation = await db.WorkLocations
+                .AnyAsync(x => x.Id == locationId && x.TenantId == tenantId, http.RequestAborted);
+            // EntityId is informational and the entity header (below) is
+            // parsed after this block — match any active org unit under the
+            // tenant's legal entities instead; the unit's entity then becomes
+            // the request's effective entity.
+            var isOrgUnit = await db.OrgUnits
+                .Where(u => u.Id == locationId && (u.Status == "active" || u.Status == "suspended"))
+                .Join(db.LegalEntities.Where(e => e.TenantId == tenantId),
+                      u => u.LegalEntityId, e => e.Id, (u, e) => new { u.Id, u.LegalEntityId })
+                .AnyAsync(http.RequestAborted);
             if (scope.IsConfined)
             {
-                // M45: confined operators may NEVER widen their scope. A header
-                // outside their assignment is an access violation (403), not a
-                // suggestion the server may silently downgrade.
-                if (!scope.AllowedLocationIds.Contains(locationId))
+                // M45 + M54: confined operators may NEVER widen their scope.
+                // A work location header must be one of their assignments; an
+                // org-unit header must sit under an assigned work location.
+                bool allowed = scope.AllowedLocationIds.Contains(locationId);
+                if (!allowed && isOrgUnit)
+                {
+                    var underAssigned = await db.OrgUnits
+                        .Where(u => u.Id == locationId)
+                        .Select(u => u.LegalEntityId)
+                        .FirstOrDefaultAsync(http.RequestAborted);
+                    var assignedEntities = await db.WorkLocations
+                        .Where(l => scope.AllowedLocationIds.Contains(l.Id))
+                        .Select(l => l.LegalEntityId)
+                        .ToListAsync(http.RequestAborted);
+                    allowed = underAssigned != Guid.Empty && assignedEntities.Contains(underAssigned);
+                }
+                if (!allowed)
                 {
                     logger.LogWarning("Operator {Op} confined to {Allowed} tried header {Loc}",
                         operatorId, string.Join(',', scope.AllowedLocationIds), locationId);
@@ -54,15 +82,34 @@ public sealed class ShellContextMiddleware(RequestDelegate next, ILogger<ShellCo
                     await http.Response.WriteAsJsonAsync(new { error = "forbidden", message = "You are confined to your assigned branches." }, http.RequestAborted);
                     return;
                 }
-                scope.LocationId = locationId;
+                scope.LocationId = isWorkLocation ? locationId : null;
+                scope.OrgUnitId = isOrgUnit ? locationId : null;
+                if (isOrgUnit && !scope.EntityId.HasValue)
+                {
+                    scope.EntityId = await db.OrgUnits
+                        .Where(u => u.Id == locationId)
+                        .Select(u => u.LegalEntityId)
+                        .FirstOrDefaultAsync(http.RequestAborted);
+                }
             }
-            else if (await db.WorkLocations.AnyAsync(x => x.Id == locationId && x.TenantId == tenantId, http.RequestAborted))
+            else if (isWorkLocation)
             {
                 scope.LocationId = locationId;
+            }
+            else if (isOrgUnit)
+            {
+                scope.OrgUnitId = locationId;
+                if (!scope.EntityId.HasValue)
+                {
+                    scope.EntityId = await db.OrgUnits
+                        .Where(u => u.Id == locationId)
+                        .Select(u => u.LegalEntityId)
+                        .FirstOrDefaultAsync(http.RequestAborted);
+                }
             }
             else
             {
-                logger.LogWarning("X-Shell-Location {Loc} not found under tenant {Tenant}; ignoring scope header", locationId, tenantId);
+                logger.LogWarning("X-Shell-Location {Loc} is neither a work location nor an org unit under tenant {Tenant}; ignoring scope header", locationId, tenantId);
             }
         }
         else if (scope.IsConfined)

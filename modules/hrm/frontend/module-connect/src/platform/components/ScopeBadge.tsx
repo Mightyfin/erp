@@ -26,11 +26,21 @@ export function ScopeBadge() {
   const scopedToBranch = shell?.scopedToBranch ?? Boolean(branch);
   // realApi.locations() always returns an array (it unwraps the { items } envelope)
   const locations = Array.isArray(locationsState.data) ? locationsState.data : [];
-  const locationId = shell?.locationId ?? (branch || null);
+  // M54.3: the switcher's branches are org units — when the shell echoes an
+  // orgUnitId, prefer it over a work location id; resolve names from either
+  // the flat work-location list or the entity tree's nested branches.
+  const orgUnitId = shell?.orgUnitId ?? null;
+  const locationId = orgUnitId ?? shell?.locationId ?? (branch || null);
   const locationName = locationId
-    ? (locations as Record<string, unknown>[]).find((l) => l.id === locationId)?.name
+    ? ((locations as Record<string, unknown>[]).find((l) => String(l.id) === locationId)?.name as string | undefined)
     : undefined;
-  const displayName = locationName ? String(locationName) : locationId ? `Branch ${String(locationId).slice(0, 8)}…` : "Branch selected";
+  const displayName = locationName
+    ? String(locationName)
+    : locationId
+      ? orgUnitId && locationId === orgUnitId
+        ? `Unit ${String(locationId).slice(0, 8)}…`
+        : `Branch ${String(locationId).slice(0, 8)}…`
+      : "Branch selected";
 
   if (!USE_REAL) return null;
   if (!scopedToBranch) {

@@ -871,7 +871,9 @@ export const realApi = {
     ),
 
   /** M44: echo of the resolved work scope (entity/branch) for the current request. */
-  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean;
+  // M54.3: the switcher's branches are org units, so the server echo now
+  // carries orgUnitId alongside locationId (one header, two scope meanings).
+  shell: () => hrmApi.get<{ locationId?: string | null; orgUnitId?: string | null; entityId?: string | null; scopedToBranch: boolean;
     assignedLocationIds?: string[]; confined?: boolean }>("/hrm/shell"),
 
   /** M45: branch access (confinement) — which platform users are confined to which branches. */

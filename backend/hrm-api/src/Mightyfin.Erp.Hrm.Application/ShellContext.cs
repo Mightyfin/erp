@@ -11,8 +11,14 @@ public sealed class ShellContext
     public Guid? LocationId { get; set; }
     public Guid? EntityId { get; set; }
 
-    /// <summary>True when the operator has deliberately narrowed work to one branch.</summary>
-    public bool IsScopedToBranch => LocationId.HasValue;
+    /// <summary>M54: organisational UNIT scope (the switcher's branches are org
+    /// units from the entity tree; work locations are a separate concept used
+    /// by payroll/attendance runs and confinement assignments).</summary>
+    public Guid? OrgUnitId { get; set; }
+
+    /// <summary>True when the operator has deliberately narrowed work to one branch
+    /// (work location or organisational unit).</summary>
+    public bool IsScopedToBranch => LocationId.HasValue || OrgUnitId.HasValue;
 
     /// <summary>M45: branch ids the operator is CONFINED to. Empty = top-level
     /// HR with org-wide access; non-empty = the operator may only work inside
