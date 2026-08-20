@@ -203,6 +203,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   const [active, setActive] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // M50.14: explicit "editing again" flag — Make changes switches back to the
+  // wizard even when every step is already marked done (the resume effect
+  // alone would keep picking the first INCOMPLETE step, which is none).
+  const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<{ text: string; kind: "error" | "info" } | null>(null);
   const [fading, setFading] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -223,10 +227,12 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
 
   useEffect(() => {
     if (!active && stepsByCompletion.length) {
-      const resume = stepsByCompletion.find((s) => !s.done);
+      // Resume at the first incomplete step when returning to the wizard.
+      // When editing after full completion, fall back to the first step.
+      const resume = stepsByCompletion.find((s) => !s.done) ?? (editing ? stepsByCompletion[0] : undefined);
       setActive(resume?.key ?? null);
     }
-  }, [stepsByCompletion, active]);
+  }, [stepsByCompletion, active, editing]);
 
   // M50.12: once the backend confirms setup completion, fade out and leave
   // the wizard page for the now-unlocked dashboard (the shell's pending-gate
@@ -347,7 +353,7 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   // with its status, offers "Go to home" (dashboard) and "Make changes"
   // (re-open the wizard at the first step). Page-mode only: the original
   // overlay path still fades out and navigates away after a fresh run.
-  if (isComplete && pageMode) {
+  if (isComplete && pageMode && !editing) {
     return (
       <div className="min-h-screen bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
@@ -388,7 +394,10 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
               <Button
                 size="lg"
                 variant="outline"
-                onClick={() => setActive(stepsByCompletion[0]?.key ?? null)}
+                onClick={() => {
+                  setEditing(true);
+                  setActive(null); // resume effect picks step 1 via the editing flag
+                }
               >
                 Make changes
               </Button>
