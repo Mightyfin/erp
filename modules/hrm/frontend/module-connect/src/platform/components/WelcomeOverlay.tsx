@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/platform/auth";
+import { isSessionValid } from "@/platform/oidc";
 import { realApi, useApi } from "@/platform/use-api";
 import {
   AlertCircle,
@@ -196,6 +198,11 @@ function SwitchGlyph() {
 }
 
 export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}) {
+  // M50.16e: the setup page renders without the app shell's auth gate, so an
+  // unauthenticated visitor (expired or missing session) would otherwise sit
+  // on the loading shell forever while the setup-state request returns 401.
+  // Redirect to the sign-in page instead, exactly like every other /hrm route.
+  const { loading: authLoading, session, signInInteractive } = useAuth();
   const api = useApi(async () => {
     const [state, steps] = await Promise.all([realApi.setupState(), realApi.setupSteps()]);
     return { state, steps: steps as StepDto[] };
@@ -410,6 +417,12 @@ export function WelcomeOverlay({ pageMode = false }: { pageMode?: boolean } = {}
   // Page mode must keep rendering the wizard even after full completion
   // when the operator pressed "Make changes" (editing === true).
   if ((isComplete && !editing) || (isComplete && !pageMode)) return null;
+
+  // M50.16e: when the auth gate has finished booting and there is no valid
+  // session, send the visitor to sign-in instead of waiting on a 401 forever.
+  if (!authLoading && pageMode && !isSessionValid(session)) {
+    signInInteractive();
+  }
 
   // M50.15: the page must NEVER render nothing. During server rendering
   // `useApi` has not fired yet (its data fetch lives in a useEffect, which
