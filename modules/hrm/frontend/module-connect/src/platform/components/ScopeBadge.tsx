@@ -22,25 +22,28 @@ export function ScopeBadge() {
     () => (USE_REAL ? realApi.locations().catch(() => null) : Promise.resolve(null)),
     [],
   );
+  // M54.3: the switcher's branches are org units — load the flat org-unit
+  // list so the badge can show the unit name (the entity tree returns only
+  // children without ids the shell echoes, but the flat list covers them).
+  const orgUnitsState = useApi(
+    () => (USE_REAL ? realApi.orgUnits().catch(() => null) : Promise.resolve(null)),
+    [],
+  );
   const shell = shellState.data;
   const scopedToBranch = shell?.scopedToBranch ?? Boolean(branch);
   // realApi.locations() always returns an array (it unwraps the { items } envelope)
   const locations = Array.isArray(locationsState.data) ? locationsState.data : [];
-  // M54.3: the switcher's branches are org units — when the shell echoes an
-  // orgUnitId, prefer it over a work location id; resolve names from either
-  // the flat work-location list or the entity tree's nested branches.
+  const orgUnits = Array.isArray(orgUnitsState.data) ? orgUnitsState.data : [];
   const orgUnitId = shell?.orgUnitId ?? null;
   const locationId = orgUnitId ?? shell?.locationId ?? (branch || null);
   const locationName = locationId
     ? ((locations as Record<string, unknown>[]).find((l) => String(l.id) === locationId)?.name as string | undefined)
     : undefined;
-  const displayName = locationName
-    ? String(locationName)
-    : locationId
-      ? orgUnitId && locationId === orgUnitId
-        ? `Unit ${String(locationId).slice(0, 8)}…`
-        : `Branch ${String(locationId).slice(0, 8)}…`
-      : "Branch selected";
+  // M54.3: prefer the org-unit name when the scope id is an org unit.
+  const unitName = orgUnitId
+    ? ((orgUnits as Record<string, unknown>[]).find((u) => String(u.id) === orgUnitId)?.name as string | undefined)
+    : undefined;
+  const displayName = unitName ? String(unitName) : locationName ? String(locationName) : locationId ? `Branch ${String(locationId).slice(0, 8)}…` : "Branch selected";
 
   if (!USE_REAL) return null;
   if (!scopedToBranch) {
@@ -54,7 +57,7 @@ export function ScopeBadge() {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
       <MapPin className="size-3.5" aria-hidden />
-      {(shellState.loading || locationsState.loading) && !locationName ? "Branch…" : displayName}
+      {(shellState.loading || locationsState.loading || orgUnitsState.loading) && !unitName && !locationName ? "Branch…" : displayName}
     </span>
   );
 }
