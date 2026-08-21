@@ -273,9 +273,24 @@ export const realApi = {
   reports: (params: Record<string, unknown>) => hrmApi.get<unknown>("/hrm/reports", params),
   managementReports: (params: Record<string, unknown>) =>
     hrmApi.get<unknown>("/hrm/reports/management", params),
-  downloadManagementReport: async (reportType: string, params: Record<string, unknown>) => {
-    const blob = await hrmApi.getBlob(`/hrm/reports/management/export/${reportType}`, params);
-    downloadUrl(URL.createObjectURL(blob), `${reportType}.csv`);
+  downloadManagementReport: async (
+    reportType: string,
+    params: Record<string, unknown>,
+    format: "csv" | "xlsx" | "pdf" = "csv",
+  ) => {
+    const blob = await hrmApi.getBlob(
+      `/hrm/reports/management/export/${reportType}`,
+      { ...params, format },
+      {
+        Accept:
+          format === "pdf"
+            ? "application/pdf"
+            : format === "xlsx"
+              ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              : "text/csv",
+      },
+    );
+    downloadUrl(URL.createObjectURL(blob), `${reportType}.${format}`);
   },
   /** Create a worker and return the created WorkerDto. */
   createWorker: (body: Record<string, unknown>) =>

@@ -3,6 +3,8 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Mightyfin.Erp.Hrm.Application;
 using Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
+using Mightyfin.Erp.Hrm.Application.Payroll;
+using Mightyfin.Erp.Hrm.Application.Shared;
 using Mightyfin.Erp.Hrm.Domain;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
@@ -14,9 +16,12 @@ namespace Mightyfin.Erp.Hrm.Infrastructure;
 /// payroll snapshots; workforce dimensions resolve effective-dated assignments.
 /// Every query remains tenant-scoped by HrmDbContext's global filters.
 /// </summary>
-public sealed class ManagementReportingService(HrmDbContext db, IAuthzService authz) : IManagementReportingService
+public sealed class ManagementReportingService(HrmDbContext db, IAuthzService authz, IPayrollReportPdfRenderer pdf) : IManagementReportingService
 {
     private static readonly string[] ReleasedStatuses = ["released", "closed"];
+
+    public ManagementReportingService(HrmDbContext db, IAuthzService authz)
+        : this(db, authz, new PayrollReportPdfRendererImpl()) { }
 
     private static readonly List<ReportCatalogueItemDto> Catalogue =
     [
@@ -166,7 +171,21 @@ public sealed class ManagementReportingService(HrmDbContext db, IAuthzService au
             "workforce-movements" => ExportMovements(dashboard.Movements),
             _ => throw new DomainException("report-not-found", $"Report type {reportType} is not available.")
         };
-        return new ManagementReportExport($"{reportType}-{from:yyyyMMdd}-{to:yyyyMMdd}.csv", "text/csv; charset=utf-8", Encoding.UTF8.GetBytes(csv));
+        var format = (query.Format ?? "csv").Trim().ToLowerInvariant();
+        var baseName = $"{reportType}-{from:yyyyMMdd}-{to:yyyyMMdd}";
+        if (format is "csv" or "")
+            return new ManagementReportExport($"{baseName}.csv", "text/csv; charset=utf-8", Encoding.UTF8.GetBytes(csv));
+        if (format == "xlsx")
+            return new ManagementReportExport(
+                $"{baseName}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                MinimalXlsx.Build(ParseCsvRows(csv)));
+        if (format == "pdf")
+            return new ManagementReportExport(
+                $"{baseName}.pdf",
+                "application/pdf",
+                await pdf.RenderPdfAsync(ToPdfHtml(reportType, dashboard, from, to, ParseCsvRows(csv)), ct));
+        throw new DomainException("report-format-not-supported", "format must be csv, xlsx or pdf");
     }
 
     private async Task<string> ExportPayrollDetail(ManagementReportQuery query, DateOnly from, DateOnly to, CancellationToken ct)
@@ -272,6 +291,68 @@ public sealed class ManagementReportingService(HrmDbContext db, IAuthzService au
         "stage,candidates,percentage\n" + string.Join('\n', rows.Select(x => $"{Csv(x.Stage)},{x.Candidates},{Num(x.Percentage)}")) + "\n";
     private static string ExportMovements(List<MovementReportDto> rows) =>
         "movement_type,movements\n" + string.Join('\n', rows.Select(x => $"{Csv(x.MovementType)},{x.Movements}")) + "\n";
+
+    private static List<List<string?>> ParseCsvRows(string csv)
+    {
+        var rows = new List<List<string?>>();
+        var row = new List<string?>();
+        var cell = new StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < csv.Length; i++)
+        {
+            var ch = csv[i];
+            if (ch == '"')
+            {
+                if (quoted && i + 1 < csv.Length && csv[i + 1] == '"') { cell.Append('"'); i++; }
+                else quoted = !quoted;
+            }
+            else if (ch == ',' && !quoted) { row.Add(cell.ToString()); cell.Clear(); }
+            else if ((ch == '\n' || ch == '\r') && !quoted)
+            {
+                if (ch == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n') i++;
+                row.Add(cell.ToString()); cell.Clear();
+                if (row.Any(x => !string.IsNullOrEmpty(x))) rows.Add(row);
+                row = new List<string?>();
+            }
+            else cell.Append(ch);
+        }
+        if (cell.Length > 0 || row.Count > 0)
+        {
+            row.Add(cell.ToString());
+            if (row.Any(x => !string.IsNullOrEmpty(x))) rows.Add(row);
+        }
+        return rows;
+    }
+
+    private static string ToPdfHtml(string reportType, ManagementDashboardDto dashboard, DateOnly from, DateOnly to, List<List<string?>> rows)
+    {
+        var title = Catalogue.FirstOrDefault(x => x.Code == reportType)?.Name ?? reportType;
+        var esc = (string? value) => System.Net.WebUtility.HtmlEncode(value ?? "");
+        var headcount = dashboard.Kpis.FirstOrDefault(x => x.Code == "headcount")?.Value.ToString("N0") ?? "0";
+        var grossPay = dashboard.Kpis.FirstOrDefault(x => x.Code == "gross-pay")?.Value.ToString("N2") ?? "0.00";
+        var netPay = dashboard.Kpis.FirstOrDefault(x => x.Code == "net-pay")?.Value.ToString("N2") ?? "0.00";
+        var employerCost = dashboard.Kpis.FirstOrDefault(x => x.Code == "employer-cost")?.Value.ToString("N2") ?? "0.00";
+        var html = new StringBuilder();
+        html.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><style>");
+        html.AppendLine("@page { size: A4 landscape; margin: 16mm 14mm 16mm; @bottom-right { content: \"Page \" counter(page) \" of \" counter(pages); color: #64748b; font-size: 8pt; } }");
+        html.AppendLine("* { box-sizing: border-box; } body { font-family: Arial, sans-serif; color: #0f172a; font-size: 9pt; }");
+        html.AppendLine(".header { border-bottom: 4px solid #ffcd04; padding-bottom: 10px; margin-bottom: 14px; }");
+        html.AppendLine(".brand { color: #00123d; font-size: 18pt; font-weight: 700; } .title { font-size: 15pt; font-weight: 700; margin-top: 4px; }");
+        html.AppendLine(".meta { color: #475569; font-size: 8.5pt; margin-top: 5px; } .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 14px; }");
+        html.AppendLine(".card { border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px; } .card-label { color: #64748b; font-size: 7.5pt; } .card-value { color: #00123d; font-size: 12pt; font-weight: 700; margin-top: 3px; }");
+        html.AppendLine("table { width: 100%; border-collapse: collapse; margin-top: 8px; } th { background: #00123d; color: white; text-align: left; font-size: 8pt; padding: 6px; } td { border-bottom: 1px solid #e2e8f0; padding: 5px 6px; vertical-align: top; } tr:nth-child(even) td { background: #f8fafc; }");
+        html.AppendLine(".footer { margin-top: 14px; color: #64748b; font-size: 7.5pt; }");
+        html.AppendLine("</style></head><body>");
+        html.AppendLine($"<div class=\"header\"><div class=\"brand\">NEW WORLD CARGO</div><div class=\"title\">{esc(title)}</div><div class=\"meta\">Reporting window: {from:yyyy-MM-dd} to {to:yyyy-MM-dd} · Generated: {esc(dashboard.GeneratedAt)}</div></div>");
+        html.AppendLine($"<div class=\"cards\"><div class=\"card\"><div class=\"card-label\">Headcount</div><div class=\"card-value\">{headcount}</div></div><div class=\"card\"><div class=\"card-label\">Gross pay</div><div class=\"card-value\">ZMW {grossPay}</div></div><div class=\"card\"><div class=\"card-label\">Net pay</div><div class=\"card-value\">ZMW {netPay}</div></div><div class=\"card\"><div class=\"card-label\">Employer cost</div><div class=\"card-value\">ZMW {employerCost}</div></div></div>");
+        var header = rows.Count == 0 ? "" : string.Join("", rows[0].Select(x => $"<th>{esc(x)}</th>"));
+        html.AppendLine($"<table><thead><tr>{header}</tr></thead><tbody>");
+        foreach (var dataRow in rows.Skip(1))
+            html.Append("<tr>").Append(string.Join("", dataRow.Select(x => $"<td>{esc(x)}</td>"))).AppendLine("</tr>");
+        html.AppendLine("</tbody></table>");
+        html.AppendLine("<div class=\"footer\">Source-backed management report. Payroll totals include released and closed runs only. New World Cargo HRM.</div></body></html>");
+        return html.ToString();
+    }
 
     private static (DateOnly From, DateOnly To) ParseWindow(ManagementReportQuery query)
     {

@@ -124,6 +124,8 @@ interface Catalogue {
   payrollRestricted: boolean;
   source: string;
 }
+type ExportFormat = "csv" | "xlsx" | "pdf";
+
 interface Dashboard {
   generatedAt: string;
   dataThrough: string;
@@ -191,6 +193,7 @@ function ReportsPage() {
   });
   const [filters, setFilters] = useState(draft);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("pdf");
   const canPayroll = useRoleGate()(["payroll", "hr_admin"]);
   const params = useMemo(
     () => ({
@@ -211,7 +214,7 @@ function ReportsPage() {
   async function download(item: Catalogue) {
     setDownloading(item.code);
     try {
-      await realApi.downloadManagementReport(item.code, params);
+      await realApi.downloadManagementReport(item.code, params, exportFormat);
     } finally {
       setDownloading(null);
     }
@@ -499,11 +502,27 @@ function ReportsPage() {
             <StatutoryFilings canPayroll={canPayroll} />
 
             <section aria-label="Report catalogue" className="space-y-3">
-              <div>
-                <h2 className="text-lg font-semibold">Certified exports</h2>
-                <p className="text-sm text-muted-foreground">
-                  Download reproducible CSV controls for the selected reporting window.
-                </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Certified exports</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Choose a delivery format for the selected reporting window. PDFs are print-ready;
+                    Excel remains editable; CSV is suited to system import.
+                  </p>
+                </div>
+                <div className="w-full sm:w-44">
+                  <Label htmlFor="report-export-format">Export format</Label>
+                  <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as ExportFormat)}>
+                    <SelectTrigger id="report-export-format" className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pdf">PDF · print-ready</SelectItem>
+                      <SelectItem value="xlsx">Excel · editable</SelectItem>
+                      <SelectItem value="csv">CSV · data</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 {data.catalogue.map((item) => {
@@ -541,7 +560,7 @@ function ReportsPage() {
                         onClick={() => download(item)}
                       >
                         <Download className="mr-1.5 size-3.5" />
-                        {downloading === item.code ? "Preparing…" : "CSV"}
+                        {downloading === item.code ? "Preparing…" : exportFormat.toUpperCase()}
                       </Button>
                     </article>
                   );
