@@ -30,13 +30,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/pay/compensation")({
   head: () => ({
     meta: [
-      { title: "Compensation and benefits — Mightyfin ERP HRM" },
+      { title: "Compensation and benefits — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Per-worker salary structures and component amounts driving the next pay run. Benefits and review cycles are not yet administered here.",
       },
-      { property: "og:title", content: "Compensation and benefits — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Compensation and benefits — New World Cargo HRM" },
       {
         property: "og:description",
         content:

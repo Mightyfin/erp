@@ -17,7 +17,6 @@ import { Route as HrmAnalyticsRouteImport } from './routes/hrm.analytics'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmBenefitsRouteImport } from './routes/hrm.benefits'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
-import { Route as HrmImportRouteImport } from './routes/hrm.import'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
 import { Route as HrmMyOffboardingRouteImport } from './routes/hrm.my-offboarding'
 import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
@@ -42,6 +41,7 @@ import { Route as HrmConfigurationPayrollRouteImport } from './routes/hrm.config
 import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.configuration.process'
 import { Route as HrmConfigurationRolesRouteImport } from './routes/hrm.configuration.roles'
 import { Route as HrmConfigurationTechnicalRouteImport } from './routes/hrm.configuration.technical'
+import { Route as HrmConfigurationUsersRouteImport } from './routes/hrm.configuration.users'
 import { Route as HrmEmployeesIndexRouteImport } from './routes/hrm.employees.index'
 import { Route as HrmEmployeesIdRouteImport } from './routes/hrm.employees.$id'
 import { Route as HrmEmployeesNewRouteImport } from './routes/hrm.employees.new'
@@ -161,11 +161,6 @@ const HrmBenefitsRoute = HrmBenefitsRouteImport.update({
 const HrmHelpRoute = HrmHelpRouteImport.update({
   id: '/hrm/help',
   path: '/hrm/help',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HrmImportRoute = HrmImportRouteImport.update({
-  id: '/hrm/import',
-  path: '/hrm/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
@@ -294,6 +289,11 @@ const HrmConfigurationTechnicalRoute =
     path: '/hrm/configuration/technical',
     getParentRoute: () => rootRouteImport,
   } as any)
+const HrmConfigurationUsersRoute = HrmConfigurationUsersRouteImport.update({
+  id: '/hrm/configuration/users',
+  path: '/hrm/configuration/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmEmployeesIndexRoute = HrmEmployeesIndexRouteImport.update({
   id: '/hrm/employees/',
   path: '/hrm/employees/',
@@ -713,7 +713,6 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
-  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -737,6 +736,7 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -828,7 +828,6 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
-  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -852,6 +851,7 @@ export interface FileRoutesByTo {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -944,7 +944,6 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
-  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -968,6 +967,7 @@ export interface FileRoutesById {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -1061,7 +1061,6 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
-    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1085,6 +1084,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
+    | '/hrm/configuration/users'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1176,7 +1176,6 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
-    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1200,6 +1199,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
+    | '/hrm/configuration/users'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1291,7 +1291,6 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
-    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1315,6 +1314,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/process'
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
+    | '/hrm/configuration/users'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1407,7 +1407,6 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmBenefitsRoute: typeof HrmBenefitsRoute
   HrmHelpRoute: typeof HrmHelpRoute
-  HrmImportRoute: typeof HrmImportRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
   HrmMyOffboardingRoute: typeof HrmMyOffboardingRoute
   HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
@@ -1431,6 +1430,7 @@ export interface RootRouteChildren {
   HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
   HrmConfigurationRolesRoute: typeof HrmConfigurationRolesRoute
   HrmConfigurationTechnicalRoute: typeof HrmConfigurationTechnicalRoute
+  HrmConfigurationUsersRoute: typeof HrmConfigurationUsersRoute
   HrmEmployeesIdRoute: typeof HrmEmployeesIdRouteWithChildren
   HrmEmployeesNewRoute: typeof HrmEmployeesNewRoute
   HrmExperienceAnnouncementsRoute: typeof HrmExperienceAnnouncementsRoute
@@ -1559,13 +1559,6 @@ declare module '@tanstack/react-router' {
       path: '/hrm/help'
       fullPath: '/hrm/help'
       preLoaderRoute: typeof HrmHelpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hrm/import': {
-      id: '/hrm/import'
-      path: '/hrm/import'
-      fullPath: '/hrm/import'
-      preLoaderRoute: typeof HrmImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-documents': {
@@ -1734,6 +1727,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/configuration/technical'
       fullPath: '/hrm/configuration/technical'
       preLoaderRoute: typeof HrmConfigurationTechnicalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/users': {
+      id: '/hrm/configuration/users'
+      path: '/hrm/configuration/users'
+      fullPath: '/hrm/configuration/users'
+      preLoaderRoute: typeof HrmConfigurationUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/employees/': {
@@ -2446,7 +2446,6 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmBenefitsRoute: HrmBenefitsRoute,
   HrmHelpRoute: HrmHelpRoute,
-  HrmImportRoute: HrmImportRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
   HrmMyOffboardingRoute: HrmMyOffboardingRoute,
   HrmMyPerformanceRoute: HrmMyPerformanceRoute,
@@ -2470,6 +2469,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,
   HrmConfigurationRolesRoute: HrmConfigurationRolesRoute,
   HrmConfigurationTechnicalRoute: HrmConfigurationTechnicalRoute,
+  HrmConfigurationUsersRoute: HrmConfigurationUsersRoute,
   HrmEmployeesIdRoute: HrmEmployeesIdRouteWithChildren,
   HrmEmployeesNewRoute: HrmEmployeesNewRoute,
   HrmExperienceAnnouncementsRoute: HrmExperienceAnnouncementsRoute,

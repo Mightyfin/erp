@@ -15,9 +15,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/time/toil")({
   head: () => ({
     meta: [
-      { title: "Time off in lieu — Mightyfin ERP HRM" },
+      { title: "Time off in lieu — New World Cargo HRM" },
       { name: "description", content: "Hours banked instead of paid, when they expire, and the working-time limits." },
-      { property: "og:title", content: "Time off in lieu — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Time off in lieu — New World Cargo HRM" },
       { property: "og:description", content: "Hours banked instead of paid, when they expire, and the working-time limits." },
     ],
   }),

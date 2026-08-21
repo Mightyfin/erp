@@ -45,13 +45,13 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/time/schedules")({
   head: () => ({
     meta: [
-      { title: "My schedule — Mightyfin ERP HRM" },
+      { title: "My schedule — New World Cargo HRM" },
       {
         name: "description",
         content:
           "The next 14 days of your roster, with shift swaps, time-off requests, team coverage gaps and open shifts you can pick up.",
       },
-      { property: "og:title", content: "My schedule — Mightyfin ERP HRM" },
+      { property: "og:title", content: "My schedule — New World Cargo HRM" },
       {
         property: "og:description",
         content:

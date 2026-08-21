@@ -14,9 +14,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/time/timesheets")({
   head: () => ({
     meta: [
-      { title: "Timesheets — Mightyfin ERP HRM" },
+      { title: "Timesheets — New World Cargo HRM" },
       { name: "description", content: "Weekly hours by project, with separate project and line-manager approvals." },
-      { property: "og:title", content: "Timesheets — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Timesheets — New World Cargo HRM" },
       { property: "og:description", content: "Weekly hours by project, with separate project and line-manager approvals." },
     ],
   }),

@@ -63,6 +63,8 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PublicHoliday> PublicHolidays => Set<PublicHoliday>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<TenantRoleAssignment> TenantRoleAssignments => Set<TenantRoleAssignment>();
+    public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
+    public DbSet<LocalSession> LocalSessions => Set<LocalSession>();
     public DbSet<HrUserBranchAssignment> UserBranchAssignments => Set<HrUserBranchAssignment>();
     public DbSet<RetentionRule> RetentionRules => Set<RetentionRule>();
 
@@ -180,6 +182,16 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<PublicHoliday>(modelBuilder, "public_holidays");
         ConfigureEntity<Job>(modelBuilder, "jobs", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<TenantRoleAssignment>(modelBuilder, "tenant_role_assignments", e => e.HasIndex(x => new { x.TenantId, x.RoleKey }).IsUnique());
+        ConfigureEntity<LocalUser>(modelBuilder, "local_users", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.NormalizedEmail }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.WorkerId }).HasFilter("worker_id IS NOT NULL");
+        });
+        ConfigureEntity<LocalSession>(modelBuilder, "local_sessions", e =>
+        {
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.LocalUserId, x.ExpiresAt });
+        });
         ConfigureEntity<HrUserBranchAssignment>(modelBuilder, "hr_user_branch_assignments",
             e => e.HasIndex(x => new { x.TenantId, x.UserId, x.LocationId }).IsUnique());
         ConfigureEntity<RetentionRule>(modelBuilder, "retention_rules", e => e.HasIndex(x => new { x.TenantId, x.RecordType }).IsUnique());

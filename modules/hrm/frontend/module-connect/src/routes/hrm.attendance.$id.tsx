@@ -13,9 +13,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/attendance/$id")({
   head: () => ({
     meta: [
-      { title: "Attendance correction — Mightyfin ERP HRM" },
+      { title: "Attendance correction — New World Cargo HRM" },
       { name: "description", content: "Compare recorded and claimed time, then approve, return or reject with a reason." },
-      { property: "og:title", content: "Attendance correction — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Attendance correction — New World Cargo HRM" },
       { property: "og:description", content: "Compare recorded and claimed time, then approve, return or reject with a reason." },
     ],
   }),

@@ -17,7 +17,7 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/performance/$id")({
   head: () => ({
     meta: [
-      { title: "Performance cycle — Mightyfin ERP HRM" },
+      { title: "Performance cycle — New World Cargo HRM" },
       { name: "description", content: "View goals, assessments and reports for a performance review cycle." },
     ],
   }),

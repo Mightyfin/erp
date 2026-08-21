@@ -367,7 +367,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
-    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections, orgUnitsTree] = await Promise.all([
+    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections] = await Promise.all([
       realApi.legalEntities().catch(() => []),
       realApi.locations().catch(() => ({ items: [] as unknown[] })),
       realApi.shell().catch(() => null),
@@ -375,10 +375,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
       realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
       realApi.timeCorrections({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
-      // M54.3: the switcher's branches are org units (entity-tree) — the shell
-      // needs their names to label the top bar / overlay when an org-unit id
-      // is the active scope.
-      realApi.orgUnitsTree().catch(() => [] as unknown[]),
     ]);
     return {
       // The backend wraps list endpoints in a `{ items: [...] }` envelope, so
@@ -415,13 +411,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         countOpen(Array.isArray(queue?.items) ? queue.items : []) +
         countOpen(Array.isArray(leave?.items) ? leave.items : []) +
         countOpen(Array.isArray(corrections?.items) ? corrections.items : []),
-      // M54.3: flattened org units for scope-name resolution (work locations
-      // live under organisational units, so a location id may need an
-      // org-unit name when no work-location row exists).
-      orgUnits: flattenOrgUnits(orgUnitsTree),
-      // M54.3: keep the raw entity tree (recursive) so the switcher can build
-      // its branch rows directly from org units instead of work locations.
-      orgUnitsTreeRaw: orgUnitsTree,
     };
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
@@ -429,8 +418,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
-  const orgUnits = shellState.data?.orgUnits ?? [];
-  const orgUnitsTree = (shellState.data?.orgUnitsTreeRaw as unknown[]) ?? [];
   const assignedIds = shellState.data?.assignedLocationIds ?? [];
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
@@ -439,29 +426,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? liveLocations.filter((location) => !entity || location.legalEntityId === entity.id)
     : (entity as { branches?: string[] })?.branches?.map((name) => ({ id: String(name), name: String(name) })) ?? [];
 
-  /** M54.3: flatten the recursive org-unit tree into a single lookup list. */
-  function flattenOrgUnits(tree: unknown[]): { id: string; name: string }[] {
-    const out: { id: string; name: string }[] = [];
-    const walk = (node: Record<string, unknown>) => {
-      if (typeof node?.id === "string") out.push({ id: node.id, name: String(node.name ?? node.id) });
-      const children = Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : [];
-      for (const child of children) walk(child);
-    };
-    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
-    return out;
-  }
-
   /** Tree used by the organisation switcher: every legal entity with its branches nested underneath. */
   const entityTree = (USE_REAL ? liveEntities : entities).map((e) => {
     const raw = e as Record<string, unknown>;
     const branches = USE_REAL
-      ? // M54.3: the switcher's branches are org units from the entity tree
-        // (workers belong to org units, not work locations). Live branch rows
-        // come from realApi.orgUnitsTree() nested under each legal entity;
-        // direct children of the entity are shown as switchable branches,
-        // with the assigned-id confinement check applied to both the tree
-        // branch ids and any of their descendant ids.
-        collectEntityBranches(orgUnitsTree, String(e.id), assignedIds)
+      ? liveLocations
+          .filter((l) => l.legalEntityId === String(e.id))
+          // M45: a confined operator only sees their assigned branches in the switcher.
+          .filter((l) => !assignedIds.length || assignedIds.includes(String(l.id)))
+          .map((l) => ({ id: String(l.id), name: String(l.name ?? l.id), type: String(l.type ?? "branch") }))
       : ((raw.branches as string[] | undefined) ?? []).map((name) => ({ id: String(name), name: String(name), type: "" }));
     return {
       entityId: String(e.id),
@@ -470,50 +443,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       branches,
     };
   });
-  /** M54.3: collect the switchable branch rows for an entity from the org-unit tree. */
-  function collectEntityBranches(
-    tree: unknown[],
-    entityId: string,
-    assignedIds: string[],
-  ): Array<{ id: string; name: string; type: string }> {
-    const out: Array<{ id: string; name: string; type: string }> = [];
-    // NOTE (M54.3): the backend's entity-tree endpoint returns the legal
-    // entity's direct children WITHOUT the entity root itself — so every
-    // top-level node in the response IS one of this entity's branches
-    // (org units such as Lusaka/Ndola).
-    for (const root of tree) {
-      const r = root as Record<string, unknown>;
-      out.push({ id: String(r.id ?? ""), name: String(r.name ?? r.id), type: String(r.unitType ?? "branch") || "branch" });
-      // M45: a confined operator only sees branches whose subtree overlaps their assignments.
-      if (!assignedIds.length || idsInSubtree(tree, String(r.id)).some((id) => assignedIds.includes(id))) {
-        const children = Array.isArray(r?.children) ? (r.children as Record<string, unknown>[]) : [];
-        const walk = (node: Record<string, unknown>) => {
-          out.push({ id: String(node.id ?? ""), name: String(node.name ?? node.id), type: String(node.unitType ?? "").toLowerCase() || "unit" });
-          for (const child of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(child);
-        };
-        for (const child of children) walk(child);
-      }
-    }
-    return out;
-  }
-  /** M54.3: every org-unit id reachable from a given subtree root (inclusive). */
-  function idsInSubtree(tree: unknown[], rootId: string): string[] {
-    const ids: string[] = [];
-    const walk = (node: Record<string, unknown>) => {
-      const nid = String(node.id ?? "");
-      if (nid === rootId) {
-        const collect = (n: Record<string, unknown>) => {
-          ids.push(String(n.id ?? ""));
-          for (const c of Array.isArray(n?.children) ? (n.children as Record<string, unknown>[]) : []) collect(c);
-        };
-        collect(node);
-        return;
-      }
-      for (const c of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(c);
-    };
-    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
-    return ids;
-  }
   const pathname = useRouterState({ select: (st) => st.location.pathname });
 
   const inScope = isPathEnabled(pathname);
@@ -534,13 +463,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (raw) {
         const shell = JSON.parse(raw) as { entityId?: string; branch?: string } | null;
         if (shell?.branch) {
-          // M54.3: the persisted branch id may be an org unit (entity-tree)
-          // rather than a work location — resolve against both name sources.
           const loc = liveLocations.find((l) => l.id === shell.branch);
-          if (loc) return `Switching to ${loc.name}…`;
-          const unit = orgUnits.find((u) => u.id === shell.branch);
-          if (unit) return `Switching to ${unit.name}…`;
-          return "Switching to branch…";
+          return loc ? `Switching to ${loc.name}…` : "Switching to branch…";
         }
         if (shell?.entityId) {
           const e = liveEntities.find((l) => String(l.id) === shell.entityId);
@@ -574,18 +498,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [shellState.error, shellState.reload]);
 
-  // M54: the operator can deliberately pick the entity-wide scope (branch
-  // cleared). Only re-select a default branch when the current branch value
-  // is stale for a DIFFERENT entity, never when scope was cleared on purpose.
   useEffect(() => {
-    // M54.3: branch ids are org-unit ids — if the currently persisted branch
-    // no longer exists in THIS entity's org-unit tree, reset it (only when a
-    // stale branch is set, never to force a default while scope is cleared).
-    if (!USE_REAL) return;
-    const node = entityTree.find((n) => n.entityId === entityId);
-    if (!branch || !node || node.branches.length === 0) return;
-    if (!node.branches.some((candidate) => candidate.id === branch)) setBranch(String(node.branches[0].id));
-  }, [branch, entityId, entityTree, setBranch]);
+    if (!USE_REAL || !entityLocations.length) return;
+    if (!entityLocations.some((candidate) => String(candidate.name ?? candidate.id) === branch))
+      setBranch(String(entityLocations[0].name ?? entityLocations[0].id));
+  }, [branch, entityLocations, setBranch]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -620,7 +537,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b bg-surface">
+      <header className="sticky top-0 z-40 border-b border-primary/40 bg-primary text-primary-foreground shadow-sm">
         <div className="flex h-14 items-center gap-2 px-3">
           <Sheet>
             <SheetTrigger asChild>
@@ -638,9 +555,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2 px-2">
-                <img src="/mightyfin-mark.png" alt="" className="size-5" aria-hidden />
-                <span className="hidden font-semibold sm:inline">Mightyfin ERP</span>
+              <Button variant="ghost" className="gap-2 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">
+                <img src="/newworld-cargo-logo.png" alt="New World Cargo" className="h-8 w-auto max-w-[132px] object-contain" />
+                <span className="hidden font-semibold sm:inline">New World Cargo HRM</span>
                 <ChevronDown className="size-3.5" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -673,11 +590,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
                 <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
-                {branch ? (
-                  <span className="max-w-32 truncate text-muted-foreground">· {(liveLocations.find((l) => l.id === branch)?.name ?? orgUnits.find((u) => u.id === branch)?.name ?? branch)}</span>
-                ) : (
-                  <span className="max-w-32 truncate text-muted-foreground">· all branches</span>
-                )}
+                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span> : null}
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -687,47 +600,33 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuLabel>
               {entityTree.map((node) => (
                 <div key={node.entityId}>
-                  <DropdownMenuRadioGroup
-                    value={
-                      // M54: branch-level picks are stored in `branch`; the
-                      // entity-wide option lives in the same group with an
-                      // empty value so the radio visually tracks the active scope.
-                      node.branches.some((b) => b.id === branch) ? branch : ""
-                    }
-                    onValueChange={(v) => {
-                      // Picking the entity row (empty) or any branch of THIS
-                      // entity first scopes the work context to the entity,
-                      // then narrows to the branch if one was picked.
-                      // M45: branch-confined operators can never clear scope
-                      // (the backend would reject them anyway).
-                      setEntityId(String(node.entityId));
-                      if (v) setBranch(v);
-                      else if (!assignedIds.length) setBranch("");
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="">
+                  <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
+                    <DropdownMenuRadioItem value={node.entityId}>
                       <span className="min-w-0">
                         <span className="flex items-center gap-1.5">
                           <Building2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                           <span className="block truncate font-medium">{node.entityName}</span>
                         </span>
                         {node.entityCode ? (
-                          <span className="block text-xs text-muted-foreground">{node.entityCode} · organisation-wide</span>
-                        ) : (
-                          <span className="block text-xs text-muted-foreground">organisation-wide</span>
-                        )}
+                          <span className="block text-xs text-muted-foreground">{node.entityCode}</span>
+                        ) : null}
                       </span>
                     </DropdownMenuRadioItem>
-                    {node.branches.map((b) => (
-                      <DropdownMenuRadioItem key={b.id} value={b.id} className="ml-2 text-sm">
-                        <span className="min-w-0 truncate">└ {b.name}</span>
-                        {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
-                      </DropdownMenuRadioItem>
-                    ))}
                   </DropdownMenuRadioGroup>
-                  {node.branches.length === 0 ? (
+                  {node.branches.length > 0 ? (
+                    <div className="ml-5 border-l border-border pl-3 py-0.5">
+                      <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
+                        {node.branches.map((b) => (
+                          <DropdownMenuRadioItem key={b.id} value={b.id} className="text-sm">
+                            <span className="min-w-0 truncate">{b.name}</span>
+                            {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </div>
+                  ) : (
                     <p className="ml-5 pl-4 pb-1.5 text-xs text-muted-foreground">No branches configured</p>
-                  ) : null}
+                  )}
                 </div>
               ))}
             </DropdownMenuContent>

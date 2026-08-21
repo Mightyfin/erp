@@ -1,0 +1,329 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Mightyfin.Erp.Hrm.Application;
+using Mightyfin.Erp.Hrm.Domain.Entities;
+using Mightyfin.Erp.Hrm.Infrastructure.Data;
+
+internal sealed class LocalAuthOptions : AuthenticationSchemeOptions;
+
+internal static class LocalPasswordHash
+{
+    private const int Iterations = 210_000;
+    private const int SaltBytes = 16;
+    private const int KeyBytes = 32;
+
+    public static string Hash(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
+            throw new ArgumentException("Passwords must contain at least 12 characters.", nameof(password));
+        var salt = RandomNumberGenerator.GetBytes(SaltBytes);
+        var key = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, KeyBytes);
+        return $"pbkdf2-sha256${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(key)}";
+    }
+
+    public static bool Verify(string password, string encoded)
+    {
+        try
+        {
+            var parts = encoded.Split('$');
+            if (parts.Length != 4 || parts[0] != "pbkdf2-sha256") return false;
+            var iterations = int.Parse(parts[1]);
+            var salt = Convert.FromBase64String(parts[2]);
+            var expected = Convert.FromBase64String(parts[3]);
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
+            return CryptographicOperations.FixedTimeEquals(actual, expected);
+        }
+        catch { return false; }
+    }
+}
+
+internal static class LocalSessionTokens
+{
+    public static string Create()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    public static string Hash(string token)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+}
+
+internal sealed class LocalAuthenticationHandler(
+    IOptionsMonitor<LocalAuthOptions> options,
+    ILoggerFactory logger,
+    System.Text.Encodings.Web.UrlEncoder encoder,
+    HrmDbContext db,
+    IConfiguration config)
+    : AuthenticationHandler<LocalAuthOptions>(options, logger, encoder)
+{
+    public const string Scheme = "local";
+    public const string CookieName = "hrm_session";
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var token = Request.Cookies[CookieName];
+        if (string.IsNullOrWhiteSpace(token)) return AuthenticateResult.NoResult();
+
+        var now = DateTimeOffset.UtcNow;
+        var session = await db.LocalSessions.FirstOrDefaultAsync(x =>
+            x.TokenHash == LocalSessionTokens.Hash(token) && x.RevokedAt == null && x.ExpiresAt > now);
+        if (session is null) return AuthenticateResult.Fail("Session expired or revoked.");
+
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == session.LocalUserId && x.IsActive && !x.IsArchived);
+        if (user is null) return AuthenticateResult.Fail("Account inactive.");
+
+        if (session.LastSeenAt < now.AddMinutes(-5))
+        {
+            session.LastSeenAt = now;
+            await db.SaveChangesAsync(Context.RequestAborted);
+        }
+
+        var identity = new ClaimsIdentity(Scheme);
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id.ToString("D")));
+        identity.AddClaim(new Claim("sub", user.Id.ToString("D")));
+        identity.AddClaim(new Claim("preferred_username", user.Email));
+        identity.AddClaim(new Claim(ClaimTypes.Email, user.Email));
+        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
+        identity.AddClaim(new Claim("tenant", user.TenantId));
+        identity.AddClaim(new Claim("environment", "standalone"));
+        foreach (var role in LocalIdentityRoutes.ParseRoles(user.RolesCsv))
+            identity.AddClaim(new Claim(ClaimTypes.Role, role));
+        if (user.WorkerId is Guid workerId)
+            identity.AddClaim(new Claim("worker_id", workerId.ToString("D")));
+
+        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme));
+    }
+}
+
+internal static class LocalIdentityRoutes
+{
+    private static readonly string[] AllowedRoles = HrmStaffAccess.Roles;
+
+    public static void Map(WebApplication app)
+    {
+        foreach (var prefix in new[] { "/api/hrm/auth", "/api/v1/hrm/auth" })
+        {
+            var g = app.MapGroup(prefix);
+            g.MapPost("/login", LoginAsync).AllowAnonymous();
+            g.MapGet("/me", MeAsync).AllowAnonymous();
+            g.MapPost("/logout", LogoutAsync).RequireAuthorization();
+            g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization();
+            g.MapGet("/users", ListUsersAsync).RequireAuthorization("hrm-admin");
+            g.MapPost("/users", CreateUserAsync).RequireAuthorization("hrm-admin");
+            g.MapPatch("/users/{id:guid}", UpdateUserAsync).RequireAuthorization("hrm-admin");
+            g.MapPost("/users/{id:guid}/reset-password", ResetPasswordAsync).RequireAuthorization("hrm-admin");
+        }
+    }
+
+    public static string[] ParseRoles(string csv)
+        => csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => AllowedRoles.Contains(x, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    private static string NormalizeEmail(string email) => email.Trim().ToUpperInvariant();
+
+    private static object UserDto(LocalUser user, bool includeSecretState = true) => new
+    {
+        id = user.Id,
+        email = user.Email,
+        displayName = user.DisplayName,
+        roles = ParseRoles(user.RolesCsv),
+        workerId = user.WorkerId,
+        isActive = user.IsActive,
+        mustChangePassword = includeSecretState && user.MustChangePassword,
+        lastLoginAt = user.LastLoginAt,
+        createdAt = user.CreatedAt,
+    };
+
+    private static object SessionDto(LocalUser user) => new
+    {
+        user = UserDto(user),
+        authenticated = true,
+    };
+
+    private static async Task<IResult> LoginAsync(LoginRequest request, HrmDbContext db, HttpContext http, IConfiguration config, CancellationToken ct)
+    {
+        var email = request.Email?.Trim() ?? "";
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.NormalizedEmail == NormalizeEmail(email), ct);
+        var now = DateTimeOffset.UtcNow;
+        if (user is null || !user.IsActive || user.IsArchived || (user.LockedUntil is not null && user.LockedUntil > now)
+            || !LocalPasswordHash.Verify(request.Password ?? "", user.PasswordHash))
+        {
+            if (user is not null && user.IsActive)
+            {
+                user.FailedLoginCount++;
+                if (user.FailedLoginCount >= 5)
+                {
+                    user.LockedUntil = now.AddMinutes(15);
+                    user.FailedLoginCount = 0;
+                }
+                await db.SaveChangesAsync(ct);
+            }
+            return Results.Json(new { code = "invalid-credentials", message = "Email or password is incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        user.LastLoginAt = now;
+        var token = LocalSessionTokens.Create();
+        db.LocalSessions.Add(new LocalSession
+        {
+            TenantId = user.TenantId,
+            LocalUserId = user.Id,
+            TokenHash = LocalSessionTokens.Hash(token),
+            ExpiresAt = now.AddDays(7),
+            LastSeenAt = now,
+            UserAgent = http.Request.Headers.UserAgent.ToString()[..Math.Min(http.Request.Headers.UserAgent.ToString().Length, 500)],
+            CreatedBy = user.Id.ToString("D"),
+        });
+        await db.SaveChangesAsync(ct);
+        http.Response.Cookies.Append(LocalAuthenticationHandler.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Lax,
+            Path = "/",
+            MaxAge = TimeSpan.FromDays(7),
+        });
+        return Results.Ok(SessionDto(user));
+    }
+
+    private static async Task<IResult> MeAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
+    {
+        if (http.User.Identity?.IsAuthenticated != true) return Results.Ok(new { authenticated = false, user = (object?)null });
+        var raw = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(raw, out var userId)) return Results.Ok(new { authenticated = false, user = (object?)null });
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == userId && x.IsActive && !x.IsArchived, ct);
+        return user is null ? Results.Ok(new { authenticated = false, user = (object?)null }) : Results.Ok(SessionDto(user));
+    }
+
+    private static async Task<IResult> LogoutAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
+    {
+        var token = http.Request.Cookies[LocalAuthenticationHandler.CookieName];
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            var session = await db.LocalSessions.FirstOrDefaultAsync(x => x.TokenHash == LocalSessionTokens.Hash(token), ct);
+            if (session is not null) { session.RevokedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); }
+        }
+        http.Response.Cookies.Delete(LocalAuthenticationHandler.CookieName, new CookieOptions { Path = "/", Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax });
+        return Results.Ok(new { authenticated = false });
+    }
+
+    private static async Task<IResult> ChangePasswordAsync(ChangePasswordRequest request, HttpContext http, HrmDbContext db, CancellationToken ct)
+    {
+        var user = await CurrentUserAsync(http, db, ct);
+        if (user is null || !LocalPasswordHash.Verify(request.CurrentPassword ?? "", user.PasswordHash))
+            return Results.Json(new { code = "invalid-password", message = "Current password is incorrect." }, statusCode: StatusCodes.Status400BadRequest);
+        user.PasswordHash = LocalPasswordHash.Hash(request.NewPassword ?? "");
+        user.MustChangePassword = false;
+        user.PasswordChangedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { changed = true });
+    }
+
+    private static async Task<IResult> ListUsersAsync(HrmDbContext db, CancellationToken ct)
+        => Results.Ok(new { items = await db.LocalUsers.OrderBy(x => x.Email).Select(x => UserDto(x)).ToListAsync(ct) });
+
+    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, HrmDbContext db, CancellationToken ct)
+    {
+        var email = request.Email?.Trim() ?? "";
+        var roles = ParseRoles(string.Join(',', request.Roles ?? ["employee"]));
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.DisplayName) || roles.Length == 0)
+            return Results.BadRequest(new { code = "invalid-user", message = "Email, display name, and at least one valid HRM role are required." });
+        if (await db.LocalUsers.AnyAsync(x => x.NormalizedEmail == NormalizeEmail(email), ct))
+            return Results.Conflict(new { code = "email-taken", message = "An account with that email already exists." });
+        var user = new LocalUser
+        {
+            Email = email,
+            NormalizedEmail = NormalizeEmail(email),
+            DisplayName = request.DisplayName.Trim(),
+            PasswordHash = LocalPasswordHash.Hash(request.Password ?? ""),
+            RolesCsv = string.Join(',', roles),
+            WorkerId = request.WorkerId,
+            MustChangePassword = true,
+        };
+        db.LocalUsers.Add(user);
+        await db.SaveChangesAsync(ct);
+        return Results.Created($"/api/hrm/auth/users/{user.Id}", UserDto(user));
+    }
+
+    private static async Task<IResult> UpdateUserAsync(Guid id, UpdateUserRequest request, HrmDbContext db, CancellationToken ct)
+    {
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (user is null) return Results.NotFound(new { code = "user-not-found", message = "User account not found." });
+        if (request.Email is not null)
+        {
+            var normalized = NormalizeEmail(request.Email);
+            if (await db.LocalUsers.AnyAsync(x => x.Id != id && x.NormalizedEmail == normalized, ct))
+                return Results.Conflict(new { code = "email-taken", message = "An account with that email already exists." });
+            user.Email = request.Email.Trim();
+            user.NormalizedEmail = normalized;
+        }
+        if (request.DisplayName is not null) user.DisplayName = request.DisplayName.Trim();
+        if (request.Roles is not null)
+        {
+            var roles = ParseRoles(string.Join(',', request.Roles));
+            if (roles.Length == 0) return Results.BadRequest(new { code = "invalid-roles", message = "At least one valid HRM role is required." });
+            user.RolesCsv = string.Join(',', roles);
+        }
+        if (request.IsActive is not null) user.IsActive = request.IsActive.Value;
+        if (request.WorkerId is not null) user.WorkerId = request.WorkerId;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(UserDto(user));
+    }
+
+    private static async Task<IResult> ResetPasswordAsync(Guid id, ResetPasswordRequest request, HrmDbContext db, CancellationToken ct)
+    {
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (user is null) return Results.NotFound(new { code = "user-not-found", message = "User account not found." });
+        user.PasswordHash = LocalPasswordHash.Hash(request.NewPassword ?? "");
+        user.MustChangePassword = true;
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        await db.LocalSessions.Where(x => x.LocalUserId == id && x.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, DateTimeOffset.UtcNow), ct);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { reset = true });
+    }
+
+    private static async Task<LocalUser?> CurrentUserAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
+    {
+        var raw = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(raw, out var id) ? await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id && x.IsActive, ct) : null;
+    }
+
+    public sealed record LoginRequest(string? Email, string? Password);
+    public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+    public sealed record CreateUserRequest(string? Email, string? DisplayName, string? Password, string[]? Roles, Guid? WorkerId);
+    public sealed record UpdateUserRequest(string? Email, string? DisplayName, string[]? Roles, bool? IsActive, Guid? WorkerId);
+    public sealed record ResetPasswordRequest(string? NewPassword);
+}
+
+internal static class LocalIdentityBootstrap
+{
+    public static async Task EnsureAsync(IServiceProvider services, IConfiguration config, CancellationToken ct = default)
+    {
+        var email = config["HRM:LocalAdminEmail"]?.Trim();
+        var password = config["HRM:LocalAdminPassword"];
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password)) return;
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HrmDbContext>();
+        if (await db.LocalUsers.AnyAsync(ct)) return;
+        var user = new LocalUser
+        {
+            Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            DisplayName = config["HRM:LocalAdminDisplayName"]?.Trim() ?? "New World Cargo Administrator",
+            PasswordHash = LocalPasswordHash.Hash(password),
+            RolesCsv = "hr_admin",
+            MustChangePassword = true,
+        };
+        db.LocalUsers.Add(user);
+        await db.SaveChangesAsync(ct);
+    }
+}

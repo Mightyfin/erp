@@ -566,15 +566,6 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/setup/steps/${key}`, { dataJson: dataJson ?? null }),
   /** M49: finish the wizard — refuses while the mandatory prefix is open. */
   finishSetup: () => hrmApi.post<unknown>("/hrm/setup/finish", null),
-  /** M53: export URL helper — builds the same /import/{type}/export URL the
-   *  blob helper fetches, for direct anchor downloads outside the dialog. */
-  importExportUrl: (typeKey: string, filter?: string) => {
-    const envBase =
-      typeof import.meta !== "undefined"
-        ? ((import.meta.env.VITE_HRM_API_BASE as string | undefined)?.trim() ?? "")
-        : "";
-    return `${envBase}/hrm/import/${typeKey}/export${filter ? `?${filter}` : ""}`;
-  },
   /** M51: provision invited wizard emails with hr_admin + employee roles in
    *  the identity system. Returns per-email outcomes so the roles step can
    *  show which invitations actually took. */
@@ -871,9 +862,7 @@ export const realApi = {
     ),
 
   /** M44: echo of the resolved work scope (entity/branch) for the current request. */
-  // M54.3: the switcher's branches are org units, so the server echo now
-  // carries orgUnitId alongside locationId (one header, two scope meanings).
-  shell: () => hrmApi.get<{ locationId?: string | null; orgUnitId?: string | null; entityId?: string | null; scopedToBranch: boolean;
+  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean;
     assignedLocationIds?: string[]; confined?: boolean }>("/hrm/shell"),
 
   /** M45: branch access (confinement) — which platform users are confined to which branches. */

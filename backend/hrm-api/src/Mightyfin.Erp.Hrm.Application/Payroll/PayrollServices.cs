@@ -556,6 +556,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
+        run.EmployeeCount = 0;
+        run.ExceptionCount = 0;
         await repo.ClearRunLinesAsync(run.Id, ct);
 
         foreach (var profile in profiles)
@@ -1273,7 +1275,7 @@ internal sealed class CalcContext
         decimal amount = comp.CalculationBasis switch
         {
             // fixed basis: structure default first, then worker profile override
-            "fixed" => comp.FixedAmount ?? ProfileAmount(comp.Id),
+            "fixed" => ProfileAmountOrDefault(comp),
             "percent-of" => Resolve(comp.BasisComponentCode ?? "") * (comp.Rate ?? 0) / 100m,
             "slab" => ApplySlabs(Resolve(comp.BasisComponentCode ?? "basic")),
             _ => 0,
@@ -1331,6 +1333,14 @@ internal sealed class CalcContext
 
     private decimal ProfileAmount(Guid componentId) =>
         _profile.ComponentValues.FirstOrDefault(v => v.ComponentId == componentId)?.Amount ?? 0;
+
+    // A worker profile is an explicit override. Use the component default only
+    // when this profile has no value for the component; this also preserves an
+    // intentional zero override.
+    private decimal ProfileAmountOrDefault(SalaryComponent comp) =>
+        _profile.ComponentValues.Any(v => v.ComponentId == comp.Id)
+            ? ProfileAmount(comp.Id)
+            : comp.FixedAmount ?? 0;
 
     private decimal _lastTaxable;
 

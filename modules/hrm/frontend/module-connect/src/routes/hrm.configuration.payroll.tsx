@@ -33,9 +33,9 @@ const description =
 export const Route = createFileRoute("/hrm/configuration/payroll")({
   head: () => ({
     meta: [
-      { title: "Payroll setup — Mightyfin ERP HRM" },
+      { title: "Payroll setup — New World Cargo HRM" },
       { name: "description", content: description },
-      { property: "og:title", content: "Payroll setup — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payroll setup — New World Cargo HRM" },
       { property: "og:description", content: description },
     ],
   }),

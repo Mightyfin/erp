@@ -18,9 +18,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/lifecycle/offboarding/$id")({
   head: () => ({
     meta: [
-      { title: "Separation case — Mightyfin ERP HRM" },
+      { title: "Separation case — New World Cargo HRM" },
       { name: "description", content: "Clearance checklist, consolidated blockers and final separation sign-off." },
-      { property: "og:title", content: "Separation case — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Separation case — New World Cargo HRM" },
       { property: "og:description", content: "Clearance checklist, consolidated blockers and final separation sign-off." },
     ],
   }),

@@ -25,13 +25,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/hrm/experience/letters")({
   head: () => ({
     meta: [
-      { title: "Letters — Mightyfin ERP HRM" },
+      { title: "Letters — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Request an employment letter and see exactly what it will say before it is issued.",
       },
-      { property: "og:title", content: "Letters — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Letters — New World Cargo HRM" },
       {
         property: "og:description",
         content:
@@ -248,7 +248,7 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
             <p className="font-medium">{addressee || "To whom it may concern"}</p>
             <p className="mt-3">
               This confirms that <span className="font-medium">{me.fullName}</span> ({me.employeeNo}
-              ) is employed by Mighty Finance Solutions Industrial Services Zambia Ltd as{" "}
+              ) is employed by New World Cargo Logistics Zambia Ltd as{" "}
               <span className="font-medium">{me.jobTitle}</span>, on a{" "}
               {me.employmentType.toLowerCase()} basis, since {me.startDate}.
             </p>

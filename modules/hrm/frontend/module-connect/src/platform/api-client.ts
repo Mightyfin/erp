@@ -7,11 +7,8 @@
  *   scope queries to the right tenant.
  * - All responses follow the backend's problem-details-ish envelope and this
  *   client normalises them into an `ApiError` class the UI can surface.
- * - Hybrid auth (M12): when `VITE_USE_REAL_API=true` and the shell holds a
- *   Keycloak session, requests carry `Authorization: Bearer <access_token>`.
+ * - Standalone auth: requests carry the application-owned HttpOnly session cookie.
  */
-
-import { getSession } from "@/platform/oidc";
 
 export class ApiError extends Error {
   constructor(
@@ -62,6 +59,23 @@ export interface SelfProfileUpdate {
   }[];
 }
 
+export interface LocalAuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: string[];
+  workerId?: string | null;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  lastLoginAt?: string | null;
+  createdAt?: string;
+}
+
+export interface LocalAuthResult {
+  authenticated: boolean;
+  user: LocalAuthUser;
+}
+
 /** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
 export interface LinkedWorker {
   id: string;
@@ -74,9 +88,6 @@ export interface LinkedWorker {
   photoUrl?: string | null;
   status: string;
 }
-
-/** Hybrid auth (M12): attach the bearer token when a Keycloak session exists. */
-const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 204) return undefined as T;
@@ -104,14 +115,6 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 function headers(extra?: Record<string, string>): Record<string, string> {
-  const authHeaders: Record<string, string> = {};
-  // Hybrid auth (M12): when the shell holds a Keycloak session, every API
-  // call carries the bearer token. The backend (JWT bearer mode) resolves
-  // the tenant-scoped identity from the token's claims.
-  if (USE_REAL) {
-    const session = getSession();
-    if (session) authHeaders.Authorization = `Bearer ${session.accessToken}`;
-  }
   // M44 branch scoping: the top-nav org switcher writes the selected scope
   // into localStorage (`erp.shell.state.v1` → { entityId?, branch? }). When a
   // branch is selected the operator works inside that branch; when only an
@@ -135,7 +138,6 @@ function headers(extra?: Record<string, string>): Record<string, string> {
   return {
     Accept: "application/json",
     "HRM-Default-TenantId": TENANT_ID,
-    ...authHeaders,
     ...shellHeaders,
     ...extra,
   };
@@ -153,8 +155,25 @@ function qs(params: Record<string, unknown>): string {
 
 /** Generic typed wrapper around the HRM API surface. */
 export const hrmApi = {
+  auth: {
+    login: (email: string, password: string) =>
+      hrmApi.post<LocalAuthResult>("/hrm/auth/login", { email, password }),
+    me: () => hrmApi.get<{ authenticated: boolean; user: LocalAuthUser | null }>("/hrm/auth/me"),
+    logout: () => hrmApi.post<{ authenticated: false }>("/hrm/auth/logout", {}),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      hrmApi.post<{ changed: boolean }>("/hrm/auth/change-password", { currentPassword, newPassword }),
+    users: () => hrmApi.get<{ items: LocalAuthUser[] }>("/hrm/auth/users"),
+    createUser: (body: { email: string; displayName: string; password: string; roles: string[]; workerId?: string }) =>
+      hrmApi.post<LocalAuthUser>("/hrm/auth/users", body),
+    updateUser: (id: string, body: Partial<{ email: string; displayName: string; roles: string[]; isActive: boolean; workerId: string }>) =>
+      hrmApi.patch<LocalAuthUser>(`/hrm/auth/users/${id}`, body),
+    resetPassword: (id: string, newPassword: string) =>
+      hrmApi.post<{ reset: boolean }>(`/hrm/auth/users/${id}/reset-password`, { newPassword }),
+  },
+
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
     const res = await fetch(`${BASE}${path}${qs(params ?? {})}`, {
+      credentials: "include",
       headers: headers(),
     });
     return handleResponse<T>(res);
@@ -163,6 +182,7 @@ export const hrmApi = {
   async post<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${BASE}${path}`, {
       method: "POST",
+      credentials: "include",
       headers: { ...headers(), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -172,6 +192,7 @@ export const hrmApi = {
   async put<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${BASE}${path}`, {
       method: "PUT",
+      credentials: "include",
       headers: { ...headers(), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -181,6 +202,7 @@ export const hrmApi = {
   async patch<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${BASE}${path}`, {
       method: "PATCH",
+      credentials: "include",
       headers: { ...headers(), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -190,6 +212,7 @@ export const hrmApi = {
   async delete<T>(path: string): Promise<T> {
     const res = await fetch(`${BASE}${path}`, {
       method: "DELETE",
+      credentials: "include",
       headers: headers(),
     });
     return handleResponse<T>(res);

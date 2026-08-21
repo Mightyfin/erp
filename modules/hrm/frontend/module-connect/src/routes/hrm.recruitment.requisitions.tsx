@@ -33,13 +33,13 @@ const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 export const Route = createFileRoute("/hrm/recruitment/requisitions")({
   head: () => ({
     meta: [
-      { title: "Requisitions — Mightyfin ERP HRM" },
+      { title: "Requisitions — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Every request to fill a post: replacement or new position, establishment check, budget, approver and due date.",
       },
-      { property: "og:title", content: "Requisitions — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Requisitions — New World Cargo HRM" },
       {
         property: "og:description",
         content:

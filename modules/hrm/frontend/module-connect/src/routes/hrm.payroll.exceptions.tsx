@@ -23,12 +23,12 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/payroll/exceptions")({
   head: () => ({
     meta: [
-      { title: "Payroll exceptions — Mightyfin ERP HRM" },
+      { title: "Payroll exceptions — New World Cargo HRM" },
       {
         name: "description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",
       },
-      { property: "og:title", content: "Payroll exceptions — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payroll exceptions — New World Cargo HRM" },
       {
         property: "og:description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",

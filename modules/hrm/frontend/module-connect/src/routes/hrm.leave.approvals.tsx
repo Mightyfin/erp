@@ -36,9 +36,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/leave/approvals")({
   head: () => ({
     meta: [
-      { title: "Leave approvals — Mightyfin ERP HRM" },
+      { title: "Leave approvals — New World Cargo HRM" },
       { name: "description", content: "Company-wide leave requests waiting on an HR decision." },
-      { property: "og:title", content: "Leave approvals — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Leave approvals — New World Cargo HRM" },
       { property: "og:description", content: "Company-wide leave requests waiting on an HR decision." },
     ],
   }),

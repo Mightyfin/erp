@@ -14,12 +14,12 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/payroll/runs")({
   head: () => ({
     meta: [
-      { title: "Pay runs — Mightyfin ERP HRM" },
+      { title: "Pay runs — New World Cargo HRM" },
       {
         name: "description",
         content: "Every pay run with its stage, control totals, owner and next action.",
       },
-      { property: "og:title", content: "Pay runs — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Pay runs — New World Cargo HRM" },
       {
         property: "og:description",
         content: "Every pay run with its stage, control totals, owner and next action.",
@@ -35,7 +35,7 @@ const closed = new Set(["Closed", "Paid", "Reversed", "Locked", "Calculated"]);
 
 /** M27: adapt persisted runs, including live control totals and payment state. */
 function adaptRunRows(rows: unknown[]): PayRun[] {
-  const entity = "Mighty Finance Solutions Industrial Services Zambia Ltd";
+  const entity = "New World Cargo Logistics Zambia Ltd";
   return rows.map((raw) => {
     const r = raw as Record<string, unknown>;
     const backendStatus = String(r.status ?? "draft");
@@ -179,9 +179,9 @@ function RunsList() {
                   id: "entity",
                   label: "Entity",
                   options: [
-                    "Mighty Finance Solutions Industrial Services Zambia Ltd",
-                    "Mighty Finance Solutions Copperbelt Services Ltd",
-                    "Mighty Finance Solutions Engineering Zambia Ltd",
+                    "New World Cargo Logistics Zambia Ltd",
+                    "New World Cargo Copperbelt Services Ltd",
+                    "New World Cargo Engineering Zambia Ltd",
                   ] as string[],
                   match: (r, v) => r.entityName === v,
                 },

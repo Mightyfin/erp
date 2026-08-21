@@ -13,9 +13,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/talent/feedback")({
   head: () => ({
     meta: [
-      { title: "Feedback and support plans — Mightyfin ERP HRM" },
+      { title: "Feedback and support plans — New World Cargo HRM" },
       { name: "description", content: "Day-to-day feedback, and structured support where someone needs it." },
-      { property: "og:title", content: "Feedback and support plans — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Feedback and support plans — New World Cargo HRM" },
       { property: "og:description", content: "Day-to-day feedback, and structured support where someone needs it." },
     ],
   }),

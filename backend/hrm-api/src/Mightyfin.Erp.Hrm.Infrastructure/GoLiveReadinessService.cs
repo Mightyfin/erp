@@ -97,10 +97,12 @@ public sealed class GoLiveReadinessService(HrmDbContext db, IAuthzService authz)
             var evidence = evidenceRows.FirstOrDefault(x => x.ControlKey == definition.Key);
             var current = evidence is not null && evidence.Status == "passed"
                 && (evidence.ExpiresAt is null || evidence.ExpiresAt > now);
+            var detail = evidence is null ? "No evidence has been recorded."
+                : current ? "The latest evidence is current and passed."
+                : evidence.Status != "passed" ? "The latest evidence is marked failed."
+                : "The latest evidence has expired.";
             gates.Add(new GoLiveGateDto(definition.Key, "evidence", definition.Name,
-                current ? "passed" : "blocked", evidence is null ? "No evidence has been recorded."
-                    : evidence.Status != "passed" ? "The latest evidence is marked failed."
-                    : "The latest evidence has expired.", evidence?.EvidenceReference, evidence?.ExecutedAt));
+                current ? "passed" : "blocked", detail, evidence?.EvidenceReference, evidence?.ExecutedAt));
         }
 
         var rows = (await db.GoLiveSignoffs.AsNoTracking().ToListAsync(ct))

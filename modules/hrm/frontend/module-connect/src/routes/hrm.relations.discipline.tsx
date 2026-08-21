@@ -13,9 +13,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/relations/discipline")({
   head: () => ({
     meta: [
-      { title: "Warning register — Mightyfin ERP HRM" },
+      { title: "Warning register — New World Cargo HRM" },
       { name: "description", content: "Disciplinary warnings, when they lapse, and why a lapsed warning cannot be relied on." },
-      { property: "og:title", content: "Warning register — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Warning register — New World Cargo HRM" },
       { property: "og:description", content: "Disciplinary warnings, when they lapse, and why a lapsed warning cannot be relied on." },
     ],
   }),

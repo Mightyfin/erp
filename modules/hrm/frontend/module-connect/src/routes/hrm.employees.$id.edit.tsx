@@ -27,9 +27,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/employees/$id/edit")({
   head: () => ({
     meta: [
-      { title: "Edit employee — Mightyfin ERP HRM" },
+      { title: "Edit employee — New World Cargo HRM" },
       { name: "description", content: "Edit an employee record: personal details, job and grade, where they work, and the pay details payroll relies on." },
-      { property: "og:title", content: "Edit employee — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Edit employee — New World Cargo HRM" },
       { property: "og:description", content: "Edit personal details, job, location and pay details on an employee record." },
     ],
   }),

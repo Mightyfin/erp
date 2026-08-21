@@ -20,12 +20,12 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/configuration/technical")({
   head: () => ({
     meta: [
-      { title: "Technical settings — Mightyfin ERP HRM" },
+      { title: "Technical settings — New World Cargo HRM" },
       {
         name: "description",
         content: "Integrations, import and export, numbering series and HR vendors.",
       },
-      { property: "og:title", content: "Technical settings — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Technical settings — New World Cargo HRM" },
       {
         property: "og:description",
         content: "Integrations, import and export, numbering series and HR vendors.",

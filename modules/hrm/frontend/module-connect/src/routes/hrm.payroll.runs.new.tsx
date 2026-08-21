@@ -25,9 +25,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/payroll/runs/new")({
   head: () => ({
     meta: [
-      { title: "Start a pay run — Mightyfin ERP HRM" },
+      { title: "Start a pay run — New World Cargo HRM" },
       { name: "description", content: "Open a pay period: choose the entity and pay group, confirm who is in and who is deliberately out, and check readiness before calculating." },
-      { property: "og:title", content: "Start a pay run — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Start a pay run — New World Cargo HRM" },
       { property: "og:description", content: "Open a pay period, confirm the population, and check readiness before calculating." },
     ],
   }),
@@ -35,9 +35,9 @@ export const Route = createFileRoute("/hrm/payroll/runs/new")({
 });
 
 const ENTITIES = [
-  { id: "ent-zm1", name: "Mighty Finance Solutions Industrial Zambia Ltd", currency: "ZMW" },
-  { id: "ent-zm2", name: "Mighty Finance Solutions Services Zambia Ltd", currency: "ZMW" },
-  { id: "ent-zm3", name: "Mighty Finance Solutions Agri Holdings Ltd", currency: "ZMW" },
+  { id: "ent-zm1", name: "New World Cargo Zambia Ltd", currency: "ZMW" },
+  { id: "ent-zm2", name: "New World Cargo Services Zambia Ltd", currency: "ZMW" },
+  { id: "ent-zm3", name: "New World Cargo Holdings Zambia Ltd", currency: "ZMW" },
 ];
 
 const PAY_GROUPS = ["Monthly salaried", "Monthly — management", "Weekly — site crew"];

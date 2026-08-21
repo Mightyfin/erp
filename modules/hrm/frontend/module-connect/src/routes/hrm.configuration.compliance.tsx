@@ -12,7 +12,7 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/configuration/compliance")({
   head: () => ({
     meta: [
-      { title: "Security and compliance — Mightyfin ERP HRM" },
+      { title: "Security and compliance — New World Cargo HRM" },
       {
         name: "description",
         content:

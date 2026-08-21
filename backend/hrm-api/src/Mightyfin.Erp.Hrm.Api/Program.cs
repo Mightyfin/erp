@@ -54,6 +54,9 @@ builder.Services.AddScoped<AuditInterceptor>();
 builder.Services.AddDbContext<HrmDbContext>((services, options) =>
 {
     options.UseNpgsql(connStr, npgsql => npgsql.MigrationsHistoryTable("__hrm_migrations", "hrm"));
+    // The repository snapshot predates several additive model changes. The
+    // migration runner must still apply explicit migrations in standalone mode.
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     options.AddInterceptors(services.GetRequiredService<AuditInterceptor>());
 });
 
@@ -137,25 +140,32 @@ builder.Services.AddScoped<IOutboxPublisherStore, EfOutboxPublisherStore>();
 builder.Services.AddSingleton<IHrmEventPublisher, NatsHrmEventPublisher>();
 builder.Services.AddSingleton<ISmtpNotificationFallback, SmtpNotificationFallback>();
 
-// ---------- AuthN: OIDC via Keycloak, with developer-fallback mode ----------
-var authMode = builder.Configuration["ERP:AuthMode"] ?? builder.Configuration["HRM:AuthMode"] ?? "oidc";
-if (authMode.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+// ---------- AuthN: local PostgreSQL sessions by default; OIDC is optional ----------
+var authMode = builder.Configuration["ERP:AuthMode"] ?? builder.Configuration["HRM:AuthMode"] ?? "local";
+if (authMode.Equals("local", StringComparison.OrdinalIgnoreCase))
 {
+    builder.Services.AddAuthentication(LocalAuthenticationHandler.Scheme)
+        .AddScheme<LocalAuthOptions, LocalAuthenticationHandler>(LocalAuthenticationHandler.Scheme, _ => { });
+}
+else if (authMode.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+{
+    // Development-only compatibility mode. Production standalone deployments must use local mode.
     builder.Services.AddAuthentication("dev")
         .AddScheme<DeveloperAuthOptions, DeveloperAuthHandler>("dev", _ => { });
 }
 else
 {
-    var authority = builder.Configuration["ERP:OidcAuthority"] ?? builder.Configuration["HRM:OidcAuthority"]
-        ?? "http://127.0.0.1.nip.io:18081/realms/mightyfin-sandbox";
+    var authority = builder.Configuration["ERP:OidcAuthority"] ?? builder.Configuration["HRM:OidcAuthority"];
+    if (string.IsNullOrWhiteSpace(authority))
+        throw new InvalidOperationException("ERP:AuthMode=oidc requires ERP:OidcAuthority or HRM:OidcAuthority.");
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(o =>
         {
             o.Authority = authority;
-            o.RequireHttpsMetadata = false;
+            o.RequireHttpsMetadata = true;
             o.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateAudience = false, // workforce realm tokens are introspected by scope claims
+                ValidateAudience = false,
                 NameClaimType = "preferred_username",
                 RoleClaimType = "realm_access.roles",
             };
@@ -212,6 +222,8 @@ if (args.Contains("--apply-migrations-only"))
     Console.WriteLine("Migrations applied. Exiting.");
     return;
 }
+await LocalIdentityBootstrap.EnsureAsync(app.Services, builder.Configuration);
+
 if (args.Contains("--run-outbox-publisher"))
 {
     await RunOutboxPublisherAsync(app.Services, builder.Configuration);
@@ -261,10 +273,15 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
 // Root welcome endpoint: confirms a successful deployment and lists supported versions.
 app.MapGet("/", () => Results.Ok(new
 {
-    service = "mightyfin-erp-hrm-api",
+    service = "newworldcargo-hrm-api",
     versions = new[] { "v1" },
+    authentication = "local-postgresql",
     documentation = app.Environment.IsDevelopment() ? "/openapi/hrm.json" : null,
 }));
+
+// Standalone identity surface. These routes use the application database and
+// same-origin HttpOnly sessions; no external provider redirect is involved.
+LocalIdentityRoutes.Map(app);
 
 // Global error handler: DomainException -> structured ApiError
 app.Use(async (ctx, next) =>

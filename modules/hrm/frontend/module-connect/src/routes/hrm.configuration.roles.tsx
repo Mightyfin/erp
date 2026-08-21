@@ -14,13 +14,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/configuration/roles")({
   head: () => ({
     meta: [
-      { title: "Roles — Mightyfin ERP HRM" },
+      { title: "Roles — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Tenant-scoped HRM role assignments: enable the capabilities your organisation's administrators, payroll officers and approvers need.",
       },
-      { property: "og:title", content: "Roles — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Roles — New World Cargo HRM" },
       {
         property: "og:description",
         content:

@@ -22,13 +22,13 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/recruitment/vacancies")({
   head: () => ({
     meta: [
-      { title: "Vacancies — Mightyfin ERP HRM" },
+      { title: "Vacancies — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Live and closed postings created from approved requisitions, with applicant numbers, days open, closing date and the next action.",
       },
-      { property: "og:title", content: "Vacancies — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Vacancies — New World Cargo HRM" },
       {
         property: "og:description",
         content: "Postings from approved requisitions, with applicants, days open, closing date and next action.",
@@ -40,7 +40,7 @@ export const Route = createFileRoute("/hrm/recruitment/vacancies")({
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
-const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Mighty Finance Solutions Industrial Services Zambia Ltd";
+const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "New World Cargo Logistics Zambia Ltd";
 
 /**
  * The backend vacancy record carries far fewer fields than the design mock
