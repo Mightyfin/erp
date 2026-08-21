@@ -570,22 +570,46 @@ function ReportsPage() {
 function StatutoryFilings({ canPayroll }: { canPayroll: boolean }) {
   const [periodId, setPeriodId] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
+  const runs = useApi(() => realApi.payrollRuns(), []);
   const groups = useApi(() => realApi.payrollPayGroups(), []);
-  const defaultGroupId = useMemo(() => {
-    const rows = Array.isArray(groups.data) ? (groups.data as Array<Record<string, unknown>>) : [];
-    return String(rows.find((x) => x.code === "MONTHLY-ZMW")?.id ?? rows[0]?.id ?? "");
-  }, [groups.data]);
+  const groupRows = useMemo(() => (groups.data ?? []) as Array<Record<string, unknown>>, [groups.data]);
+  const groupId = String(groupRows[0]?.id ?? "");
   const periods = useApi(
-    () => (defaultGroupId ? realApi.payrollPayGroupPeriods(defaultGroupId) : Promise.resolve([])),
-    [defaultGroupId],
+    () => (groupId ? realApi.payrollPayGroupPeriods(groupId) : Promise.resolve([])),
+    [groupId],
   );
-  const released = useMemo(
-    () =>
-      (Array.isArray(periods.data) ? (periods.data as Array<Record<string, unknown>>) : []).filter(
-        (x) => x.status === "released" || x.status === "closed",
-      ),
+  const periodRows = useMemo(
+    () => (periods.data ?? []) as Array<Record<string, unknown>>,
     [periods.data],
   );
+  const released = useMemo(() => {
+    const payload = runs.data as { items?: unknown[] } | unknown[] | null;
+    const rows = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === "object" && Array.isArray(payload.items)
+        ? payload.items
+        : [];
+    const releasedLabels = new Set(
+      rows
+        .map((row) => row as Record<string, unknown>)
+        .filter((row) => row.status === "released" || row.status === "closed")
+        .map((row) => String(row.periodLabel ?? ""))
+        .filter(Boolean),
+    );
+    const seen = new Set<string>();
+    return periodRows
+      .map((row) => ({
+        id: String(row.id ?? ""),
+        periodLabel: String(row.periodLabel ?? row.id ?? ""),
+      }))
+      .filter(
+        (row) =>
+          row.id &&
+          releasedLabels.has(row.periodLabel) &&
+          !seen.has(row.id) &&
+          Boolean(seen.add(row.id)),
+      );
+  }, [periodRows, runs.data]);
   useEffect(() => {
     if (!periodId && released.length) setPeriodId(String(released[0].id));
   }, [periodId, released]);

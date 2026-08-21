@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, Ban, Check, CircleDashed, Info, Lock, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Ban, Check, CircleDashed, Download, Info, Lock, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CURRENT_USER, isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
 import { CalculationPanel } from "@/platform/components/CalculationPanel";

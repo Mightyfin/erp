@@ -45,6 +45,9 @@ function TimeOperations() {
   const [encNote, setEncNote] = useState("");
   const [encQuote, setEncQuote] = useState<Record<string, unknown> | null>(null);
   const [encBusy, setEncBusy] = useState(false);
+  const encashmentItems = Array.isArray(encashments.data)
+    ? encashments.data
+    : encashments.data?.items ?? [];
 
   const quoteEncashment = async () => {
     if (!encWorker || !encLeaveType) return;
@@ -528,8 +531,8 @@ function TimeOperations() {
                 </div>
                 <div>
                   <p className="font-medium">Leave encashments</p>
-                  {encashments.data && encashments.data.items.length ? (
-                    encashments.data.items.map((item) => (
+                  {encashmentItems.length ? (
+                    encashmentItems.map((item) => (
                       <div key={String(item.id)} className="flex flex-wrap items-center gap-2 text-muted-foreground">
                         <span>
                           {String(item.workerName ?? "—")} · {String(item.leaveTypeCode)} ·{" "}
