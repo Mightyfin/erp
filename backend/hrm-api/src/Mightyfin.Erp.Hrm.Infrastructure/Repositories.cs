@@ -1364,9 +1364,12 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<List<PayrollRunLine>> ListReleasedRunLinesForPeriodAsync(Guid payPeriodId, CancellationToken ct)
     {
-        // Statutory aggregates across all released, non-reversed runs in the period.
+        // Statutory aggregates across released or reconciled/closed runs, excluding
+        // reversal runs and originals superseded by a released/closed reversal.
         var runIds = await db.PayrollRuns
-            .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
+            .Where(r => r.PayPeriodId == payPeriodId && (r.Status == "released" || r.Status == "closed") && !r.IsReversal)
+            .Where(r => !db.PayrollRuns.Any(reversal => reversal.IsReversal && reversal.ReversesRunId == r.Id &&
+                (reversal.Status == "released" || reversal.Status == "closed")))
             .Select(r => r.Id).ToListAsync(ct);
         if (runIds.Count == 0) return [];
         return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker)
