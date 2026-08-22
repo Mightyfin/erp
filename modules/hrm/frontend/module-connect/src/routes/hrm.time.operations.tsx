@@ -18,6 +18,7 @@ type Result = Record<string, unknown>;
 
 function TimeOperations() {
   const history = useApi(realApi.timeOperationsHistory, []);
+  const overtime = useApi(() => realApi.overtime({}), []);
   const leaveTypes = useApi(() =>
     realApi.leaveTypes ? realApi.leaveTypes({ includeInactive: false }) : Promise.resolve({ items: [] as unknown[] }),
   );
@@ -45,6 +46,8 @@ function TimeOperations() {
   const [encNote, setEncNote] = useState("");
   const [encQuote, setEncQuote] = useState<Record<string, unknown> | null>(null);
   const [encBusy, setEncBusy] = useState(false);
+  const [overtimeBusy, setOvertimeBusy] = useState(false);
+  const [overtimeReason, setOvertimeReason] = useState("");
   const encashmentItems = Array.isArray(encashments.data)
     ? encashments.data
     : encashments.data?.items ?? [];
@@ -113,6 +116,24 @@ function TimeOperations() {
     }
   };
 
+  const decideOvertime = async (id: string, action: "approve" | "reject") => {
+    if (action === "reject" && !overtimeReason.trim()) {
+      toast.error("Enter a reason before rejecting overtime.");
+      return;
+    }
+    setOvertimeBusy(true);
+    try {
+      await realApi.decideOvertime(id, action, overtimeReason.trim() || undefined);
+      toast.success(`Overtime ${action === "approve" ? "approved" : "rejected"}`);
+      setOvertimeReason("");
+      overtime.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Overtime decision failed");
+    } finally {
+      setOvertimeBusy(false);
+    }
+  };
+
   const importRows = () => {
     const parsed = rows
       .split(/\r?\n/)
@@ -137,6 +158,61 @@ function TimeOperations() {
           description="Import attendance, run controlled leave accruals, correct balances and escalate overdue approvals."
         />
         <div className="grid gap-6 lg:grid-cols-2" data-testid="time-operations">
+          <Card className="lg:col-span-2" data-testid="overtime-queue">
+            <CardHeader>
+              <CardTitle>Overtime review queue</CardTitle>
+              <CardDescription>
+                Overtime is derived from persisted attendance and shift rules. Only approved hours
+                enter payroll; released payroll marks the source attendance as paid.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="max-w-xl">
+                <Label htmlFor="overtime-decision-reason">Decision reason</Label>
+                <Input
+                  id="overtime-decision-reason"
+                  value={overtimeReason}
+                  onChange={(event) => setOvertimeReason(event.target.value)}
+                  placeholder="Required for rejection; optional for approval"
+                />
+              </div>
+              {overtime.loading ? <p className="text-sm text-muted-foreground">Loading overtime…</p> : null}
+              {overtime.error ? <p className="text-sm text-destructive">{overtime.error}</p> : null}
+              {!overtime.loading && !overtime.error && !(overtime.data?.length ?? 0) ? (
+                <p className="text-sm text-muted-foreground">No derived overtime records found.</p>
+              ) : null}
+              <div className="space-y-2">
+                {(overtime.data ?? []).map((item) => {
+                  const status = String(item.overtimeStatus ?? "none");
+                  const statusClass = status === "approved" || status === "paid"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : status === "rejected"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700";
+                  return (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                      <div>
+                        <p className="font-medium">{item.workerName || item.workerId}</p>
+                        <p className="text-muted-foreground">
+                          {item.workDate} · {Number(item.overtimeHours).toFixed(2)} hour(s) · ×{Number(item.overtimeMultiplier).toFixed(2)} · total {Number(item.totalHours).toFixed(2)}h
+                        </p>
+                        {item.overtimeDecisionReason ? <p className="text-xs text-muted-foreground">Reason: {item.overtimeDecisionReason}</p> : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded px-2 py-1 text-xs font-medium ${statusClass}`}>{status}</span>
+                        {status === "pending" ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => decideOvertime(item.id, "approve")} disabled={overtimeBusy || busy !== null}>Approve</Button>
+                            <Button size="sm" variant="outline" onClick={() => decideOvertime(item.id, "reject")} disabled={overtimeBusy || busy !== null}>Reject</Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle>Shift rule</CardTitle>

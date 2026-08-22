@@ -411,7 +411,10 @@ public sealed record PunchResultDto(Guid Id, Guid WorkerId, string WorkDate, str
 public sealed record AttendanceRecordDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
     string? ClockIn, string? ClockOut, string Source, string DerivedStatus, decimal TotalHours,
     decimal ScheduledHours = 0, decimal RegularHours = 0, decimal OvertimeHours = 0,
-    decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null);
+    decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null,
+    string OvertimeStatus = "none", string? OvertimeDecisionReason = null,
+    string? OvertimeDecidedBySubjectId = null, DateTimeOffset? OvertimeDecidedAt = null,
+    Guid? OvertimePayrollRunId = null, Guid? OvertimePayrollLineId = null);
 
 public sealed record ShiftCreateRequest(string Code, string Name, string StartTime, string EndTime,
     int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
@@ -428,6 +431,7 @@ public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, str
 public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
 public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount, List<string> Errors);
+public sealed record OvertimeDecisionRequest(string Action, string? Reason = null);
 public sealed record AttendanceImportHistoryDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount,
     string ImportedBySubjectId, DateTimeOffset CreatedAt);

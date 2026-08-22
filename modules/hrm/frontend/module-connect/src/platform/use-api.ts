@@ -406,6 +406,25 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}/today`),
   attendanceHistory: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}`, params ?? {}),
+  overtime: (params?: Record<string, unknown>) =>
+    hrmApi.get<Array<{
+      id: string;
+      workerId: string;
+      workerName: string;
+      workDate: string;
+      totalHours: number;
+      regularHours: number;
+      overtimeHours: number;
+      overtimeMultiplier: number;
+      overtimeStatus: string;
+      overtimeDecisionReason?: string | null;
+      overtimeDecidedBySubjectId?: string | null;
+      overtimeDecidedAt?: string | null;
+      overtimePayrollRunId?: string | null;
+      overtimePayrollLineId?: string | null;
+    }>>(`/hrm/time/overtime`, params ?? {}),
+  decideOvertime: (id: string, action: "approve" | "reject", reason?: string) =>
+    hrmApi.post<unknown>(`/hrm/time/overtime/${id}/decide`, { action, reason }),
   roster: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/roster/${workerId}`, params ?? {}),
   shifts: () => hrmApi.get<unknown[]>("/hrm/time/shifts"),

@@ -67,6 +67,11 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
             .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
 
+    public async Task<Worker?> FindByEmailAsync(string email, CancellationToken ct)
+        => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
+            .FirstOrDefaultAsync(w => w.Email == email, ct);
+
     public async Task<Worker> CreateAsync(Worker worker, CancellationToken ct)
     {
         db.Workers.Add(worker);
@@ -129,11 +134,6 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
             match = await db.Workers.FirstOrDefaultAsync(w => w.NapsaNumber != null && w.NapsaNumber == napsaNumber && !w.IsArchived, ct);
         return match;
     }
-    // M54 import re-locate: rows without any natural keys fall back to their
-    // (required) work email to find the just-created record.
-    public async Task<Worker?> FindByEmailAsync(string email, CancellationToken ct) =>
-        await db.Workers.FirstOrDefaultAsync(w => w.Email != null &&
-            w.Email == email && !w.IsArchived, ct);
 
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {
@@ -446,6 +446,18 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
         if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
         return await q.Include(a => a.Worker).Take(200).ToListAsync(ct); // already bounded by from/to window; keep insert order
+    }
+
+    public async Task<List<AttendanceRecord>> ListOvertimeAsync(Guid? workerId, DateOnly? from, DateOnly? to, string? status, CancellationToken ct)
+    {
+        var q = db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.OvertimeHours > 0);
+        if (workerId.HasValue) q = q.Where(a => a.WorkerId == workerId.Value);
+        if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
+        if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(a => a.OvertimeStatus == status);
+        return await q.OrderByDescending(a => a.WorkDate).ThenBy(a => a.Worker!.EmployeeNo).Take(1000).ToListAsync(ct);
     }
 
     public async Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct)
@@ -1135,6 +1147,32 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (profiles, components, rules, slabs, period.CutoffDate);
     }
 
+    public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var q = db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.WorkDate >= period.StartDate && a.WorkDate <= period.EndDate
+                && a.OvertimeHours > 0 && a.OvertimeStatus == "approved"
+                && a.OvertimePayrollRunId == null);
+        if (locationId.HasValue)
+            q = q.Where(a => a.LocationId == locationId || a.Worker!.LocationId == locationId);
+        return await q.OrderBy(a => a.Worker!.EmployeeNo).ThenBy(a => a.WorkDate).ToListAsync(ct);
+    }
+
+    public async Task LinkOvertimeToPayrollAsync(Guid attendanceId, Guid runId, Guid runLineId, CancellationToken ct)
+    {
+        var record = await db.AttendanceRecords.FirstOrDefaultAsync(a => a.Id == attendanceId, ct)
+            ?? throw new DomainException("overtime-not-found", "Overtime attendance record not found.");
+        if (record.OvertimeStatus != "approved" || record.OvertimePayrollRunId.HasValue)
+            throw new DomainException("overtime-not-linkable", "Overtime is no longer approved or has already been linked to payroll.");
+        record.OvertimeStatus = "paid";
+        record.OvertimePayrollRunId = runId;
+        record.OvertimePayrollLineId = runLineId;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
@@ -1364,12 +1402,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
 
     public async Task<List<PayrollRunLine>> ListReleasedRunLinesForPeriodAsync(Guid payPeriodId, CancellationToken ct)
     {
-        // Statutory aggregates across released or reconciled/closed runs, excluding
-        // reversal runs and originals superseded by a released/closed reversal.
+        // Statutory aggregates across all released, non-reversed runs in the period.
         var runIds = await db.PayrollRuns
-            .Where(r => r.PayPeriodId == payPeriodId && (r.Status == "released" || r.Status == "closed") && !r.IsReversal)
-            .Where(r => !db.PayrollRuns.Any(reversal => reversal.IsReversal && reversal.ReversesRunId == r.Id &&
-                (reversal.Status == "released" || reversal.Status == "closed")))
+            .Where(r => r.PayPeriodId == payPeriodId && r.Status == "released" && !r.IsReversal)
             .Select(r => r.Id).ToListAsync(ct);
         if (runIds.Count == 0) return [];
         return await db.PayrollRunLines.Include(l => l.Components).Include(l => l.Worker)

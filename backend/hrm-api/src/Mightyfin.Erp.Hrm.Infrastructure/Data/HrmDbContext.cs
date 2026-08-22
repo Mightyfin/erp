@@ -224,7 +224,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<LeaveType>(modelBuilder, "leave_types", e => e.HasIndex(x => new { x.TenantId, x.Code }));
         ConfigureEntity<LeaveBalanceLedger>(modelBuilder, "leave_balance_ledger");
         ConfigureEntity<LeaveRequest>(modelBuilder, "leave_requests");
-        ConfigureEntity<AttendanceRecord>(modelBuilder, "attendance_records", e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate }));
+        ConfigureEntity<AttendanceRecord>(modelBuilder, "attendance_records", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate });
+            e.HasIndex(x => new { x.TenantId, x.OvertimeStatus, x.WorkDate });
+        });
         ConfigureEntity<AttendanceCorrection>(modelBuilder, "attendance_corrections");
         ConfigureEntity<ShiftDefinition>(modelBuilder, "shift_definitions", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<WorkerShiftAssignment>(modelBuilder, "worker_shift_assignments");

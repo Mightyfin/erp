@@ -31,6 +31,8 @@ public interface ITimeService
     Task<PunchResultDto> ClockOutAsync(Guid workerId, CancellationToken ct);
     Task<PunchResultDto> GetTodayAsync(Guid workerId, CancellationToken ct);
     Task<List<AttendanceRecordDto>> ListAttendanceAsync(Guid workerId, string? from, string? to, CancellationToken ct);
+    Task<List<AttendanceRecordDto>> ListOvertimeAsync(Guid? workerId, string? from, string? to, string? status, CancellationToken ct);
+    Task<AttendanceRecordDto> DecideOvertimeAsync(Guid id, OvertimeDecisionRequest request, string actorSubjectId, CancellationToken ct);
     Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct);
     Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
     Task<LeaveRequestDto> DecideLeaveAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
@@ -268,6 +270,63 @@ public sealed class TimeServiceImpl(
         var t = to is null ? (DateOnly?)null : DateOnly.Parse(to);
         var items = await repo.ListAttendanceAsync(workerId, f, t, ct);
         return items.Select(MapAttendance).ToList();
+    }
+
+    public async Task<List<AttendanceRecordDto>> ListOvertimeAsync(Guid? workerId, string? from, string? to, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "employee");
+        if (IsEmployeeOnly && workerId is null)
+        {
+            var linked = string.IsNullOrWhiteSpace(authz.CurrentSubjectId)
+                ? null
+                : await workers.FindBySubjectIdAsync(authz.CurrentSubjectId, ct);
+            workerId = linked?.Id ?? throw new DomainException("worker-not-linked", "No worker record is linked to your account.");
+        }
+        if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
+        DateOnly? f = from is null ? null : DateOnly.Parse(from);
+        DateOnly? t = to is null ? null : DateOnly.Parse(to);
+        var items = await repo.ListOvertimeAsync(workerId, f, t, status, ct);
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false))
+            items = items.Where(a => a.LocationId == scope?.LocationId || a.LocationId == null).ToList();
+        return items.Select(MapAttendance).ToList();
+    }
+
+    public async Task<AttendanceRecordDto> DecideOvertimeAsync(Guid id, OvertimeDecisionRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        var record = (await repo.ListOvertimeAsync(null, null, null, null, ct)).FirstOrDefault(a => a.Id == id)
+            ?? throw new DomainException("overtime-not-found", $"Overtime record {id} does not exist.");
+        if (record.OvertimeHours <= 0)
+            throw new DomainException("overtime-not-present", "This attendance record has no derived overtime hours.");
+        if (record.OvertimePayrollRunId.HasValue)
+            throw new DomainException("overtime-already-paid", "This overtime record is already linked to a payroll run and cannot be changed.");
+        var action = (request.Action ?? "").Trim().ToLowerInvariant();
+        if (action is not ("approve" or "reject"))
+            throw new DomainException("overtime-invalid-decision", "Decision action must be approve or reject.");
+        if (action == "reject" && string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("overtime-rejection-reason-required", "A reason is required when rejecting overtime.");
+        record.OvertimeStatus = action == "approve" ? "approved" : "rejected";
+        record.OvertimeDecisionReason = request.Reason?.Trim();
+        record.OvertimeDecidedBySubjectId = actorSubjectId;
+        record.OvertimeDecidedAt = DateTimeOffset.UtcNow;
+        record = await repo.UpdateAttendanceAsync(record, ct);
+        if (outbox is not null)
+        {
+            await outbox.EnqueueAsync(HrmEventTypes.OvertimeDecided,
+                record.Worker?.SubjectId ?? record.WorkerId.ToString("D"),
+                new
+                {
+                    overtime_id = record.Id,
+                    worker_id = record.WorkerId,
+                    work_date = record.WorkDate.ToString("yyyy-MM-dd"),
+                    overtime_hours = record.OvertimeHours,
+                    overtime_multiplier = record.OvertimeMultiplier,
+                    status = record.OvertimeStatus,
+                    reason = record.OvertimeDecisionReason,
+                    decided_by = actorSubjectId
+                }, ct);
+        }
+        return MapAttendance(record);
     }
 
     public async Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct)
@@ -770,6 +829,21 @@ public sealed class TimeServiceImpl(
             }
         }
         record.DerivedStatus = DeriveStatus(record.ClockIn, record.ClockOut, record.DerivedStatus);
+        if (record.OvertimeHours > 0 && !record.OvertimePayrollRunId.HasValue)
+        {
+            // Any newly derived or changed overtime must be reviewed again.
+            record.OvertimeStatus = "pending";
+            record.OvertimeDecisionReason = null;
+            record.OvertimeDecidedBySubjectId = null;
+            record.OvertimeDecidedAt = null;
+        }
+        else if (record.OvertimeHours <= 0 && !record.OvertimePayrollRunId.HasValue)
+        {
+            record.OvertimeStatus = "none";
+            record.OvertimeDecisionReason = null;
+            record.OvertimeDecidedBySubjectId = null;
+            record.OvertimeDecidedAt = null;
+        }
         if (shift is not null && record.ClockIn.HasValue && record.DerivedStatus == "present" && record.ClockIn > shift.StartTime)
             record.DerivedStatus = "late";
         if (shift is not null && record.ClockOut.HasValue && record.DerivedStatus == "present" && record.ClockOut < shift.EndTime)
@@ -883,7 +957,9 @@ public sealed class TimeServiceImpl(
     private static AttendanceRecordDto MapAttendance(AttendanceRecord a) => new(
         a.Id, a.WorkerId, a.Worker?.FullName ?? "", a.WorkDate.ToString(),
         a.ClockIn?.ToString(), a.ClockOut?.ToString(), a.Source, a.DerivedStatus, a.TotalHours,
-        a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId);
+        a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId,
+        a.OvertimeStatus, a.OvertimeDecisionReason, a.OvertimeDecidedBySubjectId,
+        a.OvertimeDecidedAt, a.OvertimePayrollRunId, a.OvertimePayrollLineId);
 
     private static ShiftDto MapShift(ShiftDefinition shift) => new(
         shift.Id, shift.Code, shift.Name, shift.StartTime.ToString(), shift.EndTime.ToString(),

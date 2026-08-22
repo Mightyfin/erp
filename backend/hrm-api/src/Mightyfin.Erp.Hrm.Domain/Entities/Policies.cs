@@ -76,6 +76,13 @@ public class AttendanceRecord : Entity
     public decimal RegularHours { get; set; }
     public decimal OvertimeHours { get; set; }
     public decimal OvertimeMultiplier { get; set; }
+    // Milestone 1: derived overtime must be explicitly reviewed before payroll.
+    public string OvertimeStatus { get; set; } = "none"; // none | pending | approved | rejected | paid
+    public string? OvertimeDecisionReason { get; set; }
+    public string? OvertimeDecidedBySubjectId { get; set; }
+    public DateTimeOffset? OvertimeDecidedAt { get; set; }
+    public Guid? OvertimePayrollRunId { get; set; }
+    public Guid? OvertimePayrollLineId { get; set; }
     public Guid? ShiftId { get; set; }
     public Guid? ImportBatchId { get; set; }
 }

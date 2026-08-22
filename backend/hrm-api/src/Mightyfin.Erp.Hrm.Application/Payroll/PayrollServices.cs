@@ -554,6 +554,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         // an organisation-wide run pays everyone.
         var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
+        var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
         run.EmployeeCount = 0;
@@ -570,6 +571,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             var (workingDays, paymentDays, note) = PaymentDaysCalculator.For(
                 prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
             ctx.SetProration(workingDays, paymentDays, note);
+            // Milestone 1: approved attendance overtime is a first-class earning.
+            // It is intentionally added before statutory components so PAYE and
+            // percentage-based deductions see the same explainable gross basis.
+            ctx.AddOvertime(approvedOvertime.Where(a => a.WorkerId == worker.Id).ToList());
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
             var net = ctx.Gross - ctx.Deductions;
@@ -778,6 +783,16 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             run.Status = "released";
             run.ReleasedBySubjectId = actorSubjectId;
             await repo.UpdateRunAsync(run, transactionCt);
+            // Only a released run consumes approved overtime. Calculation remains
+            // idempotent because approved rows stay approved until this boundary.
+            var overtimeToLink = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, transactionCt);
+            var (releasedLines, _) = await repo.ListRunLinesAsync(run.Id, transactionCt);
+            foreach (var overtime in overtimeToLink)
+            {
+                var line = releasedLines.FirstOrDefault(l => l.WorkerId == overtime.WorkerId);
+                if (line is not null)
+                    await repo.LinkOvertimeToPayrollAsync(overtime.Id, run.Id, line.Id, transactionCt);
+            }
             // Reversal runs negate the original: supersede its payslips FIRST so the
             // replacement payslips generated below can chain to them via SupersedesId.
             if (run.IsReversal && run.ReversesRunId.HasValue)
@@ -1377,6 +1392,24 @@ internal sealed class CalcContext
         return Math.Round(amount * factor, 2);
     }
 
+    public void AddOvertime(List<AttendanceRecord> records)
+    {
+        if (records.Count == 0) return;
+        var hours = records.Sum(r => r.OvertimeHours);
+        if (hours <= 0) return;
+        // Zambia payroll's standard monthly base for hourly conversion is 26 x 8
+        // hours. The multiplier is sourced from the shift/calendar derivation.
+        const decimal standardMonthlyHours = 208m;
+        var basic = Resolve("basic");
+        var amount = records.Sum(r => basic / standardMonthlyHours * r.OvertimeHours * r.OvertimeMultiplier);
+        amount = Math.Round(amount, 2);
+        if (amount <= 0) return;
+        _values["overtime"] = amount;
+        Components.Add(("overtime", "Overtime", "earning", amount,
+            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier; basic K{basic:N2} / {standardMonthlyHours:N0} standard monthly hours", false));
+        Gross += amount;
+    }
+
     public void SetProration(int workingDays, int paymentDays, string? note)
     {
         WorkingDays = workingDays;
@@ -1446,6 +1479,8 @@ public interface IPayrollRepository
     Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct);
     Task<PayrollRun> SubmitRunAsync(PayrollRun run, CancellationToken ct);
     Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)> LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct, Guid? locationId = null);
+    Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task LinkOvertimeToPayrollAsync(Guid attendanceId, Guid runId, Guid runLineId, CancellationToken ct);
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);
