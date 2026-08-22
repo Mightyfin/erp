@@ -1405,8 +1405,9 @@ internal sealed class CalcContext
         amount = Math.Round(amount, 2);
         if (amount <= 0) return;
         _values["overtime"] = amount;
+        var sourceIds = string.Join(", ", records.Select(r => r.Id.ToString("D")));
         Components.Add(("overtime", "Overtime", "earning", amount,
-            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier; basic K{basic:N2} / {standardMonthlyHours:N0} standard monthly hours", false));
+            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier; basic K{basic:N2} / {standardMonthlyHours:N0} standard monthly hours; source attendance {sourceIds}", false));
         Gross += amount;
     }
 

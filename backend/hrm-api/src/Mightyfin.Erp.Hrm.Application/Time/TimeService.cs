@@ -296,6 +296,9 @@ public sealed class TimeServiceImpl(
         authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
         var record = (await repo.ListOvertimeAsync(null, null, null, null, ct)).FirstOrDefault(a => a.Id == id)
             ?? throw new DomainException("overtime-not-found", $"Overtime record {id} does not exist.");
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false)
+            && record.LocationId.HasValue && record.LocationId != scope?.LocationId)
+            throw new DomainException("overtime-scope-denied", "This overtime record is outside your assigned branch scope.");
         if (record.OvertimeHours <= 0)
             throw new DomainException("overtime-not-present", "This attendance record has no derived overtime hours.");
         if (record.OvertimePayrollRunId.HasValue)
@@ -309,23 +312,30 @@ public sealed class TimeServiceImpl(
         record.OvertimeDecisionReason = request.Reason?.Trim();
         record.OvertimeDecidedBySubjectId = actorSubjectId;
         record.OvertimeDecidedAt = DateTimeOffset.UtcNow;
-        record = await repo.UpdateAttendanceAsync(record, ct);
-        if (outbox is not null)
+        async Task Decide(CancellationToken transactionCt)
         {
-            await outbox.EnqueueAsync(HrmEventTypes.OvertimeDecided,
-                record.Worker?.SubjectId ?? record.WorkerId.ToString("D"),
-                new
-                {
-                    overtime_id = record.Id,
-                    worker_id = record.WorkerId,
-                    work_date = record.WorkDate.ToString("yyyy-MM-dd"),
-                    overtime_hours = record.OvertimeHours,
-                    overtime_multiplier = record.OvertimeMultiplier,
-                    status = record.OvertimeStatus,
-                    reason = record.OvertimeDecisionReason,
-                    decided_by = actorSubjectId
-                }, ct);
+            record = await repo.UpdateAttendanceAsync(record, transactionCt);
+            if (outbox is not null)
+            {
+                await outbox.EnqueueAsync(HrmEventTypes.OvertimeDecided,
+                    record.Worker?.SubjectId ?? record.WorkerId.ToString("D"),
+                    new
+                    {
+                        overtime_id = record.Id,
+                        worker_id = record.WorkerId,
+                        work_date = record.WorkDate.ToString("yyyy-MM-dd"),
+                        overtime_hours = record.OvertimeHours,
+                        overtime_multiplier = record.OvertimeMultiplier,
+                        status = record.OvertimeStatus,
+                        reason = record.OvertimeDecisionReason,
+                        decided_by = actorSubjectId
+                    }, transactionCt);
+            }
         }
+        if (unitOfWork is null)
+            await Decide(ct);
+        else
+            await unitOfWork.ExecuteAsync(Decide, ct);
         return MapAttendance(record);
     }
 
