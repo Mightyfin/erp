@@ -86,7 +86,6 @@ const DEMO_ONLY_PREFIXES = [
   "/hrm/relations/safety",
   "/hrm/relations/ethics",
   "/hrm/relations/labour",
-  "/hrm/time/toil",
   "/hrm/time/utilisation",
   "/hrm/time/travel",
   "/hrm/time/expenses",
