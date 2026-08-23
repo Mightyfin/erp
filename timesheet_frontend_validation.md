@@ -51,3 +51,9 @@ The expanded Time and leave navigation now presents separate task entry points: 
 The live `/hrm/data/import-export` hub loaded with the real server schema registry and showed Employees, Attendance logs, and Payroll profiles. Each data type uses the same Import and Export controls, with plain-language safeguards explaining that schema mapping, server preview, and accepted-row confirmation happen before writing. The page also links to the task-specific Attendance Import workflow. No API changes were made in this pass.
 
 Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-22-34_6195.webp`.
+
+## Focused refinement validation
+
+The refined live page now shows a clear `Live connection pending` status beside the period, a `This week` reset action, and a compact search/status toolbar under the summary cards. The status filter successfully changed from **All entries** to **Needs attention** without navigation or runtime errors. With no live rows connected, the page remains truthful and shows zero attention items rather than fabricated exceptions.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-31-52_2836.webp`.
