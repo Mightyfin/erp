@@ -535,6 +535,16 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         return shift;
     }
 
+    public Task<ShiftDefinition?> GetShiftAsync(Guid id, CancellationToken ct) =>
+        db.ShiftDefinitions.FirstOrDefaultAsync(s => s.Id == id, ct);
+
+    public async Task<ShiftDefinition> UpdateShiftAsync(ShiftDefinition shift, CancellationToken ct)
+    {
+        db.ShiftDefinitions.Update(shift);
+        await db.SaveChangesAsync(ct);
+        return shift;
+    }
+
     public async Task<WorkerShiftAssignment?> GetShiftAssignmentAsync(Guid workerId, DateOnly date, CancellationToken ct)
         => await db.WorkerShiftAssignments.Include(a => a.Shift)
             .Include(a => a.Calendar).ThenInclude(c => c!.Holidays)

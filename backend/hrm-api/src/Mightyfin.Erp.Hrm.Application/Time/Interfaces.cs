@@ -30,6 +30,8 @@ public interface ITimeRepository
     Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct);
     Task<List<ShiftDefinition>> ListShiftsAsync(CancellationToken ct);
     Task<ShiftDefinition> CreateShiftAsync(ShiftDefinition shift, CancellationToken ct);
+    Task<ShiftDefinition?> GetShiftAsync(Guid id, CancellationToken ct);
+    Task<ShiftDefinition> UpdateShiftAsync(ShiftDefinition shift, CancellationToken ct);
     Task<WorkerShiftAssignment?> GetShiftAssignmentAsync(Guid workerId, DateOnly date, CancellationToken ct);
     Task<WorkerShiftAssignment> CreateShiftAssignmentAsync(WorkerShiftAssignment assignment, CancellationToken ct);
     Task CloseOpenShiftAssignmentsAsync(Guid workerId, DateOnly effectiveTo, CancellationToken ct);

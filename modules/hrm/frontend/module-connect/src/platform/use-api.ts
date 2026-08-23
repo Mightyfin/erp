@@ -454,6 +454,8 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/time/roster/${workerId}`, params ?? {}),
   shifts: () => hrmApi.get<unknown[]>("/hrm/time/shifts"),
   createShift: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/time/shifts", body),
+  updateShift: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/time/shifts/${id}`, body),
+  closeShift: (id: string) => hrmApi.post<unknown>(`/hrm/time/shifts/${id}/close`, null),
   assignShift: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/time/shifts/assign/${workerId}`, body),
   importAttendance: (body: Record<string, unknown>) =>

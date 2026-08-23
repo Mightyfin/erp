@@ -420,6 +420,10 @@ public sealed record ShiftCreateRequest(string Code, string Name, string StartTi
     int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
     decimal WeekdayOvertimeMultiplier = 1.5m, decimal RestDayOvertimeMultiplier = 2,
     decimal HolidayOvertimeMultiplier = 2);
+public sealed record ShiftUpdateRequest(string Name, string StartTime, string EndTime,
+    int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
+    decimal WeekdayOvertimeMultiplier = 1.5m, decimal RestDayOvertimeMultiplier = 2,
+    decimal HolidayOvertimeMultiplier = 2);
 public sealed record ShiftDto(Guid Id, string Code, string Name, string StartTime, string EndTime,
     int UnpaidBreakMinutes, decimal StandardHours, decimal DailyOvertimeThresholdHours,
     decimal WeekdayOvertimeMultiplier, decimal RestDayOvertimeMultiplier,

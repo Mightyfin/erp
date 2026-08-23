@@ -40,6 +40,8 @@ public interface ITimeService
     // M28 operational administration
     Task<List<ShiftDto>> ListShiftsAsync(CancellationToken ct);
     Task<ShiftDto> CreateShiftAsync(ShiftCreateRequest request, CancellationToken ct);
+    Task<ShiftDto> UpdateShiftAsync(Guid id, ShiftUpdateRequest request, CancellationToken ct);
+    Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct);
     Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct);
     Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request, string actorSubjectId, CancellationToken ct);
@@ -422,6 +424,44 @@ public sealed class TimeServiceImpl(
             RestDayOvertimeMultiplier = request.RestDayOvertimeMultiplier,
             HolidayOvertimeMultiplier = request.HolidayOvertimeMultiplier,
         }, ct);
+        return MapShift(shift);
+    }
+
+    public async Task<ShiftDto> UpdateShiftAsync(Guid id, ShiftUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var shift = await repo.GetShiftAsync(id, ct)
+            ?? throw new DomainException("shift-not-found", $"Shift {id} does not exist.");
+        if (string.IsNullOrWhiteSpace(request.Name))
+            throw new DomainException("shift-required-fields", "Shift name is required.");
+        if (!TimeOnly.TryParse(request.StartTime, out var start) || !TimeOnly.TryParse(request.EndTime, out var end))
+            throw new DomainException("shift-invalid-time", "Shift start and end must be valid times.");
+        if (request.DailyOvertimeThresholdHours <= 0 || request.StandardHours <= 0)
+            throw new DomainException("shift-invalid-hours", "Standard and overtime-threshold hours must be positive.");
+        shift.Name = request.Name.Trim();
+        shift.StartTime = start;
+        shift.EndTime = end;
+        shift.UnpaidBreakMinutes = request.UnpaidBreakMinutes;
+        shift.StandardHours = request.StandardHours;
+        shift.DailyOvertimeThresholdHours = request.DailyOvertimeThresholdHours;
+        shift.WeekdayOvertimeMultiplier = request.WeekdayOvertimeMultiplier;
+        shift.RestDayOvertimeMultiplier = request.RestDayOvertimeMultiplier;
+        shift.HolidayOvertimeMultiplier = request.HolidayOvertimeMultiplier;
+        shift.UpdatedAt = DateTimeOffset.UtcNow;
+        shift.UpdatedBy = authz.CurrentSubjectId;
+        await repo.UpdateShiftAsync(shift, ct);
+        return MapShift(shift);
+    }
+
+    public async Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var shift = await repo.GetShiftAsync(id, ct)
+            ?? throw new DomainException("shift-not-found", $"Shift {id} does not exist.");
+        shift.IsActive = false;
+        shift.UpdatedAt = DateTimeOffset.UtcNow;
+        shift.UpdatedBy = authz.CurrentSubjectId;
+        await repo.UpdateShiftAsync(shift, ct);
         return MapShift(shift);
     }
 

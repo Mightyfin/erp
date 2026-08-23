@@ -762,6 +762,13 @@ public static class Routes
             var request = await ReadBodyAsync<ShiftCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateShiftAsync(request, ct));
         });
+        g.MapPatch("/shifts/{id:guid}", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ShiftUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateShiftAsync(id, request, ct));
+        });
+        g.MapPost("/shifts/{id:guid}/close", async (Guid id, ITimeService svc, CancellationToken ct) =>
+            Results.Ok(await svc.CloseShiftAsync(id, ct)));
         g.MapPost("/shifts/assign/{workerId:guid}", async (Guid workerId, HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ShiftAssignmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
