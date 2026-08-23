@@ -60,3 +60,7 @@ Live browser validation on 2026-08-23 confirmed the weekly toolbar, date navigat
 ## Opt-in UI sample preview
 
 Timesheets now has an explicit **Preview sample** control for design review. It loads the existing local Timesheets fixture only after the user activates the control, labels the page **Sample UI preview · not saved**, and displays a warning that the rows are not from PostgreSQL. Returning to real data restores the zero-value live-connection state. This is a frontend review aid only and is not a production data source, seed, or API fallback.
+
+## Attendance-only correction
+
+The Timesheets page is an attendance workflow, not a project-management workflow. The reference-led frontend therefore uses Employee, Clock-in & out, Overtime, Shift, Status, and row actions as its visible table concepts. Project, work item, billable, cost-centre, and project-approval concepts are excluded from this page. Those concepts must not be reintroduced when live attendance APIs are connected.

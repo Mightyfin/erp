@@ -77,3 +77,27 @@ Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-36-23_6269
 Selecting **Return to real data** restored the header label **Real data only · preview off**, reset the period to the real production context, returned all summary values to zero, and removed the sample rows. The informational row-action toast remained visible only as transient UI feedback and did not create a record.
 
 Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-36-38_1544.webp`.
+
+## Attendance-only table-first correction — 2026-08-23
+
+The deployed Timesheets page was corrected to remove project terminology entirely. The header and actions now use **attendance**, and the table columns are Employee, Clock-in & out, Worked, Regular, Overtime, Shift, Status, and row actions. The KPI strip is Present, Late clock-in, On-leave, and Overtime. Search is for employees, not work items.
+
+The live real-data state loaded successfully after deployment and showed a truthful empty table with zero KPIs and the message **No live attendance rows**. No API or PostgreSQL changes were made.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-43-46_6970.webp`.
+
+## Final attendance-only table validation
+
+The final deployed page now matches the reference composition more closely: a compact attendance summary, date controls, search/status/filter/export toolbar, and a table-first workspace. The visible production columns are **Employee**, **Clock-in & out**, **Overtime**, **Shift**, **Status**, and row actions. Project, work-item, billable, and cost-centre concepts have been removed from the Timesheets UI.
+
+The live state shows `Real attendance only · preview off`, zero KPIs, and one truthful empty-table message. The page contains no fabricated employee rows when the live attendance service has no data.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-46-11_5026.webp`.
+
+## Attendance-only reference correction validation
+
+The final opt-in sample preview now shows the compact table-first composition against the supplied reference: Present, Late clock-in, On-leave, and Overtime KPI summaries; a selected date with Today navigation; Search employees; All status/Needs attention filter; Filter and Export actions; and a concise attendance table.
+
+The table contains only Employee, Clock-in & out, Overtime, Shift, Status, and row actions. It does not contain projects, work items, billable flags, or cost centres. Selecting **Needs attention** reduced the sample table to Bin Amal (overtime), Wanda Fury (incomplete), and Shaun Chi (late), confirming the exception-focused workflow.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-46-34_7857.webp`.

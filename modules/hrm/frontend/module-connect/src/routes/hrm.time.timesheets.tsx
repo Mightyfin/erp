@@ -1,13 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { addDays, format, parseISO } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Edit3, Eye, FileClock, Filter, LockKeyhole, MoreHorizontal, Plus, Search, TimerReset, UserRound } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Eye, Filter, MoreHorizontal, Plus, Search, TimerReset, UserCheck, UserRound, UserX } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -19,108 +17,68 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/time/timesheets")({
   head: () => ({
     meta: [
-      { title: "Timesheets — New World Cargo HRM" },
-      { name: "description", content: "Record and review working time by day and payroll period." },
+      { title: "Timesheet summary — New World Cargo HRM" },
+      { name: "description", content: "Track attendance hours in one focused timesheet workspace." },
     ],
   }),
   component: TimesheetsPage,
 });
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-type Entry = { id: string; project: string; detail: string; total: number; overtime: number; status: string };
-type DayGroup = { date: string; label: string; entries: Entry[]; total: number; overtime: number };
+type StatusFilter = "all" | "active" | "attention" | "leave";
+type RowStatus = "Active" | "On-leave" | "Incomplete" | "Late";
+type AttendanceRow = { id: string; employee: string; initials: string; date: string; clockIn: string; clockOut: string; worked: string; overtime: string; shift: string; status: RowStatus; tag?: "Overtime" | "Incomplete" | "Late" };
+
+const PREVIEW_ROWS: AttendanceRow[] = [
+  { id: "p-1", employee: "Bin Amal", initials: "BA", date: "4 Nov 2024", clockIn: "10:00 AM", clockOut: "7:50 PM", worked: "09h 50m", overtime: "1h 50m", shift: "Normal shift", status: "Active", tag: "Overtime" },
+  { id: "p-2", employee: "Logan Wolves", initials: "LW", date: "4 Nov 2024", clockIn: "—", clockOut: "—", worked: "—", overtime: "—", shift: "Normal shift", status: "On-leave" },
+  { id: "p-3", employee: "Wanda Fury", initials: "WF", date: "4 Nov 2024", clockIn: "10:00 AM", clockOut: "4:50 PM", worked: "06h 50m", overtime: "—", shift: "Normal shift", status: "Incomplete", tag: "Incomplete" },
+  { id: "p-4", employee: "Saber Trot", initials: "ST", date: "4 Nov 2024", clockIn: "10:00 AM", clockOut: "6:00 PM", worked: "09h 00m", overtime: "—", shift: "Normal shift", status: "Active" },
+  { id: "p-5", employee: "Ben Unclor", initials: "BU", date: "4 Nov 2024", clockIn: "10:00 AM", clockOut: "6:00 PM", worked: "09h 00m", overtime: "—", shift: "Normal shift", status: "Active" },
+  { id: "p-6", employee: "Shaun Chi", initials: "SC", date: "4 Nov 2024", clockIn: "11:00 AM", clockOut: "7:00 PM", worked: "09h 00m", overtime: "—", shift: "Normal shift", status: "Late", tag: "Late" },
+  { id: "p-7", employee: "Peter Parkson", initials: "PP", date: "4 Nov 2024", clockIn: "10:00 AM", clockOut: "6:00 PM", worked: "09h 00m", overtime: "—", shift: "Normal shift", status: "Active" },
+];
 
 function TimesheetsPage() {
   const state = useMock(() => expensesApi.timesheets());
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [view, setView] = useState<"weekly" | "daily">("weekly");
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "attention" | "recorded">("all");
   const [previewMode, setPreviewMode] = useState(false);
-  const [previewRows, setPreviewRows] = useState<Timesheet[]>([]);
+  const [dateOffset, setDateOffset] = useState(0);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [draftProject, setDraftProject] = useState("");
-  const [draftHours, setDraftHours] = useState("8");
-  const [draftDate, setDraftDate] = useState("");
+  const date = useMemo(() => new Date(Date.UTC(2024, 10, 4 + dateOffset)), [dateOffset]);
+  const dateLabel = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-  useEffect(() => {
-    if (!previewMode) {
-      setPreviewRows([]);
-      return;
-    }
-    let active = true;
-    void expensesApi.timesheets().then((rows) => {
-      if (active) setPreviewRows(rows);
-    });
-    return () => { active = false; };
-  }, [previewMode]);
-
-  const source = (previewMode ? previewRows : state.data ?? []) as Timesheet[];
-  const timesheet = source[0];
-  const weekStart = useMemo(() => {
-    const base = timesheet?.weekStarting ? parseISO(timesheet.weekStarting) : new Date();
-    return addDays(base, weekOffset * 7);
-  }, [timesheet?.weekStarting, weekOffset]);
-  const weekDates = useMemo(() => DAYS.map((_, index) => addDays(weekStart, index)), [weekStart]);
-  const weekLabel = `${format(weekStart, "d MMMM yyyy")} – ${format(addDays(weekStart, 6), "d MMMM yyyy")}`;
-
-  const allDayGroups = useMemo<DayGroup[]>(() => {
-    if (!timesheet) return [];
-    return DAYS.map((day, index) => {
-      const entries = timesheet.rows
-        .map((row) => {
-          const total = Number(row.hours[index] ?? 0) + Number(row.overtime[index] ?? 0);
-          return { id: `${row.id}-${day}`, project: row.project, detail: `${row.costCentre} · ${row.billable ? "Billable" : "Non-billable"}`, total, overtime: Number(row.overtime[index] ?? 0), status: row.overtime[index] ? "Needs overtime review" : "Recorded" };
-        })
-        .filter((entry) => entry.total > 0);
-      return { date: format(weekDates[index], "yyyy-MM-dd"), label: `${day}, ${format(weekDates[index], "d MMM yyyy")}`, entries, total: entries.reduce((sum, entry) => sum + entry.total, 0), overtime: entries.reduce((sum, entry) => sum + entry.overtime, 0) };
-    });
-  }, [timesheet, weekDates]);
-
-  const dayGroups = useMemo<DayGroup[]>(() => {
+  const realRows = useMemo(() => adaptRealTimesheets((state.data ?? []) as Timesheet[]), [state.data]);
+  const rows = previewMode ? PREVIEW_ROWS : realRows;
+  const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return allDayGroups.map((day) => ({
-      ...day,
-      entries: day.entries.filter((entry) => {
-        const matchesQuery = !needle || `${entry.project} ${entry.detail}`.toLowerCase().includes(needle);
-        const matchesStatus = statusFilter === "all" || (statusFilter === "attention" && entry.status !== "Recorded") || (statusFilter === "recorded" && entry.status === "Recorded");
-        return matchesQuery && matchesStatus;
-      }),
-    })).map((day) => ({ ...day, total: day.entries.reduce((sum, entry) => sum + entry.total, 0), overtime: day.entries.reduce((sum, entry) => sum + entry.overtime, 0) }));
-  }, [allDayGroups, query, statusFilter]);
+    return rows.filter((row) => {
+      const matchesQuery = !needle || `${row.employee} ${row.shift} ${row.status} ${row.tag ?? ""}`.toLowerCase().includes(needle);
+      const matchesFilter = statusFilter === "all" || (statusFilter === "active" && row.status === "Active") || (statusFilter === "attention" && (row.status === "Incomplete" || row.status === "Late" || row.tag === "Overtime")) || (statusFilter === "leave" && row.status === "On-leave");
+      return matchesQuery && matchesFilter;
+    });
+  }, [query, rows, statusFilter]);
 
-  const totals = useMemo(() => ({
-    total: allDayGroups.reduce((sum, day) => sum + day.total, 0),
-    overtime: allDayGroups.reduce((sum, day) => sum + day.overtime, 0),
-    attention: allDayGroups.reduce((sum, day) => sum + day.entries.filter((entry) => entry.status !== "Recorded").length, 0),
-  }), [allDayGroups]);
+  const kpis = useMemo(() => ({
+    present: rows.filter((row) => row.status === "Active").length,
+    late: rows.filter((row) => row.tag === "Late").length,
+    leave: rows.filter((row) => row.status === "On-leave").length,
+    overtime: rows.filter((row) => row.tag === "Overtime").length,
+  }), [rows]);
 
-  function openAddTimer() {
-    setDraftDate(format(new Date(), "yyyy-MM-dd"));
-    setAddOpen(true);
-  }
-
-  function submitDraft(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAddOpen(false);
-    feedback.note("Draft time entry prepared", "It will be saved to the live timesheet service when that integration is enabled.");
-  }
-
-  return <AuthGate><AppShell><PageHeader eyebrow="Time and leave / work records" title="Timesheets" description="See your working time by day, keep the week complete, and resolve anything that needs attention." meta={<Badge variant="outline" className={`gap-1.5 ${previewMode ? "border-warning/50 bg-warning-soft text-warning-foreground" : "border-info/30 bg-info-soft text-info-foreground"}`}><LockKeyhole className="size-3" aria-hidden /> {previewMode ? "Sample UI preview · not saved" : "Real data only · preview off"}</Badge>} primaryAction={<Button onClick={openAddTimer} className="gap-2"><Plus className="size-4" aria-hidden />Add time entry</Button>} />
-    <div className="space-y-5" data-testid="timesheets-page">
-      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><Button variant="outline" size="icon" aria-label="Previous week" onClick={() => setWeekOffset((value) => value - 1)}><ChevronLeft className="size-4" aria-hidden /></Button><Button variant="outline" size="icon" aria-label="Next week" onClick={() => setWeekOffset((value) => value + 1)}><ChevronRight className="size-4" aria-hidden /></Button><Button variant="ghost" size="sm" onClick={() => setWeekOffset(0)}>This week</Button><h2 className="ml-1 text-xl font-semibold">{weekLabel}</h2><Badge variant="outline" className="hidden sm:inline-flex">{previewMode ? "Sample preview" : timesheet ? "Draft timesheet" : "Live connection pending"}</Badge></div><div className="flex flex-wrap items-center gap-2"><Select value={view} onValueChange={(value) => setView(value as "weekly" | "daily")}><SelectTrigger className="w-28" aria-label="Timesheet view"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem></SelectContent></Select><Button variant="outline" className="gap-2" onClick={() => feedback.note("Download prepared", "The timesheet export will use the selected period and filters.")}><Download className="size-4" aria-hidden />Download</Button><Button variant={previewMode ? "default" : "outline"} className="gap-2" onClick={() => setPreviewMode((value) => !value)}><Eye className="size-4" aria-hidden />{previewMode ? "Hide UI preview" : "Preview sample"}</Button></div></div>
-
-      {previewMode ? <div className="flex flex-col gap-2 rounded-xl border border-warning/50 bg-warning-soft/35 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><p><strong>UI preview mode.</strong> These sample rows exist only to review the layout. They are not from PostgreSQL and nothing you do here is saved.</p><Button variant="ghost" size="sm" onClick={() => setPreviewMode(false)}>Return to real data</Button></div> : null}
-
-      {addOpen ? <Card className="border-primary/30 bg-primary-soft/20 shadow-none"><CardContent className="p-4"><form onSubmit={submitDraft} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto] md:items-end"><div><Label htmlFor="draft-project">Work item</Label><Input id="draft-project" value={draftProject} onChange={(event) => setDraftProject(event.target.value)} placeholder="Project or work item" required /></div><div><Label htmlFor="draft-date">Date</Label><Input id="draft-date" type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)} required /></div><div><Label htmlFor="draft-hours">Hours</Label><Input id="draft-hours" type="number" min="0.25" step="0.25" value={draftHours} onChange={(event) => setDraftHours(event.target.value)} required /></div><div className="flex gap-2"><Button type="submit">Add draft</Button><Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>Cancel</Button></div></form><p className="mt-3 text-xs text-muted-foreground">This frontend-first draft interaction is intentionally not connected to an API yet; no production record is written.</p></CardContent></Card> : null}
-
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Timesheet summary"><Summary label="Total hours" value={`${totals.total.toFixed(2)} h`} detail="This selected week" icon={Clock3} tone="primary" /><Summary label="Regular hours" value={`${(totals.total - totals.overtime).toFixed(2)} h`} detail="Within scheduled time" icon={UserRound} tone="neutral" /><Summary label="Overtime" value={`${totals.overtime.toFixed(2)} h`} detail="Needs separate review" icon={TimerReset} tone="warning" /><Summary label="Needs attention" value={String(totals.attention)} detail="Entries to check" icon={FileClock} tone="danger" /></section>
-      {!state.loading && !timesheet ? <Card className="shadow-none"><CardContent className="flex flex-col items-center justify-center px-6 py-16 text-center"><span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary-foreground"><FileClock className="size-5" aria-hidden /></span><h3 className="mt-4 text-base font-semibold">Timesheets are ready for live connection</h3><p className="mt-1 max-w-lg text-sm leading-6 text-muted-foreground">The weekly workspace is ready. No rows are shown until the live timesheet service is connected, so this page will not invent hours or projects.</p><Button variant="outline" className="mt-5 gap-2" onClick={() => feedback.note("Timesheet service pending", "Connect the real attendance/timesheet API before enabling production entry persistence.")}><TimerReset className="size-4" aria-hidden />View connection status</Button></CardContent></Card> : null}
-      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-lg font-semibold">Your week</h2><Badge variant="outline" className="sm:hidden">{timesheet ? "Draft" : "Not connected"}</Badge></div><p className="text-sm text-muted-foreground">Entries are grouped by day so missing or unusual time is easy to spot.</p></div><div className="flex flex-col gap-2 sm:flex-row"><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search work items" className="w-full pl-9 sm:w-64" aria-label="Search work items" /></div><Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as "all" | "attention" | "recorded")}><SelectTrigger className="w-full gap-2 sm:w-44" aria-label="Filter timesheet entries"><Filter className="size-4" aria-hidden /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All entries</SelectItem><SelectItem value="attention">Needs attention</SelectItem><SelectItem value="recorded">Recorded</SelectItem></SelectContent></Select></div></div><div className="space-y-3">{timesheet ? (view === "daily" ? dayGroups.filter((day) => day.date === format(new Date(), "yyyy-MM-dd")) : dayGroups).map((day) => <DaySection key={day.date} day={day} open={expanded[day.date] ?? true} onToggle={() => setExpanded((current) => ({ ...current, [day.date]: !(current[day.date] ?? true) }))} />) : null}</div>
+  return <AuthGate><AppShell><PageHeader eyebrow="Time and leave / attendance" title="Timesheet summary" description="Track and manage attendance hours effortlessly." meta={<Badge variant="outline" className={`gap-1.5 ${previewMode ? "border-warning/50 bg-warning-soft text-warning-foreground" : "border-info/30 bg-info-soft text-info-foreground"}`}><Eye className="size-3" aria-hidden />{previewMode ? "Sample UI preview · not saved" : "Real attendance only · preview off"}</Badge>} primaryAction={<Button onClick={() => setAddOpen(true)} className="gap-2"><Plus className="size-4" aria-hidden />Add attendance</Button>} />
+    <div className="space-y-4" data-testid="timesheets-page">
+      <div className="flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex items-center gap-1"><Button variant="outline" size="icon" aria-label="Previous day" onClick={() => setDateOffset((value) => value - 1)}><ChevronLeft className="size-4" aria-hidden /></Button><Button variant="outline" size="icon" aria-label="Next day" onClick={() => setDateOffset((value) => value + 1)}><ChevronRight className="size-4" aria-hidden /></Button><Button variant="ghost" size="sm" onClick={() => setDateOffset(0)}>Today</Button><Button variant="outline" className="ml-1 gap-2"><CalendarDays className="size-4" aria-hidden />{dateLabel}<ChevronDown className="size-3.5" aria-hidden /></Button></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" className="gap-2" onClick={() => feedback.note("Download prepared", "The selected attendance timesheet will be exported when the live service is connected.")}><Download className="size-4" aria-hidden />Download</Button><Button variant={previewMode ? "default" : "outline"} className="gap-2" onClick={() => setPreviewMode((value) => !value)}><Eye className="size-4" aria-hidden />{previewMode ? "Hide preview" : "Preview sample"}</Button></div></div>
+      {previewMode ? <div className="flex flex-col gap-2 rounded-lg border border-warning/50 bg-warning-soft/35 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><span><strong>UI preview mode.</strong> Sample attendance rows are shown only to review this layout. They are not from PostgreSQL and nothing is saved.</span><Button variant="ghost" size="sm" onClick={() => setPreviewMode(false)}>Return to real data</Button></div> : null}
+      {addOpen ? <Card className="border-primary/30 bg-primary-soft/20 shadow-none"><CardContent className="p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">Add attendance</p><p className="text-sm text-muted-foreground">Use the attendance workflow to record a clock-in and clock-out pair.</p></div><Button variant="ghost" size="sm" onClick={() => setAddOpen(false)}>Close</Button></div><div className="mt-3 grid gap-3 md:grid-cols-4"><Input placeholder="Employee" aria-label="Employee" /><Input type="date" aria-label="Attendance date" /><Input type="time" aria-label="Clock-in time" /><Input type="time" aria-label="Clock-out time" /></div><p className="mt-3 text-xs text-muted-foreground">Frontend-only preview: no production attendance record will be created.</p></CardContent></Card> : null}
+      <section className="grid grid-cols-2 gap-3 border-y py-4 md:grid-cols-4" aria-label="Attendance summary"><Kpi label="Present" value={kpis.present} detail={previewMode ? "+7.1% vs prev" : "Live records only"} icon={UserCheck} tone="success" /><Kpi label="Late clock-in" value={kpis.late} detail={previewMode ? "+7.1% vs prev" : "Live records only"} icon={Clock3} tone="warning" /><Kpi label="On-leave" value={kpis.leave} detail={previewMode ? "+7.1% vs prev" : "Live records only"} icon={UserX} tone="neutral" /><Kpi label="Overtime" value={kpis.overtime} detail={previewMode ? "+7.1% vs prev" : "Needs review"} icon={TimerReset} tone="gold" /></section>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div className="relative w-full md:max-w-sm"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employees..." className="pl-9" aria-label="Search employees" /></div><div className="flex flex-wrap items-center gap-2"><Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}><SelectTrigger className="w-36 gap-2" aria-label="Filter status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="attention">Needs attention</SelectItem><SelectItem value="leave">On-leave</SelectItem></SelectContent></Select><Button variant="outline" className="gap-2" onClick={() => feedback.note("Filters ready", "Additional branch and period filters will use the same toolbar when connected.")}><Filter className="size-4" aria-hidden />Filter</Button><Button variant="outline" className="gap-2" onClick={() => feedback.note("Export prepared", "Export will respect the selected date, status and search filters.")}><Download className="size-4" aria-hidden />Export</Button></div></div>
+      <Card className="overflow-hidden shadow-sm"><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><caption className="sr-only">Attendance timesheet summary for {dateLabel}</caption><thead className="bg-surface-muted/70 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3 font-medium"><span className="inline-flex items-center gap-2"><input type="checkbox" aria-label="Select all attendance rows" className="size-4 rounded border-border" />Employee <ChevronDown className="size-3" aria-hidden /></span></th><th className="px-4 py-3 font-medium">Clock-in &amp; out</th><th className="px-4 py-3 font-medium">Overtime</th><th className="px-4 py-3 font-medium">Shift</th><th className="px-4 py-3 font-medium">Status</th><th className="w-12 px-4 py-3" /></tr></thead><tbody className="divide-y">{visibleRows.length ? visibleRows.map((row) => <AttendanceTableRow key={row.id} row={row} />) : <tr><td colSpan={6} className="px-6 py-16 text-center"><UserRound className="mx-auto size-7 text-muted-foreground" aria-hidden /><p className="mt-3 font-medium">{previewMode ? "No sample rows match this filter" : "No live attendance rows"}</p><p className="mt-1 text-sm text-muted-foreground">{previewMode ? "Try All status or clear the search." : "Connect the live attendance/timesheet service before showing employee time."}</p></td></tr>}</tbody></table></div><div className="flex flex-col gap-3 border-t px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Page 1 of {previewMode ? "1" : "—"}</span><div className="flex items-center gap-1"><Button variant="ghost" size="icon" aria-label="Previous page" disabled><ChevronLeft className="size-4" aria-hidden /></Button><Button variant="outline" size="sm">1</Button><Button variant="ghost" size="icon" aria-label="Next page" disabled><ChevronRight className="size-4" aria-hidden /></Button><Select defaultValue="7"><SelectTrigger className="ml-2 h-8 w-20" aria-label="Rows per page"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7">7 / page</SelectItem><SelectItem value="25">25 / page</SelectItem><SelectItem value="50">50 / page</SelectItem></SelectContent></Select></div></div></CardContent></Card>
     </div></AppShell></AuthGate>;
 }
 
-function Summary({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail: string; icon: typeof Clock3; tone: "primary" | "neutral" | "warning" | "danger" }) { const classes = { primary: "bg-primary text-primary-foreground", neutral: "bg-secondary text-secondary-foreground", warning: "bg-warning-soft text-warning-foreground", danger: "bg-danger-soft text-danger" }; return <Card className="shadow-none"><CardContent className="flex items-start justify-between gap-3 p-4"><div><p className="text-sm font-medium text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div><span className={`flex size-10 items-center justify-center rounded-xl ${classes[tone]}`}><Icon className="size-5" aria-hidden /></span></CardContent></Card>; }
+function Kpi({ label, value, detail, icon: Icon, tone }: { label: string; value: number; detail: string; icon: typeof UserCheck; tone: "success" | "warning" | "neutral" | "gold" }) { const classes = { success: "bg-success-soft text-success-foreground", warning: "bg-warning-soft text-warning-foreground", neutral: "bg-secondary text-secondary-foreground", gold: "bg-warning-soft text-warning-foreground" }; return <div className="flex items-center gap-3 px-1 sm:px-3"><span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${classes[tone]}`}><Icon className="size-4" aria-hidden /></span><div className="min-w-0"><p className="text-sm text-muted-foreground">{label}</p><p className="text-xl font-semibold tabular">{value.toLocaleString()}</p><p className="text-[11px] text-success-foreground">{detail}</p></div></div>; }
 
-function DaySection({ day, open, onToggle }: { day: DayGroup; open: boolean; onToggle: () => void }) { return <section className="overflow-hidden rounded-xl border bg-card shadow-sm"><button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-4 border-b bg-surface-muted/60 px-4 py-3 text-left hover:bg-surface-muted sm:px-5"><div><p className="font-semibold">{day.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{day.entries.length} {day.entries.length === 1 ? "entry" : "entries"}</p></div><div className="flex items-center gap-4"><span className="text-sm font-medium tabular">{day.total.toFixed(2)} h{day.overtime ? <span className="ml-2 text-xs text-warning-foreground">· {day.overtime.toFixed(2)} OT</span> : null}</span><ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden /></div></button>{open ? <div className="divide-y">{day.entries.length ? day.entries.map((entry, index) => <div key={entry.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5"><div className="flex min-w-0 flex-1 items-start gap-3"><span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground"><FileClock className="size-4" aria-hidden /></span><div className="min-w-0"><p className="truncate font-semibold">{entry.project}</p><p className="mt-1 truncate text-xs text-muted-foreground">{entry.detail}</p></div></div><div className="grid grid-cols-3 gap-4 text-sm sm:flex sm:items-center sm:gap-7"><div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Source</p><p className="mt-1">Attendance</p></div><div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Hours</p><p className="mt-1 font-medium tabular">{entry.total.toFixed(2)} h</p></div><div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p><p className={`mt-1 text-xs font-medium ${entry.overtime ? "text-warning-foreground" : "text-success-foreground"}`}>{entry.status}</p></div><Button variant="outline" size="sm" className="gap-2 sm:min-w-20" onClick={() => feedback.note(`Entry ${index + 1} selected`, "Open the detailed time entry when the live timesheet service is connected.")}><Edit3 className="size-3.5" aria-hidden /><span className="hidden sm:inline">Edit</span></Button><Button variant="ghost" size="icon" aria-label={`More actions for ${entry.project}`} onClick={() => feedback.note("More actions", "Correction and audit actions will be connected to this row.")}><MoreHorizontal className="size-4" aria-hidden /></Button></div></div>) : <div className="p-6 text-center text-sm text-muted-foreground">No time recorded for this day.</div>}</div> : null}</section>; }
+function AttendanceTableRow({ row }: { row: AttendanceRow }) { const statusClass: Record<RowStatus, string> = { Active: "border-success/30 bg-success-soft text-success-foreground", "On-leave": "border-border bg-muted text-muted-foreground", Incomplete: "border-danger/30 bg-danger-soft text-danger", Late: "border-warning/40 bg-warning-soft text-warning-foreground" }; const tagClass = row.tag === "Overtime" ? "border-warning/40 bg-warning-soft text-warning-foreground" : row.tag === "Incomplete" ? "border-danger/30 bg-danger-soft text-danger" : "border-warning/40 bg-warning-soft text-warning-foreground"; return <tr className="group hover:bg-surface-muted/40"><td className="px-4 py-3.5"><div className="flex items-center gap-3"><input type="checkbox" aria-label={`Select ${row.employee}`} className="size-4 rounded border-border" /><span className="flex size-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">{row.initials}</span><span className="font-medium">{row.employee}</span></div></td><td className="px-4 py-3.5"><div className="flex items-center gap-2 text-sm tabular"><span>{row.clockIn}</span><span className="text-muted-foreground">···</span><span>{row.worked}</span><span className="text-muted-foreground">···</span><span>{row.clockOut}</span></div></td><td className="px-4 py-3.5 font-medium tabular">{row.overtime}</td><td className="px-4 py-3.5 text-muted-foreground">{row.shift}</td><td className="px-4 py-3.5"><div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={statusClass[row.status]}>{row.status}</Badge>{row.tag ? <Badge variant="outline" className={tagClass}>{row.tag}</Badge> : null}</div></td><td className="px-4 py-3.5 text-right"><Button variant="ghost" size="icon" aria-label={`More actions for ${row.employee}`} onClick={() => feedback.note(`${row.employee} selected`, "Open the detailed attendance record when the live service is connected.")}><MoreHorizontal className="size-4" aria-hidden /></Button></td></tr>; }
+
+function adaptRealTimesheets(timesheets: Timesheet[]): AttendanceRow[] { return timesheets.flatMap((timesheet) => { const initials = timesheet.employee.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase(); const totalHours = timesheet.rows.reduce((sum, row) => sum + row.hours.reduce((subtotal, value) => subtotal + value, 0), 0); const overtimeHours = timesheet.rows.reduce((sum, row) => sum + row.overtime.reduce((subtotal, value) => subtotal + value, 0), 0); const formatHours = (value: number) => `${value.toFixed(2)} h`; return [{ id: timesheet.id, employee: timesheet.employee, initials, date: timesheet.weekStarting, clockIn: "—", clockOut: "—", worked: formatHours(totalHours + overtimeHours), overtime: overtimeHours ? formatHours(overtimeHours) : "—", shift: "Assigned shift", status: overtimeHours ? "Late" : "Active", tag: overtimeHours ? "Overtime" : undefined } satisfies AttendanceRow]; }); }
