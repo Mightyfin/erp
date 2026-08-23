@@ -95,6 +95,7 @@ function BusinessConfig() {
       sections={SECTIONS}
       active={tab}
       onSelect={setTab}
+      notice="Designations on this tab are loaded from and saved to the live HRM API. Other tabs remain explicitly unavailable until their persistence contracts are delivered."
     >
       {tab === "designations" ? (
         <Async state={state} rows={5}>
