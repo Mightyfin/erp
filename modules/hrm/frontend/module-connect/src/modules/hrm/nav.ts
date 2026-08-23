@@ -35,61 +35,80 @@ export const hrmModule: ModuleDefinition = {
       icon: Users,
       items: [
         { label: "Employees", to: "/hrm/employees" },
-        // M25: self-service profile — /hrm/my-profile resolves the own worker
-        // via GET /hrm/me (M14 link) in real mode, so it can never be
-        // misdirected at another worker. Mock mode has no worker identity
-        // concept and falls back to the static `w-1001` detail page only
-        // where code paths force it; the rail link now prefers the
-        // self-service route.
         { label: "My profile", to: "/hrm/my-profile" },
-        {
-          label: "Positions",
-          to: "/hrm/people/positions",
-          roles: ["hr_ops", "hr_admin", "manager"],
-        },
-        {
-          label: "Organisation structure",
-          to: "/hrm/people/org",
-          roles: ["hr_ops", "hr_admin", "manager"],
-        },
-        {
-          label: "Organization chart",
-          to: "/hrm/org-chart",
-          roles: ["hr_ops", "hr_admin"],
-        },
-        {
-          label: "Reporting lines",
-          to: "/hrm/reporting",
-          roles: ["hr_ops", "hr_admin"],
-        },
+        { label: "Positions", to: "/hrm/people/positions", roles: ["hr_ops", "hr_admin", "manager"] },
+        { label: "Organisation structure", to: "/hrm/people/org", roles: ["hr_ops", "hr_admin", "manager"] },
+        { label: "Organization chart", to: "/hrm/org-chart", roles: ["hr_ops", "hr_admin"] },
+        { label: "Reporting lines", to: "/hrm/reporting", roles: ["hr_ops", "hr_admin"] },
         { label: "My documents", to: "/hrm/my-documents" },
-        {
-          label: "Employee documents",
-          to: "/hrm/people/documents",
-          roles: ["hr_ops", "hr_admin"],
-        },
+        { label: "Employee documents", to: "/hrm/people/documents", roles: ["hr_ops", "hr_admin"] },
         { label: "Privacy and consent", to: "/hrm/people/privacy" },
-        {
-          label: "Master data operations",
-          to: "/hrm/people/master-data",
-          roles: ["hr_ops", "hr_admin"],
-        },
+        { label: "Master data operations", to: "/hrm/people/master-data", roles: ["hr_ops", "hr_admin"] },
         { label: "Data quality", to: "/hrm/people/data-quality", roles: ["hr_ops", "hr_admin"] },
+      ],
+      groups: [
+        {
+          label: "Employee lifecycle",
+          items: [
+            { label: "Onboarding", to: "/hrm/lifecycle/onboarding" },
+            { label: "Movements and transfers", to: "/hrm/lifecycle/movements" },
+            { label: "Offboarding", to: "/hrm/lifecycle/offboarding" },
+            { label: "Assets and access", to: "/hrm/lifecycle/assets" },
+            { label: "Journeys", to: "/hrm/lifecycle/journeys" },
+            { label: "Assignments", to: "/hrm/lifecycle/mobility" },
+            { label: "Alumni and rehire", to: "/hrm/lifecycle/alumni" },
+          ],
+        },
+        {
+          label: "Employee experience",
+          items: [
+            { label: "HR requests", to: "/hrm/requests" },
+            { label: "Raise a request", to: "/hrm/requests/new" },
+            { label: "Letters", to: "/hrm/experience/letters" },
+            { label: "Knowledge", to: "/hrm/experience/knowledge" },
+            { label: "Engagement", to: "/hrm/experience/announcements" },
+            { label: "Speak up", to: "/hrm/speak-up" },
+          ],
+        },
+        {
+          label: "Relations and safety",
+          items: [
+            { label: "Case operations", to: "/hrm/relations/operations", roles: ["hr_ops", "hr_admin"] },
+            { label: "Protected disclosures", to: "/hrm/relations/protected-disclosures", roles: ["hr_ops", "hr_admin"] },
+            { label: "Cases", to: "/hrm/relations/cases", roles: ["hr_ops", "hr_admin"] },
+            { label: "Warning register", to: "/hrm/relations/discipline", roles: ["hr_ops", "hr_admin"] },
+            { label: "Health and safety", to: "/hrm/relations/safety", roles: ["hr_ops", "hr_admin"] },
+            { label: "Ethics and declarations", to: "/hrm/relations/ethics", roles: ["hr_ops", "hr_admin"] },
+            { label: "Agreements and roll call", to: "/hrm/relations/labour", roles: ["hr_ops", "hr_admin"] },
+          ],
+        },
       ],
     },
     {
-      id: "lifecycle",
-      label: "Lifecycle",
-      icon: UserCog,
-      roles: ["hr_ops", "hr_admin", "manager"],
-      items: [
-        { label: "Onboarding", to: "/hrm/lifecycle/onboarding" },
-        { label: "Movements and transfers", to: "/hrm/lifecycle/movements" },
-        { label: "Offboarding", to: "/hrm/lifecycle/offboarding" },
-        { label: "Assets and access", to: "/hrm/lifecycle/assets" },
-        { label: "Journeys", to: "/hrm/lifecycle/journeys" },
-        { label: "Assignments", to: "/hrm/lifecycle/mobility" },
-        { label: "Alumni and rehire", to: "/hrm/lifecycle/alumni" },
+      id: "time",
+      label: "Time & attendance",
+      icon: Clock4,
+      groups: [
+        {
+          label: "Attendance",
+          items: [
+            { label: "Timesheets", to: "/hrm/time/timesheets" },
+            { label: "Clock in and out", to: "/hrm/attendance/clock" },
+            { label: "Corrections", to: "/hrm/attendance" },
+            { label: "Raise a correction", to: "/hrm/attendance/new" },
+            { label: "Schedules and rosters", to: "/hrm/time/schedules", roles: ["hr_ops", "hr_admin", "manager"] },
+            { label: "Import attendance", to: "/hrm/time/attendance/import", roles: ["hr_ops", "hr_admin"] },
+          ],
+        },
+        {
+          label: "Overtime and leave",
+          items: [
+            { label: "Overtime review", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin", "manager"] },
+            { label: "My leave", to: "/hrm/leave" },
+            { label: "Request leave", to: "/hrm/leave/new" },
+            { label: "Leave approvals", to: "/hrm/leave/approvals", roles: ["hr_ops", "hr_admin", "manager"] },
+          ],
+        },
       ],
     },
     {
@@ -106,139 +125,31 @@ export const hrmModule: ModuleDefinition = {
       ],
     },
     {
-      id: "time",
-      label: "Time and leave",
-      icon: Clock4,
-      groups: [
-        {
-          label: "Leave",
-          items: [
-            { label: "My leave", to: "/hrm/leave" },
-            { label: "Request leave", to: "/hrm/leave/new" },
-            {
-              label: "Leave approvals",
-              to: "/hrm/leave/approvals",
-              roles: ["hr_ops", "hr_admin", "manager"],
-            },
-          ],
-        },
-        {
-          label: "Attendance",
-          items: [
-            { label: "Clock in and out", to: "/hrm/attendance/clock" },
-            { label: "Corrections", to: "/hrm/attendance" },
-            { label: "Raise a correction", to: "/hrm/attendance/new" },
-          ],
-        },
-        {
-          label: "Time administration",
-          items: [
-            { label: "Overtime review", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin", "manager"] },
-            { label: "Import attendance", to: "/hrm/time/attendance/import", roles: ["hr_ops", "hr_admin"] },
-            { label: "Schedules and rosters", to: "/hrm/time/schedules", roles: ["hr_ops", "hr_admin", "manager"] },
-            { label: "Timesheets", to: "/hrm/time/timesheets" },
-          ],
-        },
-        {
-          label: "Benefits and claims",
-          items: [
-            {
-              // M41 Gap 6b: flexible benefit types, per-employee allowance
-              // overrides and the claims approve/return/pay inbox.
-              label: "Benefits",
-              to: "/hrm/benefits",
-              roles: ["hr_ops", "hr_admin", "payroll"],
-            },
-            { label: "Time off in lieu", to: "/hrm/time/toil" },
-            { label: "Utilisation", to: "/hrm/time/utilisation" },
-            { label: "Travel", to: "/hrm/time/travel" },
-            { label: "Expenses", to: "/hrm/time/expenses" },
-          ],
-        },
-      ],
-    },
-    {
       id: "payroll",
-      label: "Payroll",
+      label: "Payroll & benefits",
       icon: Banknote,
       items: [
         { label: "My payslips", to: "/hrm/payslips" },
         { label: "Compensation and benefits", to: "/hrm/pay/compensation" },
+        { label: "Benefits", to: "/hrm/benefits", roles: ["hr_ops", "hr_admin", "payroll"] },
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
         { label: "Pay runs", to: "/hrm/payroll/runs", roles: ["payroll", "hr_admin"] },
-        {
-          // M48: the top-HR approval queue. Rendered regardless of confinement
-          // in the static nav; the page itself checks the live shell scope and
-          // shows the confinement explanation to branch-confined HR instead of
-          // the queue. (Roles guard the nav rail; confinement is dynamic.)
-          label: "Approval queue",
-          to: "/hrm/payroll/queue",
-          roles: ["payroll", "hr_admin"],
-        },
-        {
-          label: "Payroll exceptions",
-          to: "/hrm/payroll/exceptions",
-          roles: ["payroll", "hr_admin"],
-        },
+        { label: "Approval queue", to: "/hrm/payroll/queue", roles: ["payroll", "hr_admin"] },
+        { label: "Payroll exceptions", to: "/hrm/payroll/exceptions", roles: ["payroll", "hr_admin"] },
         { label: "Payroll setup", to: "/hrm/configuration/payroll", roles: ["hr_ops", "hr_admin"] },
-      ],
-    },
-    {
-      id: "talent",
-      label: "Talent",
-      icon: Sparkles,
-      items: [
-        { label: "Goals", to: "/hrm/talent/goals" },
-        { label: "Performance reviews", to: "/hrm/talent/reviews" },
-        { label: "Learning", to: "/hrm/talent/learning" },
-        { label: "Feedback and plans", to: "/hrm/talent/feedback" },
-        { label: "Succession and skills", to: "/hrm/talent/succession" },
       ],
     },
     {
       id: "performance",
       label: "Performance",
       icon: Sparkles,
-      roles: ["hr_ops", "hr_admin"],
       items: [
         { label: "Performance cycles", to: "/hrm/performance" },
-      ],
-    },
-    {
-      id: "offboarding",
-      label: "Offboarding",
-      icon: Briefcase,
-      roles: ["hr_ops", "hr_admin"],
-      items: [
-        { label: "Offboarding requests", to: "/hrm/offboarding" },
-      ],
-    },
-    {
-      id: "experience",
-      label: "Employee experience",
-      icon: MessagesSquare,
-      items: [
-        { label: "HR requests", to: "/hrm/requests" },
-        { label: "Raise a request", to: "/hrm/requests/new" },
-        { label: "Letters", to: "/hrm/experience/letters" },
-        { label: "Knowledge", to: "/hrm/experience/knowledge" },
-        { label: "Engagement", to: "/hrm/experience/announcements" },
-        { label: "Speak up", to: "/hrm/speak-up" },
-      ],
-    },
-    {
-      id: "relations",
-      label: "Relations and safety",
-      icon: Shield,
-      roles: ["hr_ops", "hr_admin"],
-      items: [
-        { label: "Case operations", to: "/hrm/relations/operations" },
-        { label: "Protected disclosures", to: "/hrm/relations/protected-disclosures" },
-        { label: "Cases", to: "/hrm/relations/cases" },
-        { label: "Warning register", to: "/hrm/relations/discipline" },
-        { label: "Health and safety", to: "/hrm/relations/safety" },
-        { label: "Ethics and declarations", to: "/hrm/relations/ethics" },
-        { label: "Agreements and roll call", to: "/hrm/relations/labour" },
+        { label: "Goals", to: "/hrm/talent/goals" },
+        { label: "Performance reviews", to: "/hrm/talent/reviews" },
+        { label: "Learning", to: "/hrm/talent/learning" },
+        { label: "Feedback and plans", to: "/hrm/talent/feedback" },
+        { label: "Succession and skills", to: "/hrm/talent/succession" },
       ],
     },
     {
@@ -250,19 +161,14 @@ export const hrmModule: ModuleDefinition = {
     },
     {
       id: "reports",
-      label: "Reports",
+      label: "Reports & exports",
       icon: BarChart3,
       roles: ["manager", "hr_ops", "hr_admin", "payroll"],
       items: [
-        {
-          // M40: HR analytics dashboard — workforce, leave, payroll, performance,
-          // recruitment and attendance panels in one screen.
-          label: "Analytics",
-          to: "/hrm/analytics",
-          roles: ["hr_ops", "hr_admin"],
-        },
+        { label: "Analytics", to: "/hrm/analytics", roles: ["hr_ops", "hr_admin"] },
         { label: "Statutory filings", to: "/hrm/reports" },
         { label: "Report builder", to: "/hrm/reports/builder" },
+        { label: "Import and export", to: "/hrm/data/import-export" },
       ],
     },
     {
@@ -272,7 +178,7 @@ export const hrmModule: ModuleDefinition = {
       to: "/hrm/configuration",
       roles: ["hr_admin"],
     },
-  ],
+  ]
 };
 
 /**

@@ -4,17 +4,34 @@ import {
   Building2,
   CheckSquare,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   LogOut,
   Menu,
   Moon,
   Search,
   Sun,
+  LayoutGrid,
+  ArrowDownToLine,
+  Briefcase,
+  Banknote,
+  CalendarDays,
+  Clock3,
+  Sparkles,
+  ShieldCheck,
+  Upload,
   UserRound,
+  Users,
+  WalletCards,
+  Settings,
+  UserCog,
+  BarChart3,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -208,11 +225,14 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const sections = useVisibleSections(hrmModule, role);
   const links = sections
     .filter((s) => isSectionEnabled(s.id))
-    .flatMap((s) =>
-      s.to
-        ? [{ label: s.label, to: s.to, params: undefined }]
-        : (s.items ?? []).map((i) => ({ label: `${s.label}: ${i.label}`, to: i.to, params: i.params })),
-    )
+    .flatMap((s) => {
+      if (s.to) return [{ label: s.label, to: s.to, params: undefined }];
+      const items = [
+        ...(s.items ?? []),
+        ...((s.groups ?? []).flatMap((g) => g.items)),
+      ];
+      return items.map((i) => ({ label: `${s.label}: ${i.label}`, to: i.to, params: i.params }));
+    })
     .filter((l) => isPathEnabled(l.to.split("/$")[0]));
 
   return (
@@ -285,6 +305,91 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </CommandGroup> : null}
       </CommandList>
     </CommandDialog>
+  );
+}
+
+type QuickAccessItem = { label: string; detail: string; to: string; icon: typeof Search; roles?: Role[] };
+type QuickAccessGroup = { label: string; items: QuickAccessItem[] };
+
+const QUICK_ACCESS_GROUPS: QuickAccessGroup[] = [
+  {
+    label: "Time & attendance",
+    items: [
+      { label: "Timesheets", detail: "Today, week, month and custom attendance views", to: "/hrm/time/timesheets", icon: Clock3 },
+      { label: "Import attendance", detail: "Bring in clock records through the shared importer", to: "/hrm/time/attendance/import", icon: Upload, roles: ["hr_ops", "hr_admin"] },
+      { label: "Overtime review", detail: "Review derived overtime before payroll", to: "/hrm/time/operations", icon: ShieldCheck, roles: ["manager", "hr_ops", "hr_admin"] },
+      { label: "My leave", detail: "View balances and leave requests", to: "/hrm/leave", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { label: "Employees", detail: "Find and manage the employee directory", to: "/hrm/employees", icon: Users },
+      { label: "My profile", detail: "View your own worker record", to: "/hrm/my-profile", icon: UserRound },
+      { label: "Organization chart", detail: "See reporting relationships", to: "/hrm/org-chart", icon: Users, roles: ["hr_ops", "hr_admin"] },
+    ],
+  },
+  {
+    label: "Payroll & benefits",
+    items: [
+      { label: "My payslips", detail: "View your payroll statements", to: "/hrm/payslips", icon: WalletCards },
+      { label: "Pay runs", detail: "Open payroll processing", to: "/hrm/payroll/runs", icon: Banknote, roles: ["payroll", "hr_admin"] },
+      { label: "Benefits", detail: "Manage benefits and claims", to: "/hrm/benefits", icon: WalletCards, roles: ["hr_ops", "hr_admin", "payroll"] },
+    ],
+  },
+  {
+    label: "Performance & recruitment",
+    items: [
+      { label: "Performance cycles", detail: "Manage reviews and cycles", to: "/hrm/performance", icon: Sparkles },
+      { label: "Goals", detail: "Track employee goals", to: "/hrm/talent/goals", icon: Sparkles },
+      { label: "Hiring operations", detail: "Manage recruitment work", to: "/hrm/recruitment/operations", icon: Briefcase, roles: ["hr_ops", "hr_admin", "manager"] },
+    ],
+  },
+  {
+    label: "Reports & setup",
+    items: [
+      { label: "Analytics", detail: "Review workforce analytics", to: "/hrm/analytics", icon: BarChart3, roles: ["hr_ops", "hr_admin"] },
+      { label: "Import and export", detail: "Use shared CSV and Excel tools", to: "/hrm/data/import-export", icon: ArrowDownToLine, roles: ["manager", "hr_ops", "hr_admin", "payroll"] },
+      { label: "HR setup", detail: "Configure employer and HR rules", to: "/hrm/configuration", icon: Settings, roles: ["hr_admin"] },
+      { label: "User access", detail: "Manage local users and roles", to: "/hrm/configuration/users", icon: UserCog, roles: ["hr_admin"] },
+    ],
+  },
+];
+
+function QuickAccessDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { role } = useApp();
+  const [query, setQuery] = useState("");
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
+  const needle = query.trim().toLowerCase();
+  const groups = QUICK_ACCESS_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => (!item.roles || item.roles.includes(role)) && (!needle || `${item.label} ${item.detail} ${group.label}`.toLowerCase().includes(needle))),
+  })).filter((group) => group.items.length > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Quick access</DialogTitle>
+          <DialogDescription>Jump to a common HRM task. These shortcuts open the real page and respect your role.</DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks…" className="pl-9" aria-label="Search quick access tasks" />
+        </div>
+        <div className="grid max-h-[58vh] gap-5 overflow-y-auto pr-1 sm:grid-cols-2">
+          {groups.map((group) => (
+            <section key={group.label} aria-labelledby={`quick-access-${group.label}`}>
+              <h3 id={`quick-access-${group.label}`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</h3>
+              <div className="space-y-2">
+                {group.items.map((item) => { const Icon = item.icon; return <Link key={item.to} to={item.to} onClick={() => onOpenChange(false)} className="group flex items-start gap-3 rounded-xl border bg-card p-3 transition hover:border-primary/40 hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Icon className="size-4" aria-hidden /></span><span className="min-w-0 flex-1"><span className="block font-medium">{item.label}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{item.detail}</span></span><ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden /></Link>; })}
+              </div>
+            </section>
+          ))}
+          {groups.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground sm:col-span-2">No quick access tasks matched “{query}”.</p> : null}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -415,6 +520,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
@@ -506,9 +612,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      const key = e.key.toLowerCase();
+      if (key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+      }
+      if (key === "j" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setQuickAccessOpen((o) => !o);
       }
     };
     window.addEventListener("keydown", h);
@@ -644,6 +755,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               <kbd className="hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
             </Button>
 
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+              onClick={() => setQuickAccessOpen(true)}
+              aria-label="Open Quick access"
+              title="Quick access (⌘J)"
+            >
+              <LayoutGrid className="size-4" aria-hidden />
+              <span className="hidden lg:inline">Quick access</span>
+              <kbd className="hidden rounded border border-primary-foreground/30 px-1 text-[10px] lg:inline">⌘J</kbd>
+            </Button>
+
             {canApprove ? (
               <Button asChild variant="ghost" size="icon" className="relative" aria-label="Tasks and approvals">
                 <Link to="/hrm/approvals">
@@ -746,6 +870,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <QuickAccessDialog open={quickAccessOpen} onOpenChange={setQuickAccessOpen} />
     </div>
   );
 }
