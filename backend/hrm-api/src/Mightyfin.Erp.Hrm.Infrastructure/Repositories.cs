@@ -448,6 +448,20 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         return await q.Include(a => a.Worker).Take(200).ToListAsync(ct); // already bounded by from/to window; keep insert order
     }
 
+    public async Task<List<AttendanceRecord>> ListAttendanceForScopeAsync(DateOnly? from, DateOnly? to, Guid? locationId, Guid? orgUnitId, CancellationToken ct)
+    {
+        var q = db.AttendanceRecords.Include(a => a.Worker).AsQueryable();
+        if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
+        if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
+        // Imported attendance may predate branch tagging. Fall back to the
+        // worker assignment in that case, but never expose all branchless
+        // records to a branch-scoped operator.
+        if (locationId.HasValue)
+            q = q.Where(a => a.LocationId == locationId.Value || (!a.LocationId.HasValue && a.Worker!.LocationId == locationId.Value));
+        if (orgUnitId.HasValue)
+            q = q.Where(a => a.Worker!.OrgUnitId == orgUnitId.Value);
+        return await q.OrderByDescending(a => a.WorkDate).ThenBy(a => a.Worker!.EmployeeNo).Take(2000).ToListAsync(ct);
+    }
     public async Task<List<AttendanceRecord>> ListOvertimeAsync(Guid? workerId, DateOnly? from, DateOnly? to, string? status, CancellationToken ct)
     {
         var q = db.AttendanceRecords

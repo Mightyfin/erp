@@ -414,7 +414,7 @@ public sealed record AttendanceRecordDto(Guid Id, Guid WorkerId, string WorkerNa
     decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null,
     string OvertimeStatus = "none", string? OvertimeDecisionReason = null,
     string? OvertimeDecidedBySubjectId = null, DateTimeOffset? OvertimeDecidedAt = null,
-    Guid? OvertimePayrollRunId = null, Guid? OvertimePayrollLineId = null);
+    Guid? OvertimePayrollRunId = null, Guid? OvertimePayrollLineId = null, string WorkerEmployeeNo = "");
 
 public sealed record ShiftCreateRequest(string Code, string Name, string StartTime, string EndTime,
     int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,

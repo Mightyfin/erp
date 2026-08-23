@@ -406,6 +406,31 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}/today`),
   attendanceHistory: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}`, params ?? {}),
+  /** Organization attendance summary, scoped by the selected branch/org unit on the request. */
+  attendanceSummary: (params?: Record<string, unknown>) =>
+    hrmApi.get<Array<{
+      id: string;
+      workerId: string;
+      workerName: string;
+      workDate: string;
+      clockIn?: string | null;
+      clockOut?: string | null;
+      source: string;
+      derivedStatus: string;
+      totalHours: number;
+      scheduledHours: number;
+      regularHours: number;
+      overtimeHours: number;
+      overtimeMultiplier: number;
+      shiftId?: string | null;
+      importBatchId?: string | null;
+      overtimeStatus: string;
+      overtimeDecisionReason?: string | null;
+      overtimeDecidedBySubjectId?: string | null;
+      overtimeDecidedAt?: string | null;
+      overtimePayrollRunId?: string | null;
+      overtimePayrollLineId?: string | null;
+    }>>(`/hrm/time/attendance`, params ?? {}),
   overtime: (params?: Record<string, unknown>) =>
     hrmApi.get<Array<{
       id: string;

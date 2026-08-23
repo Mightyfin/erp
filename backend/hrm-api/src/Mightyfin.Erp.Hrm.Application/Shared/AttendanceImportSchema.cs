@@ -1,3 +1,4 @@
+using System.Globalization;
 // M31b — attendance schema for the shared import tool. Adapts the existing
 // ITimeService.ImportAttendanceAsync so attendance logs can be uploaded via
 // the same column-mapping UI as employees.
@@ -7,7 +8,7 @@ using Mightyfin.Erp.Hrm.Domain.Entities;
 
 namespace Mightyfin.Erp.Hrm.Application.Shared;
 
-public sealed class AttendanceImportSchema : IImportSchema
+public sealed class AttendanceImportSchema : IImportSchemaWithExport
 {
     private readonly IWorkerRepository workerRepo;
     private readonly ITimeService timeService;
@@ -26,9 +27,22 @@ public sealed class AttendanceImportSchema : IImportSchema
     public List<ImportFieldDef> Fields =>
     [
         new("employeeNo", "Employee number", true, Example: "EMP-0001"),
+        new("workerName", "Employee name", false),
         new("workDate", "Date", true, FormatNote: "YYYY-MM-DD"),
         new("clockIn", "Clock in", false, FormatNote: "HH:mm"),
         new("clockOut", "Clock out", false, FormatNote: "HH:mm"),
+        new("source", "Source", false),
+        new("derivedStatus", "Attendance status", false),
+        new("totalHours", "Total hours", false),
+        new("scheduledHours", "Scheduled hours", false),
+        new("regularHours", "Regular hours", false),
+        new("overtimeHours", "Overtime hours", false),
+        new("overtimeMultiplier", "Overtime multiplier", false),
+        new("overtimeStatus", "Overtime lifecycle", false),
+        new("overtimeDecisionReason", "Overtime decision reason", false),
+        new("overtimeDecidedAt", "Overtime decision time", false),
+        new("overtimePayrollRunId", "Payroll run", false),
+        new("overtimePayrollLineId", "Payroll line", false),
     ];
 
     public async Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
@@ -75,6 +89,52 @@ public sealed class AttendanceImportSchema : IImportSchema
             });
 
         await timeService.ImportAttendanceAsync(request, authz.CurrentSubjectId ?? "system", ct);
+    }
+
+    public async Task<List<Dictionary<string, string>>> ExportRowsAsync(string? filter, CancellationToken ct)
+    {
+        var from = FilterValue(filter, "from");
+        var to = FilterValue(filter, "to");
+        var rows = await timeService.ListAttendanceForScopeAsync(from, to, ct);
+        return rows.Select(row => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["employeeNo"] = row.WorkerEmployeeNo,
+            ["workerName"] = row.WorkerName,
+            ["workDate"] = NormalizeDate(row.WorkDate),
+            ["clockIn"] = row.ClockIn ?? "",
+            ["clockOut"] = row.ClockOut ?? "",
+            ["source"] = row.Source,
+            ["derivedStatus"] = row.DerivedStatus,
+            ["totalHours"] = row.TotalHours.ToString(CultureInfo.InvariantCulture),
+            ["scheduledHours"] = row.ScheduledHours.ToString(CultureInfo.InvariantCulture),
+            ["regularHours"] = row.RegularHours.ToString(CultureInfo.InvariantCulture),
+            ["overtimeHours"] = row.OvertimeHours.ToString(CultureInfo.InvariantCulture),
+            ["overtimeMultiplier"] = row.OvertimeMultiplier.ToString(CultureInfo.InvariantCulture),
+            ["overtimeStatus"] = row.OvertimeStatus,
+            ["overtimeDecisionReason"] = row.OvertimeDecisionReason ?? "",
+            ["overtimeDecidedAt"] = row.OvertimeDecidedAt?.ToString("O", CultureInfo.InvariantCulture) ?? "",
+            ["overtimePayrollRunId"] = row.OvertimePayrollRunId?.ToString() ?? "",
+            ["overtimePayrollLineId"] = row.OvertimePayrollLineId?.ToString() ?? "",
+        }).ToList();
+    }
+
+    private static string? FilterValue(string? filter, string key)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return null;
+        foreach (var part in filter.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var bits = part.Split('=', 2);
+            if (bits.Length == 2 && bits[0].Equals(key, StringComparison.OrdinalIgnoreCase))
+                return Uri.UnescapeDataString(bits[1]);
+        }
+        return null;
+    }
+
+    private static string NormalizeDate(string value)
+    {
+        if (DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return value;
     }
 
     private static string? OrNull(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();

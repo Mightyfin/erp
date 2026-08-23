@@ -748,6 +748,8 @@ public static class Routes
             => Results.Ok(await svc.ClockOutAsync(workerId, ct)));
         g.MapGet("/attendance/{workerId:guid}/today", async (Guid workerId, ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
+        g.MapGet("/attendance", async ([FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct)));
         g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)

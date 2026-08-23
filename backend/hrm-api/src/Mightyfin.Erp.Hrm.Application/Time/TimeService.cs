@@ -31,6 +31,7 @@ public interface ITimeService
     Task<PunchResultDto> ClockOutAsync(Guid workerId, CancellationToken ct);
     Task<PunchResultDto> GetTodayAsync(Guid workerId, CancellationToken ct);
     Task<List<AttendanceRecordDto>> ListAttendanceAsync(Guid workerId, string? from, string? to, CancellationToken ct);
+    Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct);
     Task<List<AttendanceRecordDto>> ListOvertimeAsync(Guid? workerId, string? from, string? to, string? status, CancellationToken ct);
     Task<AttendanceRecordDto> DecideOvertimeAsync(Guid id, OvertimeDecisionRequest request, string actorSubjectId, CancellationToken ct);
     Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct);
@@ -269,6 +270,18 @@ public sealed class TimeServiceImpl(
         var f = from is null ? (DateOnly?)null : DateOnly.Parse(from);
         var t = to is null ? (DateOnly?)null : DateOnly.Parse(to);
         var items = await repo.ListAttendanceAsync(workerId, f, t, ct);
+        return items.Select(MapAttendance).ToList();
+    }
+
+    public async Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        DateOnly? f = from is null ? null : DateOnly.Parse(from);
+        DateOnly? t = to is null ? null : DateOnly.Parse(to);
+        var items = await repo.ListAttendanceForScopeAsync(f, t, scope?.LocationId, scope?.OrgUnitId, ct);
+        if (scope is not null && scope.IsConfined && !scope.IsScopedToBranch)
+            items = items.Where(a => (a.LocationId.HasValue && scope.AllowedLocationIds.Contains(a.LocationId.Value))
+                || (!a.LocationId.HasValue && a.Worker?.LocationId.HasValue == true && scope.AllowedLocationIds.Contains(a.Worker.LocationId.Value))).ToList();
         return items.Select(MapAttendance).ToList();
     }
 
@@ -969,7 +982,7 @@ public sealed class TimeServiceImpl(
         a.ClockIn?.ToString(), a.ClockOut?.ToString(), a.Source, a.DerivedStatus, a.TotalHours,
         a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId,
         a.OvertimeStatus, a.OvertimeDecisionReason, a.OvertimeDecidedBySubjectId,
-        a.OvertimeDecidedAt, a.OvertimePayrollRunId, a.OvertimePayrollLineId);
+        a.OvertimeDecidedAt, a.OvertimePayrollRunId, a.OvertimePayrollLineId, a.Worker?.EmployeeNo ?? "");
 
     private static ShiftDto MapShift(ShiftDefinition shift) => new(
         shift.Id, shift.Code, shift.Name, shift.StartTime.ToString(), shift.EndTime.ToString(),
