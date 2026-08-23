@@ -56,3 +56,7 @@ The supplied TimeSheet.io reference clarified that the user-facing task is a foc
 The production release scope now allows `/hrm/time/timesheets` and `/hrm/data/import-export`. The Timesheets route uses the production mock guard, so no fabricated rows are rendered while the live timesheet service is absent. The Attendance Import route is separate and uses the shared server-schema ImportDialog and shared ExportButton. Overtime review remains a separate decision page. Shift rules, schedules, corrections, leave operations, and other configuration work remain separate entry points rather than being embedded into Timesheets.
 
 Live browser validation on 2026-08-23 confirmed the weekly toolbar, date navigation, Daily view selector, zero-value summaries, clear connection empty state, Add time entry disclosure, and standalone Attendance Import handoff. No API or database changes were made for this frontend-first pass.
+
+## Opt-in UI sample preview
+
+Timesheets now has an explicit **Preview sample** control for design review. It loads the existing local Timesheets fixture only after the user activates the control, labels the page **Sample UI preview · not saved**, and displays a warning that the rows are not from PostgreSQL. Returning to real data restores the zero-value live-connection state. This is a frontend review aid only and is not a production data source, seed, or API fallback.

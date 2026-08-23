@@ -57,3 +57,23 @@ Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-22-34_6195
 The refined live page now shows a clear `Live connection pending` status beside the period, a `This week` reset action, and a compact search/status toolbar under the summary cards. The status filter successfully changed from **All entries** to **Needs attention** without navigation or runtime errors. With no live rows connected, the page remains truthful and shows zero attention items rather than fabricated exceptions.
 
 Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-31-52_2836.webp`.
+
+## Opt-in UI sample preview — 2026-08-23
+
+The deployed Timesheets page now includes an explicit **Preview sample** control. Activating it loads the existing local Timesheets fixture only for visual review. The page changes its header and period badges to **Sample UI preview · not saved** / **Sample preview** and shows a warning banner stating that rows are not from PostgreSQL and nothing is saved.
+
+The preview rendered a complete weekly layout with 43.50 total hours, 40.00 regular hours, 3.50 overtime hours, two attention items, daily sections from Monday through Sunday, billable/non-billable work items, recorded statuses, and “Needs overtime review” rows. Row-level Edit and More actions were visible in the day groups. This confirms the intended UI hierarchy can be reviewed without changing production API behavior or persistence.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-35-57_9246.webp`.
+
+## Preview interaction validation
+
+In sample mode, selecting **Needs attention** reduced the visible list to the two overtime entries while preserving the period totals. The row-level **Edit** action produced a scoped informational message for the selected entry and did not write data. This demonstrates the intended exception-review behavior and keeps the API boundary explicit.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-36-23_6269.webp`.
+
+## Preview exit validation
+
+Selecting **Return to real data** restored the header label **Real data only · preview off**, reset the period to the real production context, returned all summary values to zero, and removed the sample rows. The informational row-action toast remained visible only as transient UI feedback and did not create a record.
+
+Screenshot: `/home/ubuntu/screenshots/erp_newworldcargo_2026-08-23_06-36-38_1544.webp`.

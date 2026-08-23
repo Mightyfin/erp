@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { addDays, format, parseISO } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Edit3, FileClock, Filter, LockKeyhole, MoreHorizontal, Plus, Search, TimerReset, UserRound } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Edit3, Eye, FileClock, Filter, LockKeyhole, MoreHorizontal, Plus, Search, TimerReset, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,13 +36,27 @@ function TimesheetsPage() {
   const [view, setView] = useState<"weekly" | "daily">("weekly");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "attention" | "recorded">("all");
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewRows, setPreviewRows] = useState<Timesheet[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [draftProject, setDraftProject] = useState("");
   const [draftHours, setDraftHours] = useState("8");
   const [draftDate, setDraftDate] = useState("");
 
-  const source = (state.data ?? []) as Timesheet[];
+  useEffect(() => {
+    if (!previewMode) {
+      setPreviewRows([]);
+      return;
+    }
+    let active = true;
+    void expensesApi.timesheets().then((rows) => {
+      if (active) setPreviewRows(rows);
+    });
+    return () => { active = false; };
+  }, [previewMode]);
+
+  const source = (previewMode ? previewRows : state.data ?? []) as Timesheet[];
   const timesheet = source[0];
   const weekStart = useMemo(() => {
     const base = timesheet?.weekStarting ? parseISO(timesheet.weekStarting) : new Date();
@@ -93,9 +107,11 @@ function TimesheetsPage() {
     feedback.note("Draft time entry prepared", "It will be saved to the live timesheet service when that integration is enabled.");
   }
 
-  return <AuthGate><AppShell><PageHeader eyebrow="Time and leave / work records" title="Timesheets" description="See your working time by day, keep the week complete, and resolve anything that needs attention." meta={<Badge variant="outline" className="gap-1.5 border-info/30 bg-info-soft text-info-foreground"><LockKeyhole className="size-3" aria-hidden /> Frontend workflow preview</Badge>} primaryAction={<Button onClick={openAddTimer} className="gap-2"><Plus className="size-4" aria-hidden />Add time entry</Button>} />
+  return <AuthGate><AppShell><PageHeader eyebrow="Time and leave / work records" title="Timesheets" description="See your working time by day, keep the week complete, and resolve anything that needs attention." meta={<Badge variant="outline" className={`gap-1.5 ${previewMode ? "border-warning/50 bg-warning-soft text-warning-foreground" : "border-info/30 bg-info-soft text-info-foreground"}`}><LockKeyhole className="size-3" aria-hidden /> {previewMode ? "Sample UI preview · not saved" : "Real data only · preview off"}</Badge>} primaryAction={<Button onClick={openAddTimer} className="gap-2"><Plus className="size-4" aria-hidden />Add time entry</Button>} />
     <div className="space-y-5" data-testid="timesheets-page">
-      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><Button variant="outline" size="icon" aria-label="Previous week" onClick={() => setWeekOffset((value) => value - 1)}><ChevronLeft className="size-4" aria-hidden /></Button><Button variant="outline" size="icon" aria-label="Next week" onClick={() => setWeekOffset((value) => value + 1)}><ChevronRight className="size-4" aria-hidden /></Button><Button variant="ghost" size="sm" onClick={() => setWeekOffset(0)}>This week</Button><h2 className="ml-1 text-xl font-semibold">{weekLabel}</h2><Badge variant="outline" className="hidden sm:inline-flex">{timesheet ? "Draft timesheet" : "Live connection pending"}</Badge></div><div className="flex items-center gap-2"><Select value={view} onValueChange={(value) => setView(value as "weekly" | "daily")}><SelectTrigger className="w-28" aria-label="Timesheet view"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem></SelectContent></Select><Button variant="outline" className="gap-2" onClick={() => feedback.note("Download prepared", "The timesheet export will use the selected period and filters.")}><Download className="size-4" aria-hidden />Download</Button></div></div>
+      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><Button variant="outline" size="icon" aria-label="Previous week" onClick={() => setWeekOffset((value) => value - 1)}><ChevronLeft className="size-4" aria-hidden /></Button><Button variant="outline" size="icon" aria-label="Next week" onClick={() => setWeekOffset((value) => value + 1)}><ChevronRight className="size-4" aria-hidden /></Button><Button variant="ghost" size="sm" onClick={() => setWeekOffset(0)}>This week</Button><h2 className="ml-1 text-xl font-semibold">{weekLabel}</h2><Badge variant="outline" className="hidden sm:inline-flex">{previewMode ? "Sample preview" : timesheet ? "Draft timesheet" : "Live connection pending"}</Badge></div><div className="flex flex-wrap items-center gap-2"><Select value={view} onValueChange={(value) => setView(value as "weekly" | "daily")}><SelectTrigger className="w-28" aria-label="Timesheet view"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="daily">Daily</SelectItem></SelectContent></Select><Button variant="outline" className="gap-2" onClick={() => feedback.note("Download prepared", "The timesheet export will use the selected period and filters.")}><Download className="size-4" aria-hidden />Download</Button><Button variant={previewMode ? "default" : "outline"} className="gap-2" onClick={() => setPreviewMode((value) => !value)}><Eye className="size-4" aria-hidden />{previewMode ? "Hide UI preview" : "Preview sample"}</Button></div></div>
+
+      {previewMode ? <div className="flex flex-col gap-2 rounded-xl border border-warning/50 bg-warning-soft/35 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><p><strong>UI preview mode.</strong> These sample rows exist only to review the layout. They are not from PostgreSQL and nothing you do here is saved.</p><Button variant="ghost" size="sm" onClick={() => setPreviewMode(false)}>Return to real data</Button></div> : null}
 
       {addOpen ? <Card className="border-primary/30 bg-primary-soft/20 shadow-none"><CardContent className="p-4"><form onSubmit={submitDraft} className="grid gap-3 md:grid-cols-[1fr_180px_180px_auto] md:items-end"><div><Label htmlFor="draft-project">Work item</Label><Input id="draft-project" value={draftProject} onChange={(event) => setDraftProject(event.target.value)} placeholder="Project or work item" required /></div><div><Label htmlFor="draft-date">Date</Label><Input id="draft-date" type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)} required /></div><div><Label htmlFor="draft-hours">Hours</Label><Input id="draft-hours" type="number" min="0.25" step="0.25" value={draftHours} onChange={(event) => setDraftHours(event.target.value)} required /></div><div className="flex gap-2"><Button type="submit">Add draft</Button><Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>Cancel</Button></div></form><p className="mt-3 text-xs text-muted-foreground">This frontend-first draft interaction is intentionally not connected to an API yet; no production record is written.</p></CardContent></Card> : null}
 
