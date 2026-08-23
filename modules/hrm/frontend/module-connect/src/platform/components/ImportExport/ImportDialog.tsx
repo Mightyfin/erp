@@ -148,6 +148,7 @@ function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<str
 }
 
 const SKIP = "__skip__";
+const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === "true";
 
 /* ---------------------------------------------------------------- demo data */
 /** Demo-mode schemas keep the offline preview flow usable. */
@@ -220,18 +221,21 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [schemas, setSchemas] = useState<ImportSchema[] | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   const loadSchemas = async () => {
     try {
       const s = await realApi.importSchemas();
       setSchemas(s);
-    } catch {
-      setSchemas(null); // demo mode falls through
+      setSchemaError(null);
+    } catch (error) {
+      setSchemas(USE_REAL_API ? [] : null);
+      setSchemaError(USE_REAL_API ? (error instanceof Error ? error.message : "Import schema service is unavailable") : null);
     }
   };
 
   const schema = useMemo<ImportSchema | null>(() => {
-    if (!schemas) return DEMO_SCHEMAS[typeKey] ?? null;
-    return schemas.find((s) => s.typeKey === typeKey) ?? null;
+    if (!schemas) return USE_REAL_API ? null : DEMO_SCHEMAS[typeKey] ?? null;
+    return schemas.find((s) => s.typeKey === typeKey) ?? (USE_REAL_API ? null : DEMO_SCHEMAS[typeKey] ?? null);
   }, [schemas, typeKey]);
 
   async function openDialog() {
@@ -241,6 +245,7 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
     setFileRows([]);
     setPreview(null);
     setMapping({});
+    setSchemaError(null);
     void loadSchemas();
   }
 
@@ -253,6 +258,10 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
       setFileColumns(headersClean.map((name) => ({ name,       sample: String(rows[0]?.[headersClean.indexOf(name)] ?? "") })));
       setFileRows(rows);
       if (!schema) {
+        if (USE_REAL_API) {
+          toast.error("This import type is not available because the live import schema could not be loaded.");
+          return;
+        }
         const demo = DEMO_SCHEMAS[typeKey] || DEMO_SCHEMAS.workers;
         setMapping(autoMap(headersClean, demo.fields));
       } else {
@@ -279,7 +288,10 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
   }, [fileColumns, fileRows, mapping]);
 
   async function runPreview() {
-    if (!schema) return;
+    if (!schema) {
+      toast.error("The live import schema is unavailable. Nothing has been written.");
+      return;
+    }
     setBusy(true);
     try {
       if (!schemas) {
@@ -403,6 +415,8 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
                 >
                   <Download className="h-4 w-4" /> Download blank import template
                 </Button>
+                {schemaError && USE_REAL_API && <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft/30 p-3 text-sm text-danger">{schemaError}. Try again when the import service is available; no demo schema will be used.</div>}
+                {!schema && USE_REAL_API && !schemaError && <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft/30 p-3 text-sm text-warning-foreground">Loading the live import schema…</div>}
                 {busy && <Progress value={undefined} className="h-1" />}
               </div>
             )}

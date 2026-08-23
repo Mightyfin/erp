@@ -2055,3 +2055,25 @@ The Time Operations experience was redesigned around the reviewer-to-payroll wor
 | Visual quality | Passed for Milestone 1A | The page uses deliberate hierarchy, restrained status colors, icons, whitespace, and progressive disclosure instead of a robotic API-form layout. |
 
 The page was also tested by activating the primary **Import attendance** button; it opened and scrolled to the Attendance and leave tools section. The approved, rejected, and paid tabs were opened successfully. No runtime error or mock/demo row appeared.
+
+## Frontend-first Timesheets workspace — 2026-08-23
+
+The Timesheets route was redesigned from a mixed/mock-oriented screen into a focused weekly work-record workspace inspired by the supplied simple timesheet reference. The frontend now provides period navigation, Weekly/Daily view selection, Download entry point, truthful summary tiles for total/regular/overtime/attention hours, an inline Add time entry interaction, and a day-grouped record area reserved for live timesheet rows.
+
+The production mock guard remains active. Since the live timesheet service is not yet connected, the page shows zero values and an explicit “Timesheets are ready for live connection” empty state. No hours, projects, or entries are fabricated. The Add time entry interaction explicitly states that it is frontend-only and writes no production record.
+
+The global release scope was corrected so Timesheets is no longer intercepted by the Coming Soon screen. Attendance Import is now a dedicated page using the shared ImportDialog and shared ExportButton. A shared Import/Export hub is available at `/hrm/data/import-export`; Overtime review remains at `/hrm/time/operations`.
+
+| Frontend acceptance criterion | Status | Evidence |
+|---|---|---|
+| One task per page | Passed for Timesheets and Attendance Import | Dedicated Timesheets and Attendance Import routes deployed. |
+| Simple period context | Passed | Week label, previous/next controls, and Weekly/Daily selector validated in browser. |
+| Summary before detail | Passed | Four summary tiles shown with truthful zero values when live rows are unavailable. |
+| Grouped daily layout | Implemented, awaiting live rows | Day-group component is ready; no fabricated rows are rendered in production. |
+| Local row actions | Implemented, awaiting live rows | Edit and More actions are scoped to individual rows in the frontend design. |
+| Shared import/export reuse | Passed | Attendance Import and Import/Export hub use the same shared components; employee export was refactored to the shared ExportButton. |
+| Production data integrity | Passed | No new API/database changes; production mock guard prevents fallback demo data. |
+| Desktop browser validation | Passed | Live route loaded successfully after deployment. |
+| Add time entry disclosure | Passed | Inline form opens and states that no production record is written until the live service is connected. |
+
+The page is a frontend milestone only. Live timesheet persistence and API integration remain intentionally deferred until the workflow and layout are accepted.

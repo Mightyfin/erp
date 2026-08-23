@@ -42,6 +42,7 @@ import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.config
 import { Route as HrmConfigurationRolesRouteImport } from './routes/hrm.configuration.roles'
 import { Route as HrmConfigurationTechnicalRouteImport } from './routes/hrm.configuration.technical'
 import { Route as HrmConfigurationUsersRouteImport } from './routes/hrm.configuration.users'
+import { Route as HrmDataImportExportRouteImport } from './routes/hrm.data.import-export'
 import { Route as HrmEmployeesIndexRouteImport } from './routes/hrm.employees.index'
 import { Route as HrmEmployeesIdRouteImport } from './routes/hrm.employees.$id'
 import { Route as HrmEmployeesNewRouteImport } from './routes/hrm.employees.new'
@@ -119,6 +120,7 @@ import { Route as HrmRecruitmentCandidatesIdRouteImport } from './routes/hrm.rec
 import { Route as HrmRecruitmentRequisitionsNewRouteImport } from './routes/hrm.recruitment.requisitions.new'
 import { Route as HrmRelationsCasesIdRouteImport } from './routes/hrm.relations.cases.$id'
 import { Route as HrmTalentReviewsIdRouteImport } from './routes/hrm.talent.reviews.$id'
+import { Route as HrmTimeAttendanceImportRouteImport } from './routes/hrm.time.attendance.import'
 import { Route as HrmTimeExpensesIndexRouteImport } from './routes/hrm.time.expenses.index'
 import { Route as HrmTimeExpensesNewRouteImport } from './routes/hrm.time.expenses.new'
 import { Route as HrmPayrollRunsIdEditRouteImport } from './routes/hrm.payroll.runs.$id.edit'
@@ -292,6 +294,11 @@ const HrmConfigurationTechnicalRoute =
 const HrmConfigurationUsersRoute = HrmConfigurationUsersRouteImport.update({
   id: '/hrm/configuration/users',
   path: '/hrm/configuration/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmDataImportExportRoute = HrmDataImportExportRouteImport.update({
+  id: '/hrm/data/import-export',
+  path: '/hrm/data/import-export',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmEmployeesIndexRoute = HrmEmployeesIndexRouteImport.update({
@@ -689,6 +696,11 @@ const HrmTalentReviewsIdRoute = HrmTalentReviewsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => HrmTalentReviewsRoute,
 } as any)
+const HrmTimeAttendanceImportRoute = HrmTimeAttendanceImportRouteImport.update({
+  id: '/hrm/time/attendance/import',
+  path: '/hrm/time/attendance/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmTimeExpensesIndexRoute = HrmTimeExpensesIndexRouteImport.update({
   id: '/hrm/time/expenses/',
   path: '/hrm/time/expenses/',
@@ -737,6 +749,7 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -816,6 +829,7 @@ export interface FileRoutesByFullPath {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
   '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
@@ -852,6 +866,7 @@ export interface FileRoutesByTo {
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -931,6 +946,7 @@ export interface FileRoutesByTo {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses': typeof HrmTimeExpensesIndexRoute
   '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
@@ -968,6 +984,7 @@ export interface FileRoutesById {
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
@@ -1047,6 +1064,7 @@ export interface FileRoutesById {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
   '/hrm/payroll/runs/$id/edit': typeof HrmPayrollRunsIdEditRoute
@@ -1085,6 +1103,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
     | '/hrm/configuration/users'
+    | '/hrm/data/import-export'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1164,6 +1183,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses/'
     | '/hrm/payroll/runs/$id/edit'
@@ -1200,6 +1220,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
     | '/hrm/configuration/users'
+    | '/hrm/data/import-export'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1279,6 +1300,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses'
     | '/hrm/payroll/runs/$id/edit'
@@ -1315,6 +1337,7 @@ export interface FileRouteTypes {
     | '/hrm/configuration/roles'
     | '/hrm/configuration/technical'
     | '/hrm/configuration/users'
+    | '/hrm/data/import-export'
     | '/hrm/employees/$id'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
@@ -1394,6 +1417,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses/'
     | '/hrm/payroll/runs/$id/edit'
@@ -1431,6 +1455,7 @@ export interface RootRouteChildren {
   HrmConfigurationRolesRoute: typeof HrmConfigurationRolesRoute
   HrmConfigurationTechnicalRoute: typeof HrmConfigurationTechnicalRoute
   HrmConfigurationUsersRoute: typeof HrmConfigurationUsersRoute
+  HrmDataImportExportRoute: typeof HrmDataImportExportRoute
   HrmEmployeesIdRoute: typeof HrmEmployeesIdRouteWithChildren
   HrmEmployeesNewRoute: typeof HrmEmployeesNewRoute
   HrmExperienceAnnouncementsRoute: typeof HrmExperienceAnnouncementsRoute
@@ -1499,6 +1524,7 @@ export interface RootRouteChildren {
   HrmReportsIndexRoute: typeof HrmReportsIndexRoute
   HrmRequestsIndexRoute: typeof HrmRequestsIndexRoute
   HrmTalentIndexRoute: typeof HrmTalentIndexRoute
+  HrmTimeAttendanceImportRoute: typeof HrmTimeAttendanceImportRoute
   HrmTimeExpensesNewRoute: typeof HrmTimeExpensesNewRoute
   HrmTimeExpensesIndexRoute: typeof HrmTimeExpensesIndexRoute
 }
@@ -1734,6 +1760,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/configuration/users'
       fullPath: '/hrm/configuration/users'
       preLoaderRoute: typeof HrmConfigurationUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/data/import-export': {
+      id: '/hrm/data/import-export'
+      path: '/hrm/data/import-export'
+      fullPath: '/hrm/data/import-export'
+      preLoaderRoute: typeof HrmDataImportExportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/employees/': {
@@ -2275,6 +2308,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmTalentReviewsIdRouteImport
       parentRoute: typeof HrmTalentReviewsRoute
     }
+    '/hrm/time/attendance/import': {
+      id: '/hrm/time/attendance/import'
+      path: '/hrm/time/attendance/import'
+      fullPath: '/hrm/time/attendance/import'
+      preLoaderRoute: typeof HrmTimeAttendanceImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/time/expenses/': {
       id: '/hrm/time/expenses/'
       path: '/hrm/time/expenses'
@@ -2470,6 +2510,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationRolesRoute: HrmConfigurationRolesRoute,
   HrmConfigurationTechnicalRoute: HrmConfigurationTechnicalRoute,
   HrmConfigurationUsersRoute: HrmConfigurationUsersRoute,
+  HrmDataImportExportRoute: HrmDataImportExportRoute,
   HrmEmployeesIdRoute: HrmEmployeesIdRouteWithChildren,
   HrmEmployeesNewRoute: HrmEmployeesNewRoute,
   HrmExperienceAnnouncementsRoute: HrmExperienceAnnouncementsRoute,
@@ -2538,6 +2579,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmReportsIndexRoute: HrmReportsIndexRoute,
   HrmRequestsIndexRoute: HrmRequestsIndexRoute,
   HrmTalentIndexRoute: HrmTalentIndexRoute,
+  HrmTimeAttendanceImportRoute: HrmTimeAttendanceImportRoute,
   HrmTimeExpensesNewRoute: HrmTimeExpensesNewRoute,
   HrmTimeExpensesIndexRoute: HrmTimeExpensesIndexRoute,
 }

@@ -131,6 +131,15 @@ export const hrmModule: ModuleDefinition = {
           ],
         },
         {
+          label: "Time administration",
+          items: [
+            { label: "Overtime review", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin", "manager"] },
+            { label: "Import attendance", to: "/hrm/time/attendance/import", roles: ["hr_ops", "hr_admin"] },
+            { label: "Schedules and rosters", to: "/hrm/time/schedules", roles: ["hr_ops", "hr_admin", "manager"] },
+            { label: "Timesheets", to: "/hrm/time/timesheets" },
+          ],
+        },
+        {
           label: "Benefits and claims",
           items: [
             {
@@ -140,9 +149,6 @@ export const hrmModule: ModuleDefinition = {
               to: "/hrm/benefits",
               roles: ["hr_ops", "hr_admin", "payroll"],
             },
-            { label: "Time operations", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin"] },
-            { label: "Schedules and rosters", to: "/hrm/time/schedules" },
-            { label: "Timesheets", to: "/hrm/time/timesheets" },
             { label: "Time off in lieu", to: "/hrm/time/toil" },
             { label: "Utilisation", to: "/hrm/time/utilisation" },
             { label: "Travel", to: "/hrm/time/travel" },
@@ -409,7 +415,7 @@ export const configurationGroups: {
     label: "Technical",
     description: "Integrations and data movement. Rarely changed after go-live.",
     items: [
-      { label: "Import and export", detail: "CSV templates", to: "/hrm/configuration/technical" },
+      { label: "Import and export", detail: "Shared CSV and Excel data movement", to: "/hrm/data/import-export" },
       {
         label: "Payroll interface",
         detail: "Finance, banking and statutory hand-offs",
