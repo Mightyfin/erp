@@ -386,10 +386,12 @@ export const realApi = {
   decideLeaveRequest: (id: string, action: string, reason?: string) =>
     hrmApi.post<unknown>(`/hrm/time/leave/${id}/decide`, { action, reason }),
   leaveTypes: (params?: Record<string, unknown>) =>
-    hrmApi.get<unknown[]>("/hrm/admin/leave-types", {
+    hrmApi.get<unknown>("/hrm/admin/leave-types/full", {
       includeInactive: false,
       ...(params ?? {}),
     }),
+  createLeaveType: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/leave-types", body),
+  updateLeaveType: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/leave-types/${id}`, body),
   timeCorrections: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/time/corrections", params ?? {}),
   createCorrection: (body: Record<string, unknown>) =>

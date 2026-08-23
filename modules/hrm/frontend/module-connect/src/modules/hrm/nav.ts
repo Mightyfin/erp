@@ -248,8 +248,13 @@ export const configurationGroups: {
     description: "How work moves: policies, approval routes and forms.",
     items: [
       {
+        label: "Leave types",
+        detail: "Entitlements, evidence and carry-forward",
+        to: "/hrm/configuration/leave-types",
+      },
+      {
         label: "Leave policies and accruals",
-        detail: "5 policies · 1 draft",
+        detail: "Policy administration and accrual controls",
         to: "/hrm/configuration/process",
       },
       {
