@@ -30,3 +30,15 @@ The Timesheets toolbar uses the shared `ExportButton` and now supports real atte
 The first post-deployment browser check caught a missing `ChevronDown` icon import that caused the route error boundary to render. The runtime exception was captured as `ReferenceError: ChevronDown is not defined`, fixed, rebuilt, redeployed, and revalidated successfully.
 
 A malformed browser automation edit to the native date input also exposed a robustness gap. The date change handler now accepts only `YYYY-MM-DD`, preventing invalid date strings from reaching the API and causing a 500 response.
+
+## Range-aware Timesheets validation
+
+The deployed page now supports Today, Week, Month, and Custom periods on the same route, plus Table, Week layout, and Month layout projections of the same live attendance records.
+
+Today mode loaded the honest empty state for 23 August 2026. Week mode queried 17–23 August 2026 and correctly showed no rows, then Previous period moved to 10–16 August 2026 and loaded the real UAT Alice record under Sat 15 Aug. Clicking that weekly cell opened the persisted attendance detail drawer.
+
+Month mode queried August 2026, rendered the employee-by-day matrix, displayed UAT Alice's real 15 Aug overtime cell, and clicking that cell opened the same live detail drawer. The Month period header was corrected to `Aug 2026` rather than an incorrectly sliced label.
+
+Custom mode exposed real start/end date controls and starts in the detailed Table layout. The range and layout controls are live UI state; no mock or preview fallback is present.
+
+The final web build succeeded locally and in the VPS container. The web and proxy containers were restarted successfully while the API and healthy PostgreSQL container remained running.
