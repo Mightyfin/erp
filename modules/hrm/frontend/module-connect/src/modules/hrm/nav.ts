@@ -218,8 +218,8 @@ export const configurationGroups: {
       },
       {
         label: "Calendars and public holidays",
-        detail: "3 calendars",
-        to: "/hrm/configuration/business",
+        detail: "Calendar administration",
+        to: "/hrm/configuration/holidays",
       },
       {
         label: "Country packs",

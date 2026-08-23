@@ -939,6 +939,10 @@ export const realApi = {
   orgTree: () => hrmApi.get<unknown>("/hrm/admin/org-units/tree"),
   legalEntities: () => hrmApi.get<unknown[]>("/hrm/admin/legal-entities"),
   calendars: () => hrmApi.get<unknown[]>("/hrm/admin/calendars"),
+  calendar: (id: string) => hrmApi.get<unknown>(`/hrm/admin/calendars/${id}`),
+  createHoliday: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/holidays", body),
+  updateHoliday: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/holidays/${id}`, body),
+  deleteHoliday: (id: string) => hrmApi.delete<unknown>(`/hrm/admin/holidays/${id}`),
   capabilities: () => hrmApi.get<unknown[]>("/hrm/admin/capabilities"),
   // ---------- M28 CRUD audit: jobs catalogue, roles, retention rules ----------
   jobs: (params?: { includeInactive?: boolean }) =>
