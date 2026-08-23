@@ -2037,3 +2037,21 @@ The real overtime capability is now available and validated through the producti
 | Permission and lifecycle guards | Passed for Milestone 1 | Unauthenticated list 401; HR-admin release 403; paid-record decision blocked. |
 
 This targeted milestone result does not change the overall checklist readiness: the broader register still contains untested items and stakeholder gaps, and the system remains not approved for production payroll.
+
+
+## Milestone 1A UI/UX closure — 2026-08-23
+
+The Time Operations experience was redesigned around the reviewer-to-payroll workflow rather than exposing backend operations as an equal-weight card wall. The page now opens with a clear **Overtime & attendance** purpose, a four-step Import → Review → Approve → Payroll workflow strip, queue summary cards, status tabs, search, employee-level review rows, local decision notes, payroll-linked history, and honest loading/empty/error states. Attendance and leave tools are available through progressive disclosure and no longer compete with the daily overtime review queue.
+
+| UI/UX acceptance criterion | Status | Evidence |
+|---|---|---|
+| Workflow clarity | Passed | Browser showed the four-step lifecycle and plain-language next-step guidance. |
+| Queue prioritisation | Passed | Default Needs review tab showed pending count and pending hours first. |
+| Decision safety | Passed | Decision note is attached to each pending row; reject is disabled until a reason is entered; paid rows show no decision controls. |
+| Payroll transparency | Passed | Paid row displayed historical state plus payroll run and line references. |
+| Real-data integrity | Passed | Live page showed real UAT rows only; empty and error states are explicit and do not fall back to mock data. |
+| Responsive/action hierarchy | Passed at desktop browser width | Primary Import attendance action, refresh, tabs, row actions, and progressive tools were reachable and rendered without error. Mobile-width retest remains a follow-up check. |
+| Operational efficiency | Passed for queue navigation | Status tabs, search, and inline row actions allow review without leaving the page. |
+| Visual quality | Passed for Milestone 1A | The page uses deliberate hierarchy, restrained status colors, icons, whitespace, and progressive disclosure instead of a robotic API-form layout. |
+
+The page was also tested by activating the primary **Import attendance** button; it opened and scrolled to the Attendance and leave tools section. The approved, rejected, and paid tabs were opened successfully. No runtime error or mock/demo row appeared.

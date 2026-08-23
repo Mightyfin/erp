@@ -152,3 +152,12 @@ The production Time Operations page was rebuilt and loaded successfully at `http
 Browser validation before inserting the UAT fixture showed the honest live empty state, `No derived overtime records found.`, with no demo rows and no runtime error. The functional API UAT then imported two persisted September attendance rows, derived pending overtime, approved/rejected the rows, and validated payroll allocation and paid linkage. Detailed evidence is recorded in `m1_overtime_uat_evidence.md`; browser availability evidence is in `m1_browser_validation.md`.
 
 This closes the Milestone 1 time/overtime implementation gap but does not imply overall production readiness. The page remains an operational HR/payroll workflow and requires real role configuration, policy sign-off, and broader readiness gates before production payroll approval.
+
+
+## Milestone 1A workflow-led UI/UX redesign — 2026-08-23
+
+The Time Operations page was redesigned after identifying that the first implementation exposed API operations rather than user workflows. The new experience is titled **Overtime & attendance** and states its purpose in plain language. It includes a visible Import → Review → Approve → Payroll workflow strip, Needs review/Approved/Rejected/Paid queue summaries, status tabs, search, per-employee review rows, local decision notes, payroll-linked history, and progressive disclosure for attendance and leave tools.
+
+The previous global decision-reason field was replaced by a decision note attached to each pending overtime row. Reject remains unavailable until a reason is entered. Paid rows are presented as historical and no longer expose decision actions. The primary Import attendance button opens and scrolls to the secondary tools section. Browser validation confirmed the real UAT rows, status filters, paid payroll references, empty Approved state, and no visible mock/demo rows or runtime errors.
+
+This closes the Milestone 1A UI/UX redesign objective for desktop workflow use. A dedicated narrow mobile viewport pass and broader cross-module button audit remain separate follow-up checks; the page uses responsive grid behavior and stacked action layouts but those checks are not represented as completed here.
