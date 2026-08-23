@@ -108,6 +108,7 @@ export const hrmModule: ModuleDefinition = {
             { label: "Request leave", to: "/hrm/leave/new" },
             { label: "Leave approvals", to: "/hrm/leave/approvals", roles: ["hr_ops", "hr_admin", "manager"] },
             { label: "Leave control panel", to: "/hrm/leave/control", roles: ["hr_ops", "hr_admin", "manager", "payroll"] },
+            { label: "Leave allocation", to: "/hrm/leave/allocations", roles: ["hr_ops", "hr_admin"] },
             { label: "Leave encashment", to: "/hrm/time/toil", roles: ["hr_ops", "hr_admin", "payroll"] },
           ],
         },
