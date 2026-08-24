@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-
 import { Fragment, useEffect, useState } from "react";
 import { AlertTriangle, Ban, Check, CircleDashed, Download, Info, Lock, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CURRENT_USER, isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
+import { isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
 import { CalculationPanel } from "@/platform/components/CalculationPanel";
 import type { ControlTotals, PayRun, RunLine, RunStage } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
@@ -18,6 +18,7 @@ import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { hrmApi } from "@/platform/api-client";
 import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
+import { useAuth } from "@/platform/auth";
 
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
   head: () => ({
@@ -493,7 +494,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("jv-summary", "csv")}
           >
             JV summary CSV
@@ -501,7 +502,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("jv-summary", "pdf")}
           >
             JV summary PDF
@@ -509,7 +510,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("jv-detailed", "csv")}
           >
             JV detailed CSV
@@ -517,7 +518,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("jv-detailed", "pdf")}
           >
             JV detailed PDF
@@ -525,7 +526,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("dept-summary", "csv")}
           >
             By department CSV
@@ -533,7 +534,7 @@ function PaymentWorkflow({
           <Button
             variant="outline"
             size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
             onClick={() => void downloadReport("dept-detailed", "pdf")}
           >
             By department PDF
@@ -770,6 +771,137 @@ function PayLines({
   );
 }
 
+function RunPayslipsSection({
+  run,
+  onChanged,
+}: {
+  run: OperationalPayRun;
+  onChanged: () => Promise<unknown>;
+}) {
+  const slipsState = useApi(async () => {
+    const raw = await realApi.payrollRunPayslips(run.id);
+    return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
+  }, [run.id]);
+
+  return (
+    <DetailSection
+      title="Payslips"
+      description="One payslip per released pay line. Generate PDFs for the whole run, or preview/download an individual one."
+    >
+      <Async state={slipsState} rows={4}>
+        {(slips) => {
+          if (!slips.length) {
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Run is released but no payslips were found — generate them.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={async () => {
+                    try {
+                      await realApi.payrollGenerateAllPayslips(run.id);
+                      feedback.submitted(
+                        "Payslip PDFs generated",
+                        `All ${slips.length} payslip documents are ready. Re-open to see the download links.`,
+                      );
+                      await slipsState.reload();
+                      await onChanged();
+                    } catch (e) {
+                      feedback.blocked(
+                        "Payslip PDF generation failed",
+                        e instanceof Error ? e.message : "Unknown error.",
+                      );
+                    }
+                  }}
+                >
+                  <Download className="size-4" aria-hidden />
+                  Generate PDFs for all payslips
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Idempotent — already-generated slips are returned as-is.
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b bg-surface-muted text-muted-foreground">
+                      <th className="px-2 py-1.5">Payslip</th>
+                      <th className="px-2 py-1.5">Employee</th>
+                      <th className="px-2 py-1.5 text-right">Net</th>
+                      <th className="px-2 py-1.5">Status</th>
+                      <th className="px-2 py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slips.map((s) => (
+                      <tr key={String(s.id ?? "")} className="border-b last:border-0">
+                        <td className="px-2 py-1.5 font-mono text-primary">
+                          {String(s.payslipNo ?? s.id ?? "")}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {String(s.employee ?? s.workerName ?? "")}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular">
+                          {money(Number(s.netPay ?? 0), run.currency)}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span
+                            className={
+                              String(s.status ?? "") === "released" ||
+                              String(s.status ?? "") === "final"
+                                ? "text-success"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {String(s.status ?? "draft")}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <Link
+                            to="/hrm/payslips/$id"
+                            params={{ id: String(s.id ?? "") }}
+                            className="mr-2 text-primary underline underline-offset-2"
+                          >
+                            Open
+                          </Link>
+                          <button
+                            type="button"
+                            className="text-primary underline underline-offset-2"
+                            onClick={async () => {
+                              const blob = await realApi.payslipDownloadBlob(String(s.id ?? ""));
+                              const url = URL.createObjectURL(blob);
+                              const anchor = document.createElement("a");
+                              anchor.href = url;
+                              anchor.download = `${String(s.payslipNo ?? s.id ?? "payslip")}.pdf`;
+                              anchor.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                          >
+                            PDF
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }}
+      </Async>
+    </DetailSection>
+  );
+}
+
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 type OperationalPayRun = PayRun & {
@@ -893,6 +1025,7 @@ function adaptLines(raw: unknown, runId: string): RunLine[] {
 
 function RunDetail() {
   const { id } = Route.useParams();
+  const { user } = useAuth();
   const state = useApi(async (): Promise<OperationalPayRun | null> => {
     if (!USE_REAL) {
       const mock = await payrollRunApi.run(id);
@@ -931,7 +1064,7 @@ function RunDetail() {
       live = false;
     };
   }, []);
-  const exceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
+  const mockExceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
   const lines = useApi(async (): Promise<RunLine[]> => {
     if (!USE_REAL) return payrollRunApi.linesFor(id);
     try {
@@ -964,13 +1097,37 @@ function RunDetail() {
           {(run) => {
             if (!run) return <RestrictedState />;
 
-            const selfApproval = run.preparedBy === CURRENT_USER;
+            const currentSubjectId = user?.id ? String(user.id) : "";
+            const selfApproval = USE_REAL
+              ? Boolean(currentSubjectId && run.preparedBy === currentSubjectId)
+              : false;
             // An exception that has been resolved, waived or excluded no longer
             // holds the run up — that is the point of dealing with it.
-            const blocking = (exceptions.data ?? []).filter(
-              (e) => e.severity === "Blocking" && isOutstanding(e),
+            const liveBlocking = (lines.data ?? []).flatMap((line) =>
+              line.flags.map((flag) => ({
+                id: `${line.id}-${flag}`,
+                severity: "Blocking" as const,
+                kind: "Payroll exception",
+                affects: line.employee,
+                what: flag,
+                impact: "This line must be corrected, waived or excluded before approval.",
+                recommended: "Open Payroll exceptions or recalculate after fixing the worker input.",
+                escalation: "Payroll owner",
+                resolvable: true,
+              })),
             );
+            const blocking = USE_REAL
+              ? liveBlocking
+              : (mockExceptions.data ?? []).filter(
+                  (e) => e.severity === "Blocking" && isOutstanding(e),
+                );
+            const approvalReady =
+              USE_REAL
+                ? run.backendStatus === "calculated" || run.backendStatus === "in-review"
+                : run.status === "Calculated" || run.status === "In review";
             const canApprove = !selfApproval && blocking.length === 0;
+            const firstLiveExample = lines.data?.find((line) => line.components.length)?.components[0];
+            const firstLiveLine = lines.data?.find((line) => line.components.length);
 
             return (
               <RecordDetail
@@ -1151,119 +1308,7 @@ function RunDetail() {
 
                 {/* M34: admin payslip surface — list of payslips for this run with bulk PDF generate */}
                 {USE_REAL && (run.status === "Paid" || run.status === "Closed" || run.backendStatus === "released") ? (
-                  <DetailSection
-                    title="Payslips"
-                    description="One payslip per released pay line. Generate PDFs for the whole run, or preview/download an individual one."
-                  >
-                    <Async
-                      state={
-                        useApi(async () => {
-                          const raw = await realApi.payrollRunPayslips(run.id);
-                          return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
-                        })
-                      }
-                      rows={4}
-                    >
-                      {(slips) => {
-                        if (!slips.length) {
-                          return (
-                            <div className="flex flex-wrap items-center gap-3">
-                              <p className="text-sm text-muted-foreground">
-                                Run is released but no payslips were found — generate them.
-                              </p>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                onClick={async () => {
-                                  try {
-                                    await realApi.payrollGenerateAllPayslips(run.id);
-                                    feedback.submitted(
-                                      "Payslip PDFs generated",
-                                      `All ${slips.length} payslip documents are ready. Re-open to see the download links.`,
-                                    );
-                                    await state.reload();
-                                  } catch (e) {
-                                    feedback.blocked(
-                                      "Payslip PDF generation failed",
-                                      e instanceof Error ? e.message : "Unknown error.",
-                                    );
-                                  }
-                                }}
-                              >
-                                <Download className="size-4" aria-hidden />
-                                Generate PDFs for all payslips
-                              </Button>
-                              <span className="text-xs text-muted-foreground">
-                                Idempotent — already-generated slips are returned as-is.
-                              </span>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-xs">
-                                <thead>
-                                  <tr className="border-b bg-surface-muted text-muted-foreground">
-                                    <th className="px-2 py-1.5">Payslip</th>
-                                    <th className="px-2 py-1.5">Employee</th>
-                                    <th className="px-2 py-1.5 text-right">Net</th>
-                                    <th className="px-2 py-1.5">Status</th>
-                                    <th className="px-2 py-1.5" />
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {slips.map((s) => (
-                                    <tr key={String(s.id ?? "")} className="border-b last:border-0">
-                                      <td className="px-2 py-1.5 font-mono text-primary">
-                                        {String(s.payslipNo ?? s.id ?? "")}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        {String(s.employee ?? s.workerName ?? "")}
-                                      </td>
-                                      <td className="px-2 py-1.5 text-right tabular">
-                                        {money(Number(s.netPay ?? 0), run.currency)}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        <span
-                                          className={
-                                            String(s.status ?? "") === "released" || String(s.status ?? "") === "final"
-                                              ? "text-success"
-                                              : "text-muted-foreground"
-                                          }
-                                        >
-                                          {String(s.status ?? "draft")}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 text-right">
-                                        <Link
-                                          to="/hrm/payslips/$id"
-                                          params={{ id: String(s.id ?? "") }}
-                                          className="mr-2 text-primary underline underline-offset-2"
-                                        >
-                                          Open
-                                        </Link>
-                                        <Link
-                                          to="/hrm/payslips/$id"
-                                          params={{ id: String(s.id ?? "") }}
-                                          className="text-primary underline underline-offset-2"
-                                        >
-                                          PDF
-                                        </Link>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    </Async>
-                  </DetailSection>
+                  <RunPayslipsSection run={run} onChanged={async () => { await state.reload(); }} />
                 ) : null}
 
                 <DetailSection
@@ -1295,32 +1340,28 @@ function RunDetail() {
                   </DetailSection>
                 ) : null}
 
-                <DetailSection
-                  title="Worked example — how one figure was derived"
-                  description="Every calculated line can be explained. This is the same component used on an employee payslip."
-                >
-                  <CalculationExplainer
-                    currency={run.currency}
-                    caption="Shift allowance for Chanda Mwansa-Chileshe, August 2026."
-                    lines={[
-                      {
-                        code: "SHIFT",
-                        label: "Shift allowance",
-                        amount: 2_100,
-                        inputs: [
-                          { label: "Qualifying shifts", value: "14" },
-                          { label: "Rate per shift", value: money(150, run.currency) },
-                          { label: "Source", value: "Approved attendance, cutoff 24 Aug" },
-                        ],
-                        ruleVersion: "ALLOW-SHIFT v2.1",
-                        effectiveFrom: "2026-04-01",
-                        explanation:
-                          "Qualifying night and weekend shifts multiplied by the rate in force for the period.",
-                        priorAmount: 1_650,
-                      },
-                    ]}
-                  />
-                </DetailSection>
+                {firstLiveExample && firstLiveLine ? (
+                  <DetailSection
+                    title="Worked example — how one figure was derived"
+                    description="Every calculated line can be explained. This is the same component used on an employee payslip."
+                  >
+                    <CalculationExplainer
+                      currency={run.currency}
+                      caption={`${firstLiveExample.label} for ${firstLiveLine.employee}, ${run.period}.`}
+                      lines={[
+                        {
+                          code: firstLiveExample.code,
+                          label: firstLiveExample.label,
+                          amount: firstLiveExample.amount,
+                          inputs: firstLiveExample.inputs,
+                          ruleVersion: firstLiveExample.ruleVersion,
+                          effectiveFrom: firstLiveExample.effectiveFrom,
+                          explanation: firstLiveExample.explanation || firstLiveExample.basis,
+                        },
+                      ]}
+                    />
+                  </DetailSection>
+                ) : null}
 
                 {run.status !== "Closed" && run.status !== "Paid" ? (
                   <DetailSection
@@ -1331,7 +1372,18 @@ function RunDetail() {
                         : "Segregation of duties is enforced here, not assumed."
                     }
                   >
-                    {selfApproval ? (
+                    {!approvalReady ? (
+                      <div className="rounded-lg border bg-surface-muted p-4">
+                        <p className="flex items-start gap-2 text-sm font-medium">
+                          <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                          Approval opens after calculation
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Current backend status is {run.backendStatus.replaceAll("-", " ")}. Lock and
+                          calculate the run before sending it for approval.
+                        </p>
+                      </div>
+                    ) : selfApproval ? (
                       <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
                         <p className="flex items-start gap-2 text-sm font-medium text-danger">
                           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
