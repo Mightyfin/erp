@@ -114,11 +114,15 @@ function PayslipDetail() {
       : [];
     return {
       ...raw,
-      employee: raw.workerName,
-      period: raw.periodLabel,
+      employee: raw.workerName ?? raw.employeeNo ?? raw.payslipNo,
+      employeeId: raw.employeeNo,
+      period: raw.periodLabel ?? raw.payslipNo,
+      entityName: raw.payslipNo,
+      payDate: raw.payDate ?? (typeof raw.releasedAt === "string" ? raw.releasedAt.slice(0, 10) : ""),
       gross: raw.grossPay,
       deductions: raw.totalDeductions,
       net: raw.netPay,
+      paid: ["paid", "closed", "final"].includes(String(raw.status ?? "").toLowerCase()),
       components,
     };
   }, [id]);
@@ -149,9 +153,12 @@ function PayslipDetail() {
                 <PageHeader
                   eyebrow="Pay"
                   title={`Payslip — ${String(slip.period ?? "")}`}
-                  description={`${String(slip.employee ?? "")} · ${String(slip.entityName ?? "")}`}
-                  primaryAction=                    {
-                      <Button
+                  description={[
+                    String(slip.employee ?? ""),
+                    String(slip.entityName ?? ""),
+                  ].filter(Boolean).join(" · ")}
+                  primaryAction={
+                    <Button
                       variant="outline"
                       className="gap-2"
                       disabled={generating}
@@ -159,15 +166,9 @@ function PayslipDetail() {
                         if (USE_REAL) {
                           setGenerating(true);
                           try {
-                            // Fetch the PDF through the authenticated API client (window.open
-                            // cannot carry the bearer token, which is why the plain preview
-                            // URL fails with 401), then open the blob in a new tab.
-                            const blob = await realApi.payslipDownloadBlob(id);
-                            const blobUrl = URL.createObjectURL(blob);
-                            const tab = window.open(blobUrl, "_blank", "noopener,noreferrer");
-                            if (!tab) URL.revokeObjectURL(blobUrl);
-                            // Release the blob after the new tab has loaded it (2 min safety net).
-                            setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
+                            const { url } = await realApi.myPayslipDownloadUrl(id);
+                            if (!url) throw new Error("The backend did not return a payslip URL.");
+                            window.open(url, "_blank", "noopener,noreferrer");
                             feedback.submitted(
                               "Payslip download ready.",
                               "The generated copy opened in a new browser tab.",
