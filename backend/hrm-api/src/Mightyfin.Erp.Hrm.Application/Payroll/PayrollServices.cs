@@ -85,6 +85,7 @@ public interface IPayrollService
     Task<Paged<PayslipDto>> GetMyPayslipsAsync(string subjectId, CancellationToken ct);
     Task<PayslipDto?> GetMyPayslipByIdAsync(Guid id, string subjectId, CancellationToken ct);
     Task<string> GetMyPayslipDownloadUrlAsync(Guid id, string subjectId, CancellationToken ct);
+    Task<byte[]> GetMyPayslipPreviewAsync(Guid id, string subjectId, CancellationToken ct);
 
     // M24: statutory identity readiness per run — hard gate on release.
     Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
@@ -1100,6 +1101,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         authz.RequireAnyRole("payroll", "hr_admin");
         var slip = await repo.GetPayslipAsync(payslipId, ct)
             ?? throw new DomainException("payslip-not-found", $"Payslip {payslipId} does not exist.");
+        return await EnsurePayslipPdfBytesAsync(slip, payslipId, ct);
+    }
+
+    private async Task<byte[]> EnsurePayslipPdfBytesAsync(Payslip slip, Guid payslipId, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(slip.DocumentUrl))
         {
             var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
@@ -1196,6 +1202,19 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             await repo.UpdatePayslipAsync(slip, ct);
         }
         return slip.DocumentUrl;
+    }
+
+    public async Task<byte[]> GetMyPayslipPreviewAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin", "manager", "hr_ops");
+        if (string.IsNullOrWhiteSpace(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        var slip = await repo.GetPayslipAsync(id, ct)
+            ?? throw new DomainException("payslip-not-found", $"Payslip {id} does not exist.");
+        if (worker is null || slip.WorkerId != worker.Id)
+            throw new DomainException("payslip-not-owned", "The payslip does not belong to the signed-in worker.");
+        return await EnsurePayslipPdfBytesAsync(slip, id, ct);
     }
 
     // M25: for an employee-only caller, resolve their own worker from the

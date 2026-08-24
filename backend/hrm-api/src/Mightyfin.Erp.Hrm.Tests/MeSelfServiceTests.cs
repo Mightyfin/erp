@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -83,6 +84,45 @@ public class MeSelfServiceTests
         Assert.Equal("payslip-not-owned", ex2.Code);
         // A non-existent slip always returns null, even for the owner.
         Assert.Null(await service.GetMyPayslipByIdAsync(Guid.NewGuid(), "sub-m25-block", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetMyPayslipPreview_StreamsOnlyOwnedPayslip()
+    {
+        var ctx = TestDbContextFactory.Create("m25-preview");
+        var service = new PayrollServiceImpl(new PayrollRepository(ctx), new PermissiveAuthz(),
+            new FakeDocService("https://storage.example/x.pdf"));
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+
+        var worker = await ctx.Workers.FirstAsync();
+        worker.SubjectId = "sub-m25-preview";
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+        await service.ApproveRunAsync(run.Id, "ok", CancellationToken.None);
+        await service.ReleaseRunAsync(run.Id, CancellationToken.None);
+
+        var slip = (await ctx.Payslips.ToListAsync()).Single();
+        var path = Path.Combine(Path.GetTempPath(), $"m25-preview-{Guid.NewGuid():D}.pdf");
+        try
+        {
+            var expected = new byte[] { 0x25, 0x50, 0x44, 0x46 };
+            await File.WriteAllBytesAsync(path, expected, CancellationToken.None);
+            slip.DocumentUrl = $"file://{path}";
+            await ctx.SaveChangesAsync();
+
+            var bytes = await service.GetMyPayslipPreviewAsync(slip.Id, "sub-m25-preview", CancellationToken.None);
+            Assert.Equal(expected, bytes);
+            var ex = await Assert.ThrowsAsync<DomainException>(() =>
+                service.GetMyPayslipPreviewAsync(slip.Id, "sub-impostor", CancellationToken.None));
+            Assert.Equal("payslip-not-owned", ex.Code);
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
     }
 
     [Fact]

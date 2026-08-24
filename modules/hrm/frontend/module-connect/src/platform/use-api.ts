@@ -750,6 +750,8 @@ export const realApi = {
   myPayslipById: (id: string) => hrmApi.get<unknown>(`/hrm/me/payslips/${id}`),
   myPayslipDownloadUrl: (id: string) =>
     hrmApi.get<{ url: string }>(`/hrm/me/payslips/${id}/download`),
+  myPayslipDownloadBlob: (id: string) =>
+    hrmApi.getBlob(`/hrm/me/payslips/${id}/preview`),
   /** Own HR-request inbox, optionally filtered by status. */
   myRequests: (status?: string) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/me/requests", status ? { status } : {}),

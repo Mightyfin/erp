@@ -166,9 +166,11 @@ function PayslipDetail() {
                         if (USE_REAL) {
                           setGenerating(true);
                           try {
-                            const { url } = await realApi.myPayslipDownloadUrl(id);
-                            if (!url) throw new Error("The backend did not return a payslip URL.");
-                            window.open(url, "_blank", "noopener,noreferrer");
+                            const blob = await realApi.myPayslipDownloadBlob(id);
+                            const blobUrl = URL.createObjectURL(blob);
+                            const tab = window.open(blobUrl, "_blank", "noopener,noreferrer");
+                            if (!tab) URL.revokeObjectURL(blobUrl);
+                            setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
                             feedback.submitted(
                               "Payslip download ready.",
                               "The generated copy opened in a new browser tab.",

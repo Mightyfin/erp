@@ -424,6 +424,14 @@ public static class Routes
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(new { url = await svc.GetMyPayslipDownloadUrlAsync(id, subject, ct) });
         });
+        g.MapGet("/payslips/{id:guid}/preview", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var bytes = await svc.GetMyPayslipPreviewAsync(id, subject, ct);
+            return Results.File(bytes, "application/pdf", $"payslip-{id:D}.pdf");
+        });
 
         g.MapGet("/notifications", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
             Results.Ok(await svc.ListAsync(ResolveSubjectId(http) ?? "", ct)));
