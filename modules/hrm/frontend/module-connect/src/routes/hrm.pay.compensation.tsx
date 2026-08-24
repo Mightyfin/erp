@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AppShell } from "@/platform/components/AppShell";
+import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
@@ -87,11 +88,13 @@ function WorkerPayDialog({
   state,
   open,
   onOpenChange,
+  onSaved,
 }: {
   worker: Raw | null;
   state: { profiles: Raw[]; components: Raw[]; groups: Raw[] };
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
 }) {
   const [payGroupId, setPayGroupId] = useState("");
   const [payBasis, setPayBasis] = useState<"salary" | "timesheet">("salary");
@@ -128,7 +131,7 @@ function WorkerPayDialog({
         const wid = String(worker.id ?? "");
         const profilesArr = Array.isArray(profiles) ? (profiles as Raw[]) : [];
         const existing = profilesArr.find((p) => String(p.workerId) === wid);
-        const groupList = resolvedGroups.length ? resolvedGroups : snap.groups;
+        const groupList = Array.isArray(groups) && groups.length ? (groups as Raw[]) : snap.groups;
         const defaults = groupList.find((g) => Boolean(g.isDefault))?.id ?? groupList[0]?.id ?? "";
         setPayGroupId(existing ? String(existing.payGroupId ?? "") : String(defaults));
         const basis = String(existing?.payBasis ?? "salary").toLowerCase();
@@ -140,7 +143,7 @@ function WorkerPayDialog({
         );
         const comps = Array.isArray(components) ? (components as Raw[]) : snap.components;
         const statutoryCodes = new Set(
-          snap.components
+          comps
             .filter((c) => Boolean(c.isStatutory) && Boolean(c.isActive))
             .map((c) => String(c.code ?? "")),
         );
@@ -237,15 +240,7 @@ function WorkerPayDialog({
                 payBasis,
               });
               feedback.saved(`${workerName}'s pay structure saved for the ${effectiveFrom} start date.`);
-              // Refresh the parent snapshot so the workers table reflects the new profile immediately.
-              try {
-                const refreshed = await realApi.payrollProfiles();
-                const arr = Array.isArray(refreshed) ? (refreshed as Raw[]) : [];
-                state.profiles.length = 0;
-                state.profiles.push(...arr);
-              } catch {
-                // Table keeps the older snapshot — harmless.
-              }
+              onSaved();
               onOpenChange(false);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Server rejected the change.");
@@ -391,8 +386,24 @@ function CompensationPage() {
   });
 
   const profileFor = (w: Raw) => data.profiles.find((p) => String(p.workerId) === String(w.id));
+  const basicComponent = data.components.find((c) => String(c.code ?? "").toLowerCase() === "basic");
+  const activeWorkerCount = data.workers.length;
+  const missingProfile = data.workers.filter((w) => !profileFor(w));
+  const profilesMissingBasic = data.workers.filter((w) => {
+    const profile = profileFor(w);
+    if (!profile) return false;
+    const values = (profile.values as Raw[] | undefined) ?? [];
+    return !values.some((v) => {
+      const sameComponent = basicComponent
+        ? String(v.componentId) === String(basicComponent.id)
+        : String(v.componentCode ?? "").toLowerCase() === "basic";
+      return sameComponent && Number(v.amount ?? 0) > 0;
+    });
+  });
+  const readyWorkerCount = Math.max(0, activeWorkerCount - missingProfile.length - profilesMissingBasic.length);
 
   return (
+    <AuthGate>
     <AppShell>
       <PageHeader
         eyebrow="Payroll"
@@ -447,6 +458,28 @@ function CompensationPage() {
 
       {tab === "pay" ? (
         <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Ready for payroll</p>
+              <p className="mt-1 text-2xl font-semibold tabular">{readyWorkerCount}/{activeWorkerCount}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Active workers with a usable pay profile.</p>
+            </div>
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Missing profile</p>
+              <p className={`mt-1 text-2xl font-semibold tabular ${missingProfile.length ? "text-warning" : ""}`}>
+                {missingProfile.length}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">These workers will not calculate correctly.</p>
+            </div>
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-xs text-muted-foreground">Missing basic pay</p>
+              <p className={`mt-1 text-2xl font-semibold tabular ${profilesMissingBasic.length ? "text-warning" : ""}`}>
+                {profilesMissingBasic.length}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Basic pay is mandatory before running payroll.</p>
+            </div>
+          </div>
+
           <div className="mt-4 rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
             <p className="flex items-start gap-2 font-medium">
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -509,18 +542,11 @@ function CompensationPage() {
                             {profile && canAct ? (
                               <Select
                                 value={String(profile.payBasis ?? "salary").toLowerCase() === "timesheet" ? "timesheet" : "salary"}
-                                onValueChange={async (next: string) => {
+                              onValueChange={async (next: string) => {
                                   const basis = next === "timesheet" ? "timesheet" : "salary";
                                   try {
                                     await realApi.setPayBasis(String(w.id), basis);
-                                    try {
-                                      const refreshed = await realApi.payrollProfiles();
-                                      const arr = Array.isArray(refreshed) ? (refreshed as Raw[]) : [];
-                                      state.profiles.length = 0;
-                                      state.profiles.push(...arr);
-                                    } catch {
-                                      // Keep older snapshot — harmless.
-                                    }
+                                    await state.reload();
                                     feedback.saved(
                                       basis === "timesheet"
                                         ? "Timesheet flag set — salary-basis pay still applies until timesheet pay ships."
@@ -617,7 +643,9 @@ function CompensationPage() {
         onOpenChange={(o) => {
           if (!o) setEditingWorker(null);
         }}
+        onSaved={() => void state.reload()}
       />
     </AppShell>
+    </AuthGate>
   );
 }
