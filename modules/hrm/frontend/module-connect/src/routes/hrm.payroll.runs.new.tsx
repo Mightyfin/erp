@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Ban, Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { money } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
-import { realApi, useApi } from "@/platform/use-api";
+import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import {
   demoEntityTree,
   flattenEntityTree,
@@ -84,11 +84,62 @@ function ReadinessRow({ item }: { item: (typeof READINESS)[number] }) {
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
+type PayGroupRow = {
+  id: string;
+  code?: string;
+  name: string;
+  currency: string;
+  isDefault?: boolean;
+};
+
+type PayPeriodRow = {
+  id: string;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  cutoffDate: string;
+  payDate: string;
+  status: string;
+};
+
+type ProfileRow = {
+  id: string;
+  workerId: string;
+  workerName?: string | null;
+  payGroupId: string;
+  payGroupName?: string | null;
+  effectiveFrom: string;
+  values?: Array<{ amount?: number | string | null }>;
+};
+
+type PayrollSetup = {
+  groups: PayGroupRow[];
+  periods: PayPeriodRow[];
+  profiles: ProfileRow[];
+  workers: ReturnType<typeof adaptWorkers>;
+  tree: OrgTreeNode[];
+};
+
+const asArray = (raw: unknown): unknown[] =>
+  Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && "items" in raw
+      ? ((raw as { items?: unknown[] }).items ?? [])
+      : [];
+
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+const moneyAmount = (value: unknown) => {
+  const n = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
 function NewRun() {
   const navigate = useNavigate();
   const [ref, setRef] = useState<string | null>(null);
   const [entityId, setEntityId] = useState(ENTITIES[0].id);
-  const [payGroup, setPayGroup] = useState(PAY_GROUPS[0]);
+  const [payGroup, setPayGroup] = useState("");
+  const [periodId, setPeriodId] = useState("");
   const [period, setPeriod] = useState("2026-08");
   const [payDate, setPayDate] = useState("2026-08-28");
   const [cutoff, setCutoff] = useState("2026-08-24");
@@ -98,38 +149,113 @@ function NewRun() {
   const [note, setNote] = useState("");
 
   const setup = useApi(
-    async () => {
-      const groups = (await realApi.payrollPayGroups()) as unknown as { id?: string }[];
-      const groupId = groups[0]?.id ?? "";
-      const periods = groupId
-        ? ((await realApi.payrollPayGroupPeriods(groupId)) as unknown as {
-            id: string;
-            periodLabel: string;
-            cutoffDate: string;
-            payDate: string;
-            status: string;
-          }[])
+    async (): Promise<PayrollSetup> => {
+      if (!USE_REAL) {
+        return { groups: [], periods: [], profiles: [], workers: [], tree: demoEntityTree };
+      }
+      const [groupsRaw, profilesRaw, workersRaw, treeRaw] = await Promise.all([
+        realApi.payrollPayGroups(),
+        realApi.payrollProfiles(),
+        realApi.employees({ status: "active" }),
+        realApi.entityTree(),
+      ]);
+      const groups = asArray(groupsRaw).map((g) => {
+        const row = g as Record<string, unknown>;
+        return {
+          id: text(row.id),
+          code: row.code ? text(row.code) : undefined,
+          name: text(row.name || row.code || "Pay group"),
+          currency: text(row.currency || "ZMW"),
+          isDefault: Boolean(row.isDefault),
+        };
+      });
+      const selectedGroupId = payGroup || groups.find((g) => g.isDefault)?.id || groups[0]?.id || "";
+      const periods = selectedGroupId
+        ? asArray(await realApi.payrollPayGroupPeriods(selectedGroupId)).map((p) => {
+            const row = p as Record<string, unknown>;
+            return {
+              id: text(row.id),
+              periodLabel: text(row.periodLabel),
+              startDate: text(row.startDate),
+              endDate: text(row.endDate),
+              cutoffDate: text(row.cutoffDate),
+              payDate: text(row.payDate),
+              status: text(row.status),
+            };
+          })
         : [];
-      const tree = USE_REAL
-        ? ((await realApi.entityTree()) as unknown as OrgTreeNode[])
-        : demoEntityTree;
-      return { periods, groupId, tree };
+      const profiles = asArray(profilesRaw).map((p) => {
+        const row = p as Record<string, unknown>;
+        return {
+          id: text(row.id),
+          workerId: text(row.workerId),
+          workerName: row.workerName ? text(row.workerName) : null,
+          payGroupId: text(row.payGroupId),
+          payGroupName: row.payGroupName ? text(row.payGroupName) : null,
+          effectiveFrom: text(row.effectiveFrom),
+          values: Array.isArray(row.values)
+            ? (row.values as Array<{ amount?: number | string | null }>)
+            : [],
+        };
+      });
+      return {
+        groups,
+        periods,
+        profiles,
+        workers: adaptWorkers(workersRaw),
+        tree: Array.isArray(treeRaw) ? (treeRaw as OrgTreeNode[]) : demoEntityTree,
+      };
     },
-    [],
+    [payGroup],
   );
+
+  const defaultGroupId =
+    setup.data?.groups.find((g) => g.isDefault)?.id || setup.data?.groups[0]?.id || "";
+  const selectedGroupId = USE_REAL ? payGroup || defaultGroupId : payGroup || PAY_GROUPS[0];
+  const selectedGroup = setup.data?.groups.find((g) => g.id === selectedGroupId);
+
+  useEffect(() => {
+    if (!USE_REAL || !setup.data) return;
+    if (!payGroup && defaultGroupId) setPayGroup(defaultGroupId);
+  }, [defaultGroupId, payGroup, setup.data]);
+
+  useEffect(() => {
+    if (!USE_REAL || !setup.data?.periods.length) return;
+    const current = setup.data.periods.find((p) => p.id === periodId);
+    if (current) return;
+    const open = setup.data.periods.find((p) => p.status === "open") ?? setup.data.periods[0];
+    setPeriodId(open.id);
+    setPeriod(open.periodLabel);
+    setCutoff(open.cutoffDate);
+    setPayDate(open.payDate);
+  }, [periodId, setup.data]);
+
   const placementUnits = flattenEntityTree(setup.data?.tree ?? demoEntityTree);
   const placementOptions = treeToSelectOptions(setup.data?.tree ?? demoEntityTree).map((o) => ({
     ...o,
     entity: o.value.startsWith("entity:"),
   }));
-  const chosenPeriod =
-    setup.data?.periods.find((p) => p.periodLabel === period) ??
-    (setup.data?.periods ?? [])[0];
+  const chosenPeriod = USE_REAL
+    ? setup.data?.periods.find((p) => p.id === periodId)
+    : undefined;
 
   const entity = ENTITIES.find((e) => e.id === entityId) ?? ENTITIES[0];
   const entityEntityId = placementUnits.find((p) => p.unitType === "entity")?.entityId ?? entityId;
-  const included = POPULATION.filter((p) => !excluded.includes(p.name));
-  const estimate = included.length * 20_878.88;
+  const liveProfiles = (setup.data?.profiles ?? []).filter((p) => p.payGroupId === selectedGroupId);
+  const liveWorkerById = new Map((setup.data?.workers ?? []).map((w) => [w.id, w]));
+  const livePopulation = liveProfiles.map((profile) => {
+    const worker = liveWorkerById.get(profile.workerId);
+    return {
+      id: profile.workerId,
+      name: profile.workerName || worker?.fullName || "Unnamed worker",
+      note: `${worker?.employeeNo ?? "No employee number"} · ${worker?.jobTitle || "No job title"} · profile effective ${profile.effectiveFrom || "unknown"}`,
+      amount: (profile.values ?? []).reduce((sum, value) => sum + moneyAmount(value.amount), 0),
+    };
+  });
+  const included = USE_REAL ? livePopulation : POPULATION.filter((p) => !excluded.includes(p.name));
+  const estimate = USE_REAL
+    ? livePopulation.reduce((sum, p) => sum + p.amount, 0)
+    : included.length * 20_878.88;
   const dateProblem = useMemo(
     () => (cutoff > payDate ? "The cutoff is after the pay date, so approved time would miss this run." : null),
     [cutoff, payDate],
@@ -173,13 +299,13 @@ function NewRun() {
 
           <div>
             <Label htmlFor="group">Pay group</Label>
-            <Select value={USE_REAL && setup.data?.periods.length ? setup.data.groupId : payGroup} onValueChange={setPayGroup}>
+            <Select value={selectedGroupId} onValueChange={setPayGroup}>
               <SelectTrigger id="group" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(USE_REAL && setup.data?.periods.length
-                  ? [{ id: setup.data.groupId, name: "Monthly ZMW" }]
+                {(USE_REAL
+                  ? setup.data?.groups ?? []
                   : PAY_GROUPS.map((g) => ({ id: g, name: g }))
                 ).map((g) => (
                   <SelectItem key={g.id} value={g.id}>
@@ -194,11 +320,22 @@ function NewRun() {
             <div>
               <Label htmlFor="period">Period</Label>
               {USE_REAL && setup.data?.periods.length ? (
-                <Select value={period} onValueChange={setPeriod}>
+                <Select
+                  value={periodId}
+                  onValueChange={(value) => {
+                    const next = setup.data?.periods.find((p) => p.id === value);
+                    setPeriodId(value);
+                    if (next) {
+                      setPeriod(next.periodLabel);
+                      setCutoff(next.cutoffDate);
+                      setPayDate(next.payDate);
+                    }
+                  }}
+                >
                   <SelectTrigger id="period" className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {setup.data.periods.map((p) => (
-                      <SelectItem key={p.id} value={p.periodLabel}>
+                      <SelectItem key={p.id} value={p.id}>
                         {p.periodLabel} ({p.status})
                       </SelectItem>
                     ))}
@@ -210,11 +347,11 @@ function NewRun() {
             </div>
             <div>
               <Label htmlFor="cutoff">Time cutoff</Label>
-              <Input id="cutoff" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.cutoffDate ? chosenPeriod.cutoffDate : cutoff} readOnly={USE_REAL && !!chosenPeriod?.cutoffDate} onChange={(e) => setCutoff(e.target.value)} />
+              <Input id="cutoff" type="date" className="mt-1" value={cutoff} readOnly={USE_REAL && !!chosenPeriod?.cutoffDate} onChange={(e) => setCutoff(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="paydate">Pay date</Label>
-              <Input id="paydate" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.payDate ? chosenPeriod.payDate : payDate} readOnly={USE_REAL && !!chosenPeriod?.payDate} onChange={(e) => setPayDate(e.target.value)} />
+              <Input id="paydate" type="date" className="mt-1" value={payDate} readOnly={USE_REAL && !!chosenPeriod?.payDate} onChange={(e) => setPayDate(e.target.value)} />
             </div>
           </div>
 
@@ -235,15 +372,26 @@ function NewRun() {
     {
       id: "population",
       title: "Confirm who is in the run",
-      purpose: "Nobody is silently left out — every exclusion carries a reason.",
+      purpose: USE_REAL
+        ? "Production runs include workers with an active payroll profile in the selected pay group."
+        : "Nobody is silently left out — every exclusion carries a reason.",
       render: () => (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            {included.length} in, {excluded.length} out of {POPULATION.length} in this pay group.
+            {USE_REAL
+              ? `${livePopulation.length} worker${livePopulation.length === 1 ? "" : "s"} will be picked up by the calculation engine for this pay group.`
+              : `${included.length} in, ${excluded.length} out of ${POPULATION.length} in this pay group.`}
           </p>
+          {USE_REAL && livePopulation.length === 0 ? (
+            <p role="alert" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              No active payroll profiles were found for this pay group. Assign pay profiles on
+              Compensation and benefits before opening the run.
+            </p>
+          ) : null}
           <ul className="space-y-2">
-            {POPULATION.map((p) => {
-              const isOut = excluded.includes(p.name);
+            {(USE_REAL ? livePopulation : POPULATION).map((p) => {
+              const isOut = !USE_REAL && excluded.includes(p.name);
               return (
                 <li key={p.name} className="flex flex-wrap items-start justify-between gap-3 rounded-md border p-3">
                   <span className="min-w-0 flex-1">
@@ -259,17 +407,19 @@ function NewRun() {
                     ) : (
                       <span className="text-xs text-success">Included</span>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setExcluded((x) =>
-                          isOut ? x.filter((n) => n !== p.name) : [...x, p.name],
-                        )
-                      }
-                    >
-                      {isOut ? "Include" : "Exclude"}
-                    </Button>
+                    {!USE_REAL ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setExcluded((x) =>
+                            isOut ? x.filter((n) => n !== p.name) : [...x, p.name],
+                          )
+                        }
+                      >
+                        {isOut ? "Include" : "Exclude"}
+                      </Button>
+                    ) : null}
                   </span>
                 </li>
               );
@@ -305,12 +455,12 @@ function NewRun() {
         <div className="max-w-xl space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2">
             {[
-              ["Entity", entity.name],
-              ["Pay group", payGroup],
+              ["Entity", USE_REAL ? "Current organisation scope" : entity.name],
+              ["Pay group", selectedGroup?.name ?? payGroup],
               ["Period", period],
               ["Pay date", payDate],
               ["Employees included", String(included.length)],
-              ["Deliberately excluded", String(excluded.length)],
+              ["Manual exclusions", USE_REAL ? "Not supported at run creation" : String(excluded.length)],
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -322,11 +472,12 @@ function NewRun() {
           <div className="rounded-md border bg-surface-muted p-3">
             <p className="text-sm">
               Indicative gross, based on the last period:{" "}
-              <span className="tabular font-medium">{money(estimate, entity.currency)}</span>
+              <span className="tabular font-medium">{money(estimate, selectedGroup?.currency ?? entity.currency)}</span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              An estimate to sense-check the population, not a calculation. The real figures come out
-              of the calculate stage.
+              {USE_REAL
+                ? "This adds the current configured payroll profile values. Statutory deductions, overtime, proration and exceptions are calculated only after the run is locked and calculated."
+                : "An estimate to sense-check the population, not a calculation. The real figures come out of the calculate stage."}
             </p>
           </div>
 
@@ -386,8 +537,26 @@ function NewRun() {
               );
               return;
             }
+            if (chosenPeriod.status !== "open") {
+              feedback.blocked(
+                "Period is not open",
+                `${chosenPeriod.periodLabel} is ${chosenPeriod.status}. Choose an open period before creating a run.`,
+              );
+              return;
+            }
+            if (!selectedGroupId) {
+              feedback.blocked("No pay group selected", "Choose a pay group before opening the run.");
+              return;
+            }
+            if (livePopulation.length === 0) {
+              feedback.blocked(
+                "No workers in this pay group",
+                "Assign payroll profiles before opening a run for this pay group.",
+              );
+              return;
+            }
             try {
-              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: setup.data.groupId });
+              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: selectedGroupId });
               setRef(String((r as { id?: string }).id ?? chosenPeriod.id));
               feedback.submitted(
                 "Run opened against the selected period.",
