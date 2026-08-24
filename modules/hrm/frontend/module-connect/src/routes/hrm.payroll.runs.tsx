@@ -31,11 +31,17 @@ export const Route = createFileRoute("/hrm/payroll/runs")({
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
-const closed = new Set(["Closed", "Paid", "Reversed", "Locked", "Calculated"]);
+const finished = new Set(["Paid", "Closed", "Reversed"]);
+
+type ListedPayRun = PayRun & {
+  backendStatus: string;
+  paymentStatus: string;
+  exceptionCount: number;
+  createdAt?: string;
+};
 
 /** M27: adapt persisted runs, including live control totals and payment state. */
-function adaptRunRows(rows: unknown[]): PayRun[] {
-  const entity = "New World Cargo Logistics Zambia Ltd";
+function adaptRunRows(rows: unknown[]): ListedPayRun[] {
   return rows.map((raw) => {
     const r = raw as Record<string, unknown>;
     const backendStatus = String(r.status ?? "draft");
@@ -52,18 +58,21 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
     };
     const status = statusMap[backendStatus] ?? "Draft";
     const payment = String(r.paymentStatus ?? "not-created");
+    const exceptionCount = Number(r.exceptionCount ?? 0);
     const nextAction =
       backendStatus === "draft"
         ? "Lock inputs"
         : backendStatus === "locked"
           ? "Calculate run"
           : backendStatus === "calculated"
-            ? Number(r.exceptionCount ?? 0)
+            ? exceptionCount
               ? "Resolve exceptions"
               : "Approve run"
+            : backendStatus === "in-review"
+              ? "Awaiting approval"
             : backendStatus === "approved"
               ? "Release payslips"
-              : backendStatus === "released" && payment === "not-created"
+            : backendStatus === "released" && payment === "not-created"
                 ? "Generate payment file"
                 : backendStatus === "released" && payment === "released"
                   ? "Reconcile bank result"
@@ -73,10 +82,10 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
     return {
       id: String(r.id ?? ""),
       period: String(r.periodLabel ?? ""),
-      entityId: "",
-      payGroup: "Monthly ZMW",
+      entityId: String(r.legalEntityId ?? r.entityId ?? ""),
+      payGroup: String(r.payGroup ?? r.payGroupName ?? "Monthly ZMW"),
       currency: "ZMW",
-      entityName: entity,
+      entityName: String(r.entityName ?? r.legalEntityName ?? "Payroll scope"),
       included: Number(r.employeeCount ?? 0),
       excluded: [],
       stages: [],
@@ -90,13 +99,26 @@ function adaptRunRows(rows: unknown[]): PayRun[] {
       },
       status,
       nextAction,
-      dueDate: "controlled workflow",
+      dueDate: r.createdAt ? new Date(String(r.createdAt)).toLocaleDateString("en-GB") : "controlled workflow",
       branchId: r.locationId ? String(r.locationId) : undefined,
       owner: String(r.preparedBySubjectId ?? "Payroll officer"),
       preparedBy: String(r.preparedBySubjectId ?? ""),
       approvedBy: r.approvedBySubjectId ? String(r.approvedBySubjectId) : undefined,
-    } satisfies PayRun;
+      backendStatus,
+      paymentStatus: payment,
+      exceptionCount,
+      createdAt: r.createdAt ? String(r.createdAt) : undefined,
+    } satisfies ListedPayRun;
   });
+}
+
+function adaptMockRunRows(rows: PayRun[]): ListedPayRun[] {
+  return rows.map((run) => ({
+    ...run,
+    backendStatus: run.status.toLowerCase(),
+    paymentStatus: finished.has(run.status) ? "released" : "not-created",
+    exceptionCount: 0,
+  }));
 }
 
 let liveLocationsCache: { id: string; name: string }[] | null = null;
@@ -107,8 +129,8 @@ function branchName(branchId: string): string | undefined {
 }
 
 function RunsList() {
-  const state = useApi(async (): Promise<PayRun[]> => {
-    if (!USE_REAL) return payrollRunApi.runs();
+  const state = useApi(async (): Promise<ListedPayRun[]> => {
+    if (!USE_REAL) return adaptMockRunRows(await payrollRunApi.runs());
     if (!liveLocationsCache) {
       const raw = await realApi.locations().catch(() => ({ items: [] as unknown[] }));
       liveLocationsCache = (Array.isArray(raw)
@@ -141,51 +163,69 @@ function RunsList() {
           }
         />
         <Async state={state} rows={4}>
-          {(rows) => (
-            <ListPage<PayRun>
-              rows={rows.filter((r) =>
-                view === "open"
-                  ? !closed.has(r.status)
-                  : view === "closed"
-                    ? closed.has(r.status)
-                    : true,
-              )}
+          {(rows) => {
+            const visibleRows = rows.filter((r) =>
+              view === "open"
+                ? !finished.has(r.status)
+                : view === "finished"
+                  ? finished.has(r.status)
+                  : true,
+            );
+            const statuses = Array.from(new Set(rows.map((r) => r.status))).filter(Boolean);
+            const entities = Array.from(new Set(rows.map((r) => r.entityName).filter(Boolean)));
+            const branches = Array.from(
+              new Set(
+                rows
+                  .map((r) => (r.branchId ? (branchName(r.branchId) ?? "Branch") : "Organisation-wide"))
+                  .filter(Boolean),
+              ),
+            );
+            const filters = [
+              {
+                id: "status",
+                label: "Status",
+                options: statuses,
+                match: (r: ListedPayRun, v: string) => r.status === v,
+              },
+              ...(entities.length > 1
+                ? [
+                    {
+                      id: "entity",
+                      label: "Entity",
+                      options: entities,
+                      match: (r: ListedPayRun, v: string) => r.entityName === v,
+                    },
+                  ]
+                : []),
+              ...(branches.length > 1
+                ? [
+                    {
+                      id: "branch",
+                      label: "Branch",
+                      options: branches,
+                      match: (r: ListedPayRun, v: string) =>
+                        (r.branchId ? (branchName(r.branchId) ?? "Branch") : "Organisation-wide") === v,
+                    },
+                  ]
+                : []),
+            ];
+            return (
+            <ListPage<ListedPayRun>
+              rows={visibleRows}
               savedViews={[
-                { id: "open", label: "In progress" },
-                { id: "closed", label: "Paid or closed" },
+                { id: "open", label: `Needs action (${visibleRows.length})` },
+                { id: "finished", label: `Paid or closed (${rows.filter((r) => finished.has(r.status)).length})` },
                 { id: "all", label: "All runs" },
               ]}
               activeView={view}
               onViewChange={setView}
-              searchPlaceholder="Search reference, period or entity"
-              searchFields={(r) => `${r.id} ${r.period} ${r.entityName} ${r.payGroup}`}
-              filters={[
-                {
-                  id: "status",
-                  label: "Status",
-                  options: [
-                    "Draft",
-                    "Calculating",
-                    "Calculated",
-                    "In review",
-                    "Approved",
-                    "Paid",
-                    "Closed",
-                    "Reversed",
-                  ] as string[],
-                  match: (r, v) => r.status === v,
-                },
-                {
-                  id: "entity",
-                  label: "Entity",
-                  options: [
-                    "New World Cargo Logistics Zambia Ltd",
-                    "New World Cargo Copperbelt Services Ltd",
-                    "New World Cargo Engineering Zambia Ltd",
-                  ] as string[],
-                  match: (r, v) => r.entityName === v,
-                },
-              ]}
+              searchPlaceholder="Search reference, period, branch or status"
+              searchFields={(r) =>
+                `${r.id} ${r.period} ${r.entityName} ${r.payGroup} ${r.status} ${r.backendStatus} ${
+                  r.branchId ? (branchName(r.branchId) ?? "") : "organisation-wide"
+                }`
+              }
+              filters={filters}
               columns={[
                 {
                   id: "ref",
@@ -207,8 +247,14 @@ function RunsList() {
                 },
                 {
                   id: "entity",
-                  header: "Entity",
-                  cell: (r) => <span className="block max-w-48 truncate">{r.entityName}</span>,
+                  header: "Scope",
+                  cell: (r) => (
+                    <span className="block max-w-48 truncate">
+                      {r.entityName === "Payroll scope" && r.branchId
+                        ? "Branch payroll"
+                        : r.entityName}
+                    </span>
+                  ),
                 },
                 {
                   id: "branch",
@@ -250,6 +296,26 @@ function RunsList() {
                 },
                 { id: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
                 {
+                  id: "exceptions",
+                  header: "Exceptions",
+                  defaultVisible: false,
+                  cell: (r) => (
+                    <span className={r.exceptionCount ? "text-warning-foreground" : "text-muted-foreground"}>
+                      {r.exceptionCount || "None"}
+                    </span>
+                  ),
+                },
+                {
+                  id: "payment",
+                  header: "Payment",
+                  defaultVisible: false,
+                  cell: (r) => (
+                    <span className="block max-w-36 truncate text-xs text-muted-foreground">
+                      {r.paymentStatus.replaceAll("-", " ")}
+                    </span>
+                  ),
+                },
+                {
                   id: "next",
                   header: "Next action",
                   cell: (r) => (
@@ -268,7 +334,8 @@ function RunsList() {
               ]}
               emptyBody="No pay runs match the current view."
             />
-          )}
+            );
+          }}
         </Async>
       </AppShell>
     </AuthGate>
