@@ -1246,7 +1246,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
         r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId,
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
-        r.PaymentFileReference, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
+        r.PaymentFileReference, r.PaymentFileGeneratedBySubjectId, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
         r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(

@@ -159,8 +159,9 @@ public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, i
     bool IsReversal = false, Guid? ReversesRunId = null,
     string? PreparedBySubjectId = null, string? ApprovedBySubjectId = null,
     string? ReleasedBySubjectId = null, string PaymentStatus = "not-created",
-    string? PaymentFileReference = null, string? PaymentApprovedBySubjectId = null,
-    string? PaymentReleasedBySubjectId = null, string? ReconciliationReference = null,
+    string? PaymentFileReference = null, string? PaymentFileGeneratedBySubjectId = null,
+    string? PaymentApprovedBySubjectId = null, string? PaymentReleasedBySubjectId = null,
+    string? ReconciliationReference = null,
     decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,

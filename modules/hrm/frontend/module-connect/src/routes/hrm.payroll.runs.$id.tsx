@@ -422,9 +422,20 @@ function PaymentWorkflow({
   run: OperationalPayRun;
   onChanged: () => Promise<unknown>;
 }) {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [reference, setReference] = useState("");
   const status = run.paymentStatus;
+  const currentSubjectId = user?.id ? String(user.id) : "";
+  const generatedByMe = Boolean(
+    currentSubjectId && run.paymentFileGeneratedBySubjectId === currentSubjectId,
+  );
+  const approvedByMe = Boolean(
+    currentSubjectId && run.paymentApprovedBySubjectId === currentSubjectId,
+  );
+  const canGenerate = run.backendStatus === "released" && status === "not-created";
+  const canApprove = status === "generated" && !generatedByMe;
+  const canRelease = status === "approved" && !approvedByMe;
   const invoke = async (label: string, action: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -474,6 +485,10 @@ function PaymentWorkflow({
             Status:{" "}
             <span className="font-medium text-foreground">{status.replaceAll("-", " ")}</span>
             {run.paymentFileReference ? ` · ${run.paymentFileReference}` : ""}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Payment workflow is maker-checker: generator, approver and releaser must be separate
+            where the backend requires it.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
@@ -544,7 +559,12 @@ function PaymentWorkflow({
       <div className="mt-4 flex flex-wrap gap-2">
         {status === "not-created" ? (
           <Button
-            disabled={busy || run.status !== "Paid"}
+            disabled={busy || !canGenerate}
+            title={
+              run.backendStatus !== "released"
+                ? "Payslips must be released before a bank file can be generated."
+                : undefined
+            }
             onClick={() =>
               void invoke("Payment file generated", () => realApi.payrollPaymentGenerate(run.id))
             }
@@ -559,7 +579,12 @@ function PaymentWorkflow({
         ) : null}
         {status === "generated" ? (
           <Button
-            disabled={busy}
+            disabled={busy || !canApprove}
+            title={
+              generatedByMe
+                ? "The person who generated the payment file cannot approve it."
+                : undefined
+            }
             onClick={() =>
               void invoke("Payment file approved", () =>
                 realApi.payrollPaymentApprove(run.id, "Reviewed against payroll control totals"),
@@ -571,7 +596,12 @@ function PaymentWorkflow({
         ) : null}
         {status === "approved" ? (
           <Button
-            disabled={busy}
+            disabled={busy || !canRelease}
+            title={
+              approvedByMe
+                ? "The payment approver cannot also release the bank instruction."
+                : undefined
+            }
             onClick={() =>
               void invoke("Payment instruction released", () =>
                 realApi.payrollPaymentRelease(run.id),
@@ -582,6 +612,16 @@ function PaymentWorkflow({
           </Button>
         ) : null}
       </div>
+      {status === "generated" && generatedByMe ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You generated this payment file. A different payroll or HR approver must approve it.
+        </p>
+      ) : null}
+      {status === "approved" && approvedByMe ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You approved this payment file. A different payroll officer must release it to the bank.
+        </p>
+      ) : null}
       {status === "released" ? (
         <div className="mt-4 flex flex-wrap items-end gap-2">
           <label className="min-w-64 flex-1 text-xs font-medium">
@@ -908,6 +948,9 @@ type OperationalPayRun = PayRun & {
   backendStatus: string;
   paymentStatus: string;
   paymentFileReference?: string;
+  paymentFileGeneratedBySubjectId?: string;
+  paymentApprovedBySubjectId?: string;
+  paymentReleasedBySubjectId?: string;
   reconciliationReference?: string;
 };
 
@@ -975,6 +1018,15 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
     paymentStatus: String(r.paymentStatus ?? "not-created"),
     backendStatus: String(r.status ?? "draft"),
     paymentFileReference: r.paymentFileReference ? String(r.paymentFileReference) : undefined,
+    paymentFileGeneratedBySubjectId: r.paymentFileGeneratedBySubjectId
+      ? String(r.paymentFileGeneratedBySubjectId)
+      : undefined,
+    paymentApprovedBySubjectId: r.paymentApprovedBySubjectId
+      ? String(r.paymentApprovedBySubjectId)
+      : undefined,
+    paymentReleasedBySubjectId: r.paymentReleasedBySubjectId
+      ? String(r.paymentReleasedBySubjectId)
+      : undefined,
     reconciliationReference: r.reconciliationReference
       ? String(r.reconciliationReference)
       : undefined,
