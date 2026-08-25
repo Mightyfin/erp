@@ -59,7 +59,10 @@ public interface IPayrollService
     Task<PayrollRunDto> SubmitRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
 
-    // M6: reversal of a released run (audit-preserving — never deletes history)
+    // Top-admin mistake control before release: void the run without deleting its audit/data.
+    Task<PayrollRunDto> CancelRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system");
+
+    // M6: reversal of a released/closed run (audit-preserving — never deletes history)
     Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system");
 
     // M27: bank-file workflow, reconciliation, and run-scoped audit history.
@@ -1058,7 +1061,32 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapRun(run);
     }
 
-    /// <summary>Reverses a released run audit-preservingly: creates a new draft
+    /// <summary>Voids an unreleased payroll run audit-preservingly. This is the
+    /// top-admin exit path for setup/calculation mistakes before payslips have
+    /// been released. Lines remain inspectable; status becomes terminal so a
+    /// clean replacement run may be created for the same period/scope.</summary>
+    public async Task<PayrollRunDto> CancelRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin");
+        var reason = (request.Reason ?? "").Trim();
+        if (reason.Length < 5)
+            throw new DomainException("run-cancel-reason-required", "A cancellation reason of at least 5 characters is required.");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.IsReversal)
+            throw new DomainException("run-reversal-cancel-blocked", "A reversal run cannot be cancelled. Release it to complete the reversal or leave it as audit evidence.");
+        if (run.Status is "released" or "closed")
+            throw new DomainException("run-cancel-requires-reversal", $"Run is in status {run.Status}; released payroll must be reversed instead of cancelled.");
+        if (run.Status == "reversed")
+            throw new DomainException("run-already-terminal", "This run has already been reversed or voided.");
+        var fromStatus = run.Status;
+        run.Status = "reversed";
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "cancelled", actorSubjectId, fromStatus, "reversed", reason,
+            new { control = "top-admin-void", run.PaymentStatus, run.TotalNet }, ct);
+        return MapRun(run);
+    }
+
+    /// <summary>Reverses a released or closed run audit-preservingly: creates a new draft
     /// reversal run in the same period whose release negates the original. The
     /// original run's payslips are superseded once the reversal is released; the
     /// original's status moves to reversed and it can never be re-released.</summary>
@@ -1066,8 +1094,6 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
-        if (run.Status != "released")
-            throw new DomainException("run-not-reversible", $"Run is in status {run.Status}; only released runs can be reversed.");
         if (run.IsReversal)
             throw new DomainException("run-already-reversal", "A reversal run cannot itself be reversed; create a new regular run instead.");
 
@@ -1075,6 +1101,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var existingReversal = await repo.FindRunByReversesIdAsync(run.Id, ct);
         if (existingReversal is not null)
             throw new DomainException("run-reversal-exists", $"Run {id} already has a reversal run {existingReversal.Id} (status {existingReversal.Status}).");
+        if (run.Status is not ("released" or "closed"))
+            throw new DomainException("run-not-reversible", $"Run is in status {run.Status}; only released or closed runs can be reversed.");
+
+        var fromStatus = run.Status;
 
         // Mark original as reversed so it is excluded from control totals.
         run.Status = "reversed";
@@ -1093,7 +1123,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         await repo.CreateRunAsync(reversal, ct);
         reversal.PreparedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(reversal, ct);
-        await RecordEventAsync(run, "reversal-created", actorSubjectId, "released", "reversed", request.Reason,
+        await RecordEventAsync(run, "reversal-created", actorSubjectId, fromStatus, "reversed", request.Reason,
             new { reversalRunId = reversal.Id }, ct);
         await RecordEventAsync(reversal, "created-as-reversal", actorSubjectId, null, "draft", request.Reason,
             new { originalRunId = run.Id }, ct);

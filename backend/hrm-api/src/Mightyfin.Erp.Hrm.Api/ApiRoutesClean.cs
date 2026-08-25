@@ -1085,7 +1085,12 @@ public static class Routes
         g.MapGet("/payslips/id/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct)
             => await svc.GetPayslipByIdAsync(id, ResolveSubjectId(http), ct));
 
-        // ---------- M6: reversal, liability reports, payslip documents ----------
+        // ---------- M6: cancellation/reversal, liability reports, payslip documents ----------
+        g.MapPost("/runs/{id:guid}/cancel", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();
+            return Results.Ok(await svc.CancelRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();

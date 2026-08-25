@@ -138,6 +138,77 @@ public class M27PayrollOperationsTests
     }
 
     [Fact]
+    public async Task CancelRun_VoidsUnreleasedRun_WithAudit_AndAllowsReplacement()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-cancel-run");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+
+        var cancelled = await service.CancelRunAsync(
+            run.Id,
+            new PayrollRunReverseCreate("Wrong period selected"),
+            default,
+            "top-admin");
+        var replacement = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer-2");
+        var events = await service.GetRunAuditAsync(run.Id, default);
+
+        Assert.Equal("reversed", cancelled.Status);
+        Assert.NotEqual(run.Id, replacement.Id);
+        Assert.Contains(events, e =>
+            e.Action == "cancelled" &&
+            e.ActorSubjectId == "top-admin" &&
+            e.Reason == "Wrong period selected");
+        Assert.DoesNotContain(await ctx.PayrollRuns.ToListAsync(), r => r.IsReversal && r.ReversesRunId == run.Id);
+    }
+
+    [Fact]
+    public async Task CancelRun_RejectsReleasedRun_WhichRequiresReversal()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-cancel-released");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        var stored = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        stored.Status = "released";
+        await ctx.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CancelRunAsync(run.Id, new PayrollRunReverseCreate("Already released"), default, "top-admin"));
+
+        Assert.Equal("run-cancel-requires-reversal", ex.Code);
+    }
+
+    [Fact]
+    public async Task ReverseRun_AllowsClosedRun_AndPreventsDuplicateReversal()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-reverse-closed");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        var stored = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        stored.Status = "closed";
+        await ctx.SaveChangesAsync();
+
+        var reversal = await service.ReverseRunAsync(
+            run.Id,
+            new PayrollRunReverseCreate("Bank settlement was wrong"),
+            default,
+            "top-admin");
+        var duplicate = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReverseRunAsync(run.Id, new PayrollRunReverseCreate("Try again"), default, "top-admin"));
+        var events = await service.GetRunAuditAsync(run.Id, default);
+
+        Assert.Equal("draft", reversal.Status);
+        Assert.True(reversal.IsReversal);
+        Assert.Equal("run-reversal-exists", duplicate.Code);
+        Assert.Contains(events, e =>
+            e.Action == "reversal-created" &&
+            e.FromStatus == "closed" &&
+            e.ToStatus == "reversed" &&
+            e.Reason == "Bank settlement was wrong");
+    }
+
+    [Fact]
     public async Task PaymentWorkflow_GeneratesApprovesReleasesReconciles_AndExportsAudit()
     {
         var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment");

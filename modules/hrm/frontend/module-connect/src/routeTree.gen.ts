@@ -17,6 +17,7 @@ import { Route as HrmAnalyticsRouteImport } from './routes/hrm.analytics'
 import { Route as HrmApprovalsRouteImport } from './routes/hrm.approvals'
 import { Route as HrmBenefitsRouteImport } from './routes/hrm.benefits'
 import { Route as HrmHelpRouteImport } from './routes/hrm.help'
+import { Route as HrmImportRouteImport } from './routes/hrm.import'
 import { Route as HrmMyDocumentsRouteImport } from './routes/hrm.my-documents'
 import { Route as HrmMyOffboardingRouteImport } from './routes/hrm.my-offboarding'
 import { Route as HrmMyPerformanceRouteImport } from './routes/hrm.my-performance'
@@ -35,7 +36,10 @@ import { Route as HrmConfigurationBranchAccessRouteImport } from './routes/hrm.c
 import { Route as HrmConfigurationBusinessRouteImport } from './routes/hrm.configuration.business'
 import { Route as HrmConfigurationComplianceRouteImport } from './routes/hrm.configuration.compliance'
 import { Route as HrmConfigurationGoLiveRouteImport } from './routes/hrm.configuration.go-live'
+import { Route as HrmConfigurationHolidaysRouteImport } from './routes/hrm.configuration.holidays'
 import { Route as HrmConfigurationIntegrationsRouteImport } from './routes/hrm.configuration.integrations'
+import { Route as HrmConfigurationLeavePeriodsRouteImport } from './routes/hrm.configuration.leave-periods'
+import { Route as HrmConfigurationLeaveTypesRouteImport } from './routes/hrm.configuration.leave-types'
 import { Route as HrmConfigurationOrganisationRouteImport } from './routes/hrm.configuration.organisation'
 import { Route as HrmConfigurationPayrollRouteImport } from './routes/hrm.configuration.payroll'
 import { Route as HrmConfigurationProcessRouteImport } from './routes/hrm.configuration.process'
@@ -45,13 +49,16 @@ import { Route as HrmConfigurationUsersRouteImport } from './routes/hrm.configur
 import { Route as HrmDataImportExportRouteImport } from './routes/hrm.data.import-export'
 import { Route as HrmEmployeesIndexRouteImport } from './routes/hrm.employees.index'
 import { Route as HrmEmployeesIdRouteImport } from './routes/hrm.employees.$id'
+import { Route as HrmEmployeesImportRouteImport } from './routes/hrm.employees.import'
 import { Route as HrmEmployeesNewRouteImport } from './routes/hrm.employees.new'
 import { Route as HrmExperienceAnnouncementsRouteImport } from './routes/hrm.experience.announcements'
 import { Route as HrmExperienceKnowledgeRouteImport } from './routes/hrm.experience.knowledge'
 import { Route as HrmExperienceLettersRouteImport } from './routes/hrm.experience.letters'
 import { Route as HrmLeaveIndexRouteImport } from './routes/hrm.leave.index'
 import { Route as HrmLeaveIdRouteImport } from './routes/hrm.leave.$id'
+import { Route as HrmLeaveAllocationsRouteImport } from './routes/hrm.leave.allocations'
 import { Route as HrmLeaveApprovalsRouteImport } from './routes/hrm.leave.approvals'
+import { Route as HrmLeaveControlRouteImport } from './routes/hrm.leave.control'
 import { Route as HrmLeaveNewRouteImport } from './routes/hrm.leave.new'
 import { Route as HrmLifecycleIndexRouteImport } from './routes/hrm.lifecycle.index'
 import { Route as HrmLifecycleAlumniRouteImport } from './routes/hrm.lifecycle.alumni'
@@ -165,6 +172,11 @@ const HrmHelpRoute = HrmHelpRouteImport.update({
   path: '/hrm/help',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmImportRoute = HrmImportRouteImport.update({
+  id: '/hrm/import',
+  path: '/hrm/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmMyDocumentsRoute = HrmMyDocumentsRouteImport.update({
   id: '/hrm/my-documents',
   path: '/hrm/my-documents',
@@ -258,10 +270,28 @@ const HrmConfigurationGoLiveRoute = HrmConfigurationGoLiveRouteImport.update({
   path: '/hrm/configuration/go-live',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmConfigurationHolidaysRoute =
+  HrmConfigurationHolidaysRouteImport.update({
+    id: '/hrm/configuration/holidays',
+    path: '/hrm/configuration/holidays',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const HrmConfigurationIntegrationsRoute =
   HrmConfigurationIntegrationsRouteImport.update({
     id: '/hrm/configuration/integrations',
     path: '/hrm/configuration/integrations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmConfigurationLeavePeriodsRoute =
+  HrmConfigurationLeavePeriodsRouteImport.update({
+    id: '/hrm/configuration/leave-periods',
+    path: '/hrm/configuration/leave-periods',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const HrmConfigurationLeaveTypesRoute =
+  HrmConfigurationLeaveTypesRouteImport.update({
+    id: '/hrm/configuration/leave-types',
+    path: '/hrm/configuration/leave-types',
     getParentRoute: () => rootRouteImport,
   } as any)
 const HrmConfigurationOrganisationRoute =
@@ -311,6 +341,11 @@ const HrmEmployeesIdRoute = HrmEmployeesIdRouteImport.update({
   path: '/hrm/employees/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmEmployeesImportRoute = HrmEmployeesImportRouteImport.update({
+  id: '/hrm/employees/import',
+  path: '/hrm/employees/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmEmployeesNewRoute = HrmEmployeesNewRouteImport.update({
   id: '/hrm/employees/new',
   path: '/hrm/employees/new',
@@ -342,9 +377,19 @@ const HrmLeaveIdRoute = HrmLeaveIdRouteImport.update({
   path: '/hrm/leave/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmLeaveAllocationsRoute = HrmLeaveAllocationsRouteImport.update({
+  id: '/hrm/leave/allocations',
+  path: '/hrm/leave/allocations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmLeaveApprovalsRoute = HrmLeaveApprovalsRouteImport.update({
   id: '/hrm/leave/approvals',
   path: '/hrm/leave/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmLeaveControlRoute = HrmLeaveControlRouteImport.update({
+  id: '/hrm/leave/control',
+  path: '/hrm/leave/control',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmLeaveNewRoute = HrmLeaveNewRouteImport.update({
@@ -725,6 +770,7 @@ export interface FileRoutesByFullPath {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -742,7 +788,10 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
+  '/hrm/configuration/holidays': typeof HrmConfigurationHolidaysRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
+  '/hrm/configuration/leave-periods': typeof HrmConfigurationLeavePeriodsRoute
+  '/hrm/configuration/leave-types': typeof HrmConfigurationLeaveTypesRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -751,12 +800,15 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/import': typeof HrmEmployeesImportRoute
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/allocations': typeof HrmLeaveAllocationsRoute
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
+  '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -842,6 +894,7 @@ export interface FileRoutesByTo {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -859,7 +912,10 @@ export interface FileRoutesByTo {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
+  '/hrm/configuration/holidays': typeof HrmConfigurationHolidaysRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
+  '/hrm/configuration/leave-periods': typeof HrmConfigurationLeavePeriodsRoute
+  '/hrm/configuration/leave-types': typeof HrmConfigurationLeaveTypesRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -868,12 +924,15 @@ export interface FileRoutesByTo {
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/import': typeof HrmEmployeesImportRoute
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/allocations': typeof HrmLeaveAllocationsRoute
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
+  '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -960,6 +1019,7 @@ export interface FileRoutesById {
   '/hrm/approvals': typeof HrmApprovalsRoute
   '/hrm/benefits': typeof HrmBenefitsRoute
   '/hrm/help': typeof HrmHelpRoute
+  '/hrm/import': typeof HrmImportRoute
   '/hrm/my-documents': typeof HrmMyDocumentsRoute
   '/hrm/my-offboarding': typeof HrmMyOffboardingRoute
   '/hrm/my-performance': typeof HrmMyPerformanceRoute
@@ -977,7 +1037,10 @@ export interface FileRoutesById {
   '/hrm/configuration/business': typeof HrmConfigurationBusinessRoute
   '/hrm/configuration/compliance': typeof HrmConfigurationComplianceRoute
   '/hrm/configuration/go-live': typeof HrmConfigurationGoLiveRoute
+  '/hrm/configuration/holidays': typeof HrmConfigurationHolidaysRoute
   '/hrm/configuration/integrations': typeof HrmConfigurationIntegrationsRoute
+  '/hrm/configuration/leave-periods': typeof HrmConfigurationLeavePeriodsRoute
+  '/hrm/configuration/leave-types': typeof HrmConfigurationLeaveTypesRoute
   '/hrm/configuration/organisation': typeof HrmConfigurationOrganisationRoute
   '/hrm/configuration/payroll': typeof HrmConfigurationPayrollRoute
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
@@ -986,12 +1049,15 @@ export interface FileRoutesById {
   '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
+  '/hrm/employees/import': typeof HrmEmployeesImportRoute
   '/hrm/employees/new': typeof HrmEmployeesNewRoute
   '/hrm/experience/announcements': typeof HrmExperienceAnnouncementsRoute
   '/hrm/experience/knowledge': typeof HrmExperienceKnowledgeRoute
   '/hrm/experience/letters': typeof HrmExperienceLettersRoute
   '/hrm/leave/$id': typeof HrmLeaveIdRoute
+  '/hrm/leave/allocations': typeof HrmLeaveAllocationsRoute
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
+  '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
@@ -1079,6 +1145,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1096,7 +1163,10 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/go-live'
+    | '/hrm/configuration/holidays'
     | '/hrm/configuration/integrations'
+    | '/hrm/configuration/leave-periods'
+    | '/hrm/configuration/leave-types'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1105,12 +1175,15 @@ export interface FileRouteTypes {
     | '/hrm/configuration/users'
     | '/hrm/data/import-export'
     | '/hrm/employees/$id'
+    | '/hrm/employees/import'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/allocations'
     | '/hrm/leave/approvals'
+    | '/hrm/leave/control'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1196,6 +1269,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1213,7 +1287,10 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/go-live'
+    | '/hrm/configuration/holidays'
     | '/hrm/configuration/integrations'
+    | '/hrm/configuration/leave-periods'
+    | '/hrm/configuration/leave-types'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1222,12 +1299,15 @@ export interface FileRouteTypes {
     | '/hrm/configuration/users'
     | '/hrm/data/import-export'
     | '/hrm/employees/$id'
+    | '/hrm/employees/import'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/allocations'
     | '/hrm/leave/approvals'
+    | '/hrm/leave/control'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1313,6 +1393,7 @@ export interface FileRouteTypes {
     | '/hrm/approvals'
     | '/hrm/benefits'
     | '/hrm/help'
+    | '/hrm/import'
     | '/hrm/my-documents'
     | '/hrm/my-offboarding'
     | '/hrm/my-performance'
@@ -1330,7 +1411,10 @@ export interface FileRouteTypes {
     | '/hrm/configuration/business'
     | '/hrm/configuration/compliance'
     | '/hrm/configuration/go-live'
+    | '/hrm/configuration/holidays'
     | '/hrm/configuration/integrations'
+    | '/hrm/configuration/leave-periods'
+    | '/hrm/configuration/leave-types'
     | '/hrm/configuration/organisation'
     | '/hrm/configuration/payroll'
     | '/hrm/configuration/process'
@@ -1339,12 +1423,15 @@ export interface FileRouteTypes {
     | '/hrm/configuration/users'
     | '/hrm/data/import-export'
     | '/hrm/employees/$id'
+    | '/hrm/employees/import'
     | '/hrm/employees/new'
     | '/hrm/experience/announcements'
     | '/hrm/experience/knowledge'
     | '/hrm/experience/letters'
     | '/hrm/leave/$id'
+    | '/hrm/leave/allocations'
     | '/hrm/leave/approvals'
+    | '/hrm/leave/control'
     | '/hrm/leave/new'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
@@ -1431,6 +1518,7 @@ export interface RootRouteChildren {
   HrmApprovalsRoute: typeof HrmApprovalsRoute
   HrmBenefitsRoute: typeof HrmBenefitsRoute
   HrmHelpRoute: typeof HrmHelpRoute
+  HrmImportRoute: typeof HrmImportRoute
   HrmMyDocumentsRoute: typeof HrmMyDocumentsRoute
   HrmMyOffboardingRoute: typeof HrmMyOffboardingRoute
   HrmMyPerformanceRoute: typeof HrmMyPerformanceRoute
@@ -1448,7 +1536,10 @@ export interface RootRouteChildren {
   HrmConfigurationBusinessRoute: typeof HrmConfigurationBusinessRoute
   HrmConfigurationComplianceRoute: typeof HrmConfigurationComplianceRoute
   HrmConfigurationGoLiveRoute: typeof HrmConfigurationGoLiveRoute
+  HrmConfigurationHolidaysRoute: typeof HrmConfigurationHolidaysRoute
   HrmConfigurationIntegrationsRoute: typeof HrmConfigurationIntegrationsRoute
+  HrmConfigurationLeavePeriodsRoute: typeof HrmConfigurationLeavePeriodsRoute
+  HrmConfigurationLeaveTypesRoute: typeof HrmConfigurationLeaveTypesRoute
   HrmConfigurationOrganisationRoute: typeof HrmConfigurationOrganisationRoute
   HrmConfigurationPayrollRoute: typeof HrmConfigurationPayrollRoute
   HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
@@ -1457,12 +1548,15 @@ export interface RootRouteChildren {
   HrmConfigurationUsersRoute: typeof HrmConfigurationUsersRoute
   HrmDataImportExportRoute: typeof HrmDataImportExportRoute
   HrmEmployeesIdRoute: typeof HrmEmployeesIdRouteWithChildren
+  HrmEmployeesImportRoute: typeof HrmEmployeesImportRoute
   HrmEmployeesNewRoute: typeof HrmEmployeesNewRoute
   HrmExperienceAnnouncementsRoute: typeof HrmExperienceAnnouncementsRoute
   HrmExperienceKnowledgeRoute: typeof HrmExperienceKnowledgeRoute
   HrmExperienceLettersRoute: typeof HrmExperienceLettersRoute
   HrmLeaveIdRoute: typeof HrmLeaveIdRoute
+  HrmLeaveAllocationsRoute: typeof HrmLeaveAllocationsRoute
   HrmLeaveApprovalsRoute: typeof HrmLeaveApprovalsRoute
+  HrmLeaveControlRoute: typeof HrmLeaveControlRoute
   HrmLeaveNewRoute: typeof HrmLeaveNewRoute
   HrmLifecycleAlumniRoute: typeof HrmLifecycleAlumniRoute
   HrmLifecycleAssetsRoute: typeof HrmLifecycleAssetsRoute
@@ -1585,6 +1679,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/help'
       fullPath: '/hrm/help'
       preLoaderRoute: typeof HrmHelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/import': {
+      id: '/hrm/import'
+      path: '/hrm/import'
+      fullPath: '/hrm/import'
+      preLoaderRoute: typeof HrmImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/my-documents': {
@@ -1713,11 +1814,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmConfigurationGoLiveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/configuration/holidays': {
+      id: '/hrm/configuration/holidays'
+      path: '/hrm/configuration/holidays'
+      fullPath: '/hrm/configuration/holidays'
+      preLoaderRoute: typeof HrmConfigurationHolidaysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/configuration/integrations': {
       id: '/hrm/configuration/integrations'
       path: '/hrm/configuration/integrations'
       fullPath: '/hrm/configuration/integrations'
       preLoaderRoute: typeof HrmConfigurationIntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/leave-periods': {
+      id: '/hrm/configuration/leave-periods'
+      path: '/hrm/configuration/leave-periods'
+      fullPath: '/hrm/configuration/leave-periods'
+      preLoaderRoute: typeof HrmConfigurationLeavePeriodsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/configuration/leave-types': {
+      id: '/hrm/configuration/leave-types'
+      path: '/hrm/configuration/leave-types'
+      fullPath: '/hrm/configuration/leave-types'
+      preLoaderRoute: typeof HrmConfigurationLeaveTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/configuration/organisation': {
@@ -1783,6 +1905,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmEmployeesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/employees/import': {
+      id: '/hrm/employees/import'
+      path: '/hrm/employees/import'
+      fullPath: '/hrm/employees/import'
+      preLoaderRoute: typeof HrmEmployeesImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/employees/new': {
       id: '/hrm/employees/new'
       path: '/hrm/employees/new'
@@ -1825,11 +1954,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmLeaveIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/leave/allocations': {
+      id: '/hrm/leave/allocations'
+      path: '/hrm/leave/allocations'
+      fullPath: '/hrm/leave/allocations'
+      preLoaderRoute: typeof HrmLeaveAllocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/leave/approvals': {
       id: '/hrm/leave/approvals'
       path: '/hrm/leave/approvals'
       fullPath: '/hrm/leave/approvals'
       preLoaderRoute: typeof HrmLeaveApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/leave/control': {
+      id: '/hrm/leave/control'
+      path: '/hrm/leave/control'
+      fullPath: '/hrm/leave/control'
+      preLoaderRoute: typeof HrmLeaveControlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/leave/new': {
@@ -2486,6 +2629,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmApprovalsRoute: HrmApprovalsRoute,
   HrmBenefitsRoute: HrmBenefitsRoute,
   HrmHelpRoute: HrmHelpRoute,
+  HrmImportRoute: HrmImportRoute,
   HrmMyDocumentsRoute: HrmMyDocumentsRoute,
   HrmMyOffboardingRoute: HrmMyOffboardingRoute,
   HrmMyPerformanceRoute: HrmMyPerformanceRoute,
@@ -2503,7 +2647,10 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationBusinessRoute: HrmConfigurationBusinessRoute,
   HrmConfigurationComplianceRoute: HrmConfigurationComplianceRoute,
   HrmConfigurationGoLiveRoute: HrmConfigurationGoLiveRoute,
+  HrmConfigurationHolidaysRoute: HrmConfigurationHolidaysRoute,
   HrmConfigurationIntegrationsRoute: HrmConfigurationIntegrationsRoute,
+  HrmConfigurationLeavePeriodsRoute: HrmConfigurationLeavePeriodsRoute,
+  HrmConfigurationLeaveTypesRoute: HrmConfigurationLeaveTypesRoute,
   HrmConfigurationOrganisationRoute: HrmConfigurationOrganisationRoute,
   HrmConfigurationPayrollRoute: HrmConfigurationPayrollRoute,
   HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,
@@ -2512,12 +2659,15 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationUsersRoute: HrmConfigurationUsersRoute,
   HrmDataImportExportRoute: HrmDataImportExportRoute,
   HrmEmployeesIdRoute: HrmEmployeesIdRouteWithChildren,
+  HrmEmployeesImportRoute: HrmEmployeesImportRoute,
   HrmEmployeesNewRoute: HrmEmployeesNewRoute,
   HrmExperienceAnnouncementsRoute: HrmExperienceAnnouncementsRoute,
   HrmExperienceKnowledgeRoute: HrmExperienceKnowledgeRoute,
   HrmExperienceLettersRoute: HrmExperienceLettersRoute,
   HrmLeaveIdRoute: HrmLeaveIdRoute,
+  HrmLeaveAllocationsRoute: HrmLeaveAllocationsRoute,
   HrmLeaveApprovalsRoute: HrmLeaveApprovalsRoute,
+  HrmLeaveControlRoute: HrmLeaveControlRoute,
   HrmLeaveNewRoute: HrmLeaveNewRoute,
   HrmLifecycleAlumniRoute: HrmLifecycleAlumniRoute,
   HrmLifecycleAssetsRoute: HrmLifecycleAssetsRoute,

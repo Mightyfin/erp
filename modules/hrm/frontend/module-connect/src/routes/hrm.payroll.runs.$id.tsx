@@ -1,7 +1,10 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, Ban, Check, CircleDashed, Download, Info, Lock, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Ban, Check, CircleDashed, Download, Info, Lock, RotateCcw, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
 import { CalculationPanel } from "@/platform/components/CalculationPanel";
 import type { ControlTotals, PayRun, RunLine, RunStage } from "@/mock/payrollrun";
@@ -1592,6 +1595,143 @@ function adaptLines(raw: unknown, runId: string): RunLine[] {
   });
 }
 
+function TopAdminRunControls({
+  run,
+  isTopAdmin,
+  onChanged,
+}: {
+  run: OperationalPayRun;
+  isTopAdmin: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"cancel" | "reverse" | null>(null);
+  const [reason, setReason] = useState("");
+  const [working, setWorking] = useState(false);
+  if (!USE_REAL || !isTopAdmin) return null;
+
+  const canCancel = ["draft", "locked", "calculated", "in-review", "approved"].includes(run.backendStatus);
+  const canReverse = ["released", "closed"].includes(run.backendStatus);
+  const terminal = run.backendStatus === "reversed";
+  const reasonReady = reason.trim().length >= 5;
+  const activeTitle =
+    mode === "cancel"
+      ? "Void unreleased payroll run"
+      : "Reverse released payroll run";
+  const activeDescription =
+    mode === "cancel"
+      ? "This keeps the run, lines, and audit trail visible, but marks the run terminal so a corrected replacement can be created."
+      : "This creates a draft reversal run for review and release. Paid payroll history is preserved instead of being deleted.";
+
+  const submit = async () => {
+    if (!mode || !reasonReady) return;
+    setWorking(true);
+    try {
+      if (mode === "cancel") {
+        await realApi.payrollRunCancel(run.id, reason.trim());
+        feedback.submitted("Payroll run voided.", "The original run remains in audit history and a replacement run can now be created.");
+      } else {
+        await realApi.payrollRunReverse(run.id, reason.trim());
+        feedback.submitted("Reversal run created.", "Review and release the reversal run to complete the payroll correction.");
+      }
+      setMode(null);
+      setReason("");
+      await onChanged();
+    } catch (e) {
+      feedback.blocked(
+        mode === "cancel" ? "Void failed" : "Reversal failed",
+        e instanceof Error ? e.message : "Unknown error.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <DetailSection
+      title="Top-admin correction controls"
+      description="Mistakes are fixed with audited exits, not hard deletes."
+    >
+      {terminal ? (
+        <div className="rounded-lg border bg-surface-muted p-4 text-sm text-muted-foreground">
+          Current backend status: {run.backendStatus.replaceAll("-", " ")}. This run is already terminal.
+          Use the audit trail to inspect who changed it and why.
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-surface-muted p-4">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canCancel}
+            onClick={() => setMode("cancel")}
+          >
+            <X className="size-4" aria-hidden />
+            Void unreleased run
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!canReverse}
+            onClick={() => setMode("reverse")}
+          >
+            <RotateCcw className="size-4" aria-hidden />
+            Reverse released run
+          </Button>
+          <p className="min-w-[16rem] flex-1 text-sm text-muted-foreground">
+            Current backend status: {run.backendStatus.replaceAll("-", " ")}.
+            {canCancel
+              ? " Use void before payslips are released."
+              : canReverse
+                ? " Use reversal after payslips have been released or the run has closed."
+                : " No correction action is available for this state."}
+          </p>
+        </div>
+      )}
+      <Dialog
+        open={mode !== null}
+        onOpenChange={(open) => {
+          if (!open && !working) {
+            setMode(null);
+            setReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{activeTitle}</DialogTitle>
+            <DialogDescription>{activeDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="payroll-correction-reason">Reason</Label>
+            <Textarea
+              id="payroll-correction-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Explain the mistake and the intended correction."
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              Required for audit. This reason will be visible on the run timeline.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={working} onClick={() => setMode(null)}>
+              Keep run
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "reverse" ? "destructive" : "default"}
+              disabled={!reasonReady || working}
+              onClick={submit}
+            >
+              {working ? "Working..." : mode === "cancel" ? "Void run" : "Create reversal"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </DetailSection>
+  );
+}
+
 function RunDetail() {
   const { id } = Route.useParams();
   const { user } = useAuth();
@@ -1727,6 +1867,7 @@ function RunDetail() {
             const canApprove = !selfApproval && blocking.length === 0;
             const firstLiveExample = lines.data?.find((line) => line.components.length)?.components[0];
             const firstLiveLine = lines.data?.find((line) => line.components.length);
+            const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
 
             return (
               <RecordDetail
@@ -1757,6 +1898,14 @@ function RunDetail() {
                 ]}
                 timeline={<StatusTimeline title="Audit trail" events={run.timeline} />}
               >
+                <TopAdminRunControls
+                  run={run}
+                  isTopAdmin={isTopAdmin}
+                  onChanged={async () => {
+                    await state.reload();
+                  }}
+                />
+
                 {run.stages.length ? (
                   <DetailSection
                     title="Stages"
@@ -2086,9 +2235,12 @@ function RunDetail() {
                             );
                           } else if (USE_REAL && decision === "reject") {
                             try {
-                              await realApi.payrollRunReverse(run.id);
+                              await realApi.payrollRunCancel(
+                                run.id,
+                                reason || "Rejected during payroll approval",
+                              );
                               feedback.submitted(
-                                `${run.period} rejected and reversed.`,
+                                `${run.period} rejected and voided.`,
                                 "The preparer will see your reason in the audit trail and can recalculate.",
                               );
                               await state.reload();

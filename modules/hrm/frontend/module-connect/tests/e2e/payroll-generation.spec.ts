@@ -295,6 +295,12 @@ async function stubPayrollLifecycle(page: Page) {
     else if (method === "POST" && path.endsWith("/calculate")) status = "calculated";
     else if (method === "POST" && path.endsWith("/approve")) status = "approved";
     else if (method === "POST" && path.endsWith("/release")) status = "released";
+    else if (method === "POST" && path.endsWith("/cancel")) status = "reversed";
+    else if (method === "POST" && path.endsWith("/reverse")) {
+      status = "reversed";
+      await json(route, { ...runDto("draft"), isReversal: true, reversesRunId: runId });
+      return;
+    }
 
     await json(route, runDto(status, paymentStatus));
   });
@@ -376,6 +382,21 @@ test.describe("HR manager payroll generation", () => {
     await page.getByRole("button", { name: "Reconcile and close" }).click();
 
     await expect(page.getByText("Reconciled and closed · BANK-ACK-HRMQA")).toBeVisible();
+    await page.evaluate(() => (window as unknown as { __assertNoBrowserErrors: () => void }).__assertNoBrowserErrors());
+  });
+
+  test("lets a top admin void an unreleased payroll run with an audit reason", async ({ page }) => {
+    await stubPayrollLifecycle(page);
+
+    await page.goto(`/hrm/payroll/runs/${runId}`);
+    await page.getByRole("button", { name: "Lock inputs" }).click();
+    await page.getByRole("button", { name: "Calculate run" }).click();
+    await page.getByRole("button", { name: "Void unreleased run" }).click();
+    await page.getByLabel("Reason").fill("Wrong period selected during testing");
+    await page.getByRole("button", { name: "Void run" }).click();
+
+    await expect(page.getByText("Payroll run voided.")).toBeVisible();
+    await expect(page.getByText("Current backend status: reversed.")).toBeVisible();
     await page.evaluate(() => (window as unknown as { __assertNoBrowserErrors: () => void }).__assertNoBrowserErrors());
   });
 });

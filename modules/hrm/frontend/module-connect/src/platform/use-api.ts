@@ -655,7 +655,10 @@ export const realApi = {
   payrollRunApprove: (id: string, note?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, { note }),
   payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
-  payrollRunReverse: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
+  payrollRunCancel: (id: string, reason: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/cancel`, { reason }),
+  payrollRunReverse: (id: string, reason?: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, { reason }),
   payrollRunPreflight: (payPeriodId: string, payGroupId: string) =>
     hrmApi.post<unknown>("/hrm/payroll/runs/preflight", { payPeriodId, payGroupId }),
   payrollCalculationReadiness: (id: string) =>
