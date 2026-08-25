@@ -533,6 +533,79 @@ function PaymentWorkflow({
       blocked: status !== "released" && status !== "reconciled",
     },
   ];
+  const closeoutChecks = [
+    {
+      key: "payslips",
+      label: "Payslips released",
+      detail: ["released", "closed"].includes(run.backendStatus)
+        ? "Employees can see released payslips."
+        : "Release payslips before generating a bank file.",
+      state: ["released", "closed"].includes(run.backendStatus) ? "done" : "blocked",
+    },
+    {
+      key: "reports",
+      label: "Accounting reports available",
+      detail: ["released", "closed"].includes(run.backendStatus)
+        ? "JV and department payroll reports can be exported."
+        : "Reports open once the run is released.",
+      state: ["released", "closed"].includes(run.backendStatus) ? "done" : "blocked",
+    },
+    {
+      key: "bank-file",
+      label: "Bank file generated",
+      detail:
+        status === "not-created"
+          ? readiness?.ready === false
+            ? "Fix worker bank details before generating the file."
+            : "Generate the payment file after payslip release."
+          : run.paymentFileReference
+            ? run.paymentFileReference
+            : "Payment file exists for this run.",
+      state: status === "not-created" ? "blocked" : "done",
+    },
+    {
+      key: "maker-checker",
+      label: "Maker-checker approval",
+      detail: ["approved", "released", "reconciled"].includes(status)
+        ? "A different authorised user approved the payment file."
+        : status === "generated"
+          ? "Waiting for a different user to approve."
+          : "Approval starts after bank file generation.",
+      state: ["approved", "released", "reconciled"].includes(status)
+        ? "done"
+        : status === "generated"
+          ? "current"
+          : "blocked",
+    },
+    {
+      key: "bank-release",
+      label: "Released to bank",
+      detail: ["released", "reconciled"].includes(status)
+        ? "Bank instruction release has been recorded."
+        : status === "approved"
+          ? "Waiting for a separate payroll user to release."
+          : "Release starts after payment approval.",
+      state: ["released", "reconciled"].includes(status)
+        ? "done"
+        : status === "approved"
+          ? "current"
+          : "blocked",
+    },
+    {
+      key: "reconciled",
+      label: "Reconciled and closed",
+      detail:
+        status === "reconciled"
+          ? run.reconciliationReference
+            ? `Closed with reference ${run.reconciliationReference}.`
+            : "Bank acknowledgement matched payroll net."
+          : status === "released"
+            ? "Enter the bank acknowledgement reference to close this payroll."
+            : "Closeout starts after bank release.",
+      state: status === "reconciled" ? "done" : status === "released" ? "current" : "blocked",
+    },
+  ];
+  const closeoutDone = closeoutChecks.filter((check) => check.state === "done").length;
 
   return (
     <div className="mt-4 rounded-lg border p-4" data-testid="payment-workflow">
@@ -593,6 +666,49 @@ function PaymentWorkflow({
             </div>
           );
         })}
+      </div>
+      <div className="mt-4 rounded-md border bg-surface p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-medium">Payroll closeout readiness</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {closeoutDone} of {closeoutChecks.length} controls complete before payroll is fully closed.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              closeoutDone === closeoutChecks.length
+                ? "bg-success-soft text-success"
+                : "bg-primary-soft text-primary"
+            }`}
+          >
+            {closeoutDone === closeoutChecks.length ? "Closed" : "In progress"}
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {closeoutChecks.map((check) => {
+            const Icon =
+              check.state === "done" ? Check : check.state === "current" ? CircleDashed : Lock;
+            return (
+              <div key={check.key} className="flex gap-2 rounded-md border bg-background p-2.5">
+                <Icon
+                  className={`mt-0.5 size-4 shrink-0 ${
+                    check.state === "done"
+                      ? "text-success"
+                      : check.state === "current"
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                  }`}
+                  aria-hidden
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">{check.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{check.detail}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
       {run.backendStatus !== "released" && run.backendStatus !== "closed" ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
