@@ -316,6 +316,10 @@ function NewRun() {
     .filter((worker): worker is PayrollWorkerRow =>
       Boolean(worker && (!worker.nationalId || !worker.tpin || !worker.napsaNumber || !worker.nhimaNumber)),
     );
+  const dateProblem = useMemo(
+    () => (cutoff > payDate ? "The cutoff is after the pay date, so approved time would miss this run." : null),
+    [cutoff, payDate],
+  );
   const liveReadiness: ReadinessItem[] = USE_REAL
     ? preflight.data?.checks.length
       ? preflight.data.checks
@@ -374,10 +378,6 @@ function NewRun() {
   const estimate = USE_REAL
     ? livePopulation.reduce((sum, p) => sum + p.amount, 0)
     : included.length * 20_878.88;
-  const dateProblem = useMemo(
-    () => (cutoff > payDate ? "The cutoff is after the pay date, so approved time would miss this run." : null),
-    [cutoff, payDate],
-  );
 
   const steps: FlowStep[] = [
     {
