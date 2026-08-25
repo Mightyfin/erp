@@ -352,6 +352,14 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setManualRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [fieldKey]: value } : row)));
   }
 
+  function editMappedRowsManually() {
+    const seeded = mappedRows.slice(0, 5000);
+    setManualRows(seeded.length > 0 ? seeded : [{}]);
+    setEntryMode("manual");
+    setPreview(null);
+    setStep("upload");
+  }
+
   async function runPreview() {
     if (!schema) {
       toast.error("The live import schema is unavailable. Nothing has been written.");
@@ -709,8 +717,12 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
               <p className="text-xs text-muted-foreground">
                 {Object.values(mapping).filter((v) => v && v !== SKIP).length} fields mapped
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
+                <Button variant="outline" size="sm" onClick={editMappedRowsManually} disabled={!mappedRows.length}>
+                  <Pen className="h-4 w-4" />
+                  Manual edit rows
+                </Button>
                 <Button size="sm" onClick={() => void runPreview()} disabled={busy || !canPreview}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   Preview
@@ -737,15 +749,15 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             </div>
             <div className="max-w-full overflow-hidden rounded-lg border">
               <div className="max-h-[28rem] overflow-auto">
-                <table className="w-full min-w-max border-collapse text-left text-sm">
+                <table className="w-full min-w-[1600px] border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-muted/80 text-xs font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
                     <tr>
                       <th className="w-16 whitespace-nowrap border-b px-3 py-2">Row</th>
                       <th className="w-36 whitespace-nowrap border-b px-3 py-2">Status</th>
                       <th className="min-w-56 whitespace-nowrap border-b px-3 py-2">Validation</th>
-                      {fileColumns.map((col) => (
-                        <th key={col.name} className="min-w-44 whitespace-nowrap border-b px-3 py-2" title={col.name}>
-                          <span className="block max-w-56 truncate">{col.name}</span>
+                      {(entryMode === "manual" ? schema.fields : fileColumns).map((col) => (
+                        <th key={"key" in col ? col.key : col.name} className="min-w-44 whitespace-nowrap border-b px-3 py-2" title={"label" in col ? col.label : col.name}>
+                          <span className="block max-w-56 truncate">{"label" in col ? col.label : col.name}</span>
                         </th>
                       ))}
                     </tr>
@@ -766,11 +778,21 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                           <td className="max-w-80 px-3 py-2 text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>
                             <span className="line-clamp-2">{r.message ? String(r.message) : "Ready"}</span>
                           </td>
-                          {fileColumns.map((col, colIndex) => (
-                            <td key={`${col.name}-${colIndex}`} className="max-w-64 px-3 py-2 text-sm" title={sourceRow[colIndex] ?? ""}>
-                              <span className="block truncate">{sourceRow[colIndex] || "—"}</span>
-                            </td>
-                          ))}
+                          {entryMode === "manual"
+                            ? schema.fields.map((field) => {
+                              const resolved = (r.resolved as Record<string, unknown> | undefined) ?? mappedRows[index] ?? {};
+                              const value = String(resolved[field.key] ?? "");
+                              return (
+                                <td key={field.key} className="max-w-64 px-3 py-2 text-sm" title={value}>
+                                  <span className="block truncate">{value || "—"}</span>
+                                </td>
+                              );
+                            })
+                            : fileColumns.map((col, colIndex) => (
+                              <td key={`${col.name}-${colIndex}`} className="max-w-64 px-3 py-2 text-sm" title={sourceRow[colIndex] ?? ""}>
+                                <span className="block truncate">{sourceRow[colIndex] || "—"}</span>
+                              </td>
+                            ))}
                         </tr>
                       );
                     })}
