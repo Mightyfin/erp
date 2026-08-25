@@ -23,14 +23,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
-} from "@/components/ui/command";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Check, ChevronDown, Download, FileSpreadsheet, Loader2, Search,
-  ArrowUpFromLine, X, CircleCheck, CircleAlert, CircleMinus, Pen,
+  Check, Download, FileSpreadsheet, Loader2, Search,
+  ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -375,6 +374,23 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     const rowNumber = Number(row.row);
     return Number.isFinite(rowNumber) && rowNumber >= 2 ? rowNumber - 2 : fallbackIndex;
   };
+  const selectedColumnForField = (fieldKey: string) =>
+    fileColumns.find((col) => mapping[col.name] === fieldKey)?.name ?? SKIP;
+  const sampleForColumn = (columnName: string) =>
+    columnName === SKIP ? "" : (fileColumns.find((col) => col.name === columnName)?.sample ?? "");
+  const setFieldColumn = (fieldKey: string, columnName: string) => {
+    setMapping((current) => {
+      const next = { ...current };
+      for (const [colName, mappedField] of Object.entries(next)) {
+        if (mappedField === fieldKey) next[colName] = SKIP;
+      }
+      if (columnName !== SKIP) next[columnName] = fieldKey;
+      return next;
+    });
+  };
+  const requiredMapped = schema?.fields
+    .filter((field) => field.required)
+    .every((field) => selectedColumnForField(field.key) !== SKIP) ?? false;
 
   const workflow = (
     <>
@@ -449,7 +465,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         )}
 
         {step === "map" && schema && (
-          <div className="space-y-3 p-1">
+          <div className="space-y-4 p-1">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <p className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{fileName}</span>
@@ -473,31 +489,97 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 </Button>
               </div>
             </div>
-            <div className="border rounded-lg">
-              <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <span>Column in your file</span>
+            <div className="rounded-lg border p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Columns found in your file ({fileColumns.length})
+                </span>
+                {!requiredMapped && (
+                  <Badge variant="outline" className="border-warning/40 bg-warning-soft text-warning-foreground">
+                    Required fields need mapping
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {fileColumns.map((col, index) => (
+                  <Badge key={`${col.name}-${index}`} variant="outline" className="px-2 py-1 font-mono text-[11px]">
+                    {col.name || `Column ${index + 1}`}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border">
+              <div className="grid grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.2fr)_minmax(10rem,1fr)] gap-3 rounded-t-lg bg-muted/60 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <span>System field</span>
+                <span>Spreadsheet column</span>
                 <span>Sample value</span>
               </div>
-              {fileColumns.map((col) => (
-                <div key={col.name} className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 items-center border-t">
-                  <span className="text-sm truncate" title={col.name}>{col.name}</span>
-                  <FieldMapper
-                    fields={schema.fields}
-                    value={mapping[col.name] ?? SKIP}
-                    onChange={(k) => setMapping((m) => ({ ...m, [col.name]: k }))}
-                  />
-                  <span className="text-xs text-muted-foreground truncate" title={col.sample}>{col.sample}</span>
-                </div>
-              ))}
+              {schema.fields.map((field) => {
+                const selectedColumn = selectedColumnForField(field.key);
+                const sample = sampleForColumn(selectedColumn);
+                return (
+                  <div key={field.key} className="grid grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.2fr)_minmax(10rem,1fr)] items-center gap-3 border-t px-3 py-2">
+                    <Label className="text-sm">
+                      {field.label}
+                      {field.required && <span className="ml-0.5 text-destructive">*</span>}
+                      {field.naturalKey && <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">match</Badge>}
+                    </Label>
+                    <Select value={selectedColumn} onValueChange={(value) => setFieldColumn(field.key, value)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent position="popper" side="bottom" collisionPadding={8}>
+                        <SelectItem value={SKIP}>Ignore this field</SelectItem>
+                        {fileColumns.map((col, index) => (
+                          <SelectItem key={`${col.name}-${index}`} value={col.name}>
+                            {col.name || `Column ${index + 1}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="truncate text-xs text-muted-foreground" title={sample}>{sample || "—"}</span>
+                  </div>
+                );
+              })}
             </div>
+            {fileRows.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">
+                  Spreadsheet preview — first 5 rows using your uploaded column titles
+                </div>
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="w-full min-w-max border-collapse text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground">
+                      <tr>
+                        {fileColumns.map((col, index) => (
+                          <th key={`${col.name}-${index}`} className="max-w-48 whitespace-nowrap px-3 py-2 font-medium">
+                            <span className="block truncate">{col.name || `Column ${index + 1}`}</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fileRows.slice(0, 5).map((row, rowIndex) => (
+                        <tr key={rowIndex} className="border-t">
+                          {fileColumns.map((col, colIndex) => (
+                            <td key={`${col.name}-${colIndex}`} className="max-w-56 px-3 py-2" title={row[colIndex] ?? ""}>
+                              <span className="block truncate">{row[colIndex] || "—"}</span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between pt-1">
               <p className="text-xs text-muted-foreground">
-                {Object.values(mapping).filter((v) => v && v !== SKIP).length} of {fileColumns.length} columns mapped
+                {Object.values(mapping).filter((v) => v && v !== SKIP).length} fields mapped
               </p>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
-                <Button size="sm" onClick={() => void runPreview()} disabled={busy}>
+                <Button size="sm" onClick={() => void runPreview()} disabled={busy || !requiredMapped}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   Preview
                 </Button>
@@ -613,67 +695,5 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         </>
       )}
     </>
-  );
-}
-
-/** Searchable dropdown mapping one file column to a target field or Skip. */
-function FieldMapper({ fields, value, onChange }: {
-  fields: ImportSchemaField[];
-  value: string;
-  onChange: (key: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const chosen = value === SKIP ? null : fields.find((f) => f.key === value);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn("w-full justify-between h-8 text-sm font-normal", !chosen && "text-muted-foreground")}
-        >
-          {chosen ? (
-            <span className="flex items-center gap-1.5 truncate">
-              {chosen.label}
-              {chosen.required && <Badge variant="outline" className="h-4 px-1 text-[9px]">required</Badge>}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <X className="h-3 w-3" /> Skip this column
-            </span>
-          )}
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search fields…" className="h-9" />
-          <CommandList>
-            <CommandEmpty>No fields found.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem
-                value="__skip__"
-                onSelect={() => { onChange(SKIP); setOpen(false); }}
-              >
-                <X className="h-3 w-3 mr-2 text-muted-foreground" /> Skip this column
-              </CommandItem>
-              {fields.map((f) => (
-                <CommandItem
-                  key={f.key}
-                  value={`${f.label} ${f.key}`}
-                  onSelect={() => { onChange(f.key); setOpen(false); }}
-                  className="flex items-center gap-1.5"
-                >
-                  <span>{f.label}</span>
-                  {f.naturalKey && <Badge variant="outline" className="h-4 px-1 text-[9px] ml-auto">match</Badge>}
-                  {f.required && <Badge variant="outline" className="h-4 px-1 text-[9px] ml-auto">req</Badge>}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
   );
 }
