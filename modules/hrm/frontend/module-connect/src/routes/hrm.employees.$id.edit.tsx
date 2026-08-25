@@ -9,7 +9,7 @@ import { branchOptions, departmentOptions, gradeOptions, workLocationOptions } f
 import { EMPLOYMENT_TYPES } from "@/mock/types";
 import { api } from "@/mock/service";
 import { ApiError } from "@/platform/api-client";
-import { adaptWorkerProfile, adaptWorkers, realApi } from "@/platform/use-api";
+import { adaptWorkerProfile, adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import type { Employee } from "@/mock/types";
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
@@ -22,7 +22,6 @@ import { LoadingState, RestrictedState } from "@/platform/components/States";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 import { SubRecordCard, SubRecords } from "@/platform/components/ProfileFields";
 import { feedback } from "@/platform/feedback";
-import { useMock } from "@/platform/use-mock";
 
 export const Route = createFileRoute("/hrm/employees/$id/edit")({
   head: () => ({
@@ -54,19 +53,17 @@ function EditEmployee() {
   // Real backend: the employee list carries the same shape as the mock
   // employee, so one hook covers both modes (real falls back to mock shape
   // after adaptation when switched on).
-  const realState = useMock(
-    () =>
-      realApi.employees().then((page) => {
-        const workers = adaptWorkers(page);
-        // Mock ids are `w-NNNN`; in real mode the route id is the mock id
-        // `w-1001`, which maps to employee number SMK001 on the seeded row.
-        const match = workers.find((w) => w.id === id || w.employeeNo === id);
-        return match ?? null;
-      }),
-    [id],
-  );
-  const state = USE_REAL ? realState : useMock(() => api.employee(id), [id]);
-  const profileState = useMock(
+  const state = useApi(async () => {
+    if (!USE_REAL) return api.employee(id);
+    try {
+      const direct = await realApi.worker(id);
+      return adaptWorkers([direct])[0] ?? null;
+    } catch {
+      const workers = adaptWorkers(await realApi.employees());
+      return workers.find((w) => w.id === id || w.employeeNo === id) ?? null;
+    }
+  }, [id]);
+  const profileState = useApi(
     () => (USE_REAL ? realApi.worker(id).then(adaptWorkerProfile) : employeeProfileApi.profile(id)),
     [id],
   );

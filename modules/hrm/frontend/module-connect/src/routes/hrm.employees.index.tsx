@@ -16,7 +16,7 @@
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Archive, FileSpreadsheet, UserPlus } from "lucide-react";
+import { Archive, FileSpreadsheet, Pencil, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppShell } from "@/platform/components/AppShell";
@@ -208,10 +208,18 @@ function EmployeesPage() {
             header: "Actions",
             defaultVisible: USE_REAL,
             cell: (e) => (
-              <Button size="sm" variant="outline" disabled={e.isArchived} onClick={() => setArchiveTarget(e)}>
-                <Archive className="mr-1 size-3.5" aria-hidden />
-                {e.isArchived ? "Archived" : "Archive"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/hrm/employees/$id/edit" params={{ id: e.rawId ?? e.id }}>
+                    <Pencil className="mr-1 size-3.5" aria-hidden />
+                    Edit
+                  </Link>
+                </Button>
+                <Button size="sm" variant="outline" disabled={e.isArchived} onClick={() => setArchiveTarget(e)}>
+                  <Archive className="mr-1 size-3.5" aria-hidden />
+                  {e.isArchived ? "Archived" : "Archive"}
+                </Button>
+              </div>
             ),
           },
         ] as ColumnDef<EmployeeRow>[])

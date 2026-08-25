@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-
 import { useEffect, useState } from "react";
 import { KeyRound, Link2, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { adaptWorkerProfile, adaptWorkers, realApi } from "@/platform/use-api";
+import { adaptWorkerProfile, adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
 import { employeeProfileApi } from "@/mock/employeeprofile";
 import { balanceFor } from "@/mock/leavebalance";
@@ -20,7 +20,6 @@ import { Field, FieldGrid, SubRecordCard, SubRecords, YesNo } from "@/platform/c
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 import { feedback } from "@/platform/feedback";
-import { useMock } from "@/platform/use-mock";
 import { useRoleGate } from "@/platform/app-context";
 import type { Role } from "@/mock/types";
 
@@ -346,7 +345,7 @@ function EmployeePage() {
   }, [id]);
   // Real backend: the employee list keeps the real worker GUID as the row id,
   // so detail/edit links resolve directly. Falls back to mock when off.
-  const state = useMock(async () => {
+  const state = useApi(async () => {
     if (!USE_REAL) return api.employee(id);
     try {
       // Try the GUID directly first, then fall back to a list scan by employee
@@ -362,9 +361,9 @@ function EmployeePage() {
       /* not a GUID — scan the list by employee number instead */
     }
     const workers = adaptWorkers(await realApi.employees());
-    return workers.find((w) => w.employeeNo === id) ?? workers[0] ?? null;
+    return workers.find((w) => w.employeeNo === id) ?? null;
   }, [id]);
-  const profileState = useMock(
+  const profileState = useApi(
     () => (USE_REAL ? loadLiveProfile(id) : employeeProfileApi.profile(id)),
     [id],
   );
