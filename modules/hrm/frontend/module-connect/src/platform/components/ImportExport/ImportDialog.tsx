@@ -498,8 +498,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             </div>
             {entryMode === "manual" && schema ? (
               <div className="space-y-3">
-                <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full min-w-max text-xs">
+                <div className="max-w-full overflow-x-auto rounded-md border pb-2">
+                  <table className="w-full min-w-[1600px] text-xs">
                     <thead className="bg-muted/50">
                       <tr>
                         {schema.fields.map((field) => (
@@ -660,8 +660,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 <div className="text-xs font-medium text-muted-foreground">
                   Map and preview — first 5 rows as the system will receive them
                 </div>
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="w-full min-w-max border-collapse text-left text-xs">
+                <div className="max-w-full overflow-x-auto rounded-lg border pb-2">
+                  <table className="w-full min-w-[1600px] border-collapse text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground">
                       <tr>
                         {mappedPreviewFields.map((field) => (
@@ -735,7 +735,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 </div>
               ))}
             </div>
-            <div className="overflow-hidden rounded-lg border">
+            <div className="max-w-full overflow-hidden rounded-lg border">
               <div className="max-h-[28rem] overflow-auto">
                 <table className="w-full min-w-max border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-muted/80 text-xs font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">

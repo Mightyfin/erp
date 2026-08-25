@@ -26,6 +26,8 @@ import {
   Settings,
   UserCog,
   BarChart3,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -80,24 +82,31 @@ function useVisibleSections(mod: ModuleDefinition, role: Role) {
 }
 
 /** Out-of-scope sections stay in the rail, greyed, so the roadmap is visible. */
-function SoonSection({ section }: { section: NavSection }) {
+function SoonSection({ section, collapsed = false }: { section: NavSection; collapsed?: boolean }) {
   const Icon = section.icon;
   return (
     <div
-      className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted/50"
+      className={cn(
+        "flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted/50",
+        collapsed ? "justify-center px-2" : "px-2.5",
+      )}
       aria-disabled="true"
       title={`${section.label} — coming soon`}
     >
       <Icon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 text-left">{section.label}</span>
-      <span className="shrink-0 rounded-full border border-rail-active px-1.5 py-0.5 text-[10px] font-normal">
-        Soon
-      </span>
+      {collapsed ? <span className="sr-only">{section.label}</span> : (
+        <>
+          <span className="min-w-0 flex-1 text-left">{section.label}</span>
+          <span className="shrink-0 rounded-full border border-rail-active px-1.5 py-0.5 text-[10px] font-normal">
+            Soon
+          </span>
+        </>
+      )}
     </div>
   );
 }
 
-function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNavigate?: () => void; collapsed?: boolean }) {
   return (
     <Link
       to={item.to}
@@ -105,14 +114,23 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       onClick={onNavigate}
       activeProps={{ className: "bg-rail-active text-rail-foreground font-medium" }}
       activeOptions={{ exact: true }}
-      className="block rounded-md px-3 py-1.5 text-sm text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+      className={cn(
+        "rounded-md text-sm text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+        collapsed ? "mx-auto flex size-8 items-center justify-center px-0 py-0" : "block px-3 py-1.5",
+      )}
+      title={item.label}
     >
-      {item.label}
+      {collapsed ? (
+        <>
+          <ChevronRight className="size-3.5" aria-hidden />
+          <span className="sr-only">{item.label}</span>
+        </>
+      ) : item.label}
     </Link>
   );
 }
 
-function Section({ section, onNavigate }: { section: NavSection; onNavigate?: () => void }) {
+function Section({ section, onNavigate, collapsed = false }: { section: NavSection; onNavigate?: () => void; collapsed?: boolean }) {
   const Icon = section.icon;
   const { role } = useApp();
   const visible = (i: NavItem) => (!i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
@@ -121,8 +139,9 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
     ?.map((g) => ({ ...g, items: g.items.filter(visible) }))
     .filter((g) => g.items.length > 0);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const groupedItems = groups?.flatMap((g) => g.items) ?? [];
   const childActive =
-    items?.some((i) => pathname.startsWith(i.to.split("/$")[0])) ?? false;
+    [...(items ?? []), ...groupedItems].some((i) => pathname.startsWith(i.to.split("/$")[0]));
   const [open, setOpen] = useState(childActive);
   useEffect(() => {
     if (childActive) setOpen(true);
@@ -135,10 +154,14 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
         onClick={onNavigate}
         activeProps={{ className: "bg-rail-active text-rail-foreground" }}
         activeOptions={{ exact: section.to === "/hrm" }}
-        className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+        className={cn(
+          "flex items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+          collapsed ? "justify-center px-2" : "px-2.5",
+        )}
+        title={section.label}
       >
         <Icon className="size-4 shrink-0" aria-hidden />
-        {section.label}
+        {collapsed ? <span className="sr-only">{section.label}</span> : section.label}
       </Link>
     );
   }
@@ -149,21 +172,29 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+          collapsed ? "justify-center px-2" : "px-2.5",
+        )}
+        title={section.label}
       >
         <Icon className="size-4 shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1 text-left">{section.label}</span>
-        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+        {collapsed ? <span className="sr-only">{section.label}</span> : (
+          <>
+            <span className="min-w-0 flex-1 text-left">{section.label}</span>
+            <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
       </button>
       {open ? (
-        <div className="mt-0.5 space-y-0.5 border-l border-rail-active pl-3 ml-4">
-          {items?.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} />)}
+        <div className={cn("mt-0.5 space-y-0.5", collapsed ? "px-1" : "ml-4 border-l border-rail-active pl-3")}>
+          {items?.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
           {groups?.map((g) => (
             <div key={g.label} className="pt-2">
-              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-rail-muted/80">
+              <p className={cn("pb-1 text-[11px] font-semibold uppercase tracking-wide text-rail-muted/80", collapsed ? "sr-only" : "px-3")}>
                 {g.label}
               </p>
-              {g.items.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} />)}
+              {g.items.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
             </div>
           ))}
         </div>
@@ -172,7 +203,7 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
   );
 }
 
-function RailContent({ onNavigate }: { onNavigate?: () => void }) {
+function RailContent({ onNavigate, collapsed = false, onToggleCollapsed }: { onNavigate?: () => void; collapsed?: boolean; onToggleCollapsed?: () => void }) {
   const { role } = useApp();
   const sections = useVisibleSections(hrmModule, role);
   const main = sections.filter((s) => s.id !== "configuration");
@@ -180,33 +211,55 @@ function RailContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 py-4">
-        <p className="px-2 text-xs font-semibold uppercase tracking-wide text-rail-muted">Module</p>
-        <p className="px-2 text-sm font-semibold text-rail-foreground">{hrmModule.name}</p>
+      <div className={cn("flex items-center gap-2 px-3 py-4", collapsed ? "flex-col justify-center px-2" : "justify-between")}>
+        {collapsed ? (
+          <span className="flex size-9 items-center justify-center rounded-md bg-rail-active" title={hrmModule.name}>
+            <Users className="size-4 text-rail-foreground" aria-hidden />
+            <span className="sr-only">{hrmModule.name}</span>
+          </span>
+        ) : (
+          <div>
+            <p className="px-2 text-xs font-semibold uppercase tracking-wide text-rail-muted">Module</p>
+            <p className="px-2 text-sm font-semibold text-rail-foreground">{hrmModule.name}</p>
+          </div>
+        )}
+        {onToggleCollapsed ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="hidden size-8 text-rail-muted hover:bg-rail-active hover:text-rail-foreground lg:inline-flex"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? "Expand side menu" : "Collapse side menu"}
+            title={collapsed ? "Expand side menu" : "Collapse side menu"}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" aria-hidden /> : <PanelLeftClose className="size-4" aria-hidden />}
+          </Button>
+        ) : null}
       </div>
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {main
           .filter((s) => isSectionEnabled(s.id))
           .map((s) => (
-            <Section key={s.id} section={s} onNavigate={onNavigate} />
+            <Section key={s.id} section={s} onNavigate={onNavigate} collapsed={collapsed} />
           ))}
         {main.some((s) => !isSectionEnabled(s.id)) ? (
           <div className="pt-3">
-            <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-rail-muted/70">
+            <p className={cn("pb-1 text-[10px] font-semibold uppercase tracking-wide text-rail-muted/70", collapsed ? "sr-only" : "px-2.5")}>
               Coming soon
             </p>
             {main
               .filter((s) => !isSectionEnabled(s.id))
               .map((s) => (
-                <SoonSection key={s.id} section={s} />
+                <SoonSection key={s.id} section={s} collapsed={collapsed} />
               ))}
           </div>
         ) : null}
       </nav>
       {config ? (
         <div className="border-t border-rail-active px-3 py-3">
-          <Section section={config} onNavigate={onNavigate} />
-          <p className="px-2.5 pt-1 text-[11px] text-rail-muted">
+          <Section section={config} onNavigate={onNavigate} collapsed={collapsed} />
+          <p className={cn("px-2.5 pt-1 text-[11px] text-rail-muted", collapsed && "sr-only")}>
             All setup and admin lives here.
           </p>
         </div>
@@ -521,6 +574,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railPreferenceReady, setRailPreferenceReady] = useState(false);
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
@@ -625,6 +680,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      setRailCollapsed(localStorage.getItem("erp.hrm.rail.collapsed") === "true");
+    }
+    setRailPreferenceReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!railPreferenceReady) return;
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem("erp.hrm.rail.collapsed", String(railCollapsed));
+  }, [railCollapsed, railPreferenceReady]);
 
   // M50.11: first-time gate — while setup is PENDING, keep non-confined
   // operators on the dedicated /hrm/setup wizard page (a full route, no
@@ -859,8 +927,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <div className="flex">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 bg-rail text-rail-foreground lg:block">
-          <RailContent />
+        <aside className={cn(
+          "sticky top-14 hidden h-[calc(100vh-3.5rem)] shrink-0 bg-rail text-rail-foreground transition-[width] duration-200 lg:block",
+          railCollapsed ? "w-16" : "w-64",
+        )}>
+          <RailContent
+            collapsed={railCollapsed}
+            onToggleCollapsed={() => setRailCollapsed((value) => !value)}
+          />
         </aside>
         <main id="main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-6xl flex-col space-y-6">
