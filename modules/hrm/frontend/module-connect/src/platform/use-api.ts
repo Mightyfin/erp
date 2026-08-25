@@ -673,6 +673,8 @@ export const realApi = {
     }),
   payrollPaymentGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/generate`, {}),
+  payrollPaymentReadiness: (id: string) =>
+    hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/payments/readiness`),
   payrollPaymentApprove: (id: string, note?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/approve`, { note }),
   payrollPaymentRelease: (id: string) =>

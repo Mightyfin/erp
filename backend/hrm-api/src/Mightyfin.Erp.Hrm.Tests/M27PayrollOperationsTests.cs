@@ -67,8 +67,17 @@ public class M27PayrollOperationsTests
         var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
         await service.LockRunAsync(run.Id, default, "preparer");
         await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test readiness after exception review"), default, "hr-approver");
         await service.ApproveRunAsync(run.Id, "reviewed", default, "hr-approver");
         run = await service.ReleaseRunAsync(run.Id, default, "payroll-releaser");
+
+        var readiness = await service.GetPaymentReadinessAsync(run.Id, default);
+        Assert.True(readiness.Ready);
+        Assert.Equal(run.TotalNet, readiness.TotalNet);
+        Assert.Empty(readiness.Issues);
 
         run = await service.GeneratePaymentFileAsync(run.Id, default, "payroll-releaser");
         var csv = await service.DownloadPaymentFileAsync(run.Id, default);
@@ -94,5 +103,30 @@ public class M27PayrollOperationsTests
         var auditCsv = await service.ExportRunAuditAsync(run.Id, default);
         Assert.Contains("payment-file-generated", auditCsv);
         Assert.Contains("reconciled-and-closed", auditCsv);
+    }
+
+    [Fact]
+    public async Task PaymentReadiness_ListsWorkersMissingPrimaryBankDetails()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment-readiness");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test readiness after exception review"), default, "hr-approver");
+        await service.ApproveRunAsync(run.Id, "reviewed", default, "hr-approver");
+        run = await service.ReleaseRunAsync(run.Id, default, "payroll-releaser");
+
+        var readiness = await service.GetPaymentReadinessAsync(run.Id, default);
+
+        Assert.False(readiness.Ready);
+        Assert.Equal(1, readiness.PayableCount);
+        Assert.Equal(run.TotalNet, readiness.TotalNet);
+        Assert.Single(readiness.Issues);
+        Assert.Equal("Primary bank details are missing.", readiness.Issues[0].Issue);
     }
 }

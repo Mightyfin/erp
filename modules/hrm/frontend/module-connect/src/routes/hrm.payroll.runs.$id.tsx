@@ -425,7 +425,27 @@ function PaymentWorkflow({
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [reference, setReference] = useState("");
+  const readinessState = useApi(async () => {
+    const raw = (await realApi.payrollPaymentReadiness(run.id)) as Record<string, unknown>;
+    const issues = Array.isArray(raw.issues)
+      ? (raw.issues as Record<string, unknown>[]).map((issue) => ({
+          workerId: String(issue.workerId ?? ""),
+          employeeNo: String(issue.employeeNo ?? ""),
+          workerName: String(issue.workerName ?? ""),
+          netPay: Number(issue.netPay ?? 0),
+          issue: String(issue.issue ?? "Payment readiness issue"),
+        }))
+      : [];
+    return {
+      ready: Boolean(raw.ready),
+      payableCount: Number(raw.payableCount ?? 0),
+      totalNet: Number(raw.totalNet ?? 0),
+      missingBankDetailsCount: Number(raw.missingBankDetailsCount ?? issues.length),
+      issues,
+    };
+  }, [run.id, run.paymentStatus, run.backendStatus]);
   const status = run.paymentStatus;
+  const readiness = readinessState.data;
   const currentSubjectId = user?.id ? String(user.id) : "";
   const generatedByMe = Boolean(
     currentSubjectId && run.paymentFileGeneratedBySubjectId === currentSubjectId,
@@ -433,7 +453,8 @@ function PaymentWorkflow({
   const approvedByMe = Boolean(
     currentSubjectId && run.paymentApprovedBySubjectId === currentSubjectId,
   );
-  const canGenerate = run.backendStatus === "released" && status === "not-created";
+  const canGenerate =
+    run.backendStatus === "released" && status === "not-created" && readiness?.ready === true;
   const canApprove = status === "generated" && !generatedByMe;
   const canRelease = status === "approved" && !approvedByMe && !generatedByMe;
   const invoke = async (label: string, action: () => Promise<unknown>) => {
@@ -579,6 +600,48 @@ function PaymentWorkflow({
           does not pay anyone; it only makes the payslip records visible.
         </p>
       ) : null}
+      {status === "not-created" ? (
+        <div className="mt-4 rounded-md border bg-surface p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">Bank readiness</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {readinessState.loading
+                  ? "Checking primary bank details for payable workers."
+                  : readiness
+                    ? `${readiness.payableCount} payable worker${readiness.payableCount === 1 ? "" : "s"} · ${money(readiness.totalNet, run.currency)} net`
+                    : "Bank readiness could not be loaded."}
+              </p>
+            </div>
+            {readiness ? (
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  readiness.ready
+                    ? "bg-success-soft text-success"
+                    : "bg-warning-soft text-warning"
+                }`}
+              >
+                {readiness.ready
+                  ? "Ready"
+                  : `${readiness.missingBankDetailsCount} missing bank details`}
+              </span>
+            ) : null}
+          </div>
+          {readiness?.issues.length ? (
+            <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+              {readiness.issues.slice(0, 5).map((issue) => (
+                <li key={`${issue.workerId}-${issue.issue}`} className="flex justify-between gap-3">
+                  <span>
+                    {issue.employeeNo ? `${issue.employeeNo} · ` : ""}
+                    {issue.workerName || "Worker"}
+                  </span>
+                  <span className="text-warning">{issue.issue}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* M41: accounting reports for the accounts team. The run must be
           released first — the backend enforces the same rule server-side. */}
@@ -647,6 +710,8 @@ function PaymentWorkflow({
             title={
               run.backendStatus !== "released"
                 ? "Payslips must be released before a bank file can be generated."
+                : readiness?.ready === false
+                  ? "Fix missing primary bank details before generating the bank file."
                 : undefined
             }
             onClick={() =>

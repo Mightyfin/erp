@@ -187,6 +187,11 @@ public sealed record PayrollExceptionDecisionRequest(string Decision, string Rea
 public sealed record PayrollCorrectionRequest(string ComponentCode, decimal Amount, string Reason);
 public sealed record PayrollPaymentApprovalRequest(string? Note = null);
 public sealed record PayrollReconciliationRequest(string Reference, decimal ActualAmount, string? Note = null);
+public sealed record PayrollPaymentReadinessDto(
+    Guid RunId, bool Ready, int PayableCount, decimal TotalNet, int MissingBankDetailsCount,
+    List<PayrollPaymentReadinessIssueDto> Issues);
+public sealed record PayrollPaymentReadinessIssueDto(
+    Guid WorkerId, string EmployeeNo, string WorkerName, decimal NetPay, string Issue);
 public sealed record PayrollRunEventDto(Guid Id, string Action, string ActorSubjectId,
     string? FromStatus, string? ToStatus, string? Reason, string? DetailsJson, DateTimeOffset CreatedAt);
 

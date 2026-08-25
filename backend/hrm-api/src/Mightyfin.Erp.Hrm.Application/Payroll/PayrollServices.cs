@@ -62,6 +62,7 @@ public interface IPayrollService
 
     // M27: bank-file workflow, reconciliation, and run-scoped audit history.
     Task<PayrollRunDto> GeneratePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollPaymentReadinessDto> GetPaymentReadinessAsync(Guid id, CancellationToken ct);
     Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> ApprovePaymentFileAsync(Guid id, PayrollPaymentApprovalRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
@@ -899,6 +900,21 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         await RecordEventAsync(run, "payment-file-generated", actorSubjectId, "not-created", "generated", null,
             new { run.PaymentFileReference, rowCount = rows.Count, run.TotalNet }, ct);
         return MapRun(run);
+    }
+
+    public async Task<PayrollPaymentReadinessDto> GetPaymentReadinessAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        _ = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var rows = await repo.ListPaymentRowsAsync(id, ct);
+        var issues = rows
+            .Where(x => string.IsNullOrWhiteSpace(x.AccountNumber))
+            .Select(x => new PayrollPaymentReadinessIssueDto(
+                x.WorkerId, x.EmployeeNo, x.WorkerName, x.Amount, "Primary bank details are missing."))
+            .ToList();
+        return new PayrollPaymentReadinessDto(
+            id, rows.Count > 0 && issues.Count == 0, rows.Count, rows.Sum(x => x.Amount),
+            issues.Count, issues);
     }
 
     public async Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct)

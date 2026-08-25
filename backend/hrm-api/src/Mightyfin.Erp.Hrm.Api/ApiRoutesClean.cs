@@ -1013,6 +1013,8 @@ public static class Routes
         });
         g.MapPost("/runs/{id:guid}/payments/generate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             Results.Ok(await svc.GeneratePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
+        g.MapGet("/runs/{id:guid}/payments/readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetPaymentReadinessAsync(id, ct)));
         g.MapGet("/runs/{id:guid}/payments/file", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             Results.Text(await svc.DownloadPaymentFileAsync(id, ct), "text/csv", Encoding.UTF8));
         g.MapPost("/runs/{id:guid}/payments/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
