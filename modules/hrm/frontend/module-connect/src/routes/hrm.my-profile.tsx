@@ -12,12 +12,15 @@
  * save changes against another worker's record.
  */
 import { useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  ArrowLeft,
   BadgeCheck,
   Landmark,
   LifeBuoy,
+  Link2,
+  UserPlus,
   Save,
   ShieldCheck,
   UserRound,
@@ -87,7 +90,7 @@ function Field({
 }
 
 export function MyProfilePage() {
-  const { worker, resolvingWorker } = useAuth();
+  const { user, worker, resolvingWorker } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState<SelfProfileUpdate>({});
   const [saving, setSaving] = useState(false);
@@ -96,6 +99,8 @@ export function MyProfilePage() {
   );
 
   const profile = worker as LinkedWorker | null;
+  const roles = new Set((user?.roles ?? []).map((role) => role.toLowerCase()));
+  const canManageEmployees = roles.has("hr_admin") || roles.has("hr_ops");
 
   const set = (patch: Partial<SelfProfileUpdate>) =>
     setForm((f) => ({ ...f, ...patch }));
@@ -137,12 +142,52 @@ export function MyProfilePage() {
   }
   if (!profile) {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
-        <AlertTriangle className="size-8 text-muted-foreground" aria-hidden />
-        <p className="font-medium">No worker record is linked to your login</p>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Ask HR to link your Keycloak account to your worker record, then reload this page.
-        </p>
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-6">
+        <div className="w-full max-w-2xl rounded-2xl border bg-surface p-8 text-center shadow-sm">
+          <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <AlertTriangle className="size-7" aria-hidden />
+          </span>
+          <div className="mt-5 space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Employee record not linked</h1>
+            <p className="mx-auto max-w-lg text-sm leading-6 text-muted-foreground">
+              Your login is active, but no employee record is linked to your profile yet. Link this account to the correct
+              employee record so personal details, leave, payslips and approvals can load here.
+            </p>
+          </div>
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button variant="outline" asChild>
+              <Link to="/hrm">
+                <ArrowLeft className="size-4" aria-hidden />
+                Back to dashboard
+              </Link>
+            </Button>
+            {canManageEmployees ? (
+              <>
+                <Button asChild>
+                  <Link to="/hrm/employees/new">
+                    <UserPlus className="size-4" aria-hidden />
+                    Create employee record
+                  </Link>
+                </Button>
+                <Button variant="secondary" asChild>
+                  <Link to="/hrm/configuration/users">
+                    <Link2 className="size-4" aria-hidden />
+                    Link user account
+                  </Link>
+                </Button>
+              </>
+            ) : null}
+          </div>
+          {!canManageEmployees ? (
+            <p className="mt-5 text-xs text-muted-foreground">
+              Ask HR to link your login to your employee record, then refresh this page.
+            </p>
+          ) : (
+            <p className="mt-5 text-xs text-muted-foreground">
+              HR users can create the employee record or link this login from user access.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
