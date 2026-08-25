@@ -1176,6 +1176,158 @@ function PayLines({
   );
 }
 
+function CalculationReview({
+  run,
+  rows,
+  readiness,
+}: {
+  run: PayRun;
+  rows: RunLine[];
+  readiness: CalculationReadiness | null;
+}) {
+  if (!rows.length) {
+    return (
+      <p className="rounded-md border bg-surface-muted p-3 text-sm text-muted-foreground">
+        Calculation review opens after the run has pay lines. Lock and calculate the run first.
+      </p>
+    );
+  }
+
+  const blockingLines = rows.filter((line) => line.flags.length > 0);
+  const materialVariances = rows
+    .map((line) => ({
+      line,
+      variance: line.priorNet && line.priorNet > 0 ? ((line.net - line.priorNet) / line.priorNet) * 100 : null,
+    }))
+    .filter((item) => item.variance !== null && Math.abs(item.variance) >= 2);
+  const allComponents = rows.flatMap((line) => line.components);
+  const statutoryTotal = allComponents
+    .filter((component) => component.source === "Statutory")
+    .reduce((sum, component) => sum + component.amount, 0);
+  const overtimeTotal = allComponents
+    .filter((component) =>
+      component.source === "Attendance" ||
+      component.code.toLowerCase().includes("overtime") ||
+      component.label.toLowerCase().includes("overtime"),
+    )
+    .reduce((sum, component) => sum + component.amount, 0);
+  const employerTotal = allComponents
+    .filter((component) => component.kind === "Employer")
+    .reduce((sum, component) => sum + component.amount, 0);
+  const prorationWarnings =
+    readiness?.checks.find((check) => check.id === "proration")?.count ?? 0;
+  const reviewReady =
+    readiness?.ready !== false && blockingLines.length === 0 && run.status !== "Draft";
+
+  const reviewCards = [
+    {
+      label: "Calculated workers",
+      value: String(rows.length),
+      detail: `${run.totals.headcount || rows.length} included in run totals`,
+      tone: "text-foreground",
+    },
+    {
+      label: "Gross to net",
+      value: money(run.totals.net, run.currency),
+      detail: `${money(run.totals.gross, run.currency)} gross less ${money(run.totals.deductions, run.currency)} deductions`,
+      tone: "text-foreground",
+    },
+    {
+      label: "Statutory deductions",
+      value: money(statutoryTotal, run.currency),
+      detail: "PAYE, NAPSA, NHIMA and configured statutory components from the engine",
+      tone: "text-foreground",
+    },
+    {
+      label: "Needs attention",
+      value: String(blockingLines.length + materialVariances.length),
+      detail: `${blockingLines.length} line exception${blockingLines.length === 1 ? "" : "s"}, ${materialVariances.length} material variance${materialVariances.length === 1 ? "" : "s"}`,
+      tone: blockingLines.length || materialVariances.length ? "text-warning" : "text-success",
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div
+        className={`rounded-lg border p-4 ${
+          reviewReady ? "border-success/30 bg-success-soft" : "border-warning/40 bg-warning-soft"
+        }`}
+      >
+        <p className={`flex items-start gap-2 text-sm font-semibold ${reviewReady ? "text-success" : "text-warning"}`}>
+          {reviewReady ? (
+            <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+          ) : (
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          )}
+          {reviewReady ? "Calculation review ready for approval" : "Review required before approval"}
+        </p>
+        <p className="mt-2 text-xs text-foreground">
+          Review the engine output below before approval. This page summarizes results only; salary
+          components, tax slabs and statutory rates remain managed in payroll configuration.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        {reviewCards.map((card) => (
+          <div key={card.label} className="rounded-lg border bg-background p-3">
+            <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
+            <p className={`mt-1 text-xl font-semibold tabular ${card.tone}`}>{card.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{card.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Overtime and attendance</p>
+          <p className="mt-1 text-lg font-semibold tabular">{money(overtimeTotal, run.currency)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Approved attendance/overtime included in this calculation.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Proration inputs</p>
+          <p className="mt-1 text-lg font-semibold tabular">{prorationWarnings}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Approved unpaid leave records overlapping the period.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Employer cost additions</p>
+          <p className="mt-1 text-lg font-semibold tabular">{money(employerTotal, run.currency)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Employer-side configured contributions not deducted from worker net.
+          </p>
+        </div>
+      </div>
+
+      {blockingLines.length || materialVariances.length ? (
+        <div className="rounded-lg border bg-background">
+          <div className="border-b bg-surface-muted px-3 py-2">
+            <p className="text-sm font-medium">Review exceptions</p>
+          </div>
+          <ul className="divide-y text-sm">
+            {blockingLines.slice(0, 6).map((line) => (
+              <li key={`flag-${line.id}`} className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2">
+                <span className="font-medium">{line.employee}</span>
+                <span className="text-warning">{line.flags.join(", ")}</span>
+              </li>
+            ))}
+            {materialVariances.slice(0, 6).map(({ line, variance }) => (
+              <li key={`variance-${line.id}`} className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2">
+                <span className="font-medium">{line.employee}</span>
+                <span className="text-warning">
+                  Net changed {variance! > 0 ? "+" : "-"}{Math.abs(variance!).toFixed(1)}% from prior period.
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function RunPayslipsSection({
   run,
   onChanged,
@@ -1726,6 +1878,21 @@ function RunDetail() {
                         : "Payments have been released, so recalculating would change figures people have already been paid on."
                     }
                   />
+                </DetailSection>
+
+                <DetailSection
+                  title="Calculation review"
+                  description="One checkpoint before approval: control totals, statutory deductions, overtime, proration inputs and employee-level exceptions."
+                >
+                  <Async state={lines} rows={3}>
+                    {(rows) => (
+                      <CalculationReview
+                        run={run}
+                        rows={rows}
+                        readiness={calculationReadiness.data}
+                      />
+                    )}
+                  </Async>
                 </DetailSection>
 
                 <DetailSection
