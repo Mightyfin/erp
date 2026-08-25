@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { KeyRound, Link2, Unlink } from "lucide-react";
+import { Eye, KeyRound, Link2, Printer, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { adaptWorkerProfile, adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
@@ -40,6 +40,38 @@ export const Route = createFileRoute("/hrm/employees/$id")({
 });
 
 type EmployeeRecord = NonNullable<Awaited<ReturnType<typeof api.employee>>>;
+type PayslipRecord = {
+  id?: string;
+  payslipNo?: string;
+  periodLabel?: string;
+  releasedAt?: string | null;
+  payDate?: string | null;
+};
+
+function text(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function mapPayslip(raw: unknown): PayslipRecord {
+  const p = raw as Record<string, unknown>;
+  return {
+    id: text(p.id),
+    payslipNo: text(p.payslipNo),
+    periodLabel: text(p.periodLabel),
+    releasedAt: p.releasedAt ? text(p.releasedAt) : null,
+    payDate: p.payDate ? text(p.payDate) : null,
+  };
+}
+
+async function latestPayslipFor(workerId: string) {
+  const page = await realApi.workerPayslips(workerId);
+  const slips = (page.items ?? []).map(mapPayslip).filter((slip) => slip.id);
+  return slips[0] ?? null;
+}
+
+function payslipLabel(slip: PayslipRecord) {
+  return slip.periodLabel || slip.payslipNo || "last payslip";
+}
 
 /**
  * The whole record, grouped so someone can find one fact quickly.
@@ -339,6 +371,7 @@ function EmployeePage() {
   const [linkSubject, setLinkSubject] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
   const [subjectId, setSubjectId] = useState<string | null>(null);
+  const [payslipBusy, setPayslipBusy] = useState<"preview" | "print" | null>(null);
   const hrAdmin = useRoleGate()(APPROVER_ROLES);
   useEffect(() => {
     setSubjectId(null);
@@ -369,6 +402,78 @@ function EmployeePage() {
   );
   const leaveSummary = USE_REAL ? null : balanceFor(id);
 
+  const previewLatestPayslip = async (workerId: string) => {
+    if (!USE_REAL) {
+      feedback.note("Payslip preview is available in the live HRMS.");
+      return;
+    }
+    setPayslipBusy("preview");
+    try {
+      const slip = await latestPayslipFor(workerId);
+      if (!slip?.id) {
+        feedback.blocked(
+          "No payslip is ready to preview.",
+          "Payroll must release a payslip for this employee before it can be previewed.",
+        );
+        return;
+      }
+      window.open(realApi.payslipPreviewUrl(slip.id), "_blank", "noopener,noreferrer");
+      feedback.note(`Preview opened for ${payslipLabel(slip)}.`);
+    } catch (error) {
+      feedback.blocked(
+        "Payslip preview is blocked.",
+        error instanceof Error ? error.message : "Check payroll permissions and release status, then try again.",
+      );
+    } finally {
+      setPayslipBusy(null);
+    }
+  };
+
+  const printLatestPayslip = async (workerId: string) => {
+    if (!USE_REAL) {
+      feedback.note("Payslip printing is available in the live HRMS.");
+      return;
+    }
+    setPayslipBusy("print");
+    try {
+      const slip = await latestPayslipFor(workerId);
+      if (!slip?.id) {
+        feedback.blocked(
+          "No payslip is ready to print.",
+          "Payroll must release a payslip for this employee before it can be printed.",
+        );
+        return;
+      }
+      const blob = await realApi.payslipDownloadBlob(slip.id);
+      const url = URL.createObjectURL(blob);
+      const frame = document.createElement("iframe");
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "0";
+      frame.style.height = "0";
+      frame.style.border = "0";
+      frame.src = url;
+      frame.onload = () => {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        window.setTimeout(() => {
+          URL.revokeObjectURL(url);
+          frame.remove();
+        }, 60_000);
+      };
+      document.body.appendChild(frame);
+      feedback.note(`Print dialog opened for ${payslipLabel(slip)}.`);
+    } catch (error) {
+      feedback.blocked(
+        "Payslip printing is blocked.",
+        error instanceof Error ? error.message : "Check payroll permissions and release status, then try again.",
+      );
+    } finally {
+      setPayslipBusy(null);
+    }
+  };
+
   // `/employees/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
   if (childMatches.length > 0) return <Outlet />;
@@ -397,9 +502,19 @@ function EmployeePage() {
                       : "No action required"
               }
               primaryAction={
-                <Button asChild>
-                  <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>Edit details</Link>
-                </Button>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" onClick={() => void previewLatestPayslip(e.id)} disabled={payslipBusy !== null}>
+                    <Eye className="mr-2 size-4" aria-hidden />
+                    {payslipBusy === "preview" ? "Checking..." : "Preview payslip"}
+                  </Button>
+                  <Button variant="outline" onClick={() => void printLatestPayslip(e.id)} disabled={payslipBusy !== null}>
+                    <Printer className="mr-2 size-4" aria-hidden />
+                    {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
+                  </Button>
+                  <Button asChild>
+                    <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>Edit details</Link>
+                  </Button>
+                </div>
               }
               secondaryActions={
                 <>

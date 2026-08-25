@@ -358,7 +358,8 @@ export const hrmApi = {
     extra?: Record<string, string>,
   ): Promise<Blob> {
     const res = await fetch(`${BASE}${path}${qs(params ?? {})}`, {
-      headers: { ...headers(extra), Accept: "text/csv" },
+      credentials: "include",
+      headers: { ...headers(), Accept: "text/csv", ...extra },
     });
     if (!res.ok) {
       const text = await res.text();

@@ -711,6 +711,8 @@ export const realApi = {
     }>(`/hrm/payroll/runs/${id}/statutory-readiness`),
   /** M24: payslip by id — the snapshot includes statutory references. */
   payslipById: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/payslips/id/${id}`),
+  /** Payslips for one worker, newest first as returned by the API. */
+  workerPayslips: (workerId: string) => hrmApi.get<{ items: unknown[]; totalCount: number }>(`/hrm/payroll/payslips/${workerId}`),
 
   /* ------------------------------------------------------------------ */
   /* M34: admin payslip surface per run.                                  */
@@ -726,7 +728,7 @@ export const realApi = {
     `${import.meta.env.VITE_HRM_API_BASE ?? "/api"}/hrm/payroll/payslips/${payslipId}/preview`,
   /** Direct PDF download trigger via blob fetch. */
   payslipDownloadBlob: (payslipId: string) =>
-    hrmApi.getBlob(`/hrm/payroll/payslips/${payslipId}/preview`),
+    hrmApi.getBlob(`/hrm/payroll/payslips/${payslipId}/preview`, undefined, { Accept: "application/pdf" }),
 
   /* ------------------------------------------------------------------ */
   /* M25: employee self-service — own payslips and requests inbox,        */
