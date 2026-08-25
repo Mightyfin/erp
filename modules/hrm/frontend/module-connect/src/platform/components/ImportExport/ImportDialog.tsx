@@ -370,6 +370,12 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         : status === "skip" ? <CircleMinus className="h-4 w-4 text-zinc-400" />
           : <CircleAlert className="h-4 w-4 text-red-600" />;
 
+  const previewRows = preview?.rows as Array<Record<string, unknown>> | undefined;
+  const previewRowFileIndex = (row: Record<string, unknown>, fallbackIndex: number) => {
+    const rowNumber = Number(row.row);
+    return Number.isFinite(rowNumber) && rowNumber >= 2 ? rowNumber - 2 : fallbackIndex;
+  };
+
   const workflow = (
     <>
       {embedded ? (
@@ -515,20 +521,48 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 </div>
               ))}
             </div>
-            <div className="border rounded-lg max-h-72 overflow-auto">
-              <div className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground sticky top-0 bg-background">
-                <span>#</span><span>Status</span><span>Detail</span>
+            <div className="overflow-hidden rounded-lg border">
+              <div className="max-h-[28rem] overflow-auto">
+                <table className="w-full min-w-max border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-muted/80 text-xs font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
+                    <tr>
+                      <th className="w-16 whitespace-nowrap border-b px-3 py-2">Row</th>
+                      <th className="w-36 whitespace-nowrap border-b px-3 py-2">Status</th>
+                      <th className="min-w-56 whitespace-nowrap border-b px-3 py-2">Validation</th>
+                      {fileColumns.map((col) => (
+                        <th key={col.name} className="min-w-44 whitespace-nowrap border-b px-3 py-2" title={col.name}>
+                          <span className="block max-w-56 truncate">{col.name}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(previewRows ?? []).map((r, index) => {
+                      const fileIndex = previewRowFileIndex(r, index);
+                      const sourceRow = fileRows[fileIndex] ?? [];
+                      return (
+                        <tr key={`${String(r.row)}-${index}`} className="border-b last:border-b-0 hover:bg-surface-muted/50">
+                          <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">{String(r.row ?? fileIndex + 2)}</td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <span className="inline-flex items-center gap-1.5">
+                              {statusIcon(previewRowStatus(r))}
+                              <span className="capitalize">{previewRowStatus(r)}</span>
+                            </span>
+                          </td>
+                          <td className="max-w-80 px-3 py-2 text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>
+                            <span className="line-clamp-2">{r.message ? String(r.message) : "Ready"}</span>
+                          </td>
+                          {fileColumns.map((col, colIndex) => (
+                            <td key={`${col.name}-${colIndex}`} className="max-w-64 px-3 py-2 text-sm" title={sourceRow[colIndex] ?? ""}>
+                              <span className="block truncate">{sourceRow[colIndex] || "—"}</span>
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              {(preview.rows as Array<Record<string, unknown>>).map((r) => (
-                <div key={String(r.row)} className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-1.5 items-center border-t text-sm">
-                  <span className="text-muted-foreground text-xs">{String(r.row)}</span>
-                  <span className="flex items-center gap-1.5">
-                    {statusIcon(previewRowStatus(r))}
-                    <span className="capitalize">{previewRowStatus(r)}</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>{r.message ? String(r.message) : "—"}</span>
-                </div>
-              ))}
             </div>
             <div className="flex items-center justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={() => setStep("map")}>Change mapping</Button>
