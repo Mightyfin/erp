@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Mightyfin.Erp.Hrm.Application;
+using Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -309,6 +310,8 @@ internal static class LocalIdentityRoutes
         }
         if (request.IsActive is not null) user.IsActive = request.IsActive.Value;
         if (request.WorkerId is not null) user.WorkerId = request.WorkerId;
+        if (!await ActiveAdminUserRemainsAsync(db, ct))
+            return Results.Json(new { code = "last-admin-user", message = "At least one active user must keep HRMS administration access." }, statusCode: StatusCodes.Status400BadRequest);
         await db.SaveChangesAsync(ct);
         return Results.Ok(UserDto(user));
     }
@@ -330,6 +333,27 @@ internal static class LocalIdentityRoutes
     {
         var raw = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(raw, out var id) ? await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id && x.IsActive, ct) : null;
+    }
+
+    private static async Task<bool> ActiveAdminUserRemainsAsync(HrmDbContext db, CancellationToken ct)
+    {
+        var roleRows = await db.TenantRoleAssignments.Where(r => r.Active).ToListAsync(ct);
+        var activeUsers = await db.LocalUsers.Where(u => u.IsActive && !u.IsArchived).ToListAsync(ct);
+        return activeUsers.Any(u => UserGrantsAdmin(u, roleRows));
+    }
+
+    private static bool UserGrantsAdmin(LocalUser user, IReadOnlyCollection<TenantRoleAssignment> roleRows)
+    {
+        var assigned = ParseRoles(user.RolesCsv);
+        if (assigned.Length == 0) return false;
+        if (roleRows.Count == 0)
+            return assigned.Contains("hr_admin", StringComparer.OrdinalIgnoreCase);
+        return assigned.Any(role =>
+        {
+            var row = roleRows.FirstOrDefault(r => r.RoleKey.Equals(role, StringComparison.OrdinalIgnoreCase));
+            if (row is null) return false;
+            return ParseRoles(row.PermissionsCsv).DefaultIfEmpty(row.RoleKey).Contains("hr_admin", StringComparer.OrdinalIgnoreCase);
+        });
     }
 
     public sealed record LoginRequest(string? Email, string? Password);

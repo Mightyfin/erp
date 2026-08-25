@@ -101,13 +101,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
     }
   }
   if (!res.ok) {
+    const problem = payload && typeof payload === "object" ? (payload as { title?: unknown; message?: unknown; code?: unknown }) : null;
     const title =
-      payload && typeof payload === "object" && "title" in payload
-        ? String((payload as { title?: unknown }).title)
-        : `HTTP ${res.status}`;
+      res.status === 403 ? "You do not have permission to access this page."
+        : res.status === 401 ? "Your session has expired. Please sign in again."
+          : problem?.message ? String(problem.message)
+            : problem?.title ? String(problem.title)
+              : `HTTP ${res.status}`;
     const code =
-      payload && typeof payload === "object" && "code" in payload
-        ? String((payload as { code?: unknown }).code)
+      problem?.code
+        ? String(problem.code)
         : undefined;
     throw new ApiError(title || text || `HTTP ${res.status}`, res.status, code);
   }

@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, RefreshCw, UserPlus, Users, UserX } from "lucide-react";
+import { KeyRound, RefreshCw, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -46,8 +54,10 @@ function UsersConfiguration() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("hr_ops");
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<LocalAuthUser | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [ownPasswordOpen, setOwnPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
@@ -102,6 +112,7 @@ function UsersConfiguration() {
       setDisplayName("");
       setPassword("");
       setRole(activeRoles[0]?.roleKey ?? "employee");
+      setCreateOpen(false);
       setNotice("The local account was created. Give the user their temporary password securely.");
       await loadUsers();
     } catch (err) {
@@ -159,6 +170,7 @@ function UsersConfiguration() {
       await hrmApi.auth.changePassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
+      setOwnPasswordOpen(false);
       setNotice("Your password was changed. Your current session remains active.");
     } catch (err) {
       setError(messageFor(err, "Unable to change your password."));
@@ -174,13 +186,13 @@ function UsersConfiguration() {
           eyebrow="Configuration · Security"
           title="Local users"
           description="Manage the accounts stored in this HRMS database. No IDP, OIDC provider or Mightyfin redirect is required."
-          meta={<Button variant="outline" size="sm" onClick={() => void loadUsers()}><RefreshCw className="mr-2 size-3.5" aria-hidden />Refresh</Button>}
+          meta={<div className="flex flex-wrap justify-end gap-2"><Button size="sm" onClick={() => setCreateOpen(true)}><UserPlus className="mr-2 size-3.5" aria-hidden />Add user</Button><Button variant="outline" size="sm" onClick={() => setOwnPasswordOpen(true)}><KeyRound className="mr-2 size-3.5" aria-hidden />Change my password</Button><Button variant="outline" size="sm" onClick={() => void loadUsers()}><RefreshCw className="mr-2 size-3.5" aria-hidden />Refresh</Button></div>}
         />
 
         {error ? <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{error}</div> : null}
         {notice ? <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-primary" role="status">{notice}</div> : null}
 
-        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="grid gap-5">
           <section className="rounded-lg border bg-surface p-5" aria-labelledby="accounts-heading">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -209,37 +221,50 @@ function UsersConfiguration() {
               </table>
             </div>
           </section>
-
-          <div className="space-y-5">
-            <section className="rounded-lg border bg-surface p-5" aria-labelledby="create-heading">
-              <h2 id="create-heading" className="flex items-center gap-2 text-sm font-semibold"><UserPlus className="size-4 text-primary" aria-hidden />Create account</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Create a tenant-scoped local login. Passwords are hashed by the API and never stored in plain text.</p>
-              <form className="mt-4 space-y-3" onSubmit={createUser}>
-                <div><Label htmlFor="new-display-name">Name</Label><Input id="new-display-name" className="mt-1" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></div>
-                <div><Label htmlFor="new-email">Email</Label><Input id="new-email" type="email" autoComplete="off" className="mt-1" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
-                <div><Label htmlFor="new-password">Temporary password</Label><Input id="new-password" type="password" autoComplete="new-password" className="mt-1" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} required /></div>
-                <div><Label htmlFor="new-role">Role</Label><select id="new-role" className="mt-1 flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{activeRoles.map((role) => <option key={role.roleKey} value={role.roleKey}>{role.roleName}</option>)}</select></div>
-                <Button className="w-full" type="submit" disabled={creating}>{creating ? "Creating…" : "Create local account"}</Button>
-              </form>
-            </section>
-
-            <section className="rounded-lg border bg-surface p-5" aria-labelledby="password-heading">
-              <h2 id="password-heading" className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-primary" aria-hidden />Change your password</h2>
-              <form className="mt-4 space-y-3" onSubmit={changeOwnPassword}>
-                <div><Label htmlFor="current-password">Current password</Label><Input id="current-password" type="password" autoComplete="current-password" className="mt-1" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></div>
-                <div><Label htmlFor="new-own-password">New password</Label><Input id="new-own-password" type="password" autoComplete="new-password" className="mt-1" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={12} required /></div>
-                <Button variant="outline" className="w-full" type="submit" disabled={savingPassword}>{savingPassword ? "Saving…" : "Change password"}</Button>
-              </form>
-            </section>
-          </div>
         </div>
 
-        {selectedUser ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="reset-heading">
-          <div className="w-full max-w-md rounded-lg border bg-background p-5 shadow-xl">
-            <div className="flex items-start justify-between gap-4"><div><h2 id="reset-heading" className="font-semibold">Reset password</h2><p className="mt-1 text-sm text-muted-foreground">Set a temporary password for {selectedUser.email}.</p></div><Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)} aria-label="Close">×</Button></div>
-            <form className="mt-4 space-y-3" onSubmit={resetUserPassword}><div><Label htmlFor="reset-password">Temporary password</Label><Input id="reset-password" type="password" autoComplete="new-password" className="mt-1" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} minLength={12} required /></div><div className="flex justify-end gap-2"><Button variant="outline" type="button" onClick={() => setSelectedUser(null)}>Cancel</Button><Button type="submit">Reset password</Button></div></form>
-          </div>
-        </div> : null}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create account</DialogTitle>
+              <DialogDescription>Add a local HRMS login and give the user a temporary password.</DialogDescription>
+            </DialogHeader>
+            <form className="space-y-3" onSubmit={createUser}>
+              <div><Label htmlFor="new-display-name">Name</Label><Input id="new-display-name" className="mt-1" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></div>
+              <div><Label htmlFor="new-email">Email</Label><Input id="new-email" type="email" autoComplete="off" className="mt-1" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
+              <div><Label htmlFor="new-password">Temporary password</Label><Input id="new-password" type="password" autoComplete="new-password" className="mt-1" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} required /></div>
+              <div><Label htmlFor="new-role">Role</Label><select id="new-role" className="mt-1 flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{activeRoles.map((role) => <option key={role.roleKey} value={role.roleKey}>{role.roleName}</option>)}</select></div>
+              <DialogFooter><Button variant="outline" type="button" onClick={() => setCreateOpen(false)}>Cancel</Button><Button type="submit" disabled={creating}>{creating ? "Creating…" : "Create account"}</Button></DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={ownPasswordOpen} onOpenChange={setOwnPasswordOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Change my password</DialogTitle>
+              <DialogDescription>Update the password for your current HRMS login.</DialogDescription>
+            </DialogHeader>
+            <form className="space-y-3" onSubmit={changeOwnPassword}>
+              <div><Label htmlFor="current-password">Current password</Label><Input id="current-password" type="password" autoComplete="current-password" className="mt-1" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></div>
+              <div><Label htmlFor="new-own-password">New password</Label><Input id="new-own-password" type="password" autoComplete="new-password" className="mt-1" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={12} required /></div>
+              <DialogFooter><Button variant="outline" type="button" onClick={() => setOwnPasswordOpen(false)}>Cancel</Button><Button type="submit" disabled={savingPassword}>{savingPassword ? "Saving…" : "Change password"}</Button></DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(selectedUser)} onOpenChange={(open) => { if (!open) setSelectedUser(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset password</DialogTitle>
+              <DialogDescription>Set a temporary password for {selectedUser?.email}.</DialogDescription>
+            </DialogHeader>
+            <form className="space-y-3" onSubmit={resetUserPassword}>
+              <div><Label htmlFor="reset-password">Temporary password</Label><Input id="reset-password" type="password" autoComplete="new-password" className="mt-1" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} minLength={12} required /></div>
+              <DialogFooter><Button variant="outline" type="button" onClick={() => setSelectedUser(null)}>Cancel</Button><Button type="submit">Reset password</Button></DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </AppShell>
     </AuthGate>
   );
