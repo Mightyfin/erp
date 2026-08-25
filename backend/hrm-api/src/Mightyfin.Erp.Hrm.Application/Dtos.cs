@@ -144,6 +144,12 @@ public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
 public sealed record PayrollRunPreflightDto(Guid PayPeriodId, Guid PayGroupId, Guid? LocationId,
     bool Ready, int IncludedWorkerCount, int WarningCount, List<PayrollRunPreflightCheckDto> Checks);
 public sealed record PayrollRunPreflightCheckDto(string Id, string Label, string State, string Detail, int Count);
+public sealed record PayrollCalculationReadinessDto(Guid RunId, bool Ready, int IncludedWorkerCount,
+    int BlockingCount, int WarningCount, List<PayrollCalculationReadinessCheckDto> Checks,
+    List<PayrollCalculationReadinessIssueDto> Issues);
+public sealed record PayrollCalculationReadinessCheckDto(string Id, string Label, string State, string Detail, int Count);
+public sealed record PayrollCalculationReadinessIssueDto(Guid? WorkerId, string EmployeeNo, string WorkerName,
+    string Issue, string Severity);
 // M41 Gap 3: PayBasis appended as an optional field so existing callers stay binary-compatible.
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
     List<WorkerComponentValueCreate> Values, string? PayBasis = null);

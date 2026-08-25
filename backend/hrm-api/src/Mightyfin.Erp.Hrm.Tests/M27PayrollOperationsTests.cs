@@ -56,6 +56,44 @@ public class M27PayrollOperationsTests
     }
 
     [Fact]
+    public async Task CalculationReadiness_ReturnsConfiguredInputsForSeededRun()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-calc-readiness-ready");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, default);
+
+        Assert.True(readiness.Ready);
+        Assert.Equal(1, readiness.IncludedWorkerCount);
+        Assert.Equal(0, readiness.BlockingCount);
+        Assert.Contains(readiness.Checks, c => c.Id == "earning-components" && c.State == "pass");
+        Assert.Contains(readiness.Checks, c => c.Id == "tax-slabs" && c.State == "pass");
+        Assert.Contains(readiness.Checks, c => c.Id == "contribution-rules" && c.State == "pass");
+        Assert.DoesNotContain(readiness.Issues, i => i.Severity == "fail");
+    }
+
+    [Fact]
+    public async Task CalculationReadiness_BlocksLockWhenBasicSalaryIsMissing()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-calc-readiness-basic");
+        var (group, _, period, profile, basic, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var basicValue = await ctx.WorkerComponentValues.SingleAsync(v => v.ProfileId == profile.Id && v.ComponentId == basic.Id);
+        basicValue.Amount = 0m;
+        await ctx.SaveChangesAsync();
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, default);
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.LockRunAsync(run.Id, default, "preparer"));
+
+        Assert.False(readiness.Ready);
+        Assert.Contains(readiness.Checks, c => c.Id == "basic-salary" && c.State == "fail");
+        Assert.Contains(readiness.Issues, i => i.Severity == "fail" && i.Issue.Contains("Basic salary"));
+        Assert.Equal("payroll-calculation-readiness-failed", ex.Code);
+    }
+
+    [Fact]
     public async Task RunApproval_EnforcesSegregation_AndOutstandingExceptionDecision()
     {
         var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls");

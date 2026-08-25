@@ -987,6 +987,8 @@ public static class Routes
         g.MapGet("/queue", async (IPayrollService svc, CancellationToken ct) => await svc.ListPayrollQueueAsync(ct));
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
+        g.MapGet("/runs/{id:guid}/calculation-readiness", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetCalculationReadinessAsync(id, ct)));
         g.MapPost("/runs/{id:guid}/lock", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             await svc.LockRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapPost("/runs/{id:guid}/calculate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>

@@ -46,6 +46,7 @@ public interface IPayrollService
     Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct);
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
+    Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
@@ -647,11 +648,115 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status != "draft")
             throw new DomainException("run-not-lockable", $"Run is in status {run.Status}; only draft runs can be locked.");
+        var readiness = await BuildCalculationReadinessAsync(run, ct);
+        if (!readiness.Ready)
+            throw new DomainException("payroll-calculation-readiness-failed",
+                "Payroll calculation readiness failed: " + string.Join("; ", readiness.Checks.Where(c => c.State == "fail").Select(c => c.Label)));
         run.Status = "locked";
         run.LockedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
         await RecordEventAsync(run, "inputs-locked", actorSubjectId, "draft", "locked", null, null, ct);
         return MapRun(run);
+    }
+
+    public async Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct)
+            ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        return await BuildCalculationReadinessAsync(run, ct);
+    }
+
+    private async Task<PayrollCalculationReadinessDto> BuildCalculationReadinessAsync(PayrollRun run, CancellationToken ct)
+    {
+        var period = run.PayPeriod ?? await repo.GetPeriodAsync(run.PayPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", $"Pay period {run.PayPeriodId} does not exist.");
+        var (profilesRaw, components, rules, slabs, _) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        var profiles = profilesRaw.Where(p => p.PayGroupId == run.PayGroupId).ToList();
+        var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
+        var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
+        var issues = new List<PayrollCalculationReadinessIssueDto>();
+        var checks = new List<PayrollCalculationReadinessCheckDto>();
+
+        var activeComponents = components.Where(c => c.IsActive).ToList();
+        var earningComponents = activeComponents.Where(c => c.ComponentType == "earning").ToList();
+        var basicComponent = activeComponents.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase));
+        foreach (var profile in profiles)
+        {
+            var worker = profile.Worker;
+            if (worker is null)
+            {
+                issues.Add(new(profile.WorkerId, "", "Unknown worker", "Payroll profile is not linked to a worker record.", "fail"));
+                continue;
+            }
+            if (basicComponent is null || !profile.ComponentValues.Any(v => v.ComponentId == basicComponent.Id && v.Amount > 0))
+                issues.Add(new(worker.Id, worker.EmployeeNo, worker.FullName, "Basic salary is missing or zero on the payroll profile.", "fail"));
+            if (profile.PayBasis.Equals("timesheet", StringComparison.OrdinalIgnoreCase))
+                issues.Add(new(worker.Id, worker.EmployeeNo, worker.FullName, "Timesheet pay basis is marked on this profile, but timesheet payroll is not implemented yet.", "warn"));
+        }
+
+        checks.Add(new("run-status", "Run can still be calculated",
+            run.Status is "draft" or "locked" or "calculated" ? "pass" : "fail",
+            run.Status is "draft" or "locked" or "calculated"
+                ? $"Run status is {run.Status}."
+                : $"Run status is {run.Status}; only draft, locked or calculated runs can pass this input check.",
+            0));
+        checks.Add(new("population", "Payroll profiles selected",
+            profiles.Count > 0 ? "pass" : "fail",
+            profiles.Count > 0
+                ? $"{profiles.Count} worker{(profiles.Count == 1 ? "" : "s")} match this run's pay group and branch scope."
+                : "No worker payroll profiles match this run's pay group and branch scope.",
+            profiles.Count));
+        checks.Add(new("earning-components", "Active earning components configured",
+            earningComponents.Count > 0 ? "pass" : "fail",
+            earningComponents.Count > 0
+                ? $"{earningComponents.Count} active earning component{(earningComponents.Count == 1 ? "" : "s")} will be evaluated."
+                : "No active earning components are configured.",
+            earningComponents.Count));
+        checks.Add(new("basic-salary", "Basic salary values present",
+            issues.Any(i => i.Issue.Contains("Basic salary", StringComparison.OrdinalIgnoreCase) && i.Severity == "fail") ? "fail" : "pass",
+            basicComponent is null
+                ? "The configured component code 'basic' is missing."
+                : "Every included worker has a positive basic salary value.",
+            issues.Count(i => i.Issue.Contains("Basic salary", StringComparison.OrdinalIgnoreCase))));
+        checks.Add(new("tax-slabs", "Tax slabs configured for period year",
+            slabs.Count > 0 ? "pass" : "fail",
+            slabs.Count > 0
+                ? $"{slabs.Count} tax slab{(slabs.Count == 1 ? "" : "s")} configured for {period.StartDate.Year}."
+                : $"No active tax slabs are configured for {period.StartDate.Year}. Configure PAYE tax slabs before calculation.",
+            slabs.Count));
+
+        var statutoryComponents = activeComponents.Where(c => c.IsStatutory && c.CalculationBasis == "percent-of").ToList();
+        var missingRules = statutoryComponents
+            .Where(c => !rules.Any(r => r.Code.Equals(c.Code, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        checks.Add(new("contribution-rules", "Statutory contribution rules configured",
+            missingRules.Count == 0 ? "pass" : "warn",
+            missingRules.Count == 0
+                ? $"{rules.Count} active contribution rule{(rules.Count == 1 ? "" : "s")} are available."
+                : $"Missing active contribution rule configuration for: {string.Join(", ", missingRules.Select(r => r.Code))}.",
+            missingRules.Count));
+        checks.Add(new("overtime", "Approved overtime input loaded", "pass",
+            approvedOvertime.Count > 0
+                ? $"{approvedOvertime.Count} approved overtime record{(approvedOvertime.Count == 1 ? "" : "s")} will be included."
+                : "No approved overtime records are waiting for this run.",
+            approvedOvertime.Count));
+        checks.Add(new("proration", "Leave proration input loaded", "pass",
+            prorationInputs.UnpaidLeaves.Count > 0
+                ? $"{prorationInputs.UnpaidLeaves.Count} approved unpaid leave record{(prorationInputs.UnpaidLeaves.Count == 1 ? "" : "s")} may prorate payment days."
+                : "No approved unpaid leave records overlap this period.",
+            prorationInputs.UnpaidLeaves.Count));
+        checks.Add(new("period-dates", "Period dates are valid",
+            period.StartDate <= period.EndDate && period.CutoffDate <= period.PayDate ? "pass" : "fail",
+            period.StartDate <= period.EndDate && period.CutoffDate <= period.PayDate
+                ? $"{period.PeriodLabel} runs from {period.StartDate:yyyy-MM-dd} to {period.EndDate:yyyy-MM-dd}; cutoff is {period.CutoffDate:yyyy-MM-dd}."
+                : "The pay period date range or cutoff/pay-date order is invalid.",
+            0));
+
+        var failures = checks.Count(c => c.State == "fail");
+        var warnings = checks.Count(c => c.State == "warn") + issues.Count(i => i.Severity == "warn");
+        return new PayrollCalculationReadinessDto(run.Id, failures == 0, profiles.Count,
+            failures, warnings, checks, issues.OrderBy(i => i.Severity).ThenBy(i => i.EmployeeNo).ToList());
     }
 
     public async Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
@@ -660,6 +765,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status is not "locked" and not "calculated")
             throw new DomainException("run-not-calculation-ready", $"Run is in status {run.Status} and cannot be calculated.");
+        var readiness = await BuildCalculationReadinessAsync(run, ct);
+        if (!readiness.Ready)
+            throw new DomainException("payroll-calculation-readiness-failed",
+                "Payroll calculation readiness failed: " + string.Join("; ", readiness.Checks.Where(c => c.State == "fail").Select(c => c.Label)));
         run.Status = "calculating";
         await repo.UpdateRunAsync(run, ct);
 

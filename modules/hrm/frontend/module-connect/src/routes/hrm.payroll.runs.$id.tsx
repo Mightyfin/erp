@@ -218,6 +218,99 @@ type StatutoryWorker = {
   ready?: boolean;
 };
 
+type CalculationReadiness = {
+  ready: boolean;
+  includedWorkerCount: number;
+  blockingCount: number;
+  warningCount: number;
+  checks: Array<{ id: string; label: string; state: string; detail: string; count: number }>;
+  issues: Array<{
+    workerId?: string;
+    employeeNo: string;
+    workerName: string;
+    issue: string;
+    severity: string;
+  }>;
+};
+
+function CalculationReadinessCard({ readiness }: { readiness: CalculationReadiness | null }) {
+  if (!readiness) return null;
+  const blockers = readiness.issues.filter((issue) => issue.severity === "fail");
+  const warnings = readiness.issues.filter((issue) => issue.severity === "warn");
+  const tone = readiness.ready
+    ? "border-success/30 bg-success-soft text-success"
+    : "border-danger/40 bg-danger-soft text-danger";
+
+  return (
+    <div className={`rounded-lg border p-4 ${tone}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            {readiness.ready ? (
+              <Check className="size-4" aria-hidden />
+            ) : (
+              <ShieldAlert className="size-4" aria-hidden />
+            )}
+            {readiness.ready ? "Calculation inputs ready" : "Calculation inputs blocked"}
+          </p>
+          <p className="mt-1 text-xs text-foreground">
+            {readiness.includedWorkerCount} worker{readiness.includedWorkerCount === 1 ? "" : "s"} checked.
+            Payroll rules remain configured in setup; this panel verifies the active setup for this run.
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <span className="rounded-full border bg-background px-2.5 py-1 text-foreground">
+            {readiness.blockingCount} blocker{readiness.blockingCount === 1 ? "" : "s"}
+          </span>
+          <span className="rounded-full border bg-background px-2.5 py-1 text-foreground">
+            {readiness.warningCount} warning{readiness.warningCount === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2">
+        {readiness.checks.map((check) => (
+          <div key={check.id} className="rounded-md border bg-background p-3 text-foreground">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              {check.state === "pass" ? (
+                <Check className="size-3.5 text-success" aria-hidden />
+              ) : check.state === "warn" ? (
+                <AlertTriangle className="size-3.5 text-warning" aria-hidden />
+              ) : (
+                <X className="size-3.5 text-danger" aria-hidden />
+              )}
+              {check.label}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      {blockers.length || warnings.length ? (
+        <div className="mt-4 rounded-md border bg-background p-3 text-foreground">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">Affected workers</p>
+          <ul className="mt-2 space-y-1.5 text-xs">
+            {[...blockers, ...warnings].slice(0, 8).map((issue) => (
+              <li key={`${issue.workerId ?? issue.employeeNo}-${issue.issue}`} className="flex flex-wrap gap-x-2 gap-y-1">
+                <span className="font-medium">{issue.workerName || issue.employeeNo || "Worker"}</span>
+                {issue.employeeNo ? <span className="text-muted-foreground">({issue.employeeNo})</span> : null}
+                <span className={issue.severity === "fail" ? "text-danger" : "text-warning"}>
+                  {issue.issue}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {readiness.issues.length > 8 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {readiness.issues.length - 8} more issue{readiness.issues.length - 8 === 1 ? "" : "s"} not shown.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * M24: the backend refuses to release while any worker in the run is missing an
  * NRC, TPIN, NAPSA or NHIMA number. This card shows exactly who blocks release
@@ -1406,6 +1499,36 @@ function RunDetail() {
       return null;
     }
   }, [id]);
+  const calculationReadiness = useApi(async (): Promise<CalculationReadiness | null> => {
+    if (!USE_REAL) return null;
+    try {
+      const raw = (await realApi.payrollCalculationReadiness(id)) as Record<string, unknown>;
+      const checks = Array.isArray(raw.checks) ? (raw.checks as Record<string, unknown>[]) : [];
+      const issues = Array.isArray(raw.issues) ? (raw.issues as Record<string, unknown>[]) : [];
+      return {
+        ready: Boolean(raw.ready),
+        includedWorkerCount: Number(raw.includedWorkerCount ?? 0),
+        blockingCount: Number(raw.blockingCount ?? 0),
+        warningCount: Number(raw.warningCount ?? 0),
+        checks: checks.map((check) => ({
+          id: String(check.id ?? ""),
+          label: String(check.label ?? "Check"),
+          state: String(check.state ?? "warn"),
+          detail: String(check.detail ?? ""),
+          count: Number(check.count ?? 0),
+        })),
+        issues: issues.map((issue) => ({
+          workerId: issue.workerId ? String(issue.workerId) : undefined,
+          employeeNo: String(issue.employeeNo ?? ""),
+          workerName: String(issue.workerName ?? ""),
+          issue: String(issue.issue ?? "Calculation readiness issue"),
+          severity: String(issue.severity ?? "warn"),
+        })),
+      };
+    } catch {
+      return null;
+    }
+  }, [id]);
   const [calculating, setCalculating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [locking, setLocking] = useState(false);
@@ -1502,6 +1625,7 @@ function RunDetail() {
                           size="sm"
                           disabled={
                             calculating ||
+                            calculationReadiness.data?.ready === false ||
                             (run.backendStatus !== "locked" && run.backendStatus !== "calculated")
                           }
                           onClick={async () => {
@@ -1514,6 +1638,7 @@ function RunDetail() {
                               );
                               await state.reload();
                               await lines.reload();
+                              await calculationReadiness.reload();
                             } catch (e) {
                               feedback.blocked(
                                 "Calculation failed",
@@ -1560,7 +1685,11 @@ function RunDetail() {
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          disabled={locking || run.backendStatus !== "draft"}
+                          disabled={
+                            locking ||
+                            calculationReadiness.data?.ready === false ||
+                            run.backendStatus !== "draft"
+                          }
                           onClick={async () => {
                             setLocking(true);
                             try {
@@ -1570,6 +1699,7 @@ function RunDetail() {
                                 "The run is ready to calculate.",
                               );
                               await state.reload();
+                              await calculationReadiness.reload();
                             } catch (e) {
                               feedback.blocked(
                                 "Lock failed",
@@ -1586,6 +1716,7 @@ function RunDetail() {
                     ) : undefined
                   }
                 >
+                  <CalculationReadinessCard readiness={calculationReadiness.data} />
                   <CalculationPanel
                     runId={run.id}
                     locked={run.status === "Paid" || run.status === "Closed"}
