@@ -489,8 +489,9 @@ public sealed record JobCreateRequest(string Code, string Title, Guid? OrgUnitId
 public sealed record JobUpdateRequest(string? Title = null, Guid? OrgUnitId = null, string? Grade = null);
 public sealed record JobDto(Guid Id, string Code, string Title, Guid? OrgUnitId, string? OrgUnitName, string? Grade, string Status);
 
-public sealed record TenantRoleDto(Guid Id, string RoleKey, string RoleName, string Category, bool Active);
-public sealed record RoleUpdateRequest(bool Active);
+public sealed record TenantRoleDto(Guid Id, string RoleKey, string RoleName, string Category, bool Active, string[] Permissions);
+public sealed record RoleCreateRequest(string RoleKey, string RoleName, string Category, string[]? Permissions = null, bool Active = true);
+public sealed record RoleUpdateRequest(bool? Active = null, string? RoleName = null, string? Category = null, string[]? Permissions = null);
 
 public sealed record DataRetentionCreateRequest(string RecordType, int RetentionMonths, string? Description = null);
 public sealed record DataRetentionUpdateRequest(int? RetentionMonths = null, string? Description = null, bool? Active = null);

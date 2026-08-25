@@ -92,7 +92,7 @@ internal sealed class LocalAuthenticationHandler(
         identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
         identity.AddClaim(new Claim("tenant", user.TenantId));
         identity.AddClaim(new Claim("environment", "standalone"));
-        foreach (var role in LocalIdentityRoutes.ParseRoles(user.RolesCsv))
+        foreach (var role in await LocalIdentityRoutes.ResolveGrantedRolesAsync(db, user.RolesCsv, Context.RequestAborted))
             identity.AddClaim(new Claim(ClaimTypes.Role, role));
         if (user.WorkerId is Guid workerId)
             identity.AddClaim(new Claim("worker_id", workerId.ToString("D")));
@@ -103,8 +103,6 @@ internal sealed class LocalAuthenticationHandler(
 
 internal static class LocalIdentityRoutes
 {
-    private static readonly string[] AllowedRoles = HrmStaffAccess.Roles;
-
     public static void Map(WebApplication app)
     {
         foreach (var prefix in new[] { "/api/hrm/auth", "/api/v1/hrm/auth" })
@@ -123,17 +121,52 @@ internal static class LocalIdentityRoutes
 
     public static string[] ParseRoles(string csv)
         => csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(x => AllowedRoles.Contains(x, StringComparer.OrdinalIgnoreCase))
+            .Select(x => x.Trim().ToLowerInvariant())
+            .Where(IsValidRoleKey)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    public static async Task<string[]> ResolveGrantedRolesAsync(HrmDbContext db, string csv, CancellationToken ct)
+    {
+        var assigned = ParseRoles(csv);
+        if (assigned.Length == 0) return [];
+        var configured = await db.TenantRoleAssignments.Where(r => r.Active).ToListAsync(ct);
+        if (configured.Count == 0)
+            return assigned.Where(r => HrmStaffAccess.Roles.Contains(r, StringComparer.OrdinalIgnoreCase)).ToArray();
+        var grants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var role in assigned)
+        {
+            var row = configured.FirstOrDefault(r => r.RoleKey.Equals(role, StringComparison.OrdinalIgnoreCase));
+            if (row is null) continue;
+            grants.Add(row.RoleKey);
+            var permissions = ParseRoles(row.PermissionsCsv);
+            foreach (var permission in permissions.Length > 0 ? permissions : [row.RoleKey])
+                if (HrmStaffAccess.Roles.Contains(permission, StringComparer.OrdinalIgnoreCase))
+                    grants.Add(permission);
+        }
+        return grants.ToArray();
+    }
+
+    private static bool IsValidRoleKey(string key) =>
+        key.Length > 0 && key.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+
+    private static async Task<string[]> RequireAssignableRolesAsync(HrmDbContext db, IEnumerable<string>? requestedRoles, CancellationToken ct)
+    {
+        var roles = ParseRoles(string.Join(',', requestedRoles ?? ["employee"]));
+        var active = await db.TenantRoleAssignments.Where(r => r.Active).Select(r => r.RoleKey).ToListAsync(ct);
+        var valid = active.Count == 0
+            ? roles.Where(r => HrmStaffAccess.Roles.Contains(r, StringComparer.OrdinalIgnoreCase)).ToArray()
+            : roles.Where(r => active.Contains(r, StringComparer.OrdinalIgnoreCase)).ToArray();
+        return valid.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
 
     private static string NormalizeEmail(string email) => email.Trim().ToUpperInvariant();
 
-    private static object UserDto(LocalUser user, bool includeSecretState = true) => new
+    private static object UserDto(LocalUser user, bool includeSecretState = true, string[]? roles = null) => new
     {
         id = user.Id,
         email = user.Email,
         displayName = user.DisplayName,
-        roles = ParseRoles(user.RolesCsv),
+        roles = roles ?? ParseRoles(user.RolesCsv),
         workerId = user.WorkerId,
         isActive = user.IsActive,
         mustChangePassword = includeSecretState && user.MustChangePassword,
@@ -141,9 +174,9 @@ internal static class LocalIdentityRoutes
         createdAt = user.CreatedAt,
     };
 
-    private static object SessionDto(LocalUser user) => new
+    private static object SessionDto(LocalUser user, string[]? grantedRoles = null) => new
     {
-        user = UserDto(user),
+        user = UserDto(user, roles: grantedRoles),
         authenticated = true,
     };
 
@@ -191,7 +224,7 @@ internal static class LocalIdentityRoutes
             Path = "/",
             MaxAge = TimeSpan.FromDays(7),
         });
-        return Results.Ok(SessionDto(user));
+        return Results.Ok(SessionDto(user, await ResolveGrantedRolesAsync(db, user.RolesCsv, ct)));
     }
 
     private static async Task<IResult> MeAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
@@ -200,7 +233,9 @@ internal static class LocalIdentityRoutes
         var raw = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(raw, out var userId)) return Results.Ok(new { authenticated = false, user = (object?)null });
         var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == userId && x.IsActive && !x.IsArchived, ct);
-        return user is null ? Results.Ok(new { authenticated = false, user = (object?)null }) : Results.Ok(SessionDto(user));
+        return user is null
+            ? Results.Ok(new { authenticated = false, user = (object?)null })
+            : Results.Ok(SessionDto(user, await ResolveGrantedRolesAsync(db, user.RolesCsv, ct)));
     }
 
     private static async Task<IResult> LogoutAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
@@ -233,7 +268,7 @@ internal static class LocalIdentityRoutes
     private static async Task<IResult> CreateUserAsync(CreateUserRequest request, HrmDbContext db, CancellationToken ct)
     {
         var email = request.Email?.Trim() ?? "";
-        var roles = ParseRoles(string.Join(',', request.Roles ?? ["employee"]));
+        var roles = await RequireAssignableRolesAsync(db, request.Roles, ct);
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.DisplayName) || roles.Length == 0)
             return Results.BadRequest(new { code = "invalid-user", message = "Email, display name, and at least one valid HRM role are required." });
         if (await db.LocalUsers.AnyAsync(x => x.NormalizedEmail == NormalizeEmail(email), ct))
@@ -268,7 +303,7 @@ internal static class LocalIdentityRoutes
         if (request.DisplayName is not null) user.DisplayName = request.DisplayName.Trim();
         if (request.Roles is not null)
         {
-            var roles = ParseRoles(string.Join(',', request.Roles));
+            var roles = await RequireAssignableRolesAsync(db, request.Roles, ct);
             if (roles.Length == 0) return Results.BadRequest(new { code = "invalid-roles", message = "At least one valid HRM role is required." });
             user.RolesCsv = string.Join(',', roles);
         }

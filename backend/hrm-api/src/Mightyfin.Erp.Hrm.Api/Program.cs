@@ -409,7 +409,7 @@ Routes.RegisterAll(app);
                 ("investigator", "Relations Investigator", "hrm"),
             })
             {
-                await seedRepo.CreateRoleAssignmentAsync(new TenantRoleAssignment { RoleKey = key.Key, RoleName = key.Name, Category = key.Cat, Active = true }, CancellationToken.None);
+                await seedRepo.CreateRoleAssignmentAsync(new TenantRoleAssignment { RoleKey = key.Key, RoleName = key.Name, Category = key.Cat, PermissionsCsv = key.Key, Active = true }, CancellationToken.None);
             }
         }
     }

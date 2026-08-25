@@ -185,6 +185,7 @@ public interface IConfigRepository
     Task<Job> CreateJobAsync(Job job, CancellationToken ct);
     Task<Job> UpdateJobAsync(Job job, CancellationToken ct);
     Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct);
+    Task<TenantRoleAssignment?> GetRoleAssignmentAsync(string roleKey, CancellationToken ct);
     Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct);
     Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct);
     Task<RetentionRule> CreateRetentionRuleAsync(RetentionRule rule, CancellationToken ct);

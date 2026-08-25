@@ -1546,6 +1546,8 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
     public async Task<Job> UpdateJobAsync(Job job, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return job; }
     public async Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct) => await db.TenantRoleAssignments.ToListAsync(ct);
+    public async Task<TenantRoleAssignment?> GetRoleAssignmentAsync(string roleKey, CancellationToken ct)
+        => await db.TenantRoleAssignments.FirstOrDefaultAsync(r => r.RoleKey == roleKey, ct);
     public async Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return row; }
     public async Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct) => await db.RetentionRules.ToListAsync(ct);

@@ -962,6 +962,7 @@ export const realApi = {
   updateJob: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/jobs/${id}`, body),
   closeJob: (id: string) => hrmApi.post<unknown>(`/hrm/admin/jobs/${id}/close`, null),
   roles: () => hrmApi.get<unknown[]>("/hrm/admin/roles"),
+  createRole: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/roles", body),
   updateRole: (roleKey: string, body: Record<string, unknown>) =>
     hrmApi.patch<unknown>(`/hrm/admin/roles/${roleKey}`, body),
   retentionRules: () => hrmApi.get<unknown[]>("/hrm/admin/retention-rules"),

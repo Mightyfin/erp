@@ -1269,6 +1269,11 @@ public static class Routes
             Results.Ok(await svc.CloseJobAsync(id, ct)));
 
         g.MapGet("/roles", async (IJobsAdminService svc, CancellationToken ct) => await svc.ListRolesAsync(ct));
+        g.MapPost("/roles", async (HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RoleCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateRoleAsync(request, ct));
+        });
         g.MapPatch("/roles/{roleKey}", async (string roleKey, HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<RoleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

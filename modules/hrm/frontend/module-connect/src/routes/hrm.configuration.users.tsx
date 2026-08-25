@@ -10,6 +10,7 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { ApiError, hrmApi, type LocalAuthUser } from "@/platform/api-client";
+import { realApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/configuration/users")({
   head: () => ({
@@ -23,14 +24,12 @@ export const Route = createFileRoute("/hrm/configuration/users")({
   component: UsersConfiguration,
 });
 
-const roles = [
-  ["hr_admin", "HR administrator"],
-  ["hr_ops", "HR operations"],
-  ["payroll", "Payroll"],
-  ["manager", "Manager"],
-  ["approver", "Approver"],
-  ["auditor", "Auditor"],
-] as const;
+interface RoleOption {
+  roleKey: string;
+  roleName: string;
+  category: string;
+  active: boolean;
+}
 
 function messageFor(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : error instanceof Error ? error.message : fallback;
@@ -38,6 +37,7 @@ function messageFor(error: unknown, fallback: string) {
 
 function UsersConfiguration() {
   const [users, setUsers] = useState<LocalAuthUser[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +53,7 @@ function UsersConfiguration() {
   const [savingPassword, setSavingPassword] = useState(false);
 
   const activeCount = useMemo(() => users.filter((user) => user.isActive).length, [users]);
+  const activeRoles = useMemo(() => roles.filter((r) => r.active), [roles]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -67,8 +68,22 @@ function UsersConfiguration() {
     }
   };
 
+  const loadRoles = async () => {
+    const rows = (await realApi.roles()) as Record<string, unknown>[];
+    setRoles(
+      rows.map((r) => ({
+        roleKey: String(r.roleKey ?? ""),
+        roleName: String(r.roleName ?? r.roleKey ?? ""),
+        category: String(r.category ?? "hrm"),
+        active: Boolean(r.active ?? true),
+      })),
+    );
+  };
+
   useEffect(() => {
-    void loadUsers();
+    void Promise.all([loadUsers(), loadRoles()]).catch((err) =>
+      setError(messageFor(err, "Unable to load local HRM access settings.")),
+    );
   }, []);
 
   const createUser = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -86,7 +101,7 @@ function UsersConfiguration() {
       setEmail("");
       setDisplayName("");
       setPassword("");
-      setRole("hr_ops");
+      setRole(activeRoles[0]?.roleKey ?? "employee");
       setNotice("The local account was created. Give the user their temporary password securely.");
       await loadUsers();
     } catch (err) {
@@ -170,7 +185,7 @@ function UsersConfiguration() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="accounts-heading" className="flex items-center gap-2 text-sm font-semibold"><Users className="size-4 text-primary" aria-hidden />Accounts</h2>
-                <p className="mt-1 text-xs text-muted-foreground">{activeCount} active of {users.length} local account{users.length === 1 ? "" : "s"}.</p>
+                <p className="mt-1 text-xs text-muted-foreground">{activeCount} active of {users.length} local account{users.length === 1 ? "" : "s"}. {activeRoles.length} assignable role{activeRoles.length === 1 ? "" : "s"}.</p>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto rounded-md border">
@@ -185,7 +200,7 @@ function UsersConfiguration() {
                     const currentRole = user.roles[0] ?? "auditor";
                     return <tr key={user.id}>
                       <td className="px-3 py-3"><div className="font-medium">{user.displayName}</div><div className="text-xs text-muted-foreground">{user.email}</div>{user.mustChangePassword ? <div className="mt-1 text-[11px] text-amber-700">Password change required</div> : null}</td>
-                      <td className="px-3 py-3"><select className="h-8 rounded-md border bg-background px-2 text-xs" value={currentRole} onChange={(event) => void changeRole(user, event.target.value)} aria-label={`Role for ${user.email}`}>{roles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+                      <td className="px-3 py-3"><select className="h-8 rounded-md border bg-background px-2 text-xs" value={currentRole} onChange={(event) => void changeRole(user, event.target.value)} aria-label={`Role for ${user.email}`}>{roles.map((role) => <option key={role.roleKey} value={role.roleKey} disabled={!role.active}>{role.roleName}{role.active ? "" : " (inactive)"}</option>)}</select></td>
                       <td className="px-3 py-3"><StatusBadge status={user.isActive ? "active" : "inactive"} /></td>
                       <td className="px-3 py-3"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => { setSelectedUser(user); setResetPassword(""); }}><KeyRound className="mr-1.5 size-3.5" aria-hidden />Reset</Button><Switch checked={user.isActive} onCheckedChange={(checked) => void toggleUser(user, checked)} aria-label={`${user.isActive ? "Deactivate" : "Activate"} ${user.email}`} /></div></td>
                     </tr>;
@@ -203,7 +218,7 @@ function UsersConfiguration() {
                 <div><Label htmlFor="new-display-name">Name</Label><Input id="new-display-name" className="mt-1" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></div>
                 <div><Label htmlFor="new-email">Email</Label><Input id="new-email" type="email" autoComplete="off" className="mt-1" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
                 <div><Label htmlFor="new-password">Temporary password</Label><Input id="new-password" type="password" autoComplete="new-password" className="mt-1" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} required /></div>
-                <div><Label htmlFor="new-role">Role</Label><select id="new-role" className="mt-1 flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{roles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+                <div><Label htmlFor="new-role">Role</Label><select id="new-role" className="mt-1 flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{activeRoles.map((role) => <option key={role.roleKey} value={role.roleKey}>{role.roleName}</option>)}</select></div>
                 <Button className="w-full" type="submit" disabled={creating}>{creating ? "Creating…" : "Create local account"}</Button>
               </form>
             </section>

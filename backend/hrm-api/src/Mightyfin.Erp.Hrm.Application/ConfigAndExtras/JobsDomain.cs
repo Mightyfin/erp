@@ -18,6 +18,7 @@ public sealed class TenantRoleAssignment : Entity
     public string RoleKey { get; set; } = null!;
     public string RoleName { get; set; } = null!;
     public string Category { get; set; } = "hrm"; // hrm | payroll | system
+    public string PermissionsCsv { get; set; } = "";
     public bool Active { get; set; } = true;
 }
 

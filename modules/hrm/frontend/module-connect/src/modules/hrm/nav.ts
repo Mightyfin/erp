@@ -301,8 +301,8 @@ export const configurationGroups: {
       },
       {
         label: "Roles and permissions",
-        detail: "Backend-enforced matrix",
-        to: "/hrm/configuration/compliance",
+        detail: "Create roles and assign HRMS permissions",
+        to: "/hrm/configuration/roles",
       },
       {
         label: "Sensitive field masking",

@@ -1181,6 +1181,11 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("role_name");
 
+                    b.Property<string>("PermissionsCsv")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("permissions_csv");
+
                     b.Property<string>("TenantId")
                         .IsRequired()
                         .HasColumnType("text")
