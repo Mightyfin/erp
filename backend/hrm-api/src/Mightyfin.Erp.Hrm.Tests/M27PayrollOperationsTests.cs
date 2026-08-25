@@ -9,6 +9,53 @@ namespace Mightyfin.Erp.Hrm.Tests;
 public class M27PayrollOperationsTests
 {
     [Fact]
+    public async Task RunPreflight_ReturnsWarningsForPaymentAndStatutoryReadiness()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-run-preflight");
+        var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var worker = await ctx.Workers.SingleAsync(w => w.Id == profile.WorkerId);
+        worker.Tpin = null;
+        await ctx.SaveChangesAsync();
+
+        var preflight = await service.GetRunPreflightAsync(new PayrollRunCreate(period.Id, group.Id), default);
+
+        Assert.True(preflight.Ready);
+        Assert.Equal(1, preflight.IncludedWorkerCount);
+        Assert.Contains(preflight.Checks, c => c.Id == "bank" && c.State == "warn");
+        Assert.Contains(preflight.Checks, c => c.Id == "statutory" && c.State == "warn");
+    }
+
+    [Fact]
+    public async Task RunPreflight_BlocksRunCreationWhenPayGroupHasNoPopulation()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-run-preflight-empty");
+        await PayrollEngineTests.SeedStackAsync(ctx);
+        var emptyGroup = new PayGroup { Code = "EMPTY", Name = "Empty Group", Frequency = "monthly", Currency = "ZMW", CalendarDayOfMonth = 25 };
+        ctx.PayGroups.Add(emptyGroup);
+        var emptyPeriod = new PayPeriod
+        {
+            PayGroupId = emptyGroup.Id,
+            PeriodLabel = "Aug 2026",
+            StartDate = DateOnly.FromDateTime(new DateTime(2026, 8, 1)),
+            EndDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)),
+            CutoffDate = DateOnly.FromDateTime(new DateTime(2026, 8, 20)),
+            PayDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)),
+            Status = "open",
+            IsCurrent = true,
+        };
+        ctx.PayPeriods.Add(emptyPeriod);
+        await ctx.SaveChangesAsync();
+
+        var preflight = await service.GetRunPreflightAsync(new PayrollRunCreate(emptyPeriod.Id, emptyGroup.Id), default);
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateRunAsync(new PayrollRunCreate(emptyPeriod.Id, emptyGroup.Id), default, "preparer"));
+
+        Assert.False(preflight.Ready);
+        Assert.Contains(preflight.Checks, c => c.Id == "population" && c.State == "fail");
+        Assert.Equal("payroll-run-preflight-failed", ex.Code);
+    }
+
+    [Fact]
     public async Task RunApproval_EnforcesSegregation_AndOutstandingExceptionDecision()
     {
         var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls");

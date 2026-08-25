@@ -656,6 +656,8 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, { note }),
   payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
   payrollRunReverse: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
+  payrollRunPreflight: (payPeriodId: string, payGroupId: string) =>
+    hrmApi.post<unknown>("/hrm/payroll/runs/preflight", { payPeriodId, payGroupId }),
   payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
   payrollExceptionDecision: (id: string, lineId: string, decision: string, reason: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lines/${lineId}/exception`, { decision, reason }),

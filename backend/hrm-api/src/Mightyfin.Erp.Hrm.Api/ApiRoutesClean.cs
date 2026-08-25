@@ -975,6 +975,11 @@ public static class Routes
             var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateRunAsync(request, ct, ResolveSubjectId(http) ?? "system"));
         });
+        g.MapPost("/runs/preflight", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.GetRunPreflightAsync(request, ct));
+        });
         g.MapGet("/runs", async (IPayrollService svc, CancellationToken ct) => await svc.ListRunsAsync(ct));
         // M48: the top-HR approval queue — branch runs awaiting review with
         // control totals, branch names, and submission stamps. Confined users

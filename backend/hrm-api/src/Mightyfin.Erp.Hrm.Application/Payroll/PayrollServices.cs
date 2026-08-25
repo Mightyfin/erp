@@ -43,6 +43,7 @@ public interface IPayrollService
     // M48: the top-HR approval queue — in-review branch runs with their
     // control totals, branch name, and the moment each run was submitted.
     Task<List<PayrollQueueItemDto>> ListPayrollQueueAsync(CancellationToken ct);
+    Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct);
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
@@ -412,9 +413,20 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             row.Run.CreatedAt)).ToList();
     }
 
+    public async Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        return await BuildRunPreflightAsync(request, ct);
+    }
+
     public async Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
+        var preflight = await BuildRunPreflightAsync(request, ct);
+        var failures = preflight.Checks.Where(c => c.State == "fail").ToList();
+        if (failures.Count > 0)
+            throw new DomainException("payroll-run-preflight-failed",
+                "Payroll run preflight failed: " + string.Join("; ", failures.Select(f => f.Label)));
         var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
         if (period.Status != "open")
@@ -448,6 +460,105 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
+    }
+
+    private async Task<PayrollRunPreflightDto> BuildRunPreflightAsync(PayrollRunCreate request, CancellationToken ct)
+    {
+        var checks = new List<PayrollRunPreflightCheckDto>();
+        var period = await repo.GetPeriodAsync(request.PayPeriodId, ct);
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct);
+        var targetLocation = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null;
+
+        if (period is null)
+        {
+            checks.Add(new("period-exists", "Selected pay period exists", "fail",
+                $"Pay period {request.PayPeriodId} does not exist.", 0));
+            return new PayrollRunPreflightDto(request.PayPeriodId, request.PayGroupId, targetLocation,
+                false, 0, 0, checks);
+        }
+        if (group is null)
+        {
+            checks.Add(new("pay-group-exists", "Selected pay group exists", "fail",
+                $"Pay group {request.PayGroupId} does not exist.", 0));
+        }
+        checks.Add(new("period-open", "Selected pay period is open",
+            period.Status == "open" ? "pass" : "fail",
+            $"{period.PeriodLabel} is {period.Status}.", 0));
+        checks.Add(new("period-pay-group", "Pay period belongs to selected pay group",
+            period.PayGroupId == request.PayGroupId ? "pass" : "fail",
+            period.PayGroupId == request.PayGroupId
+                ? "The selected period and pay group match."
+                : "Choose a period generated for this pay group.",
+            0));
+
+        var existingIssue = await FindRunBlockingIssueAsync(request.PayPeriodId, targetLocation, ct);
+        checks.Add(new("no-open-run", "No conflicting open payroll run",
+            existingIssue is null ? "pass" : "fail",
+            existingIssue ?? "No open run conflicts with this scope and period.", 0));
+
+        var inputs = await repo.LoadCalculationInputsAsync(request.PayPeriodId, ct, targetLocation);
+        var profiles = inputs.Profiles.Where(p => p.PayGroupId == request.PayGroupId).ToList();
+        var duplicateWorkers = profiles.GroupBy(p => p.WorkerId).Where(g => g.Count() > 1).ToList();
+        var missingBank = profiles.Count(p =>
+            p.Worker?.BankDetails is null ||
+            !p.Worker.BankDetails.Any(b => b.IsPrimary && !string.IsNullOrWhiteSpace(b.AccountNumber)));
+        var missingStatutory = profiles.Count(p =>
+            p.Worker is null ||
+            string.IsNullOrWhiteSpace(p.Worker.Nrc) ||
+            string.IsNullOrWhiteSpace(p.Worker.Tpin) ||
+            string.IsNullOrWhiteSpace(p.Worker.NapsaNumber) ||
+            string.IsNullOrWhiteSpace(p.Worker.NhimaNumber));
+
+        checks.Add(new("population", "Workers have payroll profiles",
+            profiles.Count > 0 ? "pass" : targetLocation.HasValue ? "warn" : "fail",
+            profiles.Count > 0
+                ? $"{profiles.Count} worker{(profiles.Count == 1 ? "" : "s")} will be included."
+                : targetLocation.HasValue
+                    ? "No active payroll profiles were found for this branch scope yet."
+                    : "No active payroll profiles were found for this pay group and organisation scope.",
+            profiles.Count));
+        checks.Add(new("duplicates", "No duplicate pay profiles in this group",
+            duplicateWorkers.Count == 0 ? "pass" : "warn",
+            duplicateWorkers.Count == 0
+                ? "No worker appears more than once in this pay group."
+                : $"{duplicateWorkers.Count} worker{(duplicateWorkers.Count == 1 ? "" : "s")} have more than one active profile.",
+            duplicateWorkers.Count));
+        checks.Add(new("bank", "Bank details present",
+            missingBank == 0 ? "pass" : "warn",
+            missingBank == 0
+                ? "Every included worker has a primary bank account."
+                : $"{missingBank} included worker{(missingBank == 1 ? "" : "s")} are missing primary bank details.",
+            missingBank));
+        checks.Add(new("statutory", "Statutory identity pack present",
+            missingStatutory == 0 ? "pass" : "warn",
+            missingStatutory == 0
+                ? "Every included worker has NRC, TPIN, NAPSA and NHIMA values."
+                : $"{missingStatutory} included worker{(missingStatutory == 1 ? "" : "s")} are missing NRC, TPIN, NAPSA or NHIMA values.",
+            missingStatutory));
+        checks.Add(new("dates", "Cutoff is before pay date",
+            period.CutoffDate <= period.PayDate ? "pass" : "fail",
+            period.CutoffDate <= period.PayDate
+                ? $"Time cutoff {period.CutoffDate:yyyy-MM-dd} is before pay date {period.PayDate:yyyy-MM-dd}."
+                : $"Time cutoff {period.CutoffDate:yyyy-MM-dd} is after pay date {period.PayDate:yyyy-MM-dd}.",
+            0));
+
+        return new PayrollRunPreflightDto(request.PayPeriodId, request.PayGroupId, targetLocation,
+            checks.All(c => c.State != "fail"), profiles.Count, checks.Count(c => c.State == "warn"), checks);
+    }
+
+    private async Task<string?> FindRunBlockingIssueAsync(Guid payPeriodId, Guid? targetLocation, CancellationToken ct)
+    {
+        if (targetLocation.HasValue)
+        {
+            var sameBranch = await repo.FindOpenRunByPeriodAndLocationAsync(payPeriodId, targetLocation, ct);
+            return sameBranch is null ? null : $"A payroll run already exists for this period at branch {targetLocation}.";
+        }
+        var orgOpen = await repo.FindRunByPeriodAsync(payPeriodId, ct);
+        if (orgOpen is not null) return "A payroll run already exists for this period.";
+        var branchOpen = await repo.FindOpenBranchRunForPeriodAsync(payPeriodId, ct);
+        return branchOpen is null
+            ? null
+            : "A branch payroll draft is open for this period. Resolve it before opening an organisation-wide run.";
     }
 
     /// <summary>Gross-to-net engine: applies active components in priority order

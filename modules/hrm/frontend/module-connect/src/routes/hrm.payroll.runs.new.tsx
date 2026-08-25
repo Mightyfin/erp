@@ -265,6 +265,26 @@ function NewRun() {
   const chosenPeriod = USE_REAL
     ? setup.data?.periods.find((p) => p.id === periodId)
     : undefined;
+  const preflight = useApi(async () => {
+    if (!USE_REAL || !chosenPeriod?.id || !selectedGroupId) return null;
+    const raw = (await realApi.payrollRunPreflight(chosenPeriod.id, selectedGroupId)) as Record<string, unknown>;
+    const checks = Array.isArray(raw.checks)
+      ? (raw.checks as Record<string, unknown>[]).map((check) => ({
+          id: text(check.id),
+          label: text(check.label),
+          state: (["pass", "warn", "fail"].includes(text(check.state))
+            ? text(check.state)
+            : "warn") as ReadinessItem["state"],
+          detail: text(check.detail),
+        }))
+      : [];
+    return {
+      ready: Boolean(raw.ready),
+      includedWorkerCount: Number(raw.includedWorkerCount ?? 0),
+      warningCount: Number(raw.warningCount ?? 0),
+      checks,
+    };
+  }, [chosenPeriod?.id, selectedGroupId]);
 
   const entity = ENTITIES.find((e) => e.id === entityId) ?? ENTITIES[0];
   const entityEntityId = placementUnits.find((p) => p.unitType === "entity")?.entityId ?? entityId;
@@ -297,7 +317,9 @@ function NewRun() {
       Boolean(worker && (!worker.nationalId || !worker.tpin || !worker.napsaNumber || !worker.nhimaNumber)),
     );
   const liveReadiness: ReadinessItem[] = USE_REAL
-    ? [
+    ? preflight.data?.checks.length
+      ? preflight.data.checks
+      : [
         {
           id: "period-open",
           label: "Selected pay period is open",
