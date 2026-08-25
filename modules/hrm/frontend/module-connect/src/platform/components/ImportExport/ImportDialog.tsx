@@ -29,7 +29,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Check, Download, FileSpreadsheet, Loader2, Search,
-  ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen,
+  ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen, Plus, Trash2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -215,8 +215,10 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [fileRows, setFileRows] = useState<string[][]>([]);
   const [fileName, setFileName] = useState("");
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [manualRows, setManualRows] = useState<Array<Record<string, string>>>([]);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [step, setStep] = useState<"upload" | "map" | "preview">("upload");
+  const [entryMode, setEntryMode] = useState<"upload" | "manual">("upload");
   const [mode, setMode] = useState<"insert" | "update">("insert");
   const [busy, setBusy] = useState(false);
   const [sheetName, setSheetName] = useState<string | null>(null);
@@ -249,6 +251,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setFileRows([]);
     setPreview(null);
     setMapping({});
+    setManualRows([]);
+    setEntryMode("upload");
     setSchemaError(null);
     setPasteError(null);
     void loadSchemas();
@@ -261,6 +265,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setFileRows([]);
     setPreview(null);
     setMapping({});
+    setManualRows([]);
+    setEntryMode("upload");
     setSchemaError(null);
     setPasteError(null);
     void loadSchemas();
@@ -314,6 +320,13 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
 
   /** Server-mapped rows keyed by field key, in file order. */
   const mappedRows = useMemo(() => {
+    if (entryMode === "manual") {
+      return manualRows
+        .filter((row) => Object.values(row).some((value) => String(value ?? "").trim().length > 0))
+        .map((row) =>
+          Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value ?? "").trim()])) as Record<string, string>
+        );
+    }
     if (fileColumns.length === 0 || fileRows.length === 0) return [];
     return fileRows.map((row) => {
       const out: Record<string, string> = {};
@@ -324,7 +337,20 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       });
       return out;
     });
-  }, [fileColumns, fileRows, mapping]);
+  }, [entryMode, fileColumns, fileRows, manualRows, mapping]);
+
+  function switchEntryMode(next: "upload" | "manual") {
+    setEntryMode(next);
+    setPreview(null);
+    if (next === "manual" && manualRows.length === 0) {
+      const seeded = mappedRows.slice(0, 20);
+      setManualRows(seeded.length > 0 ? seeded : [{}]);
+    }
+  }
+
+  function updateManualRow(index: number, fieldKey: string, value: string) {
+    setManualRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [fieldKey]: value } : row)));
+  }
 
   async function runPreview() {
     if (!schema) {
@@ -401,8 +427,6 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   };
   const selectedColumnForField = (fieldKey: string) =>
     fileColumns.find((col) => mapping[col.name] === fieldKey)?.name ?? SKIP;
-  const sampleForColumn = (columnName: string) =>
-    columnName === SKIP ? "" : (fileColumns.find((col) => col.name === columnName)?.sample ?? "");
   const setFieldColumn = (fieldKey: string, columnName: string) => {
     setMapping((current) => {
       const next = { ...current };
@@ -415,8 +439,15 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   };
   const requiredMapped = schema?.fields
     .filter((field) => field.required)
-    .every((field) => selectedColumnForField(field.key) !== SKIP) ?? false;
-  const mappedPreviewFields = schema?.fields.filter((field) => schema.fields.some((f) => f.key === field.key)) ?? [];
+    .every((field) => entryMode === "manual" || selectedColumnForField(field.key) !== SKIP) ?? false;
+  const mappedPreviewFields = schema?.fields ?? [];
+  const filledManualRows = manualRows.filter((row) => Object.values(row).some((value) => String(value ?? "").trim().length > 0));
+  const manualValid = schema ? filledManualRows.length > 0 && filledManualRows.every((row) =>
+    schema.fields
+      .filter((field) => field.required)
+      .every((field) => String(row[field.key] ?? "").trim().length > 0)
+  ) : false;
+  const canPreview = entryMode === "manual" ? manualValid : requiredMapped;
 
   const workflow = (
     <>
@@ -449,6 +480,81 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       <ScrollArea className={embedded ? "" : "flex-1 min-h-0"}>
         {step === "upload" && (
           <div className="space-y-4 p-1">
+            <div className="flex gap-2 text-sm">
+              <button
+                type="button"
+                className={cn("rounded-md px-3 py-1.5", entryMode === "upload" ? "bg-primary text-primary-foreground" : "bg-muted")}
+                onClick={() => switchEntryMode("upload")}
+              >
+                Upload spreadsheet
+              </button>
+              <button
+                type="button"
+                className={cn("rounded-md px-3 py-1.5", entryMode === "manual" ? "bg-primary text-primary-foreground" : "bg-muted")}
+                onClick={() => switchEntryMode("manual")}
+              >
+                Manual edit
+              </button>
+            </div>
+            {entryMode === "manual" && schema ? (
+              <div className="space-y-3">
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full min-w-max text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        {schema.fields.map((field) => (
+                          <th key={field.key} className="min-w-40 px-2 py-1.5 text-left font-medium whitespace-nowrap">
+                            {field.label}{field.required && <span className="ml-0.5 text-destructive">*</span>}
+                          </th>
+                        ))}
+                        <th className="w-12 px-2 py-1.5" aria-label="Actions" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(manualRows.length ? manualRows : [{}]).map((row, rowIndex) => (
+                        <tr key={rowIndex} className="border-t">
+                          {schema.fields.map((field) => (
+                            <td key={field.key} className="px-2 py-1.5">
+                              <Input
+                                value={row[field.key] ?? ""}
+                                onChange={(event) => updateManualRow(rowIndex, field.key, event.target.value)}
+                                placeholder={field.example || field.formatNote || field.label}
+                                className="h-8 min-w-40 text-xs"
+                              />
+                            </td>
+                          ))}
+                          <td className="px-2 py-1.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              disabled={manualRows.length <= 1}
+                              onClick={() => setManualRows((rows) => rows.filter((_, index) => index !== rowIndex))}
+                              aria-label={`Remove row ${rowIndex + 1}`}
+                            >
+                              <Trash2 className="size-4 text-muted-foreground" aria-hidden />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">Enter data horizontally, the same way the setup wizard lets you review staff rows.</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setManualRows((rows) => [...(rows.length ? rows : [{}]), {}])}>
+                    <Plus className="size-4" aria-hidden /> Add row
+                  </Button>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" onClick={() => void runPreview()} disabled={busy || !canPreview}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    Preview
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
             <div
               className="border-2 border-dashed rounded-lg p-10 text-center cursor-pointer hover:border-primary/60 transition-colors"
               onClick={() => inputRef.current?.click()}
@@ -500,6 +606,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             {schemaError && USE_REAL_API && <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft/30 p-3 text-sm text-danger">{schemaError}. Try again when the import service is available; no demo schema will be used.</div>}
             {!schema && USE_REAL_API && !schemaError && <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft/30 p-3 text-sm text-warning-foreground">Loading the live import schema…</div>}
             {busy && <Progress value={undefined} className="h-1" />}
+              </>
+            )}
           </div>
         )}
 
@@ -547,55 +655,37 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 ))}
               </div>
             </div>
-            <div className="rounded-lg border">
-              <div className="grid grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.2fr)_minmax(10rem,1fr)] gap-3 rounded-t-lg bg-muted/60 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <span>System field</span>
-                <span>Spreadsheet column</span>
-                <span>Sample value</span>
-              </div>
-              {schema.fields.map((field) => {
-                const selectedColumn = selectedColumnForField(field.key);
-                const sample = sampleForColumn(selectedColumn);
-                return (
-                  <div key={field.key} className="grid grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.2fr)_minmax(10rem,1fr)] items-center gap-3 border-t px-3 py-2">
-                    <Label className="text-sm">
-                      {field.label}
-                      {field.required && <span className="ml-0.5 text-destructive">*</span>}
-                      {field.naturalKey && <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">match</Badge>}
-                    </Label>
-                    <Select value={selectedColumn} onValueChange={(value) => setFieldColumn(field.key, value)}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent position="popper" side="bottom" collisionPadding={8}>
-                        <SelectItem value={SKIP}>Ignore this field</SelectItem>
-                        {fileColumns.map((col, index) => (
-                          <SelectItem key={`${col.name}-${index}`} value={col.name}>
-                            {col.name || `Column ${index + 1}`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="truncate text-xs text-muted-foreground" title={sample}>{sample || "—"}</span>
-                  </div>
-                );
-              })}
-            </div>
             {fileRows.length > 0 && (
               <div className="space-y-2">
                 <div className="text-xs font-medium text-muted-foreground">
-                  Preview — first 5 rows as the system will receive them
+                  Map and preview — first 5 rows as the system will receive them
                 </div>
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full min-w-max border-collapse text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground">
                       <tr>
                         {mappedPreviewFields.map((field) => (
-                          <th key={field.key} className="max-w-48 whitespace-nowrap px-3 py-2 font-medium">
-                            <span className="block truncate">
-                              {field.label}
-                              {field.required && <span className="ml-0.5 text-destructive">*</span>}
-                            </span>
+                          <th key={field.key} className="min-w-48 px-2 py-2 align-top font-medium">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 whitespace-nowrap">
+                                <span>{field.label}</span>
+                                {field.required && <span className="text-destructive">*</span>}
+                                {field.naturalKey && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">match</Badge>}
+                              </div>
+                              <Select value={selectedColumnForField(field.key)} onValueChange={(value) => setFieldColumn(field.key, value)}>
+                                <SelectTrigger className="h-8 min-w-44 bg-background text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent position="popper" side="bottom" collisionPadding={8}>
+                                  <SelectItem value={SKIP}>Ignore this field</SelectItem>
+                                  {fileColumns.map((col, index) => (
+                                    <SelectItem key={`${col.name}-${index}`} value={col.name}>
+                                      {col.name || `Column ${index + 1}`}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </th>
                         ))}
                       </tr>
@@ -621,7 +711,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
               </p>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
-                <Button size="sm" onClick={() => void runPreview()} disabled={busy || !requiredMapped}>
+                <Button size="sm" onClick={() => void runPreview()} disabled={busy || !canPreview}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   Preview
                 </Button>
