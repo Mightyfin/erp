@@ -14,7 +14,7 @@
  *
  * Pages reuse it with one line: <ImportDialog typeKey="workers" onDone={reload} />
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -58,6 +58,8 @@ export interface ImportDialogProps {
   onDone?: () => void;
   /** Default sample of mapped rows used by the demo-mode preview. */
   demoSample?: Array<Record<string, string>>;
+  /** Dialog remains the compact default; embedded gives task pages a full workflow surface. */
+  presentation?: "dialog" | "embedded";
 }
 
 interface FileColumn { name: string; sample: string }
@@ -207,7 +209,7 @@ function demoPreview(rows: Array<Record<string, string>>) {
 }
 
 /* ----------------------------------------------------------------- dialog */
-export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps) {
+export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dialog" }: ImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [fileColumns, setFileColumns] = useState<FileColumn[]>([]);
   const [fileRows, setFileRows] = useState<string[][]>([]);
@@ -222,6 +224,7 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
 
   const [schemas, setSchemas] = useState<ImportSchema[] | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
+  const embedded = presentation === "embedded";
   const loadSchemas = async () => {
     try {
       const s = await realApi.importSchemas();
@@ -248,6 +251,18 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
     setSchemaError(null);
     void loadSchemas();
   }
+
+  useEffect(() => {
+    if (!embedded) return;
+    setStep("upload");
+    setFileColumns([]);
+    setFileRows([]);
+    setPreview(null);
+    setMapping({});
+    setSchemaError(null);
+    void loadSchemas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, typeKey]);
 
   async function handleFile(file: File) {
     try {
@@ -327,7 +342,16 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
       const res = await realApi.importApply(typeKey, String(preview.id), idxs);
       const counts = res as { created?: number; updated?: number; skipped?: number; rowOutcomes?: Array<{ row: number; status: string }> };
       toast.success(`Import done — ${counts.created ?? 0} created, ${counts.updated ?? 0} updated${counts.skipped ? `, ${counts.skipped} skipped` : ""}`);
-      setOpen(false);
+      if (embedded) {
+        setStep("upload");
+        setFileColumns([]);
+        setFileRows([]);
+        setPreview(null);
+        setMapping({});
+        setFileName("");
+      } else {
+        setOpen(false);
+      }
       onDone?.();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Apply failed");
@@ -346,6 +370,187 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
         : status === "skip" ? <CircleMinus className="h-4 w-4 text-zinc-400" />
           : <CircleAlert className="h-4 w-4 text-red-600" />;
 
+  const workflow = (
+    <>
+      {embedded ? (
+        <div className="mb-5 border-b pb-4">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <FileSpreadsheet className="h-5 w-5 text-primary" />
+            Import {schema?.displayName ?? typeKey}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {step === "upload" && "Drop an Excel or CSV file from your records. Every column can be mapped to a system field next."}
+            {step === "map" && "Match each column in your file to a system field. Fields you skip are left blank."}
+            {step === "preview" && "The server checked every row. Review the preview, then confirm to import."}
+          </p>
+        </div>
+      ) : (
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Import {schema?.displayName ?? typeKey}
+          </DialogTitle>
+          <DialogDescription>
+            {step === "upload" && "Drop an Excel or CSV file from your records. Every column can be mapped to a system field next."}
+            {step === "map" && "Match each column in your file to a system field. Fields you skip are left blank."}
+            {step === "preview" && "The server checked every row. Review the preview, then confirm to import."}
+          </DialogDescription>
+        </DialogHeader>
+      )}
+
+      <ScrollArea className={embedded ? "" : "flex-1 min-h-0"}>
+        {step === "upload" && (
+          <div className="space-y-4 p-1">
+            <div
+              className="border-2 border-dashed rounded-lg p-10 text-center cursor-pointer hover:border-primary/60 transition-colors"
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files[0];
+                if (f) void handleFile(f);
+              }}
+            >
+              <ArrowUpFromLine className="h-8 w-8 mx-auto text-muted-foreground" />
+              <p className="mt-2 font-medium">Drag your file here, or click to choose</p>
+              <p className="text-sm text-muted-foreground">.xlsx, .xls or .csv — the first row should name the columns</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={async () => {
+                // Download a blank template (CSV) for the mapped type.
+                try {
+                  const blob = await realApi.importExportBlob(typeKey, "__template__");
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${typeKey}-template.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  toast.error("Template is not available yet — start from your own spreadsheet columns.");
+                }
+              }}
+            >
+              <Download className="h-4 w-4" /> Download blank import template
+            </Button>
+            {schemaError && USE_REAL_API && <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft/30 p-3 text-sm text-danger">{schemaError}. Try again when the import service is available; no demo schema will be used.</div>}
+            {!schema && USE_REAL_API && !schemaError && <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft/30 p-3 text-sm text-warning-foreground">Loading the live import schema…</div>}
+            {busy && <Progress value={undefined} className="h-1" />}
+          </div>
+        )}
+
+        {step === "map" && schema && (
+          <div className="space-y-3 p-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{fileName}</span>
+                {sheetName ? ` · sheet “${sheetName}”` : ""} · {fileRows.length} rows
+              </p>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">Mode</Label>
+                <Button
+                  variant="outline" size="sm"
+                  className={cn("h-7 text-xs", mode === "insert" ? "bg-accent" : "")}
+                  onClick={() => setMode("insert")}
+                >
+                  Insert only
+                </Button>
+                <Button
+                  variant="outline" size="sm"
+                  className={cn("h-7 text-xs", mode === "update" ? "bg-accent" : "")}
+                  onClick={() => setMode("update")}
+                >
+                  Match & update
+                </Button>
+              </div>
+            </div>
+            <div className="border rounded-lg">
+              <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <span>Column in your file</span>
+                <span>System field</span>
+                <span>Sample value</span>
+              </div>
+              {fileColumns.map((col) => (
+                <div key={col.name} className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 items-center border-t">
+                  <span className="text-sm truncate" title={col.name}>{col.name}</span>
+                  <FieldMapper
+                    fields={schema.fields}
+                    value={mapping[col.name] ?? SKIP}
+                    onChange={(k) => setMapping((m) => ({ ...m, [col.name]: k }))}
+                  />
+                  <span className="text-xs text-muted-foreground truncate" title={col.sample}>{col.sample}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-muted-foreground">
+                {Object.values(mapping).filter((v) => v && v !== SKIP).length} of {fileColumns.length} columns mapped
+              </p>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
+                <Button size="sm" onClick={() => void runPreview()} disabled={busy}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  Preview
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === "preview" && preview && schema && (
+          <div className="space-y-3 p-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Total rows", value: String(preview.totalRows ?? 0), cls: "" },
+                { label: "Will create", value: String(preview.willCreate ?? 0), cls: "text-emerald-600" },
+                { label: "Will update", value: String(preview.willUpdate ?? 0), cls: "text-sky-600" },
+                { label: "Problems", value: String(preview.willError ?? 0), cls: "text-red-600" },
+              ].map((c) => (
+                <div key={c.label} className="border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">{c.label}</p>
+                  <p className={cn("text-xl font-semibold", c.cls)}>{c.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="border rounded-lg max-h-72 overflow-auto">
+              <div className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground sticky top-0 bg-background">
+                <span>#</span><span>Status</span><span>Detail</span>
+              </div>
+              {(preview.rows as Array<Record<string, unknown>>).map((r) => (
+                <div key={String(r.row)} className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-1.5 items-center border-t text-sm">
+                  <span className="text-muted-foreground text-xs">{String(r.row)}</span>
+                  <span className="flex items-center gap-1.5">
+                    {statusIcon(previewRowStatus(r))}
+                    <span className="capitalize">{previewRowStatus(r)}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>{r.message ? String(r.message) : "—"}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setStep("map")}>Change mapping</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => {
+                  if (embedded) setStep("upload");
+                  else setOpen(false);
+                }}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Import {accepted} rows
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ScrollArea>
+    </>
+  );
+
   return (
     <>
       <input
@@ -359,175 +564,20 @@ export function ImportDialog({ typeKey, onDone, demoSample }: ImportDialogProps)
           if (f) void handleFile(f);
         }}
       />
-      <Button variant="outline" onClick={() => void openDialog()} className="gap-2">
-        <FileSpreadsheet className="h-4 w-4" /> Import
-      </Button>
-
-      <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false); }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" />
-              Import {schema?.displayName ?? typeKey}
-            </DialogTitle>
-            <DialogDescription>
-              {step === "upload" && "Drop an Excel or CSV file from your records. Every column can be mapped to a system field next."}
-              {step === "map" && "Match each column in your file to a system field. Fields you skip are left blank."}
-              {step === "preview" && "The server checked every row. Review the preview, then confirm to import."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="flex-1 min-h-0">
-            {step === "upload" && (
-              <div className="space-y-4 p-1">
-                <div
-                  className="border-2 border-dashed rounded-lg p-10 text-center cursor-pointer hover:border-primary/60 transition-colors"
-                  onClick={() => inputRef.current?.click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const f = e.dataTransfer.files[0];
-                    if (f) void handleFile(f);
-                  }}
-                >
-                  <ArrowUpFromLine className="h-8 w-8 mx-auto text-muted-foreground" />
-                  <p className="mt-2 font-medium">Drag your file here, or click to choose</p>
-                  <p className="text-sm text-muted-foreground">.xlsx, .xls or .csv — the first row should name the columns</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2"
-                  onClick={async () => {
-                    // Download a blank template (CSV) for the mapped type.
-                    try {
-                      const blob = await realApi.importExportBlob(typeKey, "__template__");
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `${typeKey}-template.csv`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    } catch {
-                      toast.error("Template is not available yet — start from your own spreadsheet columns.");
-                    }
-                  }}
-                >
-                  <Download className="h-4 w-4" /> Download blank import template
-                </Button>
-                {schemaError && USE_REAL_API && <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft/30 p-3 text-sm text-danger">{schemaError}. Try again when the import service is available; no demo schema will be used.</div>}
-                {!schema && USE_REAL_API && !schemaError && <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft/30 p-3 text-sm text-warning-foreground">Loading the live import schema…</div>}
-                {busy && <Progress value={undefined} className="h-1" />}
-              </div>
-            )}
-
-            {step === "map" && schema && (
-              <div className="space-y-3 p-1">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <p className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">{fileName}</span>
-                    {sheetName ? ` · sheet “${sheetName}”` : ""} · {fileRows.length} rows
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs">Mode</Label>
-                    <Button
-                      variant="outline" size="sm"
-                      className={cn("h-7 text-xs", mode === "insert" ? "bg-accent" : "")}
-                      onClick={() => setMode("insert")}
-                    >
-                      Insert only
-                    </Button>
-                    <Button
-                      variant="outline" size="sm"
-                      className={cn("h-7 text-xs", mode === "update" ? "bg-accent" : "")}
-                      onClick={() => setMode("update")}
-                    >
-                      Match & update
-                    </Button>
-                  </div>
-                </div>
-                <div className="border rounded-lg">
-                  <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <span>Column in your file</span>
-                    <span>System field</span>
-                    <span>Sample value</span>
-                  </div>
-                  {fileColumns.map((col) => (
-                    <div key={col.name} className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-3 py-2 items-center border-t">
-                      <span className="text-sm truncate" title={col.name}>{col.name}</span>
-                      <FieldMapper
-                        fields={schema.fields}
-                        value={mapping[col.name] ?? SKIP}
-                        onChange={(k) => setMapping((m) => ({ ...m, [col.name]: k }))}
-                      />
-                      <span className="text-xs text-muted-foreground truncate" title={col.sample}>{col.sample}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <p className="text-xs text-muted-foreground">
-                    {Object.values(mapping).filter((v) => v && v !== SKIP).length} of {fileColumns.length} columns mapped
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setStep("upload")}>Back</Button>
-                    <Button size="sm" onClick={() => void runPreview()} disabled={busy}>
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      Preview
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {step === "preview" && preview && schema && (
-              <div className="space-y-3 p-1">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: "Total rows", value: String(preview.totalRows ?? 0), cls: "" },
-                    { label: "Will create", value: String(preview.willCreate ?? 0), cls: "text-emerald-600" },
-                    { label: "Will update", value: String(preview.willUpdate ?? 0), cls: "text-sky-600" },
-                    { label: "Problems", value: String(preview.willError ?? 0), cls: "text-red-600" },
-                  ].map((c) => (
-                    <div key={c.label} className="border rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground">{c.label}</p>
-                      <p className={cn("text-xl font-semibold", c.cls)}>{c.value}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="border rounded-lg max-h-72 overflow-auto">
-                  <div className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-2 bg-muted/60 text-xs font-medium uppercase tracking-wide text-muted-foreground sticky top-0 bg-background">
-                    <span>#</span><span>Status</span><span>Detail</span>
-                  </div>
-                  {(preview.rows as Array<Record<string, unknown>>).map((r) => (
-                    <div key={String(r.row)} className="grid grid-cols-[3rem_1fr_6rem] gap-2 px-3 py-1.5 items-center border-t text-sm">
-                      <span className="text-muted-foreground text-xs">{String(r.row)}</span>
-                      <span className="flex items-center gap-1.5">
-                        {statusIcon(previewRowStatus(r))}
-                        <span className="capitalize">{previewRowStatus(r)}</span>
-                      </span>
-                      <span className="text-xs text-muted-foreground" title={r.message ? String(r.message) : undefined}>{r.message ? String(r.message) : "—"}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <Button variant="ghost" size="sm" onClick={() => setStep("map")}>Change mapping</Button>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={busy} onClick={() => {
-                      setOpen(false);
-                    }}>
-                      Cancel
-                    </Button>
-                    <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      Import {accepted} rows
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+      {embedded ? (
+        <div className="rounded-xl border bg-card p-5 shadow-sm">{workflow}</div>
+      ) : (
+        <>
+          <Button variant="outline" onClick={() => void openDialog()} className="gap-2">
+            <FileSpreadsheet className="h-4 w-4" /> Import
+          </Button>
+          <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false); }}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+              {workflow}
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </>
   );
 }

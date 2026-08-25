@@ -16,7 +16,7 @@
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Archive, UserPlus } from "lucide-react";
+import { Archive, FileSpreadsheet, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppShell } from "@/platform/components/AppShell";
@@ -40,7 +40,6 @@ import { api } from "@/mock/service";
 import type { Employee } from "@/mock/types";
 import { useMock } from "@/platform/use-mock";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
-import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 import { ExportButton } from "@/platform/components/ImportExport/ExportButton";
 
 export const Route = createFileRoute("/hrm/employees/")({
@@ -301,7 +300,12 @@ function EmployeesPage() {
           }
           primaryAction={
             <div className="flex items-center gap-2">
-              <ImportTool onDone={() => state.reload()} />
+              <Button asChild variant="outline">
+                <Link to="/hrm/employees/import">
+                  <FileSpreadsheet className="mr-1 size-4" aria-hidden />
+                  Import
+                </Link>
+              </Button>
               <ExportButton
                 typeKey="workers"
                 fileName="employees"
@@ -402,11 +406,6 @@ function labelize(status: string | undefined) {
     archived: "Archived",
   };
   return status ? (map[status] ?? status) : "Active";
-}
-
-/** M31 — shared import tool wired to /hrm/import/workers. */
-function ImportTool({ onDone }: { onDone?: () => void }) {
-  return <ImportDialog typeKey="workers" onDone={onDone} />;
 }
 
 function ArchiveDialog({
