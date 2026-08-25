@@ -475,6 +475,43 @@ function PaymentWorkflow({
     anchor.click();
     URL.revokeObjectURL(url);
   };
+  const paymentSteps = [
+    {
+      key: "released",
+      label: "Payslips released",
+      done: ["released", "closed"].includes(run.backendStatus),
+      actor: run.releasedBy,
+      blocked: !["released", "closed"].includes(run.backendStatus),
+    },
+    {
+      key: "generated",
+      label: "Bank file generated",
+      done: status !== "not-created",
+      actor: run.paymentFileGeneratedBySubjectId,
+      blocked: run.backendStatus !== "released" && run.backendStatus !== "closed",
+    },
+    {
+      key: "approved",
+      label: "Payment approved",
+      done: ["approved", "released", "reconciled"].includes(status),
+      actor: run.paymentApprovedBySubjectId,
+      blocked: status === "not-created",
+    },
+    {
+      key: "bank-released",
+      label: "Released to bank",
+      done: ["released", "reconciled"].includes(status),
+      actor: run.paymentReleasedBySubjectId,
+      blocked: status !== "approved" && !["released", "reconciled"].includes(status),
+    },
+    {
+      key: "reconciled",
+      label: "Reconciled and closed",
+      done: status === "reconciled",
+      actor: run.reconciliationReference,
+      blocked: status !== "released" && status !== "reconciled",
+    },
+  ];
 
   return (
     <div className="mt-4 rounded-lg border p-4" data-testid="payment-workflow">
@@ -487,14 +524,60 @@ function PaymentWorkflow({
             {run.paymentFileReference ? ` · ${run.paymentFileReference}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Payment workflow is maker-checker: generator, approver and releaser must be separate
-            where the backend requires it.
+            Payment workflow is maker-checker: generate the bank file, approve it, release it to
+            the bank, then reconcile the bank acknowledgement before the run is closed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
           Export audit CSV
         </Button>
       </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-5">
+        {paymentSteps.map((step) => {
+          const Icon = step.done ? Check : step.blocked ? Lock : CircleDashed;
+          return (
+            <div
+              key={step.key}
+              className={`rounded-md border p-3 ${
+                step.done
+                  ? "border-success/30 bg-success-soft"
+                  : step.blocked
+                    ? "border-border bg-muted/30"
+                    : "border-primary/30 bg-primary-soft"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon
+                  className={`size-4 ${
+                    step.done
+                      ? "text-success"
+                      : step.blocked
+                        ? "text-muted-foreground"
+                        : "text-primary"
+                  }`}
+                  aria-hidden
+                />
+                <span className="text-xs font-medium">{step.label}</span>
+              </div>
+              <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                {step.done
+                  ? step.actor
+                    ? `By ${step.actor}`
+                    : "Completed"
+                  : step.blocked
+                    ? "Waiting for prior step"
+                    : "Ready"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      {run.backendStatus !== "released" && run.backendStatus !== "closed" ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          Payment file generation is blocked until payslips are released. Releasing payslips still
+          does not pay anyone; it only makes the payslip records visible.
+        </p>
+      ) : null}
 
       {/* M41: accounting reports for the accounts team. The run must be
           released first — the backend enforces the same rule server-side. */}
