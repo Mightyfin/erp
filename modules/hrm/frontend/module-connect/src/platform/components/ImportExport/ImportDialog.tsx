@@ -4,8 +4,8 @@
  * The org arrives with Excel sheets as their only system of record, so this
  * dialog is the front door for migrating spreadsheets in:
  *   1. Drop a .csv / .xlsx file (reads both client-side; XLSX via SheetJS)
- *   2. Map every file column to a system field via a searchable dropdown
- *      (unmatched columns can be "Skip"-ped; unmapped fields stay blank)
+ *   2. Map each system field to one of the spreadsheet's real column titles
+ *      (unmapped fields stay blank)
  *   3. Auto-map fields whose labels loosely match the file headers
  *   4. Live preview: the server validates every row (create / update / skip /
  *      error) so bad rows are visible before anything is written
@@ -103,15 +103,16 @@ function parseCsvText(text: string): string[][] {
   return lines.filter((l) => l.length > 1 || (l[0] ?? "").trim() !== "");
 }
 
-async function readFileRows(file: File): Promise<{ headers: string[]; rows: string[][] }> {
+async function readFileRows(file: File): Promise<{ headers: string[]; rows: string[][]; sheetName?: string }> {
   const buf = await file.arrayBuffer();
   if (/\.xlsx?$/i.test(file.name)) {
     const wb = XLSX.read(buf, { type: "array" });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
     const raw: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
     const rows = raw.filter((r) => r.some((c) => String(c ?? "").trim() !== "")) as string[][];
     if (rows.length === 0) throw new Error("The workbook has no data rows.");
-    return { headers: rows[0].map(String), rows: rows.slice(1).map((r) => r.map(String)) };
+    return { headers: rows[0].map(String), rows: rows.slice(1).map((r) => r.map(String)), sheetName };
   }
   const text = new TextDecoder("utf-8").decode(buf);
   // Strip the UTF-8 BOM if present.
@@ -219,6 +220,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [mode, setMode] = useState<"insert" | "update">("insert");
   const [busy, setBusy] = useState(false);
   const [sheetName, setSheetName] = useState<string | null>(null);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [schemas, setSchemas] = useState<ImportSchema[] | null>(null);
@@ -248,6 +250,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreview(null);
     setMapping({});
     setSchemaError(null);
+    setPasteError(null);
     void loadSchemas();
   }
 
@@ -259,31 +262,53 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreview(null);
     setMapping({});
     setSchemaError(null);
+    setPasteError(null);
     void loadSchemas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [embedded, typeKey]);
 
+  function loadParsedSheet(headers: string[], rows: string[][], sourceName: string, parsedSheetName?: string) {
+    const headersClean = headers.map((h, index) => (h ?? "").trim() || `Column ${index + 1}`);
+    if (headersClean.length === 0) throw new Error("No header row found — the first row must name the columns.");
+    if (rows.length === 0) throw new Error("No readable data rows found below the header.");
+    setFileName(sourceName);
+    setSheetName(parsedSheetName ?? null);
+    setFileColumns(headersClean.map((name, index) => ({ name, sample: String(rows[0]?.[index] ?? "") })));
+    setFileRows(rows);
+    setPreview(null);
+    setPasteError(null);
+    if (!schema) {
+      if (USE_REAL_API) {
+        toast.error("This import type is not available because the live import schema could not be loaded.");
+        return;
+      }
+      const demo = DEMO_SCHEMAS[typeKey] || DEMO_SCHEMAS.workers;
+      setMapping(autoMap(headersClean, demo.fields));
+    } else {
+      setMapping(autoMap(headersClean, schema.fields));
+    }
+    setStep("map");
+  }
+
   async function handleFile(file: File) {
     try {
-      const { headers, rows } = await readFileRows(file);
-      const headersClean = headers.map((h) => (h ?? "").trim());
-      if (headersClean.length === 0) throw new Error("No header row found — the first row must name the columns.");
-      setFileName(file.name);
-      setFileColumns(headersClean.map((name) => ({ name,       sample: String(rows[0]?.[headersClean.indexOf(name)] ?? "") })));
-      setFileRows(rows);
-      if (!schema) {
-        if (USE_REAL_API) {
-          toast.error("This import type is not available because the live import schema could not be loaded.");
-          return;
-        }
-        const demo = DEMO_SCHEMAS[typeKey] || DEMO_SCHEMAS.workers;
-        setMapping(autoMap(headersClean, demo.fields));
-      } else {
-        setMapping(autoMap(headersClean, schema.fields));
-      }
-      setStep("map");
+      const { headers, rows, sheetName: parsedSheetName } = await readFileRows(file);
+      loadParsedSheet(headers, rows, file.name, parsedSheetName);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not read the file");
+    }
+  }
+
+  function handlePastedText(text: string) {
+    setPasteError(null);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      const all = parseCsvText(trimmed.startsWith("\uFEFF") ? trimmed.slice(1) : trimmed);
+      if (all.length < 2) throw new Error("The spreadsheet must have a header row plus at least one data row.");
+      loadParsedSheet(all[0], all.slice(1), "pasted-spreadsheet.csv");
+    } catch (e) {
+      setPasteError(e instanceof Error ? e.message : "Could not read the pasted spreadsheet data.");
     }
   }
 
@@ -391,6 +416,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const requiredMapped = schema?.fields
     .filter((field) => field.required)
     .every((field) => selectedColumnForField(field.key) !== SKIP) ?? false;
+  const mappedPreviewFields = schema?.fields.filter((field) => schema.fields.some((f) => f.key === field.key)) ?? [];
 
   const workflow = (
     <>
@@ -436,6 +462,19 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
               <ArrowUpFromLine className="h-8 w-8 mx-auto text-muted-foreground" />
               <p className="mt-2 font-medium">Drag your file here, or click to choose</p>
               <p className="text-sm text-muted-foreground">.xlsx, .xls or .csv — the first row should name the columns</p>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Or paste spreadsheet contents below. Any column titles are allowed; you will map the useful columns before anything is imported.
+              </p>
+              <textarea
+                rows={7}
+                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder={"Employee No,First Name,Last Name,Email,Department\nEMP-001,Jane,Mwansa,jane@company.co.zm,Finance"}
+                onChange={(event) => handlePastedText(event.target.value)}
+                aria-label="Paste spreadsheet contents"
+              />
+              {pasteError && <p className="text-xs text-destructive">{pasteError}</p>}
             </div>
             <Button
               variant="ghost"
@@ -545,25 +584,28 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             {fileRows.length > 0 && (
               <div className="space-y-2">
                 <div className="text-xs font-medium text-muted-foreground">
-                  Spreadsheet preview — first 5 rows using your uploaded column titles
+                  Preview — first 5 rows as the system will receive them
                 </div>
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full min-w-max border-collapse text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground">
                       <tr>
-                        {fileColumns.map((col, index) => (
-                          <th key={`${col.name}-${index}`} className="max-w-48 whitespace-nowrap px-3 py-2 font-medium">
-                            <span className="block truncate">{col.name || `Column ${index + 1}`}</span>
+                        {mappedPreviewFields.map((field) => (
+                          <th key={field.key} className="max-w-48 whitespace-nowrap px-3 py-2 font-medium">
+                            <span className="block truncate">
+                              {field.label}
+                              {field.required && <span className="ml-0.5 text-destructive">*</span>}
+                            </span>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {fileRows.slice(0, 5).map((row, rowIndex) => (
+                      {mappedRows.slice(0, 5).map((row, rowIndex) => (
                         <tr key={rowIndex} className="border-t">
-                          {fileColumns.map((col, colIndex) => (
-                            <td key={`${col.name}-${colIndex}`} className="max-w-56 px-3 py-2" title={row[colIndex] ?? ""}>
-                              <span className="block truncate">{row[colIndex] || "—"}</span>
+                          {mappedPreviewFields.map((field) => (
+                            <td key={field.key} className="max-w-56 px-3 py-2" title={row[field.key] ?? ""}>
+                              <span className="block truncate">{row[field.key] || "—"}</span>
                             </td>
                           ))}
                         </tr>
