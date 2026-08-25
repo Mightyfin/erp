@@ -80,6 +80,10 @@ public class M27PayrollOperationsTests
         Assert.Equal("payment-self-approval", selfApproval.Code);
 
         await service.ApprovePaymentFileAsync(run.Id, new("finance reviewed"), default, "finance-approver");
+        var generatorRelease = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReleasePaymentFileAsync(run.Id, default, "payroll-releaser"));
+        Assert.Equal("payment-generator-release", generatorRelease.Code);
+
         await service.ReleasePaymentFileAsync(run.Id, default, "treasury-releaser");
         run = await service.ReconcileRunAsync(run.Id,
             new PayrollReconciliationRequest("BANK-ACK-009", run.TotalNet, "bank accepted all rows"), default, "reconciler");

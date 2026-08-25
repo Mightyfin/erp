@@ -435,7 +435,7 @@ function PaymentWorkflow({
   );
   const canGenerate = run.backendStatus === "released" && status === "not-created";
   const canApprove = status === "generated" && !generatedByMe;
-  const canRelease = status === "approved" && !approvedByMe;
+  const canRelease = status === "approved" && !approvedByMe && !generatedByMe;
   const invoke = async (label: string, action: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -525,7 +525,8 @@ function PaymentWorkflow({
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Payment workflow is maker-checker: generate the bank file, approve it, release it to
-            the bank, then reconcile the bank acknowledgement before the run is closed.
+            the bank, then reconcile the bank acknowledgement before the run is closed. The
+            generator, approver and bank releaser must be different people.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
@@ -683,6 +684,8 @@ function PaymentWorkflow({
             title={
               approvedByMe
                 ? "The payment approver cannot also release the bank instruction."
+                : generatedByMe
+                  ? "The person who generated the payment file cannot release it to the bank."
                 : undefined
             }
             onClick={() =>
@@ -703,6 +706,11 @@ function PaymentWorkflow({
       {status === "approved" && approvedByMe ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
           You approved this payment file. A different payroll officer must release it to the bank.
+        </p>
+      ) : null}
+      {status === "approved" && generatedByMe ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You generated this payment file. A different payroll officer must release it to the bank.
         </p>
       ) : null}
       {status === "released" ? (

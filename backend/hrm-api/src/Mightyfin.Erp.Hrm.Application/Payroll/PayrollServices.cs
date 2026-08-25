@@ -935,6 +935,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         if (run.PaymentStatus != "approved") throw new DomainException("payment-not-releasable", $"Payment is in status {run.PaymentStatus}.");
         if (string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-self-release", "The payment approver cannot also release the bank instruction.");
+        if (string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("payment-generator-release", "The person who generated the payment file cannot release the bank instruction.");
         run.PaymentStatus = "released";
         run.PaymentReleasedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
