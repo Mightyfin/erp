@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Ban, Check, Info } from "lucide-react";
+import { AlertTriangle, Ban, Check, Info, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,13 +42,20 @@ const ENTITIES = [
 
 const PAY_GROUPS = ["Monthly salaried", "Monthly — management", "Weekly — site crew"];
 
-/** Everything that must be true before a calculation can be trusted. */
-const READINESS = [
-  { id: "r1", label: "Country pack active for the period", detail: "Zambia 2026.1 — PAYE bands, NAPSA ceiling and NHIMA rate.", state: "pass" as const },
-  { id: "r2", label: "Attendance approved to cutoff", detail: "24 of 26 timesheets approved. 2 still with the line manager.", state: "warn" as const },
-  { id: "r3", label: "Bank details present and verified", detail: "Every included employee has a verified account.", state: "pass" as const },
-  { id: "r4", label: "No employee on two pay groups", detail: "Nobody would be paid twice.", state: "pass" as const },
-  { id: "r5", label: "Previous period closed", detail: "July 2026 reconciled and locked.", state: "pass" as const },
+type ReadinessItem = {
+  id: string;
+  label: string;
+  detail: string;
+  state: "pass" | "warn" | "fail";
+};
+
+/** Demo checklist used only when the live backend is disabled. */
+const READINESS: ReadinessItem[] = [
+  { id: "r1", label: "Country pack active for the period", detail: "Zambia 2026.1 - PAYE bands, NAPSA ceiling and NHIMA rate.", state: "pass" },
+  { id: "r2", label: "Attendance approved to cutoff", detail: "24 of 26 timesheets approved. 2 still with the line manager.", state: "warn" },
+  { id: "r3", label: "Bank details present and verified", detail: "Every included employee has a verified account.", state: "pass" },
+  { id: "r4", label: "No employee on two pay groups", detail: "Nobody would be paid twice.", state: "pass" },
+  { id: "r5", label: "Previous period closed", detail: "July 2026 reconciled and locked.", state: "pass" },
 ];
 
 const POPULATION = [
@@ -60,20 +67,23 @@ const POPULATION = [
   { name: "Lubinda Sitali", in: false, note: "On unpaid study leave for the whole period." },
 ];
 
-function ReadinessRow({ item }: { item: (typeof READINESS)[number] }) {
+function ReadinessRow({ item }: { item: ReadinessItem }) {
   const pass = item.state === "pass";
+  const fail = item.state === "fail";
   return (
     <li className="flex items-start gap-2 rounded-md border p-3">
       {pass ? (
         <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+      ) : fail ? (
+        <X className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
       ) : (
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
       )}
       <span className="min-w-0">
         <span className="block text-sm font-medium">
           {item.label}
-          <span className={`ml-2 text-xs font-normal ${pass ? "text-success" : "text-warning"}`}>
-            {pass ? "Ready" : "Needs attention"}
+          <span className={`ml-2 text-xs font-normal ${pass ? "text-success" : fail ? "text-danger" : "text-warning"}`}>
+            {pass ? "Ready" : fail ? "Blocking" : "Needs attention"}
           </span>
         </span>
         <span className="block text-xs text-muted-foreground">{item.detail}</span>
@@ -112,11 +122,17 @@ type ProfileRow = {
   values?: Array<{ amount?: number | string | null }>;
 };
 
+type PayrollWorkerRow = ReturnType<typeof adaptWorkers>[number] & {
+  tpin?: string;
+  napsaNumber?: string;
+  nhimaNumber?: string;
+};
+
 type PayrollSetup = {
   groups: PayGroupRow[];
   periods: PayPeriodRow[];
   profiles: ProfileRow[];
-  workers: ReturnType<typeof adaptWorkers>;
+  workers: PayrollWorkerRow[];
   tree: OrgTreeNode[];
 };
 
@@ -198,11 +214,22 @@ function NewRun() {
             : [],
         };
       });
+      const adaptedWorkers = adaptWorkers(workersRaw);
+      const rawWorkers = asArray(workersRaw).map((w) => w as Record<string, unknown>);
+      const workerExtras = new Map(rawWorkers.map((w) => [text(w.id), w]));
       return {
         groups,
         periods,
         profiles,
-        workers: adaptWorkers(workersRaw),
+        workers: adaptedWorkers.map((worker) => {
+          const raw = workerExtras.get(worker.id);
+          return {
+            ...worker,
+            tpin: text(raw?.tpin),
+            napsaNumber: text(raw?.napsaNumber),
+            nhimaNumber: text(raw?.nhimaNumber),
+          };
+        }),
         tree: Array.isArray(treeRaw) ? (treeRaw as OrgTreeNode[]) : demoEntityTree,
       };
     },
@@ -243,6 +270,7 @@ function NewRun() {
   const entityEntityId = placementUnits.find((p) => p.unitType === "entity")?.entityId ?? entityId;
   const liveProfiles = (setup.data?.profiles ?? []).filter((p) => p.payGroupId === selectedGroupId);
   const liveWorkerById = new Map((setup.data?.workers ?? []).map((w) => [w.id, w]));
+  const liveActiveWorkers = setup.data?.workers ?? [];
   const livePopulation = liveProfiles.map((profile) => {
     const worker = liveWorkerById.get(profile.workerId);
     return {
@@ -252,6 +280,74 @@ function NewRun() {
       amount: (profile.values ?? []).reduce((sum, value) => sum + moneyAmount(value.amount), 0),
     };
   });
+  const liveProfileWorkerIds = new Set(liveProfiles.map((profile) => profile.workerId));
+  const missingProfiles = liveActiveWorkers.filter((worker) => !liveProfileWorkerIds.has(worker.id));
+  const duplicateProfileWorkers = Array.from(
+    liveProfiles.reduce((counts, profile) => {
+      counts.set(profile.workerId, (counts.get(profile.workerId) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>()),
+  ).filter(([, count]) => count > 1);
+  const missingBankWorkers = liveProfiles
+    .map((profile) => liveWorkerById.get(profile.workerId))
+    .filter((worker): worker is PayrollWorkerRow => Boolean(worker && !worker.bankAccount));
+  const missingStatutoryWorkers = liveProfiles
+    .map((profile) => liveWorkerById.get(profile.workerId))
+    .filter((worker): worker is PayrollWorkerRow =>
+      Boolean(worker && (!worker.nationalId || !worker.tpin || !worker.napsaNumber || !worker.nhimaNumber)),
+    );
+  const liveReadiness: ReadinessItem[] = USE_REAL
+    ? [
+        {
+          id: "period-open",
+          label: "Selected pay period is open",
+          detail: chosenPeriod
+            ? `${chosenPeriod.periodLabel} is ${chosenPeriod.status || "not marked open"}.`
+            : "Choose a pay group with an available pay period.",
+          state: chosenPeriod?.status === "open" ? "pass" : "fail",
+        },
+        {
+          id: "population",
+          label: "Workers have payroll profiles",
+          detail: livePopulation.length
+            ? `${livePopulation.length} worker${livePopulation.length === 1 ? "" : "s"} will be included. ${missingProfiles.length} active worker${missingProfiles.length === 1 ? "" : "s"} sit outside this selected pay group.`
+            : "No active payroll profiles were found for this pay group.",
+          state: livePopulation.length ? "pass" : "fail",
+        },
+        {
+          id: "duplicates",
+          label: "No duplicate pay profiles in this group",
+          detail: duplicateProfileWorkers.length
+            ? `${duplicateProfileWorkers.length} worker${duplicateProfileWorkers.length === 1 ? "" : "s"} have more than one profile in this pay group.`
+            : "No worker appears more than once in this pay group.",
+          state: duplicateProfileWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "bank",
+          label: "Bank details present",
+          detail: missingBankWorkers.length
+            ? `${missingBankWorkers.length} included worker${missingBankWorkers.length === 1 ? "" : "s"} are missing a primary bank account.`
+            : "Every included worker has a primary bank account.",
+          state: missingBankWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "statutory",
+          label: "Statutory identity pack present",
+          detail: missingStatutoryWorkers.length
+            ? `${missingStatutoryWorkers.length} included worker${missingStatutoryWorkers.length === 1 ? "" : "s"} are missing NRC, TPIN, NAPSA or NHIMA values.`
+            : "Every included worker has NRC, TPIN, NAPSA and NHIMA values.",
+          state: missingStatutoryWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "dates",
+          label: "Cutoff is before pay date",
+          detail: dateProblem ?? `Time cutoff ${cutoff || "not set"} is before pay date ${payDate || "not set"}.`,
+          state: dateProblem ? "fail" : "pass",
+        },
+      ]
+    : READINESS;
+  const readinessFailures = liveReadiness.filter((item) => item.state === "fail");
+  const readinessWarnings = liveReadiness.filter((item) => item.state === "warn");
   const included = USE_REAL ? livePopulation : POPULATION.filter((p) => !excluded.includes(p.name));
   const estimate = USE_REAL
     ? livePopulation.reduce((sum, p) => sum + p.amount, 0)
@@ -435,15 +531,26 @@ function NewRun() {
       render: () => (
         <div className="space-y-3">
           <ul className="space-y-2">
-            {READINESS.map((r) => (
+            {liveReadiness.map((r) => (
               <ReadinessRow key={r.id} item={r} />
             ))}
           </ul>
-          <p className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            You can calculate with an outstanding warning, but it is recorded against the run and the
-            approver will see it.
-          </p>
+          {readinessFailures.length ? (
+            <p className="flex gap-2 rounded-md border border-danger/40 bg-danger-soft p-3 text-xs text-danger">
+              <X className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              Fix {readinessFailures.length} blocking readiness issue{readinessFailures.length === 1 ? "" : "s"} before opening this run.
+            </p>
+          ) : readinessWarnings.length ? (
+            <p className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              You can open the run with {readinessWarnings.length} warning{readinessWarnings.length === 1 ? "" : "s"}, but payroll release or bank-file generation may be blocked later.
+            </p>
+          ) : (
+            <p className="flex gap-2 rounded-md border border-success/40 bg-success-soft p-3 text-xs text-success">
+              <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              The selected pay group and period are ready to open.
+            </p>
+          )}
         </div>
       ),
     },
@@ -461,6 +568,8 @@ function NewRun() {
               ["Pay date", payDate],
               ["Employees included", String(included.length)],
               ["Manual exclusions", USE_REAL ? "Not supported at run creation" : String(excluded.length)],
+              ["Readiness blockers", String(readinessFailures.length)],
+              ["Readiness warnings", String(readinessWarnings.length)],
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -480,6 +589,17 @@ function NewRun() {
                 : "An estimate to sense-check the population, not a calculation. The real figures come out of the calculate stage."}
             </p>
           </div>
+
+          {readinessFailures.length ? (
+            <div className="rounded-md border border-danger/40 bg-danger-soft p-3">
+              <p className="text-sm font-medium text-danger">This run cannot be opened yet</p>
+              <ul className="mt-2 space-y-1 text-xs text-danger">
+                {readinessFailures.map((item) => (
+                  <li key={item.id}>{item.label}: {item.detail}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div>
             <Label htmlFor="note">
@@ -527,6 +647,13 @@ function NewRun() {
         onSubmit={async () => {
           if (dateProblem) {
             feedback.blocked("Cannot open this run", dateProblem);
+            return;
+          }
+          if (USE_REAL && readinessFailures.length) {
+            feedback.blocked(
+              "Readiness blockers remain",
+              readinessFailures.map((item) => item.label).join(", "),
+            );
             return;
           }
           if (USE_REAL) {
