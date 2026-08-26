@@ -26,7 +26,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Check, Download, FileSpreadsheet, Loader2, Search,
   ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen, Plus, Trash2,
@@ -700,14 +699,14 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         </DialogHeader>
       )}
 
-      <ScrollArea className={embedded ? "" : "flex-1 min-h-0"}>
+      <div className={cn("min-w-0", embedded ? "w-full overflow-visible" : "flex-1 min-h-0 overflow-y-auto pr-2")}>
         {modeTabs ? <div className="p-1 pb-3">{modeTabs}</div> : null}
         {step === "upload" && (
           <div className="space-y-4 p-1">
             {entryMode === "manual" && schema ? (
               <div className="space-y-3">
-                <div className="max-w-full overflow-x-auto rounded-md border pb-2">
-                  <table className="w-full min-w-[1600px] text-xs">
+                <div className="w-full min-w-0 overflow-x-scroll rounded-md border pb-2 [scrollbar-gutter:stable]">
+                  <table className="w-max min-w-[1600px] text-xs">
                     <thead className="bg-muted/50">
                       <tr>
                         {schema.fields.map((field) => (
@@ -876,8 +875,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 <div className="text-xs font-medium text-muted-foreground">
                   Map and preview — rows {fileRows.length ? (mapPage - 1) * IMPORT_PAGE_SIZE + 1 : 0}-{Math.min(mapPage * IMPORT_PAGE_SIZE, mappedRows.length)} as the system will receive them
                 </div>
-                <div className="max-w-full overflow-x-auto rounded-lg border pb-2">
-                  <table className="w-full min-w-[1600px] border-collapse text-left text-xs">
+                <div className="w-full min-w-0 overflow-x-scroll rounded-lg border pb-2 [scrollbar-gutter:stable]">
+                  <table className="w-max min-w-[1600px] border-collapse text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground">
                       <tr>
                         {mappedPreviewFields.map((field) => (
@@ -973,9 +972,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 </div>
               ))}
             </div>
-            <div className="max-w-full overflow-hidden rounded-lg border">
-              <div className="max-h-[28rem] overflow-auto">
-                <table className="w-full min-w-[1600px] border-collapse text-left text-sm">
+            <div className="w-full min-w-0 rounded-lg border">
+              <div className="max-h-[28rem] overflow-x-scroll overflow-y-auto [scrollbar-gutter:stable]">
+                <table className="w-max min-w-[1600px] border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-muted/80 text-xs font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
                     <tr>
                       <th className="w-16 whitespace-nowrap border-b px-3 py-2">Row</th>
@@ -1049,7 +1048,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             </div>
           </div>
         )}
-      </ScrollArea>
+      </div>
       {actionBar}
     </>
   );
@@ -1068,7 +1067,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         }}
       />
       {embedded ? (
-        <div className="rounded-xl border bg-card p-5 shadow-sm">{workflow}</div>
+        <div className="min-w-0 overflow-hidden rounded-xl border bg-card p-5 shadow-sm">{workflow}</div>
       ) : (
         <>
           <Button variant="outline" onClick={() => void openDialog()} className="gap-2">

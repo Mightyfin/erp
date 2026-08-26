@@ -25,7 +25,7 @@ function EmployeeImportPage() {
   return (
     <AuthGate>
       <AppShell>
-        <div className="mx-auto max-w-6xl space-y-6 pb-16">
+        <div className="mx-auto min-w-0 max-w-6xl space-y-6 pb-16">
           <PageHeader
             eyebrow="People / employees"
             title="Import employees"
