@@ -25,9 +25,9 @@ public class PayrollStatutoryTests
     /// K37,236/month → max contribution K1,861.80 per party (PwC / NAPSA notice).</summary>
     private static List<ContributionRule> ZambiaNapsaNhima2026() => new()
     {
-        new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
-        new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
-        new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, Floor = 50m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer", Payer = "employer", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
     };
 
@@ -129,8 +129,8 @@ public class PayrollStatutoryTests
     public void Napsa_5PercentCappedAtCeiling()
     {
         var basic = Comp("basic", "earning", "fixed", priority: 10);
-        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true);
-        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "basic", rate: 5m, statutory: true);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true);
+        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "gross", rate: 5m, statutory: true);
         var (_, deductions, _, employerCost, comps) = Evaluate(
             new() { basic, napsaEe, napsaEr }, new() { (basic.Id, "basic", 40000m) },
             ZambiaNapsaNhima2026(), ZambiaPaye2026());
@@ -145,7 +145,7 @@ public class PayrollStatutoryTests
     public void Napsa_BelowCeiling_Full5Percent()
     {
         var basic = Comp("basic", "earning", "fixed", priority: 10);
-        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true);
         var (gross, _, _, _, comps) = Evaluate(
             new() { basic, napsaEe }, new() { (basic.Id, "basic", 15000m) },
             ZambiaNapsaNhima2026(), ZambiaPaye2026());
@@ -169,14 +169,27 @@ public class PayrollStatutoryTests
     }
 
     [Fact]
+    public void Nhima_EmployeeContribution_HonoursMinimumFloor()
+    {
+        var basic = Comp("basic", "earning", "fixed", priority: 10);
+        var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true);
+        var (_, deductions, _, _, comps) = Evaluate(
+            new() { basic, nhimaEe }, new() { (basic.Id, "basic", 4209.68m) },
+            ZambiaNapsaNhima2026(), ZambiaPaye2026());
+
+        Assert.Equal(50m, comps.First(c => c.Code == "nhima-ee").Amount);
+        Assert.Equal(50m, deductions);
+    }
+
+    [Fact]
     public void FullPayslip_IntegratesEarningsStatutoryAndTax()
     {
         var basic = Comp("basic", "earning", "fixed", priority: 10);
         var housing = Comp("housing-allowance", "earning", "fixed", priority: 20);
-        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true);
         var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true);
         var paye = Comp("paye", "tax", "slab", tied: "gross");
-        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "basic", rate: 5m, statutory: true);
+        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "gross", rate: 5m, statutory: true);
         var nhimaEr = Comp("nhima-er", "employer-contribution", "percent-of", tied: "basic", rate: 1m, statutory: true);
 
         var (gross, deductions, net, employerCost, comps) = Evaluate(
@@ -189,14 +202,43 @@ public class PayrollStatutoryTests
         // PAYE on 30,000: 400 + 630 + 37% × 20,800 = 400 + 630 + 7,696 = 8,726
         var payeAmt = comps.First(c => c.Code == "paye").Amount;
         Assert.Equal(8726m, payeAmt);
-        // NAPSA-EE on basic 25,000 × 5% = 1,250 (below ceiling); NHIMA-EE 1% × 25,000 = 250
-        Assert.Equal(1250m, comps.First(c => c.Code == "napsa-ee").Amount);
+        // NAPSA-EE on gross 30,000 × 5% = 1,500 (below ceiling); NHIMA-EE 1% × 25,000 = 250
+        Assert.Equal(1500m, comps.First(c => c.Code == "napsa-ee").Amount);
         Assert.Equal(250m, comps.First(c => c.Code == "nhima-ee").Amount);
-        // Deductions = 8,726 + 1,250 + 250 = 10,226
-        Assert.Equal(10226m, deductions);
-        // Net = 30,000 − 10,226 = 19,774
-        Assert.Equal(19774m, net);
-        // Employer cost = 1,250 (NAPSA-ER 5% × 25,000) + 250 (NHIMA-ER 1% × 25,000) = 1,500
-        Assert.Equal(1500m, employerCost);
+        // Deductions = 8,726 + 1,500 + 250 = 10,476
+        Assert.Equal(10476m, deductions);
+        // Net = 30,000 − 10,476 = 19,524
+        Assert.Equal(19524m, net);
+        // Employer cost = 1,500 (NAPSA-ER 5% × 30,000) + 250 (NHIMA-ER 1% × 25,000) = 1,750
+        Assert.Equal(1750m, employerCost);
+    }
+
+    [Fact]
+    public void FullPayslip_ZraCalculatorScenario_BasicAllowancesAndOtherContribution()
+    {
+        var basic = Comp("basic", "earning", "fixed", priority: 10);
+        var allowance = Comp("allowance", "earning", "fixed", priority: 20);
+        var otherContribution = Comp("other-statutory", "deduction", "fixed", priority: 30, statutory: true);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true, priority: 40);
+        var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 50);
+        var paye = Comp("paye", "tax", "slab", tied: "gross", statutory: true, priority: 60);
+
+        var (gross, deductions, net, _, comps) = Evaluate(
+            new() { basic, allowance, otherContribution, napsaEe, nhimaEe, paye },
+            new()
+            {
+                (basic.Id, "basic", 12000m),
+                (allowance.Id, "allowance", 1000m),
+                (otherContribution.Id, "other-statutory", 1000m),
+            },
+            ZambiaNapsaNhima2026(), ZambiaPaye2026());
+
+        Assert.Equal(13000m, gross);
+        Assert.Equal(2436m, comps.First(c => c.Code == "paye").Amount);
+        Assert.Equal(650m, comps.First(c => c.Code == "napsa-ee").Amount);
+        Assert.Equal(120m, comps.First(c => c.Code == "nhima-ee").Amount);
+        Assert.Equal(1000m, comps.First(c => c.Code == "other-statutory").Amount);
+        Assert.Equal(4206m, deductions);
+        Assert.Equal(8794m, net);
     }
 }

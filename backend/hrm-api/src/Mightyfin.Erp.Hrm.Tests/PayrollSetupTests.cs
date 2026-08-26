@@ -77,7 +77,7 @@ public class PayrollSetupTests
     public async Task UpdateContributionRule_Tightens_Napsa_Ceiling()
     {
         var (service, ctx) = Build();
-        var rule = new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
+        var rule = new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
         ctx.ContributionRules.Add(rule);
         ctx.SaveChanges();
 
