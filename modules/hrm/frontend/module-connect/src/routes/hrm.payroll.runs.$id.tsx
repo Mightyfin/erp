@@ -1645,12 +1645,11 @@ function TopAdminRunControls({
   const canReverse = ["released", "closed"].includes(run.backendStatus);
   const terminal = run.backendStatus === "reversed";
   const reasonReady = reason.trim().length >= 5;
-  const activeTitle =
-    mode === "cancel" ? "Void unreleased payroll run" : "Reverse released payroll run";
+  const activeTitle = mode === "cancel" ? "Cancel this payroll run" : "Reverse this payroll run";
   const activeDescription =
     mode === "cancel"
-      ? "This keeps the run, lines, and audit trail visible, but marks the run terminal so a corrected replacement can be created."
-      : "This creates a draft reversal run for review and release. Paid payroll history is preserved instead of being deleted.";
+      ? "Use this before payslips are released. The run will stay visible, but it will be marked as cancelled so you can create the correct run."
+      : "Use this after payslips are released. The system will create a reversal run instead of deleting payroll history.";
 
   const submit = async () => {
     if (!mode || !reasonReady) return;
@@ -1738,16 +1737,16 @@ function TopAdminRunControls({
             <DialogDescription>{activeDescription}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="payroll-correction-reason">Reason</Label>
+            <Label htmlFor="payroll-correction-reason">Why are you doing this?</Label>
             <Textarea
               id="payroll-correction-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="Explain the mistake and the intended correction."
+              placeholder="Example: wrong pay period was selected, so I need to create the correct run."
               rows={4}
             />
             <p className="text-xs text-muted-foreground">
-              Required for audit. This reason will be visible on the run timeline.
+              This is required. It will show in the payroll history.
             </p>
           </div>
           <DialogFooter>
@@ -1757,7 +1756,7 @@ function TopAdminRunControls({
               disabled={working}
               onClick={() => setMode(null)}
             >
-              Keep run
+              Do not change it
             </Button>
             <Button
               type="button"
@@ -1765,7 +1764,7 @@ function TopAdminRunControls({
               disabled={!reasonReady || working}
               onClick={submit}
             >
-              {working ? "Working..." : mode === "cancel" ? "Void run" : "Create reversal"}
+              {working ? "Working..." : mode === "cancel" ? "Cancel run" : "Create reversal"}
             </Button>
           </DialogFooter>
         </DialogContent>
