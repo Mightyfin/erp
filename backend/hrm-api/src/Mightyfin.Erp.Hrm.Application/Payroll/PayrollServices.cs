@@ -1267,8 +1267,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         if (run.PaymentStatus != "generated") throw new DomainException("payment-not-approvable", $"Payment is in status {run.PaymentStatus}.");
-        if (string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-self-approval", "The person who generated the payment file cannot approve it.");
         run.PaymentStatus = "approved";
         run.PaymentApprovedBySubjectId = actorSubjectId;

@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
@@ -549,6 +550,9 @@ function PaymentWorkflow({
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [reference, setReference] = useState("");
+  const [reportKind, setReportKind] = useState("jv-summary");
+  const [reportFormat, setReportFormat] = useState<"csv" | "pdf">("csv");
+  const [bankFormat, setBankFormat] = useState<"csv">("csv");
   const readinessState = useApi(async () => {
     const raw = (await realApi.payrollPaymentReadiness(run.id)) as Record<string, unknown>;
     const issues = Array.isArray(raw.issues)
@@ -580,7 +584,7 @@ function PaymentWorkflow({
   const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
   const canGenerate =
     run.backendStatus === "released" && status === "not-created" && readiness?.ready === true;
-  const canApprove = status === "generated" && !generatedByMe;
+  const canApprove = status === "generated" && (isTopAdmin || !generatedByMe);
   const canRelease = status === "approved" && (isTopAdmin || (!approvedByMe && !generatedByMe));
   const invoke = async (label: string, action: () => Promise<unknown>) => {
     setBusy(true);
@@ -740,9 +744,9 @@ function PaymentWorkflow({
             {run.paymentFileReference ? ` · ${run.paymentFileReference}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Payment workflow is maker-checker: generate the bank file, approve it, release it to the
-            bank, then reconcile the bank acknowledgement before the run is closed. The generator,
-            approver and bank releaser must be different people.
+            Payment workflow is maker-checker for payroll officers: generate the bank file, approve
+            it, release it to the bank, then reconcile the bank acknowledgement before the run is
+            closed. HR admin can override this when they carry final payroll authority.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
@@ -889,54 +893,40 @@ function PaymentWorkflow({
           bank details. Reports are only available once the run is released or closed. GL accounts
           marked * need mapping before booking.
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+          <div>
+            <Label htmlFor="report-kind" className="text-xs">Report</Label>
+            <Select value={reportKind} onValueChange={setReportKind}>
+              <SelectTrigger id="report-kind" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jv-summary">JV summary</SelectItem>
+                <SelectItem value="jv-detailed">JV detailed</SelectItem>
+                <SelectItem value="dept-summary">Department summary</SelectItem>
+                <SelectItem value="dept-detailed">Department detailed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="report-format" className="text-xs">File type</Label>
+            <Select value={reportFormat} onValueChange={(value) => setReportFormat(value as "csv" | "pdf")}>
+              <SelectTrigger id="report-format" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="csv">CSV</SelectItem>
+                <SelectItem value="pdf">PDF</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="outline"
-            size="sm"
+            className="self-end"
             disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("jv-summary", "csv")}
+            onClick={() => void downloadReport(reportKind, reportFormat)}
           >
-            JV summary CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("jv-summary", "pdf")}
-          >
-            JV summary PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("jv-detailed", "csv")}
-          >
-            JV detailed CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("jv-detailed", "pdf")}
-          >
-            JV detailed PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("dept-summary", "csv")}
-          >
-            By department CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
-            onClick={() => void downloadReport("dept-detailed", "pdf")}
-          >
-            By department PDF
+            <Download className="size-4" aria-hidden /> Download
           </Button>
         </div>
       </div>
@@ -959,15 +949,28 @@ function PaymentWorkflow({
           </Button>
         ) : null}
         {status !== "not-created" ? (
-          <Button variant="outline" disabled={busy} onClick={() => void download("payment")}>
-            Download bank CSV
-          </Button>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <Label htmlFor="bank-format" className="text-xs">Bank file type</Label>
+              <Select value={bankFormat} onValueChange={(value) => setBankFormat(value as "csv")}>
+                <SelectTrigger id="bank-format" className="mt-1 w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="csv">CSV</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" disabled={busy} onClick={() => void download("payment")}>
+              <Download className="size-4" aria-hidden /> Download bank file
+            </Button>
+          </div>
         ) : null}
         {status === "generated" ? (
           <Button
             disabled={busy || !canApprove}
             title={
-              generatedByMe
+              generatedByMe && !isTopAdmin
                 ? "The person who generated the payment file cannot approve it."
                 : undefined
             }
@@ -1000,7 +1003,7 @@ function PaymentWorkflow({
           </Button>
         ) : null}
       </div>
-      {status === "generated" && generatedByMe ? (
+      {status === "generated" && generatedByMe && !isTopAdmin ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
           You generated this payment file. A different payroll or HR approver must approve it.
         </p>

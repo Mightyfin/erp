@@ -281,6 +281,37 @@ public class M27PayrollOperationsTests
     }
 
     [Fact]
+    public async Task PaymentWorkflow_AllowsHrAdminToGenerateApproveAndReleaseBankFile()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment-admin", roles: ["hr_admin"]);
+        var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        ctx.WorkerBankDetails.Add(new WorkerBankDetail
+        {
+            WorkerId = profile.WorkerId, BankName = "Zanaco", BranchCode = "010001",
+            AccountName = "Test Worker", AccountNumber = "001234567890", IsPrimary = true
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Top admin reviewed exception"), default, "admin-user");
+        await service.ApproveRunAsync(run.Id, "top admin reviewed", default, "admin-user");
+        run = await service.ReleaseRunAsync(run.Id, default, "admin-user");
+        run = await service.GeneratePaymentFileAsync(run.Id, default, "admin-user");
+        run = await service.ApprovePaymentFileAsync(run.Id, new("top admin approved"), default, "admin-user");
+        run = await service.ReleasePaymentFileAsync(run.Id, default, "admin-user");
+
+        Assert.Equal("released", run.PaymentStatus);
+        Assert.Equal("admin-user", run.PaymentFileGeneratedBySubjectId);
+        Assert.Equal("admin-user", run.PaymentApprovedBySubjectId);
+        Assert.Equal("admin-user", run.PaymentReleasedBySubjectId);
+    }
+
+    [Fact]
     public async Task PaymentReadiness_ListsWorkersMissingPrimaryBankDetails()
     {
         var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment-readiness");
