@@ -1684,13 +1684,14 @@ function TopAdminRunControls({
 
   return (
     <DetailSection
-      title="Top-admin correction controls"
-      description="Mistakes are fixed with audited exits, not hard deletes."
+      title="Payroll correction controls"
+      description="Fix payroll mistakes safely. The system keeps a record of what changed and who changed it."
     >
       {terminal ? (
         <div className="rounded-lg border bg-surface-muted p-4 text-sm text-muted-foreground">
-          Current backend status: {run.backendStatus.replaceAll("-", " ")}. This run is already
-          terminal. Use the audit trail to inspect who changed it and why.
+          Current payroll status: {run.backendStatus.replaceAll("-", " ")}. This run is already
+          finished, so no correction button is available here. Check the audit trail to see what
+          happened.
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-surface-muted p-4">
@@ -1701,7 +1702,7 @@ function TopAdminRunControls({
             onClick={() => setMode("cancel")}
           >
             <X className="size-4" aria-hidden />
-            Void unreleased run
+            Cancel before payslips are released
           </Button>
           <Button
             type="button"
@@ -1710,15 +1711,15 @@ function TopAdminRunControls({
             onClick={() => setMode("reverse")}
           >
             <RotateCcw className="size-4" aria-hidden />
-            Reverse released run
+            Reverse after payslips are released
           </Button>
           <p className="min-w-[16rem] flex-1 text-sm text-muted-foreground">
-            Current backend status: {run.backendStatus.replaceAll("-", " ")}.
+            Current payroll status: {run.backendStatus.replaceAll("-", " ")}.
             {canCancel
-              ? " Use void before payslips are released."
+              ? " You can cancel this run because payslips have not been released yet."
               : canReverse
-                ? " Use reversal after payslips have been released or the run has closed."
-                : " No correction action is available for this state."}
+                ? " Payslips have already been released, so use a reversal instead of deleting the run."
+                : " No correction action is available for this payroll status."}
           </p>
         </div>
       )}
