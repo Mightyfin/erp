@@ -450,6 +450,23 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setManualRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [fieldKey]: value } : row)));
   }
 
+  function addManualRow() {
+    setManualRows((rows) => {
+      const next = [...(rows.length ? rows : [{}]), {}];
+      setManualPage(pageCount(next.length));
+      return next;
+    });
+  }
+
+  function removeManualRow(rowIndex: number) {
+    setManualRows((rows) => {
+      if (rows.length <= 1) return rows;
+      const next = rows.filter((_, index) => index !== rowIndex);
+      setManualPage((page) => clampPage(page, next.length || 1));
+      return next.length ? next : [{}];
+    });
+  }
+
   function editMappedRowsManually() {
     if (manualRows.length === 0) {
       const seeded = mappedRows;
@@ -616,6 +633,12 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         {step === "preview" && `${accepted} rows ready to import${(preview?.willError as number | undefined) ? `, ${String(preview?.willError)} need correction` : ""}`}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
+        {step === "upload" && entryMode === "manual" ? (
+          <Button variant="outline" size="sm" onClick={addManualRow}>
+            <Plus className="h-4 w-4" />
+            Add row
+          </Button>
+        ) : null}
         {step === "map" ? (
           <Button variant="outline" size="sm" onClick={editMappedRowsManually} disabled={!mappedRows.length}>
             <Pen className="h-4 w-4" />
@@ -634,10 +657,16 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
           </Button>
         ) : null}
         {step === "preview" ? (
-          <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Submit import
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={editMappedRowsManually}>
+              <Pen className="h-4 w-4" />
+              Edit rows
+            </Button>
+            <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Submit import
+            </Button>
+          </>
         ) : null}
       </div>
     </div>
@@ -686,7 +715,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                             {field.label}{field.required && <span className="ml-0.5 text-destructive">*</span>}
                           </th>
                         ))}
-                        <th className="w-12 px-2 py-1.5" aria-label="Actions" />
+                        <th className="sticky right-0 z-10 w-16 bg-muted/95 px-2 py-1.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" aria-label="Actions" />
                       </tr>
                     </thead>
                     <tbody>
@@ -704,13 +733,13 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                               />
                             </td>
                           ))}
-                          <td className="px-2 py-1.5">
+                          <td className="sticky right-0 bg-card px-2 py-1.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               disabled={manualRows.length <= 1}
-                              onClick={() => setManualRows((rows) => rows.filter((_, index) => index !== rowIndex))}
+                              onClick={() => removeManualRow(rowIndex)}
                               aria-label={`Remove row ${rowIndex + 1}`}
                             >
                               <Trash2 className="size-4 text-muted-foreground" aria-hidden />
@@ -729,7 +758,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-muted-foreground">Enter data horizontally, the same way the setup wizard lets you review staff rows.</p>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setManualRows((rows) => [...(rows.length ? rows : [{}]), {}])}>
+                  <Button type="button" variant="outline" size="sm" onClick={addManualRow}>
                     <Plus className="size-4" aria-hidden /> Add row
                   </Button>
                 </div>
