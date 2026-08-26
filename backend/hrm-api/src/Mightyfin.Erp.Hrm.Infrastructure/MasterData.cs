@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Mightyfin.Erp.Hrm.Application;
@@ -191,7 +192,7 @@ public sealed class MasterDataService(HrmDbContext db, IAuthzService authz, IUni
             if (string.IsNullOrWhiteSpace(row.LastName)) Add("lastName", "Last name is required.");
             if (employeeNo is not null && !seenNos.Add(employeeNo)) Add("employeeNo", "Employee number appears more than once in this file.");
             if (!WorkerTypes.Contains(row.WorkerType)) Add("workerType", "Worker type must be employee, contingent, intern, or volunteer.");
-            if (row.StartDate is not null && !DateOnly.TryParse(row.StartDate, out _)) Add("startDate", "Start date must use yyyy-MM-dd.");
+            if (row.StartDate is not null && !TryParseImportDate(row.StartDate, out _)) Add("startDate", "Start date must use DD-MM-YYYY.");
             if (row.OrgUnitCode is not null && !orgs.ContainsKey(row.OrgUnitCode)) Add("orgUnitCode", "Organisation unit code was not found.");
             if (row.LocationCode is not null && !locations.ContainsKey(row.LocationCode)) Add("locationCode", "Location code was not found.");
             ValidateUnique("email", row.Email, seenEmails, workers, x => x.Email, employeeNo, Add);
@@ -342,7 +343,7 @@ public sealed class MasterDataService(HrmDbContext db, IAuthzService authz, IUni
         worker.LocationId = Resolve(row.LocationCode, locations, worker.LocationId);
         worker.Grade = row.Grade ?? worker.Grade;
         worker.JobTitle = row.JobTitle ?? worker.JobTitle;
-        if (row.StartDate is not null) worker.StartDate = DateOnly.Parse(row.StartDate);
+        if (row.StartDate is not null && TryParseImportDate(row.StartDate, out var startDate)) worker.StartDate = startDate;
         if (worker.Status is null or "pre-hire") worker.Status = worker.StartDate is null ? "pre-hire" : "active";
         worker.UpdatedAt = DateTimeOffset.UtcNow;
     }
@@ -377,7 +378,28 @@ public sealed class MasterDataService(HrmDbContext db, IAuthzService authz, IUni
         || Resolve(row.OrgUnitCode, orgs, worker.OrgUnitId) != worker.OrgUnitId
         || Resolve(row.LocationCode, locations, worker.LocationId) != worker.LocationId
         || Different(row.Grade, worker.Grade) || Different(row.JobTitle, worker.JobTitle)
-        || (row.StartDate is not null && DateOnly.Parse(row.StartDate) != worker.StartDate);
+        || (row.StartDate is not null && TryParseImportDate(row.StartDate, out var startDate) && startDate != worker.StartDate);
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
 
     private static bool BulkWouldChange(Worker worker, WorkerBulkChangeRow row, Dictionary<string, OrgUnit> orgs,
         Dictionary<string, WorkLocation> locations, Dictionary<string, Worker> workers) =>

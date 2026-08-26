@@ -114,10 +114,22 @@ public class ImportExportServiceTests
         Assert.Equal("error", preview.Rows[0].Status);
         Assert.Contains("TPIN", preview.Rows[0].Message);
 
-        rows = [new() { ["firstName"] = "A", ["lastName"] = "B", ["email"] = "a@b.com", ["phone"] = "0971234567", ["workerType"] = "employee", ["startDate"] = "02/01/2026" }];
+        rows = [new() { ["firstName"] = "A", ["lastName"] = "B", ["email"] = "a@b.com", ["phone"] = "0971234567", ["workerType"] = "employee", ["startDate"] = "31/31/2026" }];
         preview = await svc.PreviewAsync("workers", "t.csv", "insert", rows, CancellationToken.None);
         Assert.Equal("error", preview.Rows[0].Status);
         Assert.Contains("Start date", preview.Rows[0].Message);
+    }
+
+    [Fact]
+    public async Task Preview_DayFirstStartDateIsAccepted()
+    {
+        var svc = BuildService();
+        var rows = new List<Dictionary<string, string>>
+        {
+            new() { ["firstName"] = "A", ["lastName"] = "B", ["email"] = "a@b.com", ["phone"] = "0971234567", ["workerType"] = "employee", ["startDate"] = "02-01-2026" },
+        };
+        var preview = await svc.PreviewAsync("workers", "t.csv", "insert", rows, CancellationToken.None);
+        Assert.Equal("create", preview.Rows[0].Status);
     }
 
     [Fact]

@@ -248,12 +248,26 @@ public class M41Gap4ImportTests
         var (_, svc, _) = BuildSeeded();
         var rows = new List<Dictionary<string, string>>
         {
-            new() { ["employeeNo"] = "EMP-99", ["basic"] = "1000", ["effectiveFrom"] = "31/07/2026" },
+            new() { ["employeeNo"] = "EMP-99", ["basic"] = "1000", ["effectiveFrom"] = "31/31/2026" },
         };
         var preview = await svc.PreviewAsync("payroll-profiles", "pay.csv", "insert", rows, CancellationToken.None);
         Assert.Equal("error", preview.Rows[0].Status);
         Assert.Contains("Effective date", preview.Rows[0].Message);
     }
+
+    [Fact]
+    public async Task Preview_DayFirstEffectiveDateAccepted()
+    {
+        var (_, svc, _) = BuildSeeded();
+        var rows = new List<Dictionary<string, string>>
+        {
+            new() { ["employeeNo"] = "EMP-99", ["basic"] = "1000", ["effectiveFrom"] = "31-07-2026" },
+        };
+        var preview = await svc.PreviewAsync("payroll-profiles", "pay.csv", "insert", rows, CancellationToken.None);
+        Assert.Equal("create", preview.Rows[0].Status);
+        Assert.Equal("2026-07-31", preview.Rows[0].Resolved?["__effectiveFrom"]);
+    }
+
 
     [Fact]
     public async Task Preview_UnknownPayGroupNameRejected()

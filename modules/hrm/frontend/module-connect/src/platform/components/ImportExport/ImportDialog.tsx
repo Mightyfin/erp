@@ -172,7 +172,7 @@ const DEMO_SCHEMAS: Record<string, ImportSchema> = {
       { key: "nhimaNumber", label: "NHIMA number", required: false, formatNote: "12 digits" },
       { key: "grade", label: "Grade", required: false },
       { key: "jobTitle", label: "Job title", required: false },
-      { key: "startDate", label: "Start date", required: false, formatNote: "YYYY-MM-DD" },
+      { key: "startDate", label: "Start date", required: false, formatNote: "DD-MM-YYYY" },
       { key: "workerType", label: "Worker type", required: false, example: "employee" },
       { key: "orgUnitName", label: "Department", required: false },
     ],
@@ -182,7 +182,7 @@ const DEMO_SCHEMAS: Record<string, ImportSchema> = {
     displayName: "Attendance",
     fields: [
       { key: "employeeNo", label: "Employee number", required: true, naturalKey: true, example: "EMP-0005" },
-      { key: "workDate", label: "Date", required: true, formatNote: "YYYY-MM-DD" },
+      { key: "workDate", label: "Date", required: true, formatNote: "DD-MM-YYYY" },
       { key: "clockIn", label: "Clock in", required: false, formatNote: "HH:mm" },
       { key: "clockOut", label: "Clock out", required: false, formatNote: "HH:mm" },
       { key: "note", label: "Note", required: false },

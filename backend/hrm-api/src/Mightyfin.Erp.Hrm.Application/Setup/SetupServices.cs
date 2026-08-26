@@ -1,3 +1,4 @@
+using System.Globalization;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
 namespace Mightyfin.Erp.Hrm.Application.Setup;
@@ -701,8 +702,8 @@ public sealed class SetupServiceImpl(
                 errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: first name is required."));
             if (string.IsNullOrWhiteSpace(r.LastName))
                 errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: last name is required."));
-            if (r.StartDate is not null && !DateOnly.TryParse(r.StartDate, out _))
-                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: start date '{r.StartDate}' is not a valid date (YYYY-MM-DD)."));
+            if (r.StartDate is not null && !TryParseImportDate(r.StartDate, out _))
+                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: start date '{r.StartDate}' is not a valid date (DD-MM-YYYY)."));
         }
         if (errors.Count != 0)
             throw new DomainException("employees-import-invalid",
@@ -734,7 +735,7 @@ public sealed class SetupServiceImpl(
             }
             sb.AppendJoin(',',
                 CsvEscape(r.FirstName), CsvEscape(r.LastName), CsvEscape(r.Email), CsvEscape(r.Phone),
-                CsvEscape(r.JobTitle), CsvEscape(r.Grade), CsvEscape(r.StartDate), CsvEscape(orgUnit));
+                CsvEscape(r.JobTitle), CsvEscape(r.Grade), CsvEscape(NormalizeImportDate(r.StartDate)), CsvEscape(orgUnit));
             sb.Append('\n');
         }
         if (errors.Count != 0)
@@ -801,6 +802,32 @@ public sealed class SetupServiceImpl(
         try { var addr = new System.Net.Mail.MailAddress(email); return addr.Address == email && email.Contains('@') && email.Length >= 5; }
         catch { return false; }
     }
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
+
+    private static string? NormalizeImportDate(string? value) =>
+        TryParseImportDate(value, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : value;
 
     private static string Slugify(string name)
     {

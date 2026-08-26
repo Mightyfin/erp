@@ -28,7 +28,7 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
     [
         new("employeeNo", "Employee number", true, Example: "EMP-0001"),
         new("workerName", "Employee name", false),
-        new("workDate", "Date", true, FormatNote: "YYYY-MM-DD"),
+        new("workDate", "Date", true, FormatNote: "DD-MM-YYYY"),
         new("clockIn", "Clock in", false, FormatNote: "HH:mm"),
         new("clockOut", "Clock out", false, FormatNote: "HH:mm"),
         new("source", "Source", false),
@@ -61,8 +61,8 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
         if (worker is null)
             return new ImportRowOutcome("error", $"Employee '{employeeNo}' not found.");
 
-        if (!DateOnly.TryParse(workDateStr, out var date))
-            return new ImportRowOutcome("error", $"Date '{workDateStr}' is invalid — use YYYY-MM-DD.");
+        if (!TryParseImportDate(workDateStr, out var date))
+            return new ImportRowOutcome("error", $"Date '{workDateStr}' is invalid — use DD-MM-YYYY.");
 
         if (!string.IsNullOrWhiteSpace(clockInStr) && !TimeOnly.TryParse(clockInStr, out _))
             return new ImportRowOutcome("error", $"Clock-in time '{clockInStr}' is invalid — use HH:mm.");
@@ -83,7 +83,7 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
             {
                 new AttendanceImportRow(
                     row.Get("employeeNo").Trim(),
-                    row.Get("workDate").Trim(),
+                    NormalizeImportDate(row.Get("workDate")) ?? row.Get("workDate").Trim(),
                     OrNull(row.Get("clockIn")),
                     OrNull(row.Get("clockOut")))
             });
@@ -136,6 +136,32 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
             return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         return value;
     }
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
+
+    private static string? NormalizeImportDate(string? value) =>
+        TryParseImportDate(value, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : null;
 
     private static string? OrNull(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
 }

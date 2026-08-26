@@ -2,6 +2,7 @@
 // Reuses the existing worker creation service so imports go through the same
 // lifecycle as the UI form (naming rules, entity/unit resolution, validations),
 // and adds Update mode matched on employee number with NRC/NAPSA fallback.
+using System.Globalization;
 using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
@@ -39,7 +40,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("nhimaNumber", "NHIMA number", false, FormatNote: "e.g. NHIMA-001"),
         new("grade", "Grade", false, Example: "G5"),
         new("jobTitle", "Job title", false, Example: "Accounts Officer"),
-        new("startDate", "Start date", false, FormatNote: "YYYY-MM-DD"),
+        new("startDate", "Start date", false, FormatNote: "DD-MM-YYYY"),
         new("locationId", "Branch", false, FormatNote: "guid of the work location, optional — current work scope is used when empty"),
         new("workerType", "Employment type", true, Example: "employee | contingent | intern | volunteer"),
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
@@ -138,8 +139,8 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         if (!string.IsNullOrWhiteSpace(tpin) && !TpinValid(tpin))
             return new ImportRowOutcome("error", $"TPIN '{tpin}' is not valid — use exactly 10 digits.");
         var startDate = row.Get("startDate").Trim();
-        if (!string.IsNullOrWhiteSpace(startDate) && !DateTime.TryParseExact(startDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _))
-            return new ImportRowOutcome("error", $"Start date '{startDate}' is not valid — use YYYY-MM-DD, e.g. 2026-01-02.");
+        if (!string.IsNullOrWhiteSpace(startDate) && !TryParseImportDate(startDate, out _))
+            return new ImportRowOutcome("error", $"Start date '{startDate}' is not valid — use DD-MM-YYYY, e.g. 02-01-2026.");
 
         // ---- Cross-field uniqueness: never import two rows that collide with each
         // other, so a bad spreadsheet cannot mass-duplicate identities in one batch.
@@ -294,7 +295,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 NhimaNumber: OrNull(row.Get("nhimaNumber")),
                 Grade: OrNull(row.Get("grade")),
                 JobTitle: OrNull(row.Get("jobTitle")),
-                StartDate: OrNull(row.Get("startDate")),
+                StartDate: NormalizedImportDate(row.Get("startDate")),
                 WorkerType: workerType,
                 OrgUnitId: orgUnitId,
                 LocationId: locationId);
@@ -348,8 +349,8 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 WorkerId = workerId,
                 Company = extCompany.Trim(),
                 Role = OrNull(row.Get("ext.role"))?.Trim(),
-                StartDate = NormalizedIso(row.Get("ext.startDate")),
-                EndDate = NormalizedIso(row.Get("ext.endDate")),
+                StartDate = NormalizedImportDate(row.Get("ext.startDate")),
+                EndDate = NormalizedImportDate(row.Get("ext.endDate")),
             }, ct);
         }
 
@@ -366,19 +367,40 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 WorkerId = workerId,
                 OrgUnitName = resolved.Trim(),
                 Role = intRole?.Trim(),
-                StartDate = NormalizedIso(row.Get("int.startDate")),
+                StartDate = NormalizedImportDate(row.Get("int.startDate")),
             }, ct);
         }
     }
 
     private static bool IsNonBlank(string v) => !string.IsNullOrWhiteSpace(v);
 
-    /// Passes through a YYYY-MM-DD value unchanged if it parses, otherwise null.
-    private static string? NormalizedIso(string v)
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
     {
-        var t = v?.Trim();
-        if (string.IsNullOrWhiteSpace(t)) return null;
-        return DateTime.TryParseExact(t, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _) ? t : null;
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
+
+    /// Accepts day-first import dates and returns the ISO value the domain services use.
+    private static string? NormalizedImportDate(string? v)
+    {
+        return TryParseImportDate(v, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : null;
     }
 
     public async Task<List<Dictionary<string, string>>> ExportRowsAsync(string? filter, CancellationToken ct)
