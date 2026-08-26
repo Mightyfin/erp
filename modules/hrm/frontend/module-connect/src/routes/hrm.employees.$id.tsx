@@ -1,6 +1,15 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, FileText, KeyRound, Link2, Printer, Unlink } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Eye,
+  FileText,
+  KeyRound,
+  Link2,
+  Printer,
+  Unlink,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,7 +32,13 @@ import { DetailSection, RecordDetail } from "@/platform/components/RecordDetail"
 import { RestrictedState } from "@/platform/components/States";
 import { MaskedValue } from "@/platform/components/Sensitive";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Field, FieldGrid, SubRecordCard, SubRecords, YesNo } from "@/platform/components/ProfileFields";
+import {
+  Field,
+  FieldGrid,
+  SubRecordCard,
+  SubRecords,
+  YesNo,
+} from "@/platform/components/ProfileFields";
 import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 import { feedback } from "@/platform/feedback";
@@ -38,9 +53,15 @@ export const Route = createFileRoute("/hrm/employees/$id")({
   head: () => ({
     meta: [
       { title: "Employee profile — New World Cargo HRM" },
-      { name: "description", content: "Employment record: identity, contract, pay context, history and related records." },
+      {
+        name: "description",
+        content: "Employment record: identity, contract, pay context, history and related records.",
+      },
       { property: "og:title", content: "Employee profile — New World Cargo HRM" },
-      { property: "og:description", content: "Employment record: identity, contract, pay context, history and related records." },
+      {
+        property: "og:description",
+        content: "Employment record: identity, contract, pay context, history and related records.",
+      },
     ],
   }),
   component: EmployeePage,
@@ -135,7 +156,15 @@ function previewRun(raw: unknown) {
     payGroup: rawText(r, "payGroup", "payGroupName") || "Payroll run",
     currency: rawText(r, "currency") || "ZMW",
     status: (rawText(r, "status") || "draft").toLowerCase(),
-    sortKey: rawText(r, "endDate", "cutoffDate", "postingDate", "createdAt", "updatedAt", "periodLabel"),
+    sortKey: rawText(
+      r,
+      "endDate",
+      "cutoffDate",
+      "postingDate",
+      "createdAt",
+      "updatedAt",
+      "periodLabel",
+    ),
   };
 }
 
@@ -149,7 +178,7 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
       kind:
         componentType === "employer-contribution"
           ? "Employer"
-          : componentType === "deduction"
+          : componentType === "deduction" || componentType === "tax"
             ? "Deduction"
             : "Earning",
       amount: Number(c.amount ?? 0),
@@ -174,14 +203,18 @@ async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview
     .map(previewRun)
     .filter((run) => run.id)
     .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
-  const usableRuns = runs.filter((run) => !["draft", "locked", "cancelled", "void", "reversed"].includes(run.status));
+  const usableRuns = runs.filter(
+    (run) => !["draft", "locked", "cancelled", "void", "reversed"].includes(run.status),
+  );
   const searchRuns = usableRuns.length ? usableRuns : runs;
   const guardrails: string[] = [];
 
   if (!runs.length) {
     return {
       status: "blocked",
-      guardrails: ["No payroll run exists yet. Create a payroll run, calculate it, then preview the employee's payslip."],
+      guardrails: [
+        "No payroll run exists yet. Create a payroll run, calculate it, then preview the employee's payslip.",
+      ],
     };
   }
 
@@ -192,12 +225,22 @@ async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview
     if (!rawLine) continue;
 
     const line = previewLine(rawLine);
-    if (!line.components.length) guardrails.push("The payroll line exists, but no component breakdown was returned by the engine.");
-    if (!line.components.some((c) => c.kind === "Earning")) guardrails.push("No earning component was calculated for this employee.");
-    if (line.gross <= 0) guardrails.push("Gross pay is zero. Check basic salary, earning components and salary profile setup.");
-    if (line.net <= 0) guardrails.push("Net pay is zero or negative. Review deductions before releasing a payslip.");
+    if (!line.components.length)
+      guardrails.push(
+        "The payroll line exists, but no component breakdown was returned by the engine.",
+      );
+    if (!line.components.some((c) => c.kind === "Earning"))
+      guardrails.push("No earning component was calculated for this employee.");
+    if (line.gross <= 0)
+      guardrails.push(
+        "Gross pay is zero. Check basic salary, earning components and salary profile setup.",
+      );
+    if (line.net <= 0)
+      guardrails.push("Net pay is zero or negative. Review deductions before releasing a payslip.");
     if (Math.abs(line.gross - line.deductions - line.net) > 0.05) {
-      guardrails.push("Gross minus deductions does not match net pay. Recalculate the run or review payroll engine output.");
+      guardrails.push(
+        "Gross minus deductions does not match net pay. Recalculate the run or review payroll engine output.",
+      );
     }
     line.flags.forEach((flag) => guardrails.push(flag));
 
@@ -233,7 +276,10 @@ function PayslipPreviewDialog({
     () =>
       open && USE_REAL
         ? latestPayslipPreviewFor(employee.id)
-        : Promise.resolve({ status: "blocked", guardrails: ["Payslip preview is available in the live HRMS."] } as PayslipPreview),
+        : Promise.resolve({
+            status: "blocked",
+            guardrails: ["Payslip preview is available in the live HRMS."],
+          } as PayslipPreview),
     [open, employee.id],
   );
   const preview = state.data;
@@ -244,8 +290,12 @@ function PayslipPreviewDialog({
   const employer = line?.components.filter((component) => component.kind === "Employer") ?? [];
   const profileWarnings: string[] = [
     !profile?.paymentMethod ? "Payment method is not recorded on the employee profile." : "",
-    profile?.paymentMethod === "Bank" && !profile?.bankAccount ? "Bank account is not recorded." : "",
-    profile?.paymentMethod === "Mobile money" && !profile?.mobileMoneyNumber ? "Mobile money number is not recorded." : "",
+    profile?.paymentMethod === "Bank" && !profile?.bankAccount
+      ? "Bank account is not recorded."
+      : "",
+    profile?.paymentMethod === "Mobile money" && !profile?.mobileMoneyNumber
+      ? "Mobile money number is not recorded."
+      : "",
   ].filter((item): item is string => Boolean(item));
 
   return (
@@ -257,12 +307,15 @@ function PayslipPreviewDialog({
             Payslip preview for {employee.fullName}
           </DialogTitle>
           <DialogDescription>
-            Preview comes from the latest calculated payroll line. A PDF is only available after the run is approved and payslips are released.
+            Preview comes from the latest calculated payroll line. A PDF is only available after the
+            run is approved and payslips are released.
           </DialogDescription>
         </DialogHeader>
 
         {state.loading ? (
-          <div className="rounded-md border bg-surface p-6 text-sm text-muted-foreground">Checking payroll output...</div>
+          <div className="rounded-md border bg-surface p-6 text-sm text-muted-foreground">
+            Checking payroll output...
+          </div>
         ) : state.error ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
             {state.error}
@@ -280,7 +333,9 @@ function PayslipPreviewDialog({
               </div>
               <div className="rounded-md border bg-surface p-3">
                 <div className="text-xs text-muted-foreground">Deductions</div>
-                <div className="mt-1 font-semibold">{line ? money(line.deductions, currency) : "—"}</div>
+                <div className="mt-1 font-semibold">
+                  {line ? money(line.deductions, currency) : "—"}
+                </div>
               </div>
               <div className="rounded-md border bg-surface p-3">
                 <div className="text-xs text-muted-foreground">Net pay</div>
@@ -288,7 +343,7 @@ function PayslipPreviewDialog({
               </div>
             </div>
 
-            {(preview?.guardrails.length || profileWarnings.length) ? (
+            {preview?.guardrails.length || profileWarnings.length ? (
               <div className="rounded-md border border-warning/40 bg-warning/10 p-4">
                 <div className="flex items-center gap-2 font-semibold text-warning">
                   <AlertTriangle className="size-4" aria-hidden />
@@ -316,7 +371,8 @@ function PayslipPreviewDialog({
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-surface p-3 text-sm">
                   <span>
-                    Run status: <strong>{preview?.run?.status.replaceAll("-", " ")}</strong> · {preview?.run?.payGroup}
+                    Run status: <strong>{preview?.run?.status.replaceAll("-", " ")}</strong> ·{" "}
+                    {preview?.run?.payGroup}
                   </span>
                   {preview?.run?.id ? (
                     <Button variant="outline" size="sm" asChild>
@@ -335,7 +391,15 @@ function PayslipPreviewDialog({
   );
 }
 
-function ComponentList({ title, items, currency }: { title: string; items: PreviewComponent[]; currency: string }) {
+function ComponentList({
+  title,
+  items,
+  currency,
+}: {
+  title: string;
+  items: PreviewComponent[];
+  currency: string;
+}) {
   return (
     <div className="rounded-md border bg-surface">
       <div className="border-b px-3 py-2 text-sm font-semibold">{title}</div>
@@ -348,9 +412,13 @@ function ComponentList({ title, items, currency }: { title: string; items: Previ
                   <div className="font-medium">{item.label}</div>
                   <div className="text-xs text-muted-foreground">{item.code || "No code"}</div>
                 </div>
-                <div className="whitespace-nowrap font-semibold">{money(item.amount, currency)}</div>
+                <div className="whitespace-nowrap font-semibold">
+                  {money(item.amount, currency)}
+                </div>
               </div>
-              {item.explanation ? <div className="mt-1 text-xs text-muted-foreground">{item.explanation}</div> : null}
+              {item.explanation ? (
+                <div className="mt-1 text-xs text-muted-foreground">{item.explanation}</div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -392,7 +460,10 @@ function ProfileTabs({
 
       {/* ---------------------------------------------------------------- */}
       <TabsContent value="personal" className="mt-4 space-y-4">
-        <DetailSection title="Identity" description="As it appears on the NRC. Payroll and the bank both check the legal name.">
+        <DetailSection
+          title="Identity"
+          description="As it appears on the NRC. Payroll and the bank both check the legal name."
+        >
           <FieldGrid>
             <Field label="Salutation" value={p.salutation} />
             <Field label="Full legal name" value={e.fullName} />
@@ -495,7 +566,11 @@ function ProfileTabs({
             <Field label="Legal entity" value={entities.find((x) => x.id === e.entityId)?.name} />
             <Field label="Branch" value={e.branch} />
             <Field label="Work location" value={e.location} />
-            <Field label="Cost centre" value={p.costCentre} hint="Where this person's cost lands in the ledger." />
+            <Field
+              label="Cost centre"
+              value={p.costCentre}
+              hint="Where this person's cost lands in the ledger."
+            />
           </FieldGrid>
         </DetailSection>
 
@@ -562,7 +637,12 @@ function ProfileTabs({
             empty="No dependants recorded."
             render={(d) => (
               <SubRecordCard title={d.name} meta={`Born ${d.dateOfBirth}`}>
-                {d.relationship} · <YesNo value={d.onMedicalScheme} yes="On the medical scheme" no="Not on the scheme" />
+                {d.relationship} ·{" "}
+                <YesNo
+                  value={d.onMedicalScheme}
+                  yes="On the medical scheme"
+                  no="Not on the scheme"
+                />
               </SubRecordCard>
             )}
           />
@@ -592,9 +672,16 @@ function ProfileTabs({
             items={p.previousEmployment}
             empty="No prior employment recorded."
             render={(pe) => (
-              <SubRecordCard title={`${pe.jobTitle} — ${pe.employer}`} meta={`${pe.from} to ${pe.to}`}>
+              <SubRecordCard
+                title={`${pe.jobTitle} — ${pe.employer}`}
+                meta={`${pe.from} to ${pe.to}`}
+              >
                 Left because: {pe.reasonForLeaving} ·{" "}
-                <YesNo value={pe.referenceChecked} yes="Reference checked" no="Reference not checked" />
+                <YesNo
+                  value={pe.referenceChecked}
+                  yes="Reference checked"
+                  no="Reference not checked"
+                />
               </SubRecordCard>
             )}
           />
@@ -612,8 +699,14 @@ function ProfileTabs({
               <Field label="Last working day" value={p.exit.lastWorkingDay} />
               <Field label="Notice given on" value={p.exit.noticeGivenOn} />
               <Field label="Reason" value={p.exit.reason} wide />
-              <Field label="Exit interview" value={<YesNo value={p.exit.interviewHeld} yes="Held" no="Not yet held" />} />
-              <Field label="Eligible for rehire" value={<YesNo value={p.exit.eligibleForRehire} />} />
+              <Field
+                label="Exit interview"
+                value={<YesNo value={p.exit.interviewHeld} yes="Held" no="Not yet held" />}
+              />
+              <Field
+                label="Eligible for rehire"
+                value={<YesNo value={p.exit.eligibleForRehire} />}
+              />
             </FieldGrid>
             {p.exit.note ? (
               <p className="mt-4 rounded-md border border-info/30 bg-info-soft p-3 text-xs text-info">
@@ -644,7 +737,9 @@ async function loadLiveProfile(id: string): Promise<EmployeeProfile | null> {
     raw = (await realApi.worker(id)) as Record<string, unknown>;
   } catch {
     const page = await realApi.employees();
-    const match = page.items.find((item) => String((item as Record<string, unknown>).employeeNo) === id) as Record<string, unknown> | undefined;
+    const match = page.items.find(
+      (item) => String((item as Record<string, unknown>).employeeNo) === id,
+    ) as Record<string, unknown> | undefined;
     if (!match) return null;
     raw = (await realApi.worker(String(match.id))) as Record<string, unknown>;
   }
@@ -731,7 +826,9 @@ function EmployeePage() {
     } catch (error) {
       feedback.blocked(
         "Payslip printing is blocked.",
-        error instanceof Error ? error.message : "Check payroll permissions and release status, then try again.",
+        error instanceof Error
+          ? error.message
+          : "Check payroll permissions and release status, then try again.",
       );
     } finally {
       setPayslipBusy(null);
@@ -745,217 +842,314 @@ function EmployeePage() {
   return (
     <AuthGate>
       <AppShell>
-      <Async state={state} rows={3}>
-        {(e) =>
-          !e ? (
-            <RestrictedState />
-          ) : (
-            <RecordDetail
-              reference={e.employeeNo}
-              title={e.fullName}
-              subtitle={`${e.jobTitle} · ${e.department}`}
-              status={e.status}
-              owner={e.managerId ? "Assigned manager" : "HR operations"}
-              nextAction={
-                e.status === "Pre-hire"
-                  ? `Complete onboarding before ${e.startDate}`
-                  : e.status === "Notice period"
-                    ? `Clearance and final pay before ${e.endDate}`
-                    : e.endDate
-                      ? `Confirm contract intention before ${e.endDate}`
-                      : "No action required"
-              }
-              primaryAction={
-                <div className="flex flex-wrap justify-end gap-2">
-                  <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={payslipBusy !== null}>
-                    <Eye className="mr-2 size-4" aria-hidden />
-                    Preview payslip
-                  </Button>
-                  <Button variant="outline" onClick={() => void printLatestPayslip(e.id)} disabled={payslipBusy !== null}>
-                    <Printer className="mr-2 size-4" aria-hidden />
-                    {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
-                  </Button>
-                  <Button asChild>
-                    <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>Edit details</Link>
-                  </Button>
-                </div>
-              }
-              secondaryActions={
-                <>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to="/hrm/leave/new">Request leave</Link>
-                  </Button>
-                  {!USE_REAL ? <Button variant="outline" size="sm" onClick={() => setConfirmEnd(true)}>
-                    End employment
-                  </Button> : null}
-                </>
-              }
-              summary={[
-                { label: "Employee number", value: e.employeeNo },
-                { label: "Employment type", value: e.employmentType },
-                { label: "Legal entity", value: USE_REAL ? "Managed on assignment" : entities.find((x) => x.id === e.entityId)?.name },
-                { label: "Branch", value: e.branch },
-                { label: "Location", value: e.location },
-                { label: "Start date", value: e.startDate },
-                { label: "End date", value: e.endDate ?? <span className="text-muted-foreground">Not applicable</span> },
-                { label: "Grade", value: e.grade },
-                { label: "Work email", value: e.email ?? <span className="text-muted-foreground">Not recorded</span> },
-                { label: "Phone", value: e.phone ?? <span className="text-muted-foreground">Not recorded</span> },
-                {
-                  label: "Leave available",
-                  value: leaveSummary
-                    ? `${leaveSummary.available} days`
-                    : <span className="text-muted-foreground">Not applicable</span>,
-                },
-                {
-                  label: "Future-effective change",
-                  value: e.futureEffective ? `${e.futureEffective.change} from ${e.futureEffective.effectiveFrom}` : <span className="text-muted-foreground">None scheduled</span>,
-                },
-              ]}
-              timeline={
-                <StatusTimeline
-                  title="Employment history"
-                  events={[
-                    { id: "e1", at: `${e.startDate}T09:00:00Z`, actor: "HR operations", event: "Hired", after: e.jobTitle },
-                    ...(!USE_REAL ? [{ id: "e2", at: "2025-01-01T09:00:00Z", actor: "System", event: "Annual salary review applied", before: "Grade " + e.grade, after: "Grade " + e.grade, evidence: { label: "Review letter", href: "#" } }] : []),
-                    ...(e.futureEffective
-                      ? [{ id: "e3", at: `${e.futureEffective.effectiveFrom}T09:00:00Z`, actor: "Mutale Kabwe", event: "Scheduled change (future-effective)", after: e.futureEffective.change }]
-                      : []),
-                  ]}
-                />
-              }
-              related={
-                <>
-                  <Link to="/hrm/leave" className="block text-primary underline underline-offset-2">Leave requests</Link>
-                  <Link to="/hrm/attendance" className="block text-primary underline underline-offset-2">Attendance corrections</Link>
-                  <Link to="/hrm/payslips" className="block text-primary underline underline-offset-2">Payslips</Link>
-                </>
-              }
-            >
-              <Async state={profileState} rows={4}>
-                {(profile) =>
-                  profile ? (
-                    <ProfileTabs employee={e} profile={profile} />
-                  ) : (
-                    <DetailSection
-                      title="Full profile"
-                      description="Only the directory record exists for this person."
-                    >
-                      <p className="text-sm text-muted-foreground">
-                        Personal details, next of kin and statutory registrations have not been
-                        captured yet. Payroll cannot pay someone without a bank account and a NAPSA
-                        number, so complete the profile before the next run.
-                      </p>
-                      <Button className="mt-3" asChild>
-                        <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>
-                          Complete the profile
-                        </Link>
-                      </Button>
-                    </DetailSection>
-                  )
+        <Async state={state} rows={3}>
+          {(e) =>
+            !e ? (
+              <RestrictedState />
+            ) : (
+              <RecordDetail
+                reference={e.employeeNo}
+                title={e.fullName}
+                subtitle={`${e.jobTitle} · ${e.department}`}
+                status={e.status}
+                owner={e.managerId ? "Assigned manager" : "HR operations"}
+                nextAction={
+                  e.status === "Pre-hire"
+                    ? `Complete onboarding before ${e.startDate}`
+                    : e.status === "Notice period"
+                      ? `Clearance and final pay before ${e.endDate}`
+                      : e.endDate
+                        ? `Confirm contract intention before ${e.endDate}`
+                        : "No action required"
                 }
-              </Async>
-
-              {USE_REAL && hrAdmin ? (
-                <DetailSection title="Account linking" description="Self-service works only when the employee record is linked to an identity.">
-                  <div className="flex flex-wrap items-center gap-3">
-                    {subjectId ? (
-                      <span className="flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-xs font-mono">
-                        <Link2 className="size-3.5 text-muted-foreground" aria-hidden />
-                        Linked to identity {subjectId.slice(0, 8)}…
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 rounded border border-warning bg-warning/10 px-2 py-1 text-xs">
-                        <Unlink className="size-3.5" aria-hidden />
-                        Not linked — leave, documents, letters and payslips are unavailable for this person.
-                      </span>
-                    )}
+                primaryAction={
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Button
                       variant="outline"
-                      size="sm"
-                      disabled={linkBusy}
-                      onClick={() => {
-                        setLinkSubject(subjectId ?? "");
-                        setLinkOpen(true);
-                      }}
+                      onClick={() => setPreviewOpen(true)}
+                      disabled={payslipBusy !== null}
                     >
-                      <KeyRound className="size-4" aria-hidden />
-                      {subjectId ? "Change account" : "Link account"}
+                      <Eye className="mr-2 size-4" aria-hidden />
+                      Preview payslip
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void printLatestPayslip(e.id)}
+                      disabled={payslipBusy !== null}
+                    >
+                      <Printer className="mr-2 size-4" aria-hidden />
+                      {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
+                    </Button>
+                    <Button asChild>
+                      <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>
+                        Edit details
+                      </Link>
                     </Button>
                   </div>
-                </DetailSection>
-              ) : null}
-
-              <PayslipPreviewDialog
-                employee={e}
-                profile={profileState.data}
-                open={previewOpen}
-                onOpenChange={setPreviewOpen}
-              />
-
-              <ConfirmDialog
-                open={linkOpen}
-                onOpenChange={setLinkOpen}
-                title={subjectId ? `Change the linked identity for ${e.fullName}?` : `Link an identity to ${e.fullName}?`}
-                consequence="The employee's self-service surfaces (leave, documents, letters, payslips) will attach to this identity. An identity can only be linked to one employee record."
-                detail={
-                  <ul className="list-inside list-disc space-y-1">
-                    <li>Paste the Keycloak identity id (the token "sub" claim) of the user.</li>
-                    <li>If the identity is already linked elsewhere, linking here will transfer it.</li>
-                    <li>Unlinking is done by clearing the field in the edit form.</li>
-                  </ul>
                 }
-                confirmLabel="Save link"
-                onConfirm={() => {
-                  const value = linkSubject.trim();
-                  if (!value) {
-                    feedback.blocked("Identity id is empty.", 'Paste the identity id (the token "sub" claim) to continue.');
-                    return;
+                secondaryActions={
+                  <>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to="/hrm/leave/new">Request leave</Link>
+                    </Button>
+                    {!USE_REAL ? (
+                      <Button variant="outline" size="sm" onClick={() => setConfirmEnd(true)}>
+                        End employment
+                      </Button>
+                    ) : null}
+                  </>
+                }
+                summary={[
+                  { label: "Employee number", value: e.employeeNo },
+                  { label: "Employment type", value: e.employmentType },
+                  {
+                    label: "Legal entity",
+                    value: USE_REAL
+                      ? "Managed on assignment"
+                      : entities.find((x) => x.id === e.entityId)?.name,
+                  },
+                  { label: "Branch", value: e.branch },
+                  { label: "Location", value: e.location },
+                  { label: "Start date", value: e.startDate },
+                  {
+                    label: "End date",
+                    value: e.endDate ?? (
+                      <span className="text-muted-foreground">Not applicable</span>
+                    ),
+                  },
+                  { label: "Grade", value: e.grade },
+                  {
+                    label: "Work email",
+                    value: e.email ?? <span className="text-muted-foreground">Not recorded</span>,
+                  },
+                  {
+                    label: "Phone",
+                    value: e.phone ?? <span className="text-muted-foreground">Not recorded</span>,
+                  },
+                  {
+                    label: "Leave available",
+                    value: leaveSummary ? (
+                      `${leaveSummary.available} days`
+                    ) : (
+                      <span className="text-muted-foreground">Not applicable</span>
+                    ),
+                  },
+                  {
+                    label: "Future-effective change",
+                    value: e.futureEffective ? (
+                      `${e.futureEffective.change} from ${e.futureEffective.effectiveFrom}`
+                    ) : (
+                      <span className="text-muted-foreground">None scheduled</span>
+                    ),
+                  },
+                ]}
+                timeline={
+                  <StatusTimeline
+                    title="Employment history"
+                    events={[
+                      {
+                        id: "e1",
+                        at: `${e.startDate}T09:00:00Z`,
+                        actor: "HR operations",
+                        event: "Hired",
+                        after: e.jobTitle,
+                      },
+                      ...(!USE_REAL
+                        ? [
+                            {
+                              id: "e2",
+                              at: "2025-01-01T09:00:00Z",
+                              actor: "System",
+                              event: "Annual salary review applied",
+                              before: "Grade " + e.grade,
+                              after: "Grade " + e.grade,
+                              evidence: { label: "Review letter", href: "#" },
+                            },
+                          ]
+                        : []),
+                      ...(e.futureEffective
+                        ? [
+                            {
+                              id: "e3",
+                              at: `${e.futureEffective.effectiveFrom}T09:00:00Z`,
+                              actor: "Mutale Kabwe",
+                              event: "Scheduled change (future-effective)",
+                              after: e.futureEffective.change,
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                }
+                related={
+                  <>
+                    <Link
+                      to="/hrm/leave"
+                      className="block text-primary underline underline-offset-2"
+                    >
+                      Leave requests
+                    </Link>
+                    <Link
+                      to="/hrm/attendance"
+                      className="block text-primary underline underline-offset-2"
+                    >
+                      Attendance corrections
+                    </Link>
+                    <Link
+                      to="/hrm/payslips"
+                      className="block text-primary underline underline-offset-2"
+                    >
+                      Payslips
+                    </Link>
+                  </>
+                }
+              >
+                <Async state={profileState} rows={4}>
+                  {(profile) =>
+                    profile ? (
+                      <ProfileTabs employee={e} profile={profile} />
+                    ) : (
+                      <DetailSection
+                        title="Full profile"
+                        description="Only the directory record exists for this person."
+                      >
+                        <p className="text-sm text-muted-foreground">
+                          Personal details, next of kin and statutory registrations have not been
+                          captured yet. Payroll cannot pay someone without a bank account and a
+                          NAPSA number, so complete the profile before the next run.
+                        </p>
+                        <Button className="mt-3" asChild>
+                          <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>
+                            Complete the profile
+                          </Link>
+                        </Button>
+                      </DetailSection>
+                    )
                   }
-                  setLinkBusy(true);
-                  realApi
-                    .updateWorker(e.id, { subjectId: value })
-                    .then(() => {
-                      setLinkBusy(false);
-                      setLinkOpen(false);
-                      setSubjectId(value);
-                      feedback.submitted(
-                        `Identity linked to ${e.fullName}.`,
-                        "The account is now connected to this employee record. Self-service surfaces will show their own data on the next visit.",
+                </Async>
+
+                {USE_REAL && hrAdmin ? (
+                  <DetailSection
+                    title="Account linking"
+                    description="Self-service works only when the employee record is linked to an identity."
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      {subjectId ? (
+                        <span className="flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-xs font-mono">
+                          <Link2 className="size-3.5 text-muted-foreground" aria-hidden />
+                          Linked to identity {subjectId.slice(0, 8)}…
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 rounded border border-warning bg-warning/10 px-2 py-1 text-xs">
+                          <Unlink className="size-3.5" aria-hidden />
+                          Not linked — leave, documents, letters and payslips are unavailable for
+                          this person.
+                        </span>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={linkBusy}
+                        onClick={() => {
+                          setLinkSubject(subjectId ?? "");
+                          setLinkOpen(true);
+                        }}
+                      >
+                        <KeyRound className="size-4" aria-hidden />
+                        {subjectId ? "Change account" : "Link account"}
+                      </Button>
+                    </div>
+                  </DetailSection>
+                ) : null}
+
+                <PayslipPreviewDialog
+                  employee={e}
+                  profile={profileState.data}
+                  open={previewOpen}
+                  onOpenChange={setPreviewOpen}
+                />
+
+                <ConfirmDialog
+                  open={linkOpen}
+                  onOpenChange={setLinkOpen}
+                  title={
+                    subjectId
+                      ? `Change the linked identity for ${e.fullName}?`
+                      : `Link an identity to ${e.fullName}?`
+                  }
+                  consequence="The employee's self-service surfaces (leave, documents, letters, payslips) will attach to this identity. An identity can only be linked to one employee record."
+                  detail={
+                    <ul className="list-inside list-disc space-y-1">
+                      <li>Paste the Keycloak identity id (the token "sub" claim) of the user.</li>
+                      <li>
+                        If the identity is already linked elsewhere, linking here will transfer it.
+                      </li>
+                      <li>Unlinking is done by clearing the field in the edit form.</li>
+                    </ul>
+                  }
+                  confirmLabel="Save link"
+                  onConfirm={() => {
+                    const value = linkSubject.trim();
+                    if (!value) {
+                      feedback.blocked(
+                        "Identity id is empty.",
+                        'Paste the identity id (the token "sub" claim) to continue.',
                       );
-                    })
-                    .catch((err) => {
-                      setLinkBusy(false);
-                      const apiErr = err as { message?: string };
-                      feedback.blocked("Link failed.", String(apiErr?.message ?? "The identity could not be linked — it may already belong to another employee record or not exist."));
-                    });
-                }}
-              />
-              <ConfirmDialog
-                open={confirmEnd}
-                onOpenChange={setConfirmEnd}
-                title={`End employment for ${e.fullName}?`}
-                consequence="This starts offboarding. It does not delete anything — the record is retained for the statutory period and stays payable for any final settlement."
-                detail={
-                  <ul className="list-inside list-disc space-y-1">
-                    <li>Access is revoked on the last working day, not today.</li>
-                    <li>Final pay, leave settlement and any outstanding advance are calculated first.</li>
-                    <li>Assets on loan are listed for return.</li>
-                  </ul>
-                }
-                confirmLabel="Start offboarding"
-                onConfirm={() =>
-                  feedback.submitted(
-                    `Offboarding started for ${e.fullName}.`,
-                    "Clearance checklist created. Final pay is calculated in the next run.",
-                  )
-                }
-              />
-            </RecordDetail>
-          )
-        }
-      </Async>
-    </AppShell>
-      </AuthGate>
+                      return;
+                    }
+                    setLinkBusy(true);
+                    realApi
+                      .updateWorker(e.id, { subjectId: value })
+                      .then(() => {
+                        setLinkBusy(false);
+                        setLinkOpen(false);
+                        setSubjectId(value);
+                        feedback.submitted(
+                          `Identity linked to ${e.fullName}.`,
+                          "The account is now connected to this employee record. Self-service surfaces will show their own data on the next visit.",
+                        );
+                      })
+                      .catch((err) => {
+                        setLinkBusy(false);
+                        const apiErr = err as { message?: string };
+                        feedback.blocked(
+                          "Link failed.",
+                          String(
+                            apiErr?.message ??
+                              "The identity could not be linked — it may already belong to another employee record or not exist.",
+                          ),
+                        );
+                      });
+                  }}
+                />
+                <ConfirmDialog
+                  open={confirmEnd}
+                  onOpenChange={setConfirmEnd}
+                  title={`End employment for ${e.fullName}?`}
+                  consequence="This starts offboarding. It does not delete anything — the record is retained for the statutory period and stays payable for any final settlement."
+                  detail={
+                    <ul className="list-inside list-disc space-y-1">
+                      <li>Access is revoked on the last working day, not today.</li>
+                      <li>
+                        Final pay, leave settlement and any outstanding advance are calculated
+                        first.
+                      </li>
+                      <li>Assets on loan are listed for return.</li>
+                    </ul>
+                  }
+                  confirmLabel="Start offboarding"
+                  onConfirm={() =>
+                    feedback.submitted(
+                      `Offboarding started for ${e.fullName}.`,
+                      "Clearance checklist created. Final pay is calculated in the next run.",
+                    )
+                  }
+                />
+              </RecordDetail>
+            )
+          }
+        </Async>
+      </AppShell>
+    </AuthGate>
   );
 }
