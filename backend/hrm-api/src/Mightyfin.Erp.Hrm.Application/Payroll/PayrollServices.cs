@@ -986,7 +986,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status is not "calculated" and not "in-review")
             throw new DomainException("run-not-review-ready", $"Run is in status {run.Status}; it must be calculated (and submitted) before approval.");
-        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal)
+            && !authz.IsRole("hr_admin"))
             throw new DomainException("run-self-approval", "The person who prepared this run cannot approve it. Send it to a separate payroll or HR approver.");
         // M46: a branch payroll draft flows UP for approval — the approver of a
         // branch run must be org-wide HR (no branch assignments). Confined

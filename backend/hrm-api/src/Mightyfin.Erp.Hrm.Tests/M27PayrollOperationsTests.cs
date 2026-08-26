@@ -96,7 +96,7 @@ public class M27PayrollOperationsTests
     [Fact]
     public async Task RunApproval_EnforcesSegregation_AndOutstandingExceptionDecision()
     {
-        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls");
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls", roles: ["payroll"]);
         var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
         var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer-1");
         await service.LockRunAsync(run.Id, default, "preparer-1");
@@ -117,6 +117,25 @@ public class M27PayrollOperationsTests
 
         Assert.Equal("approved", approved.Status);
         Assert.Equal("approver-2", approved.ApprovedBySubjectId);
+        Assert.Equal(0, approved.ExceptionCount);
+    }
+
+    [Fact]
+    public async Task RunApproval_AllowsHrAdminEmergencySelfApprovalAfterExceptionsAreCleared()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-top-admin-self-approval", roles: ["hr_admin"]);
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "top-admin");
+        await service.LockRunAsync(run.Id, default, "top-admin");
+        await service.CalculateRunAsync(run.Id, default, "top-admin");
+
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        await service.DecideExceptionAsync(run.Id, line.Id,
+            new PayrollExceptionDecisionRequest("waived", "Top-admin setup override"), default, "separate-reviewer");
+        var approved = await service.ApproveRunAsync(run.Id, "Emergency top-admin approval during setup", default, "top-admin");
+
+        Assert.Equal("approved", approved.Status);
+        Assert.Equal("top-admin", approved.ApprovedBySubjectId);
         Assert.Equal(0, approved.ExceptionCount);
     }
 

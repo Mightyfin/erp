@@ -1864,10 +1864,10 @@ function RunDetail() {
               USE_REAL
                 ? run.backendStatus === "calculated" || run.backendStatus === "in-review"
                 : run.status === "Calculated" || run.status === "In review";
-            const canApprove = !selfApproval && blocking.length === 0;
+            const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
+            const canApprove = (!selfApproval || isTopAdmin) && blocking.length === 0;
             const firstLiveExample = lines.data?.find((line) => line.components.length)?.components[0];
             const firstLiveLine = lines.data?.find((line) => line.components.length);
-            const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
 
             return (
               <RecordDetail
@@ -2160,7 +2160,7 @@ function RunDetail() {
                           calculate the run before sending it for approval.
                         </p>
                       </div>
-                    ) : selfApproval ? (
+                    ) : selfApproval && !isTopAdmin ? (
                       <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
                         <p className="flex items-start gap-2 text-sm font-medium text-danger">
                           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -2179,6 +2179,52 @@ function RunDetail() {
                           are both recorded.
                         </p>
                       </div>
+                    ) : selfApproval && isTopAdmin ? (
+                      <ApprovalPanel
+                        decisionSummary={`Emergency top-admin approval for ${run.period}: you prepared this run, but your HR administrator role is allowed to override maker-checker during setup or correction. Net pay ${money(run.totals.net, run.currency)}.`}
+                        policy={[
+                          {
+                            id: "p1",
+                            label: "Top-admin override",
+                            outcome: "warn",
+                            detail:
+                              "You prepared this run. Approval is allowed because your account has the HR administrator role and the action is written to the audit trail.",
+                          },
+                          {
+                            id: "p2",
+                            label: "Blocking exceptions",
+                            outcome: "pass",
+                            detail: "None outstanding.",
+                          },
+                        ]}
+                        conflicts={[]}
+                        onDecision={async (decision, reason) => {
+                          if (decision === "approve") {
+                            try {
+                              await realApi.payrollRunApprove(
+                                run.id,
+                                reason || "Top-admin self-approval override during controlled setup",
+                              );
+                              feedback.submitted(
+                                `${run.period} approved by top admin.`,
+                                "The override reason was recorded in the payroll audit trail.",
+                              );
+                              await state.reload();
+                              return;
+                            } catch (error) {
+                              feedback.blocked(
+                                "Approval failed",
+                                error instanceof Error ? error.message : "Unknown error.",
+                              );
+                              return;
+                            }
+                          }
+                          feedback.note(
+                            "Decision not applied.",
+                            reason || "Approve the run only when the top-admin override is intended.",
+                          );
+                        }}
+                      />
                     ) : blocking.length ? (
                       <div className="rounded-lg border border-warning/40 bg-warning-soft p-4">
                         <p className="flex items-start gap-2 text-sm font-medium text-warning">

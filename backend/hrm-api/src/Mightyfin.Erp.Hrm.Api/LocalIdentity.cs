@@ -379,7 +379,7 @@ internal static class LocalIdentityBootstrap
             NormalizedEmail = email.ToUpperInvariant(),
             DisplayName = config["HRM:LocalAdminDisplayName"]?.Trim() ?? "New World Cargo Administrator",
             PasswordHash = LocalPasswordHash.Hash(password),
-            RolesCsv = "hr_admin",
+            RolesCsv = "hr_admin,employee,hr_ops,finance_approver,investigator,payroll,manager",
             MustChangePassword = true,
         };
         db.LocalUsers.Add(user);

@@ -22,11 +22,17 @@ public class PayrollEngineTests
             => Task.FromResult(url);
     }
 
-    internal static (PayrollServiceImpl service, HrmDbContext ctx) Build(string url = "https://storage.example/payslip.pdf", string tenant = "test-tenant")
+    internal static (PayrollServiceImpl service, HrmDbContext ctx) Build(
+        string url = "https://storage.example/payslip.pdf",
+        string tenant = "test-tenant",
+        string[]? roles = null)
     {
         var ctx = TestDbContextFactory.Create(tenant);
         var repo = new PayrollRepository(ctx);
-        var service = new PayrollServiceImpl(repo, new PermissiveAuthz(), new FakeDocumentService(url));
+        var service = new PayrollServiceImpl(
+            repo,
+            new PermissiveAuthz { Roles = roles ?? ["hr_ops", "hr_admin", "payroll", "employee"] },
+            new FakeDocumentService(url));
         return (service, ctx);
     }
 
