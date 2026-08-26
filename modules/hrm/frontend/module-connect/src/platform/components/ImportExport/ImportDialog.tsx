@@ -888,6 +888,19 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
 
         {step === "preview" && preview && schema && (
           <div className="space-y-3 p-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface-muted/40 p-3">
+              <div>
+                <p className="text-sm font-medium">Ready to finish import</p>
+                <p className="text-xs text-muted-foreground">
+                  {accepted} rows are ready to upload
+                  {(preview.willError as number | undefined) ? ` · ${String(preview.willError)} rows need correction` : ""}
+                </p>
+              </div>
+              <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Confirm import
+              </Button>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: "Total rows", value: String(preview.totalRows ?? 0), cls: "" },
