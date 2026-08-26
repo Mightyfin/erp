@@ -657,6 +657,8 @@ export const realApi = {
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),
+  updatePayrollRun: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/runs/${id}`, body),
   calculatePayrollRun: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/calculate`, null),
   lockPayrollRun: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lock`, null),

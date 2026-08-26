@@ -3,6 +3,8 @@ import { useState } from "react";
 import { AlertTriangle, Ban, Info, Lock, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/mock/payrollrun";
 import type { RunLine } from "@/mock/payrollrun";
 import { isEditableSource } from "@/mock/payrollrun";
@@ -53,6 +55,9 @@ function adaptRunDisplay(raw: unknown): {
   status: string;
   currency: string;
   dueDate: string;
+  payPeriodId: string;
+  payGroupId: string;
+  approvalNote: string;
   excluded: { employee: string; reason: string }[];
 } {
   const r = (raw ?? {}) as Record<string, unknown>;
@@ -65,11 +70,91 @@ function adaptRunDisplay(raw: unknown): {
     status: String(r.status ?? "draft"),
     currency: String(r.currency ?? "ZMW"),
     dueDate: r.dueDate ? String(r.dueDate) : "",
+    payPeriodId: String(r.payPeriodId ?? ""),
+    payGroupId: String(r.payGroupId ?? ""),
+    approvalNote: String(r.approvalNote ?? ""),
     excluded: excluded.map((x) => ({
       employee: String(x.employee ?? x.workerName ?? ""),
       reason: String(x.reason ?? x.exceptionReason ?? ""),
     })),
   };
+}
+
+type OptionRow = Record<string, unknown>;
+
+const asArray = (raw: unknown): unknown[] =>
+  Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && "items" in raw
+      ? ((raw as { items?: unknown[] }).items ?? [])
+      : [];
+
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+function DraftRunFields({
+  values,
+  setValue,
+}: {
+  values: Record<string, string>;
+  setValue: (name: string, value: string) => void;
+}) {
+  const groups = useApi(realApi.payrollPayGroups, []);
+  const periods = useApi(
+    async () => (values.payGroupId ? realApi.payrollPayGroupPeriods(values.payGroupId) : []),
+    [values.payGroupId],
+  );
+  const groupRows = asArray(groups.data) as OptionRow[];
+  const periodRows = asArray(periods.data) as OptionRow[];
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div>
+        <Label htmlFor="payGroupId">Pay group</Label>
+        <Select
+          value={values.payGroupId || undefined}
+          onValueChange={(value) => {
+            setValue("payGroupId", value);
+            setValue("payPeriodId", "");
+          }}
+        >
+          <SelectTrigger id="payGroupId" className="mt-1">
+            <SelectValue placeholder="Select pay group" />
+          </SelectTrigger>
+          <SelectContent>
+            {groupRows.map((row) => (
+              <SelectItem key={text(row.id)} value={text(row.id)}>
+                {text(row.name || row.code || "Pay group")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label htmlFor="payPeriodId">Pay period</Label>
+        <Select value={values.payPeriodId || undefined} onValueChange={(value) => setValue("payPeriodId", value)}>
+          <SelectTrigger id="payPeriodId" className="mt-1">
+            <SelectValue placeholder={periods.loading ? "Loading periods..." : "Select pay period"} />
+          </SelectTrigger>
+          <SelectContent>
+            {periodRows.map((row) => (
+              <SelectItem key={text(row.id)} value={text(row.id)}>
+                {text(row.periodLabel)} ({text(row.status)})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {values.payGroupId && !periods.loading && periodRows.length === 0 ? (
+          <p className="mt-1 text-xs text-warning">No periods are configured for this pay group.</p>
+        ) : null}
+      </div>
+
+      <p className="flex gap-1.5 text-xs text-muted-foreground sm:col-span-2">
+        <Info className="mt-0.5 size-3 shrink-0" aria-hidden />
+        Draft runs can change pay group and period. Once calculated, change the input data or use line corrections.
+      </p>
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -224,7 +309,7 @@ function LineRow({
         {locked ? (
           <p className="mt-1.5 flex gap-1.5 text-xs text-warning">
             <Lock className="mt-0.5 size-3 shrink-0" aria-hidden />
-            This run is approved, so pay lines are frozen. Reopen it to adjust anyone.
+            This run is not in the calculated stage, so pay lines cannot be changed here.
           </p>
         ) : null}
       </div>
@@ -234,7 +319,7 @@ function LineRow({
 
 /* -------------------------------------------------------------------------- */
 
-const lockedStatuses = new Set(["Approved", "Paid", "Closed"]);
+const lockedStatuses = new Set(["approved", "released", "paid", "closed", "reversed", "in-review"]);
 
 function EditRun() {
   const { id } = Route.useParams();
@@ -264,10 +349,24 @@ function EditRun() {
         {(run) => {
           if (!run) return <RestrictedState />;
 
-          const locked = lockedStatuses.has(run.status);
+          const canCorrectLines = run.status === "calculated";
+          const locked = !canCorrectLines || lockedStatuses.has(run.status);
           const lines: RunLine[] = USE_REAL ? (linesState.data ?? []) : [];
 
           const sections: EditSection[] = [
+            ...(run.status === "draft"
+              ? [
+                  {
+                    id: "draft",
+                    title: "Draft setup",
+                    description:
+                      "Choose the payroll period and pay group before calculation starts.",
+                    render: ({ values, setValue }) => (
+                      <DraftRunFields values={values} setValue={setValue} />
+                    ),
+                  } satisfies EditSection,
+                ]
+              : []),
             {
               id: "lines",
               title: "Pay lines",
@@ -346,19 +445,10 @@ function EditRun() {
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={locked || !USE_REAL}
-                          onClick={() =>
-                            setAdjustments((s) => {
-                              const reasonKey = `excl-${l.employeeId}`;
-                              const next = { ...s };
-                              if (next[reasonKey]) return next;
-                              next[reasonKey] = { label: "", amount: "0" };
-                              return next;
-                            })
-                          }
+                          disabled
                         >
                           <Ban className="size-3.5" aria-hidden />
-                          Mark for exclusion
+                          Exclusion endpoint pending
                         </Button>
                       </li>
                     ))}
@@ -383,8 +473,8 @@ function EditRun() {
                   {USE_REAL ? (
                     <p className="flex gap-1.5 text-xs text-muted-foreground">
                       <Info className="mt-0.5 size-3 shrink-0" aria-hidden />
-                      Exclusions are recorded as exclusions on the next calculation; they do not
-                      remove anyone from the run that has already been calculated.
+                      Payroll exclusion needs a dedicated backend action so it can be audited separately.
+                      For now, remove a worker from the source payroll profile before recalculating.
                     </p>
                   ) : null}
                 </div>
@@ -413,15 +503,17 @@ function EditRun() {
               description={`${run.entityName}. Adjustments are persisted as one-off corrections on the run and are recorded in its audit trail.`}
               sections={sections}
               initial={{
+                payGroupId: run.payGroupId,
+                payPeriodId: run.payPeriodId,
                 payGroup: run.payGroup,
                 cutoff: "",
                 payDate: "",
                 dueDate: run.dueDate,
-                approverNote: "",
+                approverNote: run.approvalNote,
               }}
               extraChanges={[
                 ...Object.entries(adjustments)
-                  .filter(([, a]) => Number(a.amount) || 0 !== 0 || a.label.trim())
+                  .filter(([, a]) => (Number(a.amount) || 0) !== 0 || a.label.trim())
                   .map(([key, a]) => {
                     if (key.startsWith("excl-")) {
                       const workerId = key.replace("excl-", "");
@@ -444,8 +536,10 @@ function EditRun() {
               ]}
               saveLabel="Save the run"
               footerNote={
-                locked
-                  ? "This run is approved — pay lines cannot be changed. Reopen it first."
+                run.status === "draft"
+                  ? "Draft runs can change pay group, period and approver note. Calculate after saving."
+                  : locked
+                    ? "Only calculated runs can receive line corrections here."
                   : USE_REAL
                     ? "Adjustments are saved as one-off corrections on the run. Run the calculation again to pick them up."
                     : "Demonstration build — nothing is saved."
@@ -460,9 +554,6 @@ function EditRun() {
                 const corrections = Object.entries(adjustments)
                   .filter(([k]) => !k.startsWith("excl-"))
                   .map(([workerId, a]) => ({ workerId, ...a }));
-                const exclusions = Object.entries(adjustments)
-                  .filter(([k]) => k.startsWith("excl-"))
-                  .map(([k, a]) => ({ workerId: k.replace("excl-", ""), label: a.label }));
 
                 const unexplained = corrections.filter((c) => !c.label.trim());
                 if (unexplained.length) {
@@ -478,6 +569,21 @@ function EditRun() {
                 if (saving) return;
                 setSaving(true);
                 try {
+                  if (run.status === "draft") {
+                    if (!_values.payGroupId || !_values.payPeriodId) {
+                      feedback.blocked("Choose a pay group and pay period before saving.");
+                      return;
+                    }
+                    await realApi.updatePayrollRun(id, {
+                      payGroupId: _values.payGroupId,
+                      payPeriodId: _values.payPeriodId,
+                      approvalNote: _values.approverNote || null,
+                    });
+                    feedback.saved("Draft payroll run updated.");
+                    navigate({ to: "/hrm/payroll/runs/$id", params: { id } });
+                    return;
+                  }
+
                   let saved = 0;
                   let failed = 0;
                   for (const c of corrections) {
@@ -488,22 +594,23 @@ function EditRun() {
                     }
                     // First non-statutory earning component takes the adjustment.
                     const target = line.components.find(
-                      (comp) => comp.source !== "Statutory",
-                    ) ?? line.components[0];
+                      (comp) => comp.source !== "Statutory" && comp.kind === "Earning",
+                    ) ?? line.components.find((comp) => comp.source !== "Statutory") ?? line.components[0];
                     if (!target) {
                       failed += 1;
                       continue;
                     }
+                    const adjustedAmount = target.amount + (Number(c.amount) || 0);
                     await realApi.payrollCorrection(
                       id,
                       line.id,
                       target.code,
-                      Number(c.amount) || 0,
+                      adjustedAmount,
                       c.label.trim(),
                     );
                     saved += 1;
                   }
-                  if (saved + failed === 0 && exclusions.length === 0) {
+                  if (saved + failed === 0) {
                     feedback.note("No changes to save.");
                   } else if (failed) {
                     feedback.saved(

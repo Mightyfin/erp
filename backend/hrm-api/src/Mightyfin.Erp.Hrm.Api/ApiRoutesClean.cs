@@ -987,6 +987,11 @@ public static class Routes
         g.MapGet("/queue", async (IPayrollService svc, CancellationToken ct) => await svc.ListPayrollQueueAsync(ct));
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
+        g.MapPatch("/runs/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunUpdate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapGet("/runs/{id:guid}/calculation-readiness", async (Guid id, IPayrollService svc, CancellationToken ct)
             => Results.Ok(await svc.GetCalculationReadinessAsync(id, ct)));
         g.MapPost("/runs/{id:guid}/lock", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>

@@ -45,6 +45,7 @@ public interface IPayrollService
     Task<List<PayrollQueueItemDto>> ListPayrollQueueAsync(CancellationToken ct);
     Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct);
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> UpdateRunAsync(Guid id, PayrollRunUpdate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
     Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
@@ -464,6 +465,61 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
+    }
+
+    public async Task<PayrollRunDto> UpdateRunAsync(Guid id, PayrollRunUpdate request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct)
+            ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "draft")
+            throw new DomainException("payroll-run-not-draft",
+                $"Run is in status {run.Status}; only draft payroll runs can change pay group or period.");
+
+        if ((scope?.IsScopedToBranch ?? false) && run.LocationId != scope?.LocationId)
+            throw new DomainException("payroll-run-scope-denied",
+                "This payroll run is outside your current branch scope.");
+
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct)
+            ?? throw new DomainException("pay-group-not-found", $"Pay group {request.PayGroupId} does not exist.");
+        var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
+        if (period.PayGroupId != group.Id)
+            throw new DomainException("pay-period-group-mismatch",
+                $"Pay period {period.PeriodLabel} does not belong to pay group {group.Name}.");
+        if (period.Status != "open")
+            throw new DomainException("pay-period-not-open",
+                $"Pay period {period.PeriodLabel} is {period.Status} and cannot be used by a draft run.");
+
+        var targetLocation = run.LocationId;
+        if (targetLocation.HasValue)
+        {
+            var sameBranch = await repo.FindOpenRunByPeriodAndLocationAsync(request.PayPeriodId, targetLocation, ct);
+            if (sameBranch is not null && sameBranch.Id != run.Id)
+                throw new DomainException("run-already-exists",
+                    $"Another payroll run already exists for this period at branch {targetLocation}.");
+        }
+        else
+        {
+            var orgOpen = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
+            if (orgOpen is not null && orgOpen.Id != run.Id)
+                throw new DomainException("run-already-exists", "Another payroll run already exists for this period.");
+            var branchOpen = await repo.FindOpenBranchRunForPeriodAsync(request.PayPeriodId, ct);
+            if (branchOpen is not null && branchOpen.Id != run.Id)
+                throw new DomainException("branch-run-open",
+                    "A branch payroll draft is open for this period. Resolve it first before moving this organisation-wide run there.");
+        }
+
+        var oldPeriodId = run.PayPeriodId;
+        var oldPayGroupId = run.PayGroupId;
+        run.PayPeriodId = request.PayPeriodId;
+        run.PayGroupId = request.PayGroupId;
+        run.PayPeriod = period;
+        run.ApprovalNote = string.IsNullOrWhiteSpace(request.ApprovalNote) ? null : request.ApprovalNote.Trim();
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "draft-updated", actorSubjectId, "draft", "draft", run.ApprovalNote,
+            new { oldPeriodId, oldPayGroupId, run.PayPeriodId, run.PayGroupId }, ct);
+        return MapRun(run);
     }
 
     private async Task<PayrollRunPreflightDto> BuildRunPreflightAsync(PayrollRunCreate request, CancellationToken ct)
@@ -1534,7 +1590,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId,
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
         r.PaymentFileReference, r.PaymentFileGeneratedBySubjectId, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
-        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId);
+        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId,
+        r.PayPeriodId, r.PayGroupId, r.ApprovalNote);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),

@@ -1927,11 +1927,14 @@ function RunDetail() {
                           disabled={
                             calculating ||
                             calculationReadiness.data?.ready === false ||
-                            (run.backendStatus !== "locked" && run.backendStatus !== "calculated")
+                            !["draft", "locked", "calculated"].includes(run.backendStatus)
                           }
                           onClick={async () => {
                             setCalculating(true);
                             try {
+                              if (run.backendStatus === "draft") {
+                                await realApi.lockPayrollRun(run.id);
+                              }
                               await realApi.calculatePayrollRun(run.id);
                               feedback.submitted(
                                 "Calculation complete.",
