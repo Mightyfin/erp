@@ -388,6 +388,8 @@ export const hrmApi = {
   /** Statutory export CSV (NAPSA / NHIMA / ZRA / napsa-bankfile). */
   statutoryExport: (exportType: string, periodId: string) =>
     hrmApi.getBlob(`/hrm/statutory-exports`, { exportType, periodId }),
+  statutoryExportPreview: (exportType: string, periodId: string) =>
+    hrmApi.get<unknown>(`/hrm/statutory-exports/preview`, { exportType, periodId }),
 
   // ---- M16: self-service leave (always keyed on the caller's token subject)
 

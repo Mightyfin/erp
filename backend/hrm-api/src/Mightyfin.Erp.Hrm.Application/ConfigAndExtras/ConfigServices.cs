@@ -140,9 +140,12 @@ public sealed record DqResult(string Rule, string Severity, Guid WorkerId, strin
 public interface IStatutoryExportService
 {
     Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct);
+    Task<StatutoryExportPreviewDto> PreviewAsync(string exportType, Guid payPeriodId, CancellationToken ct);
     /// <summary>M23: aggregate statutory liability totals for one period.</summary>
     Task<StatutorySummaryDto> SummaryAsync(Guid payPeriodId, CancellationToken ct);
 }
+public sealed record StatutoryExportPreviewDto(string ExportType, string PeriodLabel, string Currency,
+    List<string> TemplateColumns, List<Dictionary<string, string>> Rows);
 
 /// <summary>Persistence contracts implemented by EF Core in Infrastructure.</summary>
 public interface IConfigRepository

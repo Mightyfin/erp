@@ -592,6 +592,8 @@ export const realApi = {
     const fileName = `${exportType}-${periodId}.csv`;
     return { url, fileName };
   },
+  statutoryPreview: (exportType: string, periodId: string) =>
+    hrmApi.statutoryExportPreview(exportType, periodId),
   /** Aggregate statutory liability summary for one period (no download). */
   statutorySummary: (periodId: string) =>
     hrmApi.get<Record<string, unknown>>(`/hrm/statutory-exports/summary?periodId=${periodId}`),

@@ -962,6 +962,14 @@ public sealed class DqServiceImpl(IConfigRepository configRepo, IDocumentsReposi
 /// payment file, all derived from released (non-reversed) payroll run lines.</summary>
 public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, IConfigRepository configRepo, IAuthzService authz) : IStatutoryExportService
 {
+    private static readonly Dictionary<string, string[]> TemplateColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["napsa"] = ["Company Account", "Year", "Period", "SSN", "NRC", "Surname", "First Name", "", "Date of Birth", "Gross", "Employee Contribution", "Employer Contribution", "Status"],
+        ["nhima"] = ["Year", "Month", "NHIMA", "NRC", "Surname", "First Name", "Date of Birth", "Gross", "Employee Contribution", "Employer Contribution"],
+        ["paye-return"] = ["identityType", "tpinNrc", "fullName", "employmentNature", "grossEmoluments", "chargeableEmoluments", "totalTaxCredit", "taxDeducted", "taxAdjusted"],
+        ["zra"] = ["Employee No", "Employee Name", "TPIN", "Gross Pay", "PAYE", "Net Pay"],
+    };
+
     public async Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct)
     {
         authz.RequireAnyRole("payroll", "hr_admin");
@@ -1006,6 +1014,73 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
         var file = Path.Combine(Path.GetTempPath(), fileName);
         await File.WriteAllTextAsync(file, joined + "\r\n", ct);
         return file;
+    }
+
+    public async Task<StatutoryExportPreviewDto> PreviewAsync(string exportType, Guid payPeriodId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        if (!TemplateColumns.ContainsKey(exportType))
+            throw new DomainException("export-not-found", $"Export type '{exportType}' is not supported for layout preview.");
+        var lines = await payrollRepo.ListReleasedRunLinesForPeriodAsync(payPeriodId, ct);
+        if (lines.Count == 0)
+            throw new DomainException("export-no-data", $"No released payroll data found for period {payPeriodId}.");
+        var employer = (await configRepo.ListLegalEntitiesAsync(ct))
+            .FirstOrDefault(e => e.IsDefault) ?? (await configRepo.ListLegalEntitiesAsync(ct)).FirstOrDefault();
+        var period = lines.FirstOrDefault()?.Run?.PayPeriod;
+        var periodStart = period?.StartDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = lines.OrderBy(l => l.Worker?.EmployeeNo).Select(line =>
+        {
+            var amounts = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            foreach (var comp in line.Components)
+                amounts[comp.ComponentCode] = amounts.TryGetValue(comp.ComponentCode, out var prev) ? prev + comp.Amount : comp.Amount;
+            var worker = line.Worker;
+            var gross = Math.Round(line.GrossPay, 2);
+            var paye = Math.Round(amounts.TryGetValue("paye", out var p) ? p : 0, 2);
+            var napsaEe = Math.Round(amounts.TryGetValue("napsa-ee", out var ne) ? ne : 0, 2);
+            var napsaEr = Math.Round(amounts.TryGetValue("napsa-er", out var nr) ? nr : 0, 2);
+            var nhimaEe = Math.Round(amounts.TryGetValue("nhima-ee", out var he) ? he : 0, 2);
+            var nhimaEr = Math.Round(amounts.TryGetValue("nhima-er", out var hr) ? hr : 0, 2);
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["companyAccount"] = employer?.NapsaEmployerRef ?? "",
+                ["nhimaEmployerRef"] = employer?.NhimaEmployerRef ?? "",
+                ["employerTpin"] = employer?.Tpin ?? "",
+                ["year"] = periodStart.Year.ToString(),
+                ["period"] = periodStart.Month.ToString(),
+                ["month"] = periodStart.Month.ToString(),
+                ["employeeNo"] = worker?.EmployeeNo ?? "",
+                ["ssn"] = worker?.NapsaNumber ?? "",
+                ["napsaNumber"] = worker?.NapsaNumber ?? "",
+                ["nhimaNumber"] = worker?.NhimaNumber ?? "",
+                ["nrc"] = worker?.Nrc ?? "",
+                ["tpin"] = worker?.Tpin ?? "",
+                ["tpinNrc"] = string.IsNullOrWhiteSpace(worker?.Tpin) ? worker?.Nrc ?? "" : worker!.Tpin!,
+                ["identityType"] = string.IsNullOrWhiteSpace(worker?.Tpin) ? "Nrc" : "Tpin",
+                ["surname"] = worker?.LastName ?? "",
+                ["firstName"] = worker?.FirstName ?? "",
+                ["fullName"] = FullNameOf(line),
+                ["employmentNature"] = "Permanent",
+                ["dateOfBirth"] = FormatDate(worker?.DateOfBirth),
+                ["gross"] = Money(gross),
+                ["grossEmoluments"] = Money(gross),
+                ["chargeableEmoluments"] = Money(gross),
+                ["netPay"] = Money(line.NetPay),
+                ["paye"] = Money(paye),
+                ["taxDeducted"] = Money(paye),
+                ["totalTaxCredit"] = "0.00",
+                ["taxAdjusted"] = "0.00",
+                ["napsaEmployee"] = Money(napsaEe),
+                ["napsaEmployer"] = Money(napsaEr),
+                ["napsaTotal"] = Money(napsaEe + napsaEr),
+                ["nhimaEmployee"] = Money(nhimaEe),
+                ["nhimaEmployer"] = Money(nhimaEr),
+                ["nhimaTotal"] = Money(nhimaEe + nhimaEr),
+                ["status"] = "I",
+                ["blank"] = "",
+            };
+        }).ToList();
+        return new StatutoryExportPreviewDto(exportType, period?.PeriodLabel ?? payPeriodId.ToString(),
+            employer?.Currency ?? "ZMW", TemplateColumns[exportType].ToList(), rows);
     }
 
     /// <summary>Aggregate statutory summary for one period — used by the
@@ -1087,6 +1162,13 @@ public sealed class StatutoryExportServiceImpl(IPayrollRepository payrollRepo, I
 
     private static string CsvField(string value) =>
         value.Contains(',') || value.Contains('"') || value.Contains('\n') ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+
+    private static string Money(decimal value) => value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatDate(string? value) =>
+        DateOnly.TryParse(value, out var date)
+            ? date.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : value ?? "";
 
     private static string NapsaRow(PayrollRunLine l, Dictionary<string, decimal> a) =>
         Csv("EE", WorkerNo(l), FullNameOf(l), l.Worker?.NapsaNumber ?? "", Math.Round(a.TryGetValue("napsa-ee", out var v) ? v : 0, 2),
