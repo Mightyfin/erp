@@ -1060,12 +1060,13 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     }
 
     /// <summary>Release finalizes payslips and generates the payment file
-    /// payload. Segregation of duties: releaser cannot be the sole approver —
-    /// enforced here by requiring status = approved (approval was a separate actor).</summary>
+    /// payload. Segregation of duties applies to payroll officers; HR admin can
+    /// override it when they intentionally carry final payroll authority.</summary>
     public async Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
-        authz.RequireAnyRole("payroll");
+        authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         // M24: every worker in the run must carry the statutory identity pack
         // (NRC, TPIN, NAPSA number, NHIMA number) before payslips can be released.
         var readiness = await GetRunStatutoryReadinessAsync(id, ct);
@@ -1083,7 +1084,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         }
         if (run.Status != "approved")
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
-        if (actorSubjectId != "system" && string.Equals(run.ApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && actorSubjectId != "system" && string.Equals(run.ApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("run-self-release", "The approver cannot also release the run. A separate payroll officer must release it.");
         async Task ReleaseAndEnqueue(CancellationToken transactionCt)
         {
@@ -1278,12 +1279,13 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
 
     public async Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
-        authz.RequireAnyRole("payroll");
+        authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         if (run.PaymentStatus != "approved") throw new DomainException("payment-not-releasable", $"Payment is in status {run.PaymentStatus}.");
-        if (string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-self-release", "The payment approver cannot also release the bank instruction.");
-        if (string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-generator-release", "The person who generated the payment file cannot release the bank instruction.");
         run.PaymentStatus = "released";
         run.PaymentReleasedBySubjectId = actorSubjectId;

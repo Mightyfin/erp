@@ -577,10 +577,11 @@ function PaymentWorkflow({
   const approvedByMe = Boolean(
     currentSubjectId && run.paymentApprovedBySubjectId === currentSubjectId,
   );
+  const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
   const canGenerate =
     run.backendStatus === "released" && status === "not-created" && readiness?.ready === true;
   const canApprove = status === "generated" && !generatedByMe;
-  const canRelease = status === "approved" && !approvedByMe && !generatedByMe;
+  const canRelease = status === "approved" && (isTopAdmin || (!approvedByMe && !generatedByMe));
   const invoke = async (label: string, action: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -983,9 +984,9 @@ function PaymentWorkflow({
           <Button
             disabled={busy || !canRelease}
             title={
-              approvedByMe
+              approvedByMe && !isTopAdmin
                 ? "The payment approver cannot also release the bank instruction."
-                : generatedByMe
+                : generatedByMe && !isTopAdmin
                   ? "The person who generated the payment file cannot release it to the bank."
                   : undefined
             }
@@ -1004,12 +1005,12 @@ function PaymentWorkflow({
           You generated this payment file. A different payroll or HR approver must approve it.
         </p>
       ) : null}
-      {status === "approved" && approvedByMe ? (
+      {status === "approved" && approvedByMe && !isTopAdmin ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
           You approved this payment file. A different payroll officer must release it to the bank.
         </p>
       ) : null}
-      {status === "approved" && generatedByMe ? (
+      {status === "approved" && generatedByMe && !isTopAdmin ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
           You generated this payment file. A different payroll officer must release it to the bank.
         </p>

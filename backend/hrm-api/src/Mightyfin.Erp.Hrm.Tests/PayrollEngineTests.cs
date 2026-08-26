@@ -154,6 +154,47 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task ReleaseRun_BlocksPayrollOfficerWhoApprovedSameRun()
+    {
+        var (service, ctx) = Build(tenant: "payroll-self-release", roles: ["payroll"]);
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+        await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test release guard after exception review"), CancellationToken.None, "payroll-user");
+        await service.ApproveRunAsync(run.Id, "reviewed", CancellationToken.None, "payroll-user");
+
+        var error = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReleaseRunAsync(run.Id, CancellationToken.None, "payroll-user"));
+        Assert.Equal("run-self-release", error.Code);
+    }
+
+    [Fact]
+    public async Task ReleaseRun_AllowsHrAdminToApproveAndReleaseSameRun()
+    {
+        var (service, ctx) = Build(tenant: "admin-self-release", roles: ["hr_admin"]);
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+        await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Top admin reviewed generated exception"), CancellationToken.None, "admin-user");
+        await service.ApproveRunAsync(run.Id, "top admin reviewed", CancellationToken.None, "admin-user");
+        var released = await service.ReleaseRunAsync(run.Id, CancellationToken.None, "admin-user");
+
+        Assert.Equal("released", released.Status);
+        Assert.Equal("admin-user", released.ApprovedBySubjectId);
+        Assert.Equal("admin-user", released.ReleasedBySubjectId);
+    }
+
+    [Fact]
     public async Task Ytd_AccumulatesAcrossReleasedRunsInSameTaxYear()
     {
         var (service, ctx) = Build();

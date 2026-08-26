@@ -230,7 +230,7 @@ public class M27PayrollOperationsTests
     [Fact]
     public async Task PaymentWorkflow_GeneratesApprovesReleasesReconciles_AndExportsAudit()
     {
-        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment");
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment", roles: ["payroll"]);
         var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
         ctx.WorkerBankDetails.Add(new WorkerBankDetail
         {
