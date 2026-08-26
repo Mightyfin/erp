@@ -59,7 +59,17 @@ public sealed partial class WorkerImportService : IWorkerImportService
         for (var page = 1; ; page++)
         {
             var (batch, total) = await repo.ListAsync(
-                new WorkerListFilters(null, null, null, null, null, null, true, page, 100), ct);
+                new WorkerListFilters(
+                    Search: null,
+                    Status: null,
+                    LegalEntityId: null,
+                    OrgUnitId: null,
+                    LocationId: null,
+                    WorkerType: null,
+                    Grade: null,
+                    IncludeArchived: true,
+                    Page: page,
+                    PageSize: 100), ct);
             existing.AddRange(batch);
             if (existing.Count >= total) break;
         }

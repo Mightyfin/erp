@@ -247,14 +247,14 @@ public class WorkerServiceTests
         await ctx.SaveChangesAsync();
 
         var repo = new WorkerRepository(ctx);
-        var (items, total) = await repo.ListAsync(new WorkerListFilters(Search: null, Status: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null), CancellationToken.None);
+        var (items, total) = await repo.ListAsync(new WorkerListFilters(Search: null, Status: null, LegalEntityId: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null), CancellationToken.None);
         Assert.Equal(1, total);
         Assert.Single(items);
         Assert.Equal("EMP-A1", items[0].EmployeeNo);
 
         // Explicitly including archived surfaces the leaver again.
         var (archivedItems, archivedTotal) = await repo.ListAsync(
-            new WorkerListFilters(Search: null, Status: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null, IncludeArchived: true), CancellationToken.None);
+            new WorkerListFilters(Search: null, Status: null, LegalEntityId: null, OrgUnitId: null, LocationId: null, WorkerType: null, Grade: null, IncludeArchived: true), CancellationToken.None);
         Assert.Equal(2, archivedTotal);
         Assert.Contains(archivedItems, w => w.EmployeeNo == "EMP-A2");
     }

@@ -7,7 +7,7 @@ namespace Mightyfin.Erp.Hrm.Application;
 // ===================== Workers =====================
 
 public sealed record WorkerListFilters(
-    string? Search, string? Status, Guid? OrgUnitId, Guid? LocationId,
+    string? Search, string? Status, Guid? LegalEntityId, Guid? OrgUnitId, Guid? LocationId,
     string? WorkerType, string? Grade, bool IncludeArchived = false,
     int Page = 1, int PageSize = 25);
 

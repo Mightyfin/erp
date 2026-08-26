@@ -37,6 +37,10 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
                 || (w.Email != null && w.Email.ToLower().Contains(s)));
         }
         if (!string.IsNullOrWhiteSpace(filters.Status)) q = q.Where(w => w.Status == filters.Status);
+        if (filters.LegalEntityId.HasValue)
+            q = q.Where(w =>
+                (w.OrgUnit != null && w.OrgUnit.LegalEntityId == filters.LegalEntityId.Value) ||
+                (w.Location != null && w.Location.LegalEntityId == filters.LegalEntityId.Value));
         if (filters.OrgUnitId.HasValue) q = q.Where(w => w.OrgUnitId == filters.OrgUnitId.Value);
         if (filters.LocationId.HasValue) q = q.Where(w => w.LocationId == filters.LocationId.Value);
         if (!string.IsNullOrWhiteSpace(filters.WorkerType)) q = q.Where(w => w.WorkerType == filters.WorkerType);

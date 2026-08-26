@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,12 @@ import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 import { realApi, useApi } from "@/platform/use-api";
 import { useAuth } from "@/platform/auth";
 import { feedback } from "@/platform/feedback";
+import {
+  demoEntityTree,
+  flattenEntityTree,
+  treeToSelectOptions,
+  type OrgTreeNode,
+} from "@/platform/orgTree";
 
 export const Route = createFileRoute("/hrm/pay/compensation")({
   head: () => ({
@@ -49,8 +55,19 @@ export const Route = createFileRoute("/hrm/pay/compensation")({
 });
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+const COMPENSATION_PAGE_SIZE = 25;
 
 type Raw = Record<string, unknown>;
+type CompensationState = {
+  workers: Raw[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  profiles: Raw[];
+  components: Raw[];
+  groups: Raw[];
+  locations: Raw[];
+};
 
 /** Compa-ratio is shown as a number and a word — never a bare colour. */
 function CompaRatio({ value }: { value: number }) {
@@ -67,19 +84,25 @@ function CompaRatio({ value }: { value: number }) {
 
 /* ------------------------------------------------------------------ */
 
-async function loadCompensation() {
-  if (!USE_REAL) return { workers: [], profiles: [], components: [], groups: [] };
-  const [workers, profiles, components, groups] = await Promise.all([
-    realApi.employees({ page: 1, pageSize: 200, status: "active" }),
+async function loadCompensation(params: Record<string, unknown> = {}): Promise<CompensationState> {
+  if (!USE_REAL) return { workers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
+  const [workers, profiles, components, groups, locations] = await Promise.all([
+    realApi.employees(params),
     realApi.payrollProfiles(),
     realApi.payrollComponents(),
     realApi.payrollPayGroups(),
+    realApi.locations(),
   ]);
+  const workerItems = Array.isArray(workers) ? (workers as Raw[]) : ((workers?.items ?? []) as Raw[]);
   return {
-    workers: Array.isArray(workers) ? (workers as Raw[]) : (workers?.items ?? []) as Raw[],
+    workers: workerItems,
+    totalCount: Array.isArray(workers) ? workerItems.length : Number(workers?.totalCount ?? workerItems.length),
+    page: Array.isArray(workers) ? 1 : Number((workers as { page?: number })?.page ?? params.page ?? 1),
+    pageSize: Array.isArray(workers) ? workerItems.length : Number((workers as { pageSize?: number })?.pageSize ?? params.pageSize ?? COMPENSATION_PAGE_SIZE),
     profiles: Array.isArray(profiles) ? (profiles as Raw[]) : [],
     components: Array.isArray(components) ? (components as Raw[]) : [],
     groups: Array.isArray(groups) ? (groups as Raw[]) : [],
+    locations: Array.isArray(locations) ? (locations as Raw[]) : [],
   };
 }
 
@@ -371,18 +394,54 @@ function WorkerPayDialog({
 /* ------------------------------------------------------------------ */
 
 function CompensationPage() {
-  const state = useApi(loadCompensation);
   const userRoles = new Set(useAuth().user?.roles ?? []);
   const canAct = userRoles.has("hr_admin") || userRoles.has("hr_ops") || userRoles.has("payroll");
   const [tab, setTab] = useState<"pay" | "benefits" | "equity">("pay");
   const [editingWorker, setEditingWorker] = useState<Raw | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [payGroupFilter, setPayGroupFilter] = useState("");
+  const [profileFilter, setProfileFilter] = useState("");
+  const [page, setPage] = useState(1);
 
-  const data = state.data ?? { workers: [], profiles: [], components: [], groups: [] };
-  const searchTerm = search.trim().toLowerCase();
+  const state = useApi(
+    () =>
+      loadCompensation({
+        page,
+        pageSize: COMPENSATION_PAGE_SIZE,
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(typeFilter ? { workerType: typeFilter } : {}),
+        ...(orgFilter?.startsWith("entity:") ? { legalEntityId: orgFilter.slice(7) } : {}),
+        ...(orgFilter && !orgFilter.startsWith("entity:") ? { orgUnitId: orgFilter } : {}),
+        ...(locationFilter ? { locationId: locationFilter } : {}),
+        ...(gradeFilter ? { grade: gradeFilter } : {}),
+      }),
+    [search, statusFilter, typeFilter, orgFilter, locationFilter, gradeFilter, page],
+  );
+
+  const treeState = useApi<OrgTreeNode[]>(async () => {
+    if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
+    return demoEntityTree;
+  }, []);
+
+  const data = state.data ?? { workers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
+  const entityUnits = flattenEntityTree(treeState.data ?? []);
+  const entityTreeOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
+    ...o,
+    entity: o.value.startsWith("entity:"),
+  }));
+
   const visibleWorkers = data.workers.filter((w) => {
-    const key = `${String(w.employeeNo ?? "")} ${String(w.fullName ?? "")} ${String(w.jobTitle ?? "")}`.toLowerCase();
-    return !searchTerm || key.includes(searchTerm);
+    const profile = data.profiles.find((p) => String(p.workerId) === String(w.id));
+    if (payGroupFilter && String(profile?.payGroupId ?? "") !== payGroupFilter) return false;
+    if (profileFilter === "assigned" && !profile) return false;
+    if (profileFilter === "missing" && profile) return false;
+    return true;
   });
 
   const profileFor = (w: Raw) => data.profiles.find((p) => String(p.workerId) === String(w.id));
@@ -401,6 +460,16 @@ function CompensationPage() {
     });
   });
   const readyWorkerCount = Math.max(0, activeWorkerCount - missingProfile.length - profilesMissingBasic.length);
+  const totalPages = Math.max(1, Math.ceil(data.totalCount / COMPENSATION_PAGE_SIZE));
+  const pageStart = data.totalCount === 0 ? 0 : (page - 1) * COMPENSATION_PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * COMPENSATION_PAGE_SIZE, data.totalCount);
+  const gradeOptions = Array.from(
+    new Set(data.workers.map((w) => String(w.grade ?? "").trim()).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+  const resetPagedFilter = (setter: (value: string) => void) => (value: string) => {
+    setter(value === "all" ? "" : value);
+    setPage(1);
+  };
 
   return (
     <AuthGate>
@@ -492,7 +561,7 @@ function CompensationPage() {
             </p>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-4 grid gap-3 rounded-lg border bg-surface p-3 md:grid-cols-[minmax(16rem,1.5fr)_repeat(3,minmax(9rem,1fr))] xl:grid-cols-[minmax(16rem,1.5fr)_repeat(7,minmax(9rem,1fr))]">
             <div className="min-w-0 flex-1">
               <Label htmlFor="cp-search" className="sr-only">
                 Search workers
@@ -501,10 +570,103 @@ function CompensationPage() {
                 id="cp-search"
                 placeholder="Search by employee number, name or job title"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="max-w-sm"
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
               />
             </div>
+            <Select value={statusFilter || "all"} onValueChange={resetPagedFilter(setStatusFilter)}>
+              <SelectTrigger aria-label="Status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Status: all</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="on-leave">On leave</SelectItem>
+                <SelectItem value="notice">Notice period</SelectItem>
+                <SelectItem value="pre-hire">Pre-hire</SelectItem>
+                <SelectItem value="terminated">Terminated</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter || "all"} onValueChange={resetPagedFilter(setTypeFilter)}>
+              <SelectTrigger aria-label="Employment type">
+                <SelectValue placeholder="Employment type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Type: all</SelectItem>
+                <SelectItem value="employee">Permanent</SelectItem>
+                <SelectItem value="contingent">Contractor</SelectItem>
+                <SelectItem value="intern">Intern</SelectItem>
+                <SelectItem value="volunteer">Volunteer</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={locationFilter || "all"} onValueChange={resetPagedFilter(setLocationFilter)}>
+              <SelectTrigger aria-label="Branch">
+                <SelectValue placeholder="Branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Branch: all</SelectItem>
+                {data.locations.map((location) => (
+                  <SelectItem key={String(location.id)} value={String(location.id)}>
+                    {String(location.name ?? location.code)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={orgFilter || "all"} onValueChange={resetPagedFilter(setOrgFilter)}>
+              <SelectTrigger aria-label="Entity and department">
+                <SelectValue placeholder="Entity / department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Entity & branch: all</SelectItem>
+                {entityTreeOptions.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className={o.entity ? "font-semibold text-primary" : undefined}
+                  >
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={gradeFilter || "all"} onValueChange={resetPagedFilter(setGradeFilter)}>
+              <SelectTrigger aria-label="Grade">
+                <SelectValue placeholder="Grade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Grade: all</SelectItem>
+                {gradeOptions.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={payGroupFilter || "all"} onValueChange={resetPagedFilter(setPayGroupFilter)}>
+              <SelectTrigger aria-label="Pay group">
+                <SelectValue placeholder="Pay group" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Pay group: all</SelectItem>
+                {data.groups.map((g) => (
+                  <SelectItem key={String(g.id)} value={String(g.id)}>
+                    {String(g.name ?? g.code)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={profileFilter || "all"} onValueChange={resetPagedFilter(setProfileFilter)}>
+              <SelectTrigger aria-label="Pay profile">
+                <SelectValue placeholder="Pay profile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Profile: all</SelectItem>
+                <SelectItem value="assigned">Assigned</SelectItem>
+                <SelectItem value="missing">Missing</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Async state={state} rows={5}>
@@ -514,7 +676,7 @@ function CompensationPage() {
                   <caption className="sr-only">Workers and their open pay profiles</caption>
                   <thead className="border-b bg-surface-muted">
                     <tr>
-                      {["Employee", "No.", "Job title", "Pay group", "Effective from", "Pay basis", "Action"].map((h) => (
+                      {["Employee", "No.", "Department", "Branch", "Job title", "Pay group", "Effective from", "Pay basis", "Action"].map((h) => (
                         <th
                           key={h}
                           scope="col"
@@ -535,6 +697,8 @@ function CompensationPage() {
                         <tr key={String(w.id)} className="hover:bg-surface-muted">
                           <td className="max-w-52 truncate px-3 py-3 font-medium">{String(w.fullName ?? "")}</td>
                           <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{String(w.employeeNo ?? "")}</td>
+                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.orgUnitName ?? "—")}</td>
+                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.locationName ?? "—")}</td>
                           <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.jobTitle ?? "—")}</td>
                           <td className="px-3 py-3">{profile ? String(group?.name ?? group?.code ?? "—") : <span className="text-warning">Not assigned</span>}</td>
                           <td className="px-3 py-3 font-mono text-xs">{profile ? String(profile.effectiveFrom) : "—"}</td>
@@ -590,7 +754,7 @@ function CompensationPage() {
                     })}
                     {!visibleWorkers.length ? (
                       <tr>
-                        <td colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={9} className="px-3 py-8 text-center text-sm text-muted-foreground">
                           No workers match{search ? ` "${search}"` : ""}.
                         </td>
                       </tr>
@@ -600,6 +764,38 @@ function CompensationPage() {
               </div>
             )}
           </Async>
+          {USE_REAL ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+              <span className="text-muted-foreground">
+                Showing {pageStart}-{pageEnd} of {data.totalCount} workers
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  <ChevronLeft className="mr-1 size-4" aria-hidden />
+                  Previous
+                </Button>
+                <span className="min-w-24 text-center text-xs text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  Next
+                  <ChevronRight className="ml-1 size-4" aria-hidden />
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
