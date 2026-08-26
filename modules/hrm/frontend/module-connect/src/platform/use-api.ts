@@ -685,6 +685,8 @@ export const realApi = {
   payrollCalculationReadiness: (id: string) =>
     hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/calculation-readiness`),
   payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
+  workerPayslipPreview: (workerId: string) =>
+    hrmApi.get<unknown>(`/hrm/payroll/workers/${workerId}/payslip-preview`),
   payrollExceptionDecision: (id: string, lineId: string, decision: string, reason: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lines/${lineId}/exception`, { decision, reason }),
   payrollCorrection: (

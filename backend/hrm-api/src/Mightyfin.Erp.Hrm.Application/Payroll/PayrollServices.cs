@@ -51,6 +51,7 @@ public interface IPayrollService
     Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<WorkerPayslipPreviewDto> PreviewWorkerPayslipAsync(Guid workerId, CancellationToken ct);
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
@@ -109,6 +110,8 @@ public sealed record SalaryComponentDto(Guid Id, string Code, string Name, strin
 public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status);
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
+public sealed record WorkerPayslipPreviewDto(string Status, string PeriodLabel, string Currency,
+    List<string> Guardrails, PayrollRunLineDto? Line);
 
 // ---------- M20: payroll setup admin (write surface) ----------
 public sealed record PayGroupUpdateRequest(string? Code = null, string? Name = null,
@@ -978,6 +981,73 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             l.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
             l.ExceptionStatus, l.ExceptionDecisionReason, l.ExceptionDecidedBySubjectId, l.ExceptionDecidedAt, l.IsExcluded,
             l.WorkingDays, l.PaymentDays, l.ProrationNote)).ToList(), total, 1, 100);
+    }
+
+    public async Task<WorkerPayslipPreviewDto> PreviewWorkerPayslipAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "payroll", "hr_admin");
+        var guardrails = new List<string>();
+        var openProfile = await repo.FindOpenProfileAsync(workerId, ct);
+        if (openProfile is null)
+            return new WorkerPayslipPreviewDto("blocked", "", "ZMW",
+                ["No active payroll profile is linked to this employee. Add a payroll profile before previewing a payslip."], null);
+
+        var payGroup = await repo.GetPayGroupAsync(openProfile.PayGroupId, ct);
+        var periods = await repo.ListPeriodsAsync(openProfile.PayGroupId, ct);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var period = periods.FirstOrDefault(p => p.IsCurrent)
+            ?? periods.FirstOrDefault(p => p.StartDate <= today && p.EndDate >= today)
+            ?? periods.FirstOrDefault();
+        if (period is null)
+            return new WorkerPayslipPreviewDto("blocked", "", payGroup?.Currency ?? "ZMW",
+                ["No pay period exists for this employee's pay group. Create a pay period before previewing a payslip."], null);
+
+        var locationId = openProfile.Worker?.LocationId;
+        var (profiles, components, rules, slabs, _) = await repo.LoadCalculationInputsAsync(period.Id, ct, locationId);
+        var profile = profiles.FirstOrDefault(p => p.WorkerId == workerId) ?? openProfile;
+        var worker = profile.Worker ?? await repo.GetWorkerAsync(workerId, ct);
+        if (worker is null)
+            return new WorkerPayslipPreviewDto("blocked", period.PeriodLabel, payGroup?.Currency ?? "ZMW",
+                ["The payroll profile is not linked to an employee record."], null);
+
+        var activeComponents = components.Where(c => c.IsActive).OrderBy(c => c.Priority).ToList();
+        var basicComponent = activeComponents.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase));
+        if (basicComponent is null)
+            guardrails.Add("Basic salary component is not active in payroll configuration.");
+        else if (!profile.ComponentValues.Any(v => v.ComponentId == basicComponent.Id && v.Amount > 0))
+            guardrails.Add("Basic salary is missing or zero on the employee payroll profile.");
+        if (!activeComponents.Any(c => c.ComponentType == "earning"))
+            guardrails.Add("No active earning components are configured.");
+        if (!worker.BankDetails.Any(b => b.IsPrimary))
+            guardrails.Add("Primary bank or mobile money payment details are missing.");
+
+        var ctx = new CalcContext(worker, profile, activeComponents, rules, slabs);
+        var prorationInputs = await repo.LoadProrationInputsAsync(period.Id, ct);
+        var (workingDays, paymentDays, note) = PaymentDaysCalculator.For(
+            prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
+        ctx.SetProration(workingDays, paymentDays, note);
+        ctx.AddOvertime((await repo.LoadApprovedOvertimeAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList());
+        ctx.AddPayrollBenefits((await repo.LoadPayrollBenefitAllowancesAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList());
+        foreach (var comp in activeComponents)
+            ctx.Evaluate(comp);
+        var net = ctx.Gross - ctx.Deductions;
+        if (ctx.Gross <= 0)
+            guardrails.Add("Gross pay is zero. Check basic salary, earning components and salary profile setup.");
+        if (net <= 0)
+            guardrails.Add("Net pay is zero or negative. Review deductions before releasing a payslip.");
+        if (ctx.ExceptionReason is not null)
+            guardrails.Add(ctx.ExceptionReason);
+
+        var line = new PayrollRunLineDto(Guid.Empty, worker.Id, worker.FullName, worker.EmployeeNo,
+            Math.Round(ctx.Gross, 2), Math.Round(ctx.Deductions, 2), Math.Round(net, 2),
+            Math.Round(ctx.EmployerCost, 2), guardrails.Count > 0, guardrails.FirstOrDefault(),
+            ctx.Components.Select(c => new PayrollLineComponentDto(c.Code, c.Name, c.Type, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
+            WorkingDays: ctx.WorkingDays, PaymentDays: ctx.PaymentDays, ProrationNote: ctx.ProrationNote);
+
+        return new WorkerPayslipPreviewDto(guardrails.Count == 0 ? "ready" : "blocked",
+            period.PeriodLabel, payGroup?.Currency ?? "ZMW", guardrails, line);
     }
 
     public async Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request,

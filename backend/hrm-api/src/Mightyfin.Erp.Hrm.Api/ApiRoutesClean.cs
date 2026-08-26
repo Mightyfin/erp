@@ -1059,6 +1059,8 @@ public static class Routes
             await svc.CalculateRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapGet("/runs/{id:guid}/lines", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunLinesAsync(id, ct));
+        g.MapGet("/workers/{workerId:guid}/payslip-preview", async (Guid workerId, IPayrollService svc, CancellationToken ct)
+            => await svc.PreviewWorkerPayslipAsync(workerId, ct));
         g.MapPost("/runs/{id:guid}/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var note = await ReadBodyAsync<PayrollRunApprovalNote>(http, ct);

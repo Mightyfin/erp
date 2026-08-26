@@ -199,6 +199,34 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
 }
 
 async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
+  try {
+    const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
+    const rawLine = rawPreview.line as Record<string, unknown> | undefined;
+    const guardrails = Array.isArray(rawPreview.guardrails)
+      ? rawPreview.guardrails.map(String).filter(Boolean)
+      : [];
+    const line = rawLine ? previewLine(rawLine) : undefined;
+    if (line && !line.components.length)
+      guardrails.push(
+        "The payroll preview was calculated, but no component breakdown was returned by the engine.",
+      );
+    return {
+      status: rawText(rawPreview, "status") === "ready" && guardrails.length === 0 ? "ready" : "blocked",
+      guardrails,
+      run: {
+        id: "current-preview",
+        period: rawText(rawPreview, "periodLabel") || "Current pay period",
+        payGroup: "",
+        currency: rawText(rawPreview, "currency") || "ZMW",
+        status: "preview",
+      },
+      line,
+    };
+  } catch {
+    // Older API deployments did not expose a simulation endpoint. Fall back to
+    // the latest calculated line so the screen remains usable during rollout.
+  }
+
   const runs = (await realApi.payrollRuns()).items
     .map(previewRun)
     .filter((run) => run.id)
@@ -307,8 +335,8 @@ function PayslipPreviewDialog({
             Payslip preview for {employee.fullName}
           </DialogTitle>
           <DialogDescription>
-            Preview comes from the latest calculated payroll line. A PDF is only available after the
-            run is approved and payslips are released.
+            Preview uses current payroll configuration. The last released payslip remains unchanged
+            and is available from Print last payslip.
           </DialogDescription>
         </DialogHeader>
 

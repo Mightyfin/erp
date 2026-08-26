@@ -27,7 +27,7 @@ public class PayrollStatutoryTests
     {
         new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
-        new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, Floor = 50m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+        new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer", Payer = "employer", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
     };
 
@@ -169,13 +169,28 @@ public class PayrollStatutoryTests
     }
 
     [Fact]
-    public void Nhima_EmployeeContribution_HonoursMinimumFloor()
+    public void Nhima_DefaultEmployeeContribution_IsOnePercentOfBasicWithoutFloor()
     {
         var basic = Comp("basic", "earning", "fixed", priority: 10);
         var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true);
         var (_, deductions, _, _, comps) = Evaluate(
             new() { basic, nhimaEe }, new() { (basic.Id, "basic", 4209.68m) },
             ZambiaNapsaNhima2026(), ZambiaPaye2026());
+
+        Assert.Equal(42.10m, comps.First(c => c.Code == "nhima-ee").Amount);
+        Assert.Equal(42.10m, Math.Round(deductions, 2));
+    }
+
+    [Fact]
+    public void ContributionRule_ExplicitMinimumFloor_IsHonoured()
+    {
+        var basic = Comp("basic", "earning", "fixed", priority: 10);
+        var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true);
+        var rules = ZambiaNapsaNhima2026();
+        rules.First(r => r.Code == "nhima-ee").Floor = 50m;
+        var (_, deductions, _, _, comps) = Evaluate(
+            new() { basic, nhimaEe }, new() { (basic.Id, "basic", 4209.68m) },
+            rules, ZambiaPaye2026());
 
         Assert.Equal(50m, comps.First(c => c.Code == "nhima-ee").Amount);
         Assert.Equal(50m, deductions);
