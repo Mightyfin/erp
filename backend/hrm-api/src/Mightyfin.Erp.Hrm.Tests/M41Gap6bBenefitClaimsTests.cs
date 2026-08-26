@@ -118,6 +118,30 @@ public class M41Gap6bBenefitClaimsTests
     }
 
     [Fact]
+    public async Task Allowance_CannotExceedBenefitTypeAnnualCap()
+    {
+        var (svc, ctx, worker, medical) = Build();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => svc.SetAllowanceAsync(
+            new AllowanceSetRequest(worker.Id, "medical", medical.AnnualCap + 1m, DateTime.UtcNow.Year), default));
+
+        Assert.Equal("benefit-allowance-over-cap", ex.Code);
+        Assert.Empty(ctx.WorkerBenefitAllowances);
+    }
+
+    [Fact]
+    public async Task Allowance_SecondAssignmentUpdatesExistingRow()
+    {
+        var (svc, ctx, worker, medical) = Build();
+
+        await svc.SetAllowanceAsync(new AllowanceSetRequest(worker.Id, "medical", 200m, DateTime.UtcNow.Year), default);
+        await svc.SetAllowanceAsync(new AllowanceSetRequest(worker.Id, "medical", 300m, DateTime.UtcNow.Year), default);
+
+        var allowance = Assert.Single(ctx.WorkerBenefitAllowances);
+        Assert.Equal(300m, allowance.AnnualAmount);
+    }
+
+    [Fact]
     public async Task CreateClaim_NoAllowanceConfiguredRejected()
     {
         var (svc, ctx, worker, medical) = Build();
@@ -159,6 +183,23 @@ public class M41Gap6bBenefitClaimsTests
         Assert.Equal("rejected", rejected.Status);
         await Assert.ThrowsAsync<DomainException>(() => svc.DecideClaimAsync(claim.Id,
             new ClaimDecideRequest("approve", null, null), default));
+    }
+
+    [Fact]
+    public async Task Decide_ApproveCannotExceedRemainingAllowance()
+    {
+        var (svc, ctx, worker, medical) = Build();
+
+        var first = await svc.CreateClaimAsync(
+            new BenefitClaimCreateRequest(worker.Id, "medical", 4000m, "ZMW", "rx", true), default);
+        var second = await svc.CreateClaimAsync(
+            new BenefitClaimCreateRequest(worker.Id, "medical", 2000m, "ZMW", "rx", true), default);
+
+        await svc.DecideClaimAsync(first.Id, new ClaimDecideRequest("approve", null, null), default);
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            svc.DecideClaimAsync(second.Id, new ClaimDecideRequest("approve", null, null), default));
+
+        Assert.Equal("benefit-claim-over-limit", ex.Code);
     }
 
     [Fact]

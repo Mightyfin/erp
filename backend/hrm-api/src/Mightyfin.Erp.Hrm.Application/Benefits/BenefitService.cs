@@ -97,6 +97,9 @@ public sealed class BenefitServiceImpl(
             throw new DomainException("benefit-type-inactive", "Inactive benefit types cannot receive allowances.");
         if (request.AnnualAmount < 0)
             throw new DomainException("benefit-allowance-invalid", "The annual amount cannot be negative.");
+        if (request.AnnualAmount > type.AnnualCap)
+            throw new DomainException("benefit-allowance-over-cap",
+                $"{type.Name} allowance cannot exceed the configured annual cap of {type.AnnualCap:N2}.");
         var allowance = new WorkerBenefitAllowance
         {
             WorkerId = request.WorkerId,
@@ -180,6 +183,13 @@ public sealed class BenefitServiceImpl(
             var amount = request.ApprovedAmount is null or <= 0 ? claim.AmountClaimed : request.ApprovedAmount;
             if (amount > claim.AmountClaimed + 0.0001m)
                 throw new DomainException("benefit-claim-invalid", "The approved amount cannot exceed the claimed amount.");
+            var year = claim.CreatedAt.Year == 1 ? DateTime.UtcNow.Year : claim.CreatedAt.Year;
+            var allowance = await repo.GetAllowanceAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+            var annualLimit = allowance?.AnnualAmount ?? claim.BenefitType?.AnnualCap ?? 0m;
+            var spent = await repo.SumApprovedAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+            if (annualLimit <= 0 || spent + (amount ?? 0m) > annualLimit + 0.0001m)
+                throw new DomainException("benefit-claim-over-limit",
+                    $"Approving {amount:N2} would exceed the remaining {claim.BenefitType?.Name ?? "benefit"} allowance ({annualLimit - spent:N2} available for {year}).");
             claim.Status = "approved";
             claim.ApprovedAmount = Math.Round(amount ?? 0m, 2);
         }
