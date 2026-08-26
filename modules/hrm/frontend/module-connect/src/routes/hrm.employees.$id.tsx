@@ -1,7 +1,14 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Eye, KeyRound, Link2, Printer, Unlink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, FileText, KeyRound, Link2, Printer, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { adaptWorkerProfile, adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { entities } from "@/mock/data";
 import { employeeProfileApi } from "@/mock/employeeprofile";
@@ -47,6 +54,33 @@ type PayslipRecord = {
   releasedAt?: string | null;
   payDate?: string | null;
 };
+type PreviewComponent = {
+  code: string;
+  label: string;
+  kind: "Earning" | "Deduction" | "Employer";
+  amount: number;
+  explanation: string;
+};
+type PayslipPreview = {
+  status: "ready" | "blocked";
+  guardrails: string[];
+  run?: {
+    id: string;
+    period: string;
+    payGroup: string;
+    currency: string;
+    status: string;
+  };
+  line?: {
+    id: string;
+    gross: number;
+    deductions: number;
+    employerCost: number;
+    net: number;
+    components: PreviewComponent[];
+    flags: string[];
+  };
+};
 
 function text(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
@@ -71,6 +105,260 @@ async function latestPayslipFor(workerId: string) {
 
 function payslipLabel(slip: PayslipRecord) {
   return slip.periodLabel || slip.payslipNo || "last payslip";
+}
+
+function money(value: number, currency = "ZMW") {
+  try {
+    return new Intl.NumberFormat("en-ZM", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(2)}`;
+  }
+}
+
+function rawText(raw: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = raw[key];
+    if (value !== null && value !== undefined && String(value).trim()) return String(value);
+  }
+  return "";
+}
+
+function previewRun(raw: unknown) {
+  const r = raw as Record<string, unknown>;
+  return {
+    id: rawText(r, "id"),
+    period: rawText(r, "periodLabel", "period", "name"),
+    payGroup: rawText(r, "payGroup", "payGroupName") || "Payroll run",
+    currency: rawText(r, "currency") || "ZMW",
+    status: (rawText(r, "status") || "draft").toLowerCase(),
+    sortKey: rawText(r, "endDate", "cutoffDate", "postingDate", "createdAt", "updatedAt", "periodLabel"),
+  };
+}
+
+function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
+  const l = raw as Record<string, unknown>;
+  const components = ((l.components as Record<string, unknown>[] | undefined) ?? []).map((c) => {
+    const componentType = rawText(c, "componentType", "type");
+    return {
+      code: rawText(c, "componentCode", "code"),
+      label: rawText(c, "componentName", "name", "label") || "Payroll component",
+      kind:
+        componentType === "employer-contribution"
+          ? "Employer"
+          : componentType === "deduction"
+            ? "Deduction"
+            : "Earning",
+      amount: Number(c.amount ?? 0),
+      explanation: rawText(c, "explanation", "basis"),
+    } as PreviewComponent;
+  });
+  return {
+    id: rawText(l, "id"),
+    gross: Number(l.grossPay ?? l.gross ?? 0),
+    deductions: Number(l.totalDeductions ?? l.deductions ?? 0),
+    employerCost: Number(l.employerCost ?? 0),
+    net: Number(l.netPay ?? l.net ?? 0),
+    components,
+    flags: l.hasException
+      ? [rawText(l, "exceptionReason") || "Payroll exception needs review."]
+      : [],
+  };
+}
+
+async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
+  const runs = (await realApi.payrollRuns()).items
+    .map(previewRun)
+    .filter((run) => run.id)
+    .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  const usableRuns = runs.filter((run) => !["draft", "locked", "cancelled", "void", "reversed"].includes(run.status));
+  const searchRuns = usableRuns.length ? usableRuns : runs;
+  const guardrails: string[] = [];
+
+  if (!runs.length) {
+    return {
+      status: "blocked",
+      guardrails: ["No payroll run exists yet. Create a payroll run, calculate it, then preview the employee's payslip."],
+    };
+  }
+
+  for (const run of searchRuns) {
+    const rawLines = await realApi.payrollRunLines(run.id);
+    const lines = ((rawLines as { items?: unknown[] }).items ?? []) as Record<string, unknown>[];
+    const rawLine = lines.find((line) => rawText(line, "workerId", "employeeId") === workerId);
+    if (!rawLine) continue;
+
+    const line = previewLine(rawLine);
+    if (!line.components.length) guardrails.push("The payroll line exists, but no component breakdown was returned by the engine.");
+    if (!line.components.some((c) => c.kind === "Earning")) guardrails.push("No earning component was calculated for this employee.");
+    if (line.gross <= 0) guardrails.push("Gross pay is zero. Check basic salary, earning components and salary profile setup.");
+    if (line.net <= 0) guardrails.push("Net pay is zero or negative. Review deductions before releasing a payslip.");
+    if (Math.abs(line.gross - line.deductions - line.net) > 0.05) {
+      guardrails.push("Gross minus deductions does not match net pay. Recalculate the run or review payroll engine output.");
+    }
+    line.flags.forEach((flag) => guardrails.push(flag));
+
+    return {
+      status: guardrails.length ? "blocked" : "ready",
+      guardrails,
+      run,
+      line,
+    };
+  }
+
+  return {
+    status: "blocked",
+    guardrails: [
+      "No calculated payroll line was found for this employee.",
+      "Confirm the employee has an active payroll profile, belongs to the selected pay group and branch scope, then calculate the run again.",
+    ],
+  };
+}
+
+function PayslipPreviewDialog({
+  employee,
+  profile,
+  open,
+  onOpenChange,
+}: {
+  employee: EmployeeRecord;
+  profile: EmployeeProfile | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const state = useApi(
+    () =>
+      open && USE_REAL
+        ? latestPayslipPreviewFor(employee.id)
+        : Promise.resolve({ status: "blocked", guardrails: ["Payslip preview is available in the live HRMS."] } as PayslipPreview),
+    [open, employee.id],
+  );
+  const preview = state.data;
+  const line = preview?.line;
+  const currency = preview?.run?.currency ?? "ZMW";
+  const earnings = line?.components.filter((component) => component.kind === "Earning") ?? [];
+  const deductions = line?.components.filter((component) => component.kind === "Deduction") ?? [];
+  const employer = line?.components.filter((component) => component.kind === "Employer") ?? [];
+  const profileWarnings: string[] = [
+    !profile?.paymentMethod ? "Payment method is not recorded on the employee profile." : "",
+    profile?.paymentMethod === "Bank" && !profile?.bankAccount ? "Bank account is not recorded." : "",
+    profile?.paymentMethod === "Mobile money" && !profile?.mobileMoneyNumber ? "Mobile money number is not recorded." : "",
+  ].filter((item): item is string => Boolean(item));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="size-5 text-primary" aria-hidden />
+            Payslip preview for {employee.fullName}
+          </DialogTitle>
+          <DialogDescription>
+            Preview comes from the latest calculated payroll line. A PDF is only available after the run is approved and payslips are released.
+          </DialogDescription>
+        </DialogHeader>
+
+        {state.loading ? (
+          <div className="rounded-md border bg-surface p-6 text-sm text-muted-foreground">Checking payroll output...</div>
+        ) : state.error ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            {state.error}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-md border bg-surface p-3">
+                <div className="text-xs text-muted-foreground">Period</div>
+                <div className="mt-1 font-semibold">{preview?.run?.period || "Not calculated"}</div>
+              </div>
+              <div className="rounded-md border bg-surface p-3">
+                <div className="text-xs text-muted-foreground">Gross</div>
+                <div className="mt-1 font-semibold">{line ? money(line.gross, currency) : "—"}</div>
+              </div>
+              <div className="rounded-md border bg-surface p-3">
+                <div className="text-xs text-muted-foreground">Deductions</div>
+                <div className="mt-1 font-semibold">{line ? money(line.deductions, currency) : "—"}</div>
+              </div>
+              <div className="rounded-md border bg-surface p-3">
+                <div className="text-xs text-muted-foreground">Net pay</div>
+                <div className="mt-1 font-semibold">{line ? money(line.net, currency) : "—"}</div>
+              </div>
+            </div>
+
+            {(preview?.guardrails.length || profileWarnings.length) ? (
+              <div className="rounded-md border border-warning/40 bg-warning/10 p-4">
+                <div className="flex items-center gap-2 font-semibold text-warning">
+                  <AlertTriangle className="size-4" aria-hidden />
+                  Guard rails
+                </div>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                  {[...(preview?.guardrails ?? []), ...profileWarnings].map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 p-4 text-sm text-success">
+                <CheckCircle2 className="size-4" aria-hidden />
+                Payroll line is calculated and ready for approval/release checks.
+              </div>
+            )}
+
+            {line ? (
+              <>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <ComponentList title="Earnings" items={earnings} currency={currency} />
+                  <ComponentList title="Deductions" items={deductions} currency={currency} />
+                  <ComponentList title="Employer cost" items={employer} currency={currency} />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-surface p-3 text-sm">
+                  <span>
+                    Run status: <strong>{preview?.run?.status.replaceAll("-", " ")}</strong> · {preview?.run?.payGroup}
+                  </span>
+                  {preview?.run?.id ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to="/hrm/payroll/runs/$id" params={{ id: preview.run.id }}>
+                        Open payroll run
+                      </Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ComponentList({ title, items, currency }: { title: string; items: PreviewComponent[]; currency: string }) {
+  return (
+    <div className="rounded-md border bg-surface">
+      <div className="border-b px-3 py-2 text-sm font-semibold">{title}</div>
+      {items.length ? (
+        <div className="divide-y">
+          {items.map((item) => (
+            <div key={`${item.kind}-${item.code}-${item.label}`} className="p-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{item.label}</div>
+                  <div className="text-xs text-muted-foreground">{item.code || "No code"}</div>
+                </div>
+                <div className="whitespace-nowrap font-semibold">{money(item.amount, currency)}</div>
+              </div>
+              {item.explanation ? <div className="mt-1 text-xs text-muted-foreground">{item.explanation}</div> : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="p-3 text-sm text-muted-foreground">No components calculated.</div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -373,7 +661,8 @@ function EmployeePage() {
   const [linkSubject, setLinkSubject] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
   const [subjectId, setSubjectId] = useState<string | null>(null);
-  const [payslipBusy, setPayslipBusy] = useState<"preview" | "print" | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [payslipBusy, setPayslipBusy] = useState<"print" | null>(null);
   const hrAdmin = useRoleGate()(APPROVER_ROLES);
   useEffect(() => {
     setSubjectId(null);
@@ -403,33 +692,6 @@ function EmployeePage() {
     [id],
   );
   const leaveSummary = USE_REAL ? null : balanceFor(id);
-
-  const previewLatestPayslip = async (workerId: string) => {
-    if (!USE_REAL) {
-      feedback.note("Payslip preview is available in the live HRMS.");
-      return;
-    }
-    setPayslipBusy("preview");
-    try {
-      const slip = await latestPayslipFor(workerId);
-      if (!slip?.id) {
-        feedback.blocked(
-          "No payslip is ready to preview.",
-          "Payroll must release a payslip for this employee before it can be previewed.",
-        );
-        return;
-      }
-      window.open(realApi.payslipPreviewUrl(slip.id), "_blank", "noopener,noreferrer");
-      feedback.note(`Preview opened for ${payslipLabel(slip)}.`);
-    } catch (error) {
-      feedback.blocked(
-        "Payslip preview is blocked.",
-        error instanceof Error ? error.message : "Check payroll permissions and release status, then try again.",
-      );
-    } finally {
-      setPayslipBusy(null);
-    }
-  };
 
   const printLatestPayslip = async (workerId: string) => {
     if (!USE_REAL) {
@@ -505,9 +767,9 @@ function EmployeePage() {
               }
               primaryAction={
                 <div className="flex flex-wrap justify-end gap-2">
-                  <Button variant="outline" onClick={() => void previewLatestPayslip(e.id)} disabled={payslipBusy !== null}>
+                  <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={payslipBusy !== null}>
                     <Eye className="mr-2 size-4" aria-hidden />
-                    {payslipBusy === "preview" ? "Checking..." : "Preview payslip"}
+                    Preview payslip
                   </Button>
                   <Button variant="outline" onClick={() => void printLatestPayslip(e.id)} disabled={payslipBusy !== null}>
                     <Printer className="mr-2 size-4" aria-hidden />
@@ -623,6 +885,13 @@ function EmployeePage() {
                   </div>
                 </DetailSection>
               ) : null}
+
+              <PayslipPreviewDialog
+                employee={e}
+                profile={profileState.data}
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+              />
 
               <ConfirmDialog
                 open={linkOpen}
