@@ -2024,6 +2024,9 @@ function RunDetail() {
                   <CalculationPanel
                     runId={run.id}
                     locked={run.status === "Paid" || run.status === "Closed"}
+                    liveCalculatedCount={USE_REAL ? (lines.data?.length ?? 0) : undefined}
+                    liveTotalCount={USE_REAL ? run.included : undefined}
+                    liveStatus={USE_REAL ? run.backendStatus : undefined}
                     lockedReason={
                       run.status === "Closed"
                         ? "This period is closed and locked. A change now needs a correction run."
