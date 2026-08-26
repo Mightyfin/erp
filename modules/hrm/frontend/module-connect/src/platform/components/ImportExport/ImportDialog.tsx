@@ -62,6 +62,12 @@ export interface ImportDialogProps {
 }
 
 interface FileColumn { name: string; sample: string }
+interface MissingReferencePlan {
+  departments: string[];
+  grades: string[];
+  legalEntityId: string;
+  legalEntityName: string;
+}
 
 /* ---------------------------------------------------------------- csv parse */
 /** Quote-aware CSV parser mirroring the server's ImportRowParser. */
@@ -152,6 +158,54 @@ function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<str
 const SKIP = "__skip__";
 const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === "true";
 const IMPORT_PAGE_SIZE = 25;
+
+function uniqueClean(values: unknown[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+  }
+  return result;
+}
+
+function slugifyCode(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return (slug || "department").slice(0, 40);
+}
+
+function readItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const row = value as { items?: unknown[] } | null;
+  return Array.isArray(row?.items) ? row.items : [];
+}
+
+function readString(row: unknown, key: string) {
+  const obj = row as Record<string, unknown> | null;
+  return obj?.[key] ? String(obj[key]) : "";
+}
+
+function parseSetupEmployment(value: unknown) {
+  const dataJson = (value as { dataJson?: string | null } | null)?.dataJson;
+  if (!dataJson) return { grades: [] as Array<{ name: string }>, positions: [] as unknown[] };
+  try {
+    const parsed = JSON.parse(dataJson) as { grades?: Array<{ name?: string }>; positions?: unknown[] };
+    return {
+      grades: (parsed.grades ?? []).map((grade) => ({ name: String(grade.name ?? "").trim() })).filter((grade) => grade.name),
+      positions: parsed.positions ?? [],
+    };
+  } catch {
+    return { grades: [] as Array<{ name: string }>, positions: [] as unknown[] };
+  }
+}
 
 /* ---------------------------------------------------------------- demo data */
 /** Demo-mode schemas keep the offline preview flow usable. */
@@ -281,6 +335,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [mapPage, setMapPage] = useState(1);
   const [previewPage, setPreviewPage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [referencesOpen, setReferencesOpen] = useState(false);
+  const [referencesBusy, setReferencesBusy] = useState(false);
+  const [missingReferences, setMissingReferences] = useState<MissingReferencePlan | null>(null);
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [pasteError, setPasteError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -318,6 +375,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
+    setMissingReferences(null);
+    setReferencesOpen(false);
     void loadSchemas();
   }
 
@@ -335,6 +394,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
+    setMissingReferences(null);
+    setReferencesOpen(false);
     void loadSchemas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [embedded, typeKey]);
@@ -373,6 +434,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setMapping({});
     setPreview(null);
     setPasteError(null);
+    setMissingReferences(null);
+    setReferencesOpen(false);
     setEntryMode("upload");
     setManualPage(1);
     setMapPage(1);
@@ -478,6 +541,112 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setStep("upload");
   }
 
+  function extractMissingDepartmentNames(rows: Array<Record<string, unknown>>) {
+    return uniqueClean(rows.flatMap((row) => {
+      const message = String(row.message ?? "");
+      const match = message.match(/No department named '([^']+)' exists/i);
+      return match?.[1] ? [match[1]] : [];
+    }));
+  }
+
+  async function buildMissingReferencePlan() {
+    if (typeKey !== "workers") return null;
+    const rows = (preview?.rows as Array<Record<string, unknown>> | undefined) ?? [];
+    const [orgUnitsRaw, legalEntitiesRaw, employmentRaw] = await Promise.all([
+      realApi.orgUnits().catch(() => []),
+      realApi.legalEntities().catch(() => []),
+      realApi.setupStepData("employment").catch(() => null),
+    ]);
+
+    const orgUnits = readItems(orgUnitsRaw);
+    const legalEntities = readItems(legalEntitiesRaw);
+    const existingDepartments = new Set(
+      orgUnits
+        .filter((unit) => !readString(unit, "unitType") || readString(unit, "unitType").toLowerCase() === "department")
+        .map((unit) => readString(unit, "name").toLowerCase())
+        .filter(Boolean),
+    );
+    const departmentsFromErrors = extractMissingDepartmentNames(rows);
+    const departmentsFromRows = uniqueClean(mappedRows.map((row) => row.orgUnitName))
+      .filter((name) => !existingDepartments.has(name.toLowerCase()));
+    const departments = uniqueClean([...departmentsFromErrors, ...departmentsFromRows]);
+
+    const employment = parseSetupEmployment(employmentRaw);
+    const existingGrades = new Set(employment.grades.map((grade) => grade.name.toLowerCase()));
+    const grades = uniqueClean(mappedRows.map((row) => row.grade))
+      .filter((grade) => !existingGrades.has(grade.toLowerCase()));
+
+    const legalEntityId =
+      readString(orgUnits[0], "legalEntityId") ||
+      readString(legalEntities[0], "id");
+    const legalEntityName =
+      readString(orgUnits[0], "legalEntityName") ||
+      readString(legalEntities[0], "registeredName") ||
+      readString(legalEntities[0], "tradingName") ||
+      "default entity";
+
+    if (!departments.length && !grades.length) return null;
+    return { departments, grades, legalEntityId, legalEntityName };
+  }
+
+  async function openMissingReferencesDialog() {
+    setReferencesBusy(true);
+    try {
+      const plan = await buildMissingReferencePlan();
+      if (!plan) {
+        toast.info("No missing departments or grades were found in this preview.");
+        return;
+      }
+      setMissingReferences(plan);
+      setReferencesOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not check missing reference data.");
+    } finally {
+      setReferencesBusy(false);
+    }
+  }
+
+  async function createMissingReferences() {
+    if (!missingReferences) return;
+    setReferencesBusy(true);
+    try {
+      if (missingReferences.departments.length && !missingReferences.legalEntityId) {
+        throw new Error("Create a legal entity first, then create missing departments from this import.");
+      }
+      for (const department of missingReferences.departments) {
+        await realApi.createOrgUnit({
+          code: slugifyCode(department),
+          name: department,
+          legalEntityId: missingReferences.legalEntityId,
+          unitType: "department",
+          effectiveFrom: new Date().toISOString().slice(0, 10),
+        });
+      }
+
+      if (missingReferences.grades.length) {
+        const employmentRaw = await realApi.setupStepData("employment").catch(() => null);
+        const employment = parseSetupEmployment(employmentRaw);
+        const existing = new Set(employment.grades.map((grade) => grade.name.toLowerCase()));
+        const grades = [
+          ...employment.grades,
+          ...missingReferences.grades
+            .filter((grade) => !existing.has(grade.toLowerCase()))
+            .map((name) => ({ name })),
+        ];
+        await realApi.completeSetupStep("employment", JSON.stringify({ grades, positions: employment.positions }));
+      }
+
+      toast.success("Missing reference data created. Preview is being refreshed.");
+      setReferencesOpen(false);
+      setMissingReferences(null);
+      await runPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Missing reference data was not created.");
+    } finally {
+      setReferencesBusy(false);
+    }
+  }
+
   async function runPreview() {
     if (!schema) {
       toast.error("The live import schema is unavailable. Nothing has been written.");
@@ -485,6 +654,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     }
     setBusy(true);
     try {
+      setMissingReferences(null);
       if (!schemas) {
         setPreview(demoPreview(mappedRows));
       } else {
@@ -959,6 +1129,27 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 Confirm import
               </Button>
             </div>
+            {typeKey === "workers" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft/30 p-3">
+                <div>
+                  <p className="text-sm font-medium text-warning-foreground">Check reference data</p>
+                  <p className="text-xs text-muted-foreground">
+                    If the file contains new departments or grade names, create them here and preview again.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={referencesBusy}
+                  onClick={() => void openMissingReferencesDialog()}
+                >
+                  {referencesBusy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Plus className="size-4" aria-hidden />}
+                  Check missing data
+                </Button>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: "Total rows", value: String(preview.totalRows ?? 0), cls: "" },
@@ -1080,6 +1271,72 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
           </Dialog>
         </>
       )}
+      <Dialog open={referencesOpen} onOpenChange={setReferencesOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create missing import data</DialogTitle>
+            <DialogDescription>
+              These values were found in the imported rows but are not yet configured.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {missingReferences?.departments.length ? (
+              <div className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Departments</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      They will be created under {missingReferences.legalEntityName}.
+                    </p>
+                  </div>
+                  <Badge variant="outline">{missingReferences.departments.length}</Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {missingReferences.departments.map((department) => (
+                    <Badge key={department} variant="secondary">{department}</Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {missingReferences?.grades.length ? (
+              <div className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Grades</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      They will be saved to the employment setup configuration used by employee forms.
+                    </p>
+                  </div>
+                  <Badge variant="outline">{missingReferences.grades.length}</Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {missingReferences.grades.map((grade) => (
+                    <Badge key={grade} variant="secondary">{grade}</Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {missingReferences?.departments.length && !missingReferences.legalEntityId ? (
+              <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft/30 p-3 text-sm text-danger">
+                No legal entity was found. Create the company/entity first, then add these departments.
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={() => setReferencesOpen(false)} disabled={referencesBusy}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void createMissingReferences()}
+                disabled={referencesBusy || !missingReferences || (!missingReferences.departments.length && !missingReferences.grades.length)}
+              >
+                {referencesBusy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
+                Create and recheck
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

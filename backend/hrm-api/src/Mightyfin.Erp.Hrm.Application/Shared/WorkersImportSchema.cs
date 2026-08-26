@@ -29,10 +29,10 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     public List<ImportFieldDef> Fields =>
     [
         new("employeeNo", "Employee number", false, NaturalKey: true, Example: "EMP-0008"),
-        new("firstName", "First name", true, Example: "Mary"),
-        new("lastName", "Last name", true, Example: "Bwalya"),
+        new("firstName", "First name", true),
+        new("lastName", "Last name", true),
         new("middleName", "Middle name", false, Example: "Chileshe"),
-        new("email", "Work email", true, FormatNote: "e.g. mary@example.com"),
+        new("email", "Work email", true, FormatNote: "e.g. employee@example.com"),
         new("phone", "Phone", true, FormatNote: "e.g. 0971234567"),
         new("nrc", "NRC", false, FormatNote: "e.g. 123456/78/1"),
         new("tpin", "TPIN", false, FormatNote: "10 digits"),
