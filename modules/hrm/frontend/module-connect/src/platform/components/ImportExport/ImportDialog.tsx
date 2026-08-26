@@ -438,7 +438,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   function showUploadEntry() {
     setEntryMode("upload");
     setPreview(null);
-    setStep("upload");
+    setStep(fileRows.length > 0 ? "map" : "upload");
   }
 
   function showManualEntry() {
@@ -451,8 +451,10 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   }
 
   function editMappedRowsManually() {
-    const seeded = mappedRows;
-    setManualRows(seeded.length > 0 ? seeded : [{}]);
+    if (manualRows.length === 0) {
+      const seeded = mappedRows;
+      setManualRows(seeded.length > 0 ? seeded : [{}]);
+    }
     setEntryMode("manual");
     setPreview(null);
     setManualPage(1);
@@ -502,15 +504,6 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       const counts = res as { created?: number; updated?: number; skipped?: number; rowOutcomes?: Array<{ row: number; status: string }> };
       toast.success(`Import done — ${counts.created ?? 0} created, ${counts.updated ?? 0} updated${counts.skipped ? `, ${counts.skipped} skipped` : ""}`);
       if (embedded) {
-        setStep("upload");
-        setFileColumns([]);
-        setFileRows([]);
-        setPreview(null);
-        setMapping({});
-        setFileName("");
-        setManualRows([]);
-        setManualPage(1);
-        setMapPage(1);
         setPreviewPage(1);
       } else {
         setOpen(false);
