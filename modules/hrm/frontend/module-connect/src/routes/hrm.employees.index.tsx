@@ -16,7 +16,7 @@
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Archive, FileSpreadsheet, Pencil, UserPlus } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, Pencil, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppShell } from "@/platform/components/AppShell";
@@ -60,6 +60,7 @@ const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 const ARCHIVE_ROLES = new Set(["hr_admin", "hr_ops"]);
 
 const MOCK_TYPE_OPTIONS = ["Permanent", "Fixed term", "Contractor", "Intern", "Part time"];
+const EMPLOYEE_PAGE_SIZE = 25;
 
 /** Extended row kept in sync with the backend's WorkerDto fields we need. */
 type EmployeeRow = Employee & { rawId?: string; isArchived?: boolean; rawStatus?: string };
@@ -71,6 +72,7 @@ function EmployeesPage() {
   const [archived, setArchived] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<EmployeeRow | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Mock-mode view chip (demo behaviour only — real mode uses the backend).
   const [view, setView] = useState("all");
@@ -86,11 +88,12 @@ function EmployeesPage() {
               ...(statusFilter ? { status: statusFilter } : {}),
               ...(typeFilter ? { workerType: typeFilter } : {}),
               ...(archived ? { includeArchived: "true" } : {}),
-              pageSize: 100,
+              page,
+              pageSize: EMPLOYEE_PAGE_SIZE,
             })
             .then(
-              (page) =>
-                (Array.from(page.items ?? []) as Array<Record<string, unknown>>).map(
+              (result) => ({
+                items: (Array.from(result.items ?? []) as Array<Record<string, unknown>>).map(
                   (raw) =>
                     ({
                       ...(adaptWorkers([raw])[0] ?? ({} as Employee)),
@@ -99,13 +102,21 @@ function EmployeesPage() {
                       isArchived: Boolean(raw.isArchived),
                     }) as EmployeeRow,
                 ) as EmployeeRow[],
+                totalCount: Number(result.totalCount ?? 0),
+                page: Number((result as { page?: number }).page ?? page),
+                pageSize: Number((result as { pageSize?: number }).pageSize ?? EMPLOYEE_PAGE_SIZE),
+              }),
             )
-        : Promise.resolve([] as EmployeeRow[]),
-    [search, statusFilter, typeFilter, archived],
+        : Promise.resolve({ items: [] as EmployeeRow[], totalCount: 0, page: 1, pageSize: EMPLOYEE_PAGE_SIZE }),
+    [search, statusFilter, typeFilter, archived, page],
   );
 
   const mockState = useMock(() => api.employees());
-  const rows: EmployeeRow[] = USE_REAL ? (state.data ?? []) : mockState.data ?? [];
+  const rows: EmployeeRow[] = USE_REAL ? (state.data?.items ?? []) : mockState.data ?? [];
+  const totalCount = USE_REAL ? (state.data?.totalCount ?? 0) : rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / EMPLOYEE_PAGE_SIZE));
+  const pageStart = totalCount === 0 ? 0 : (page - 1) * EMPLOYEE_PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * EMPLOYEE_PAGE_SIZE, totalCount);
 
   const treeState = useApi<OrgTreeNode[]>(async () => {
     if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
@@ -229,7 +240,10 @@ function EmployeesPage() {
   // Real-mode view chips flip the archived filter at the API.
   const handleView = (next: string) => {
     setView(next);
-    if (USE_REAL) setArchived(next === "archived");
+    if (USE_REAL) {
+      setArchived(next === "archived");
+      setPage(1);
+    }
   };
 
   const clientFilters = USE_REAL
@@ -347,32 +361,69 @@ function EmployeesPage() {
         </div>
 
         <Async state={USE_REAL ? state : mockState} rows={6}>
-          {(rendered) => (
-            <ListPage
-              rows={rendered as EmployeeRow[]}
-              columns={columns}
-              savedViews={views}
-              activeView={view}
-              onViewChange={handleView}
-              searchPlaceholder={USE_REAL ? "Search name, employee number, NRC or email" : "Search name, number or job title"}
-              searchFields={(e) => `${e.fullName} ${e.employeeNo} ${e.jobTitle} ${e.email ?? ""} ${e.nationalId ?? ""}`}
-              filters={clientFilters}
-              emptyBody={
-                archived
-                  ? "No archived employees — leavers will surface here when HR archives them."
-                  : "No employees found for the current filters."
-              }
-              rowHref={(e) => (
-                <Link
-                  to="/hrm/employees/$id"
-                  params={{ id: e.rawId ?? e.id }}
-                  className="text-xs font-medium text-primary underline underline-offset-2"
-                >
-                  Open
-                </Link>
-              )}
-            />
-          )}
+          {(rendered) => {
+            const renderedRows = USE_REAL ? ((rendered as { items: EmployeeRow[] }).items ?? []) : (rendered as EmployeeRow[]);
+            return (
+              <div className="space-y-4">
+                <ListPage
+                  rows={renderedRows}
+                  columns={columns}
+                  savedViews={views}
+                  activeView={view}
+                  onViewChange={handleView}
+                  searchPlaceholder={USE_REAL ? "Search name, employee number, NRC or email" : "Search name, number or job title"}
+                  searchFields={(e) => `${e.fullName} ${e.employeeNo} ${e.jobTitle} ${e.email ?? ""} ${e.nationalId ?? ""}`}
+                  filters={clientFilters}
+                  emptyBody={
+                    archived
+                      ? "No archived employees — leavers will surface here when HR archives them."
+                      : "No employees found for the current filters."
+                  }
+                  rowHref={(e) => (
+                    <Link
+                      to="/hrm/employees/$id"
+                      params={{ id: e.rawId ?? e.id }}
+                      className="text-xs font-medium text-primary underline underline-offset-2"
+                    >
+                      Open
+                    </Link>
+                  )}
+                />
+                {USE_REAL ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">
+                      Showing {pageStart}-{pageEnd} of {totalCount} employees
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      >
+                        <ChevronLeft className="mr-1 size-4" aria-hidden />
+                        Previous
+                      </Button>
+                      <span className="min-w-24 text-center text-xs text-muted-foreground">
+                        Page {page} of {totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      >
+                        Next
+                        <ChevronRight className="ml-1 size-4" aria-hidden />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          }}
         </Async>
 
         {archiveTarget && (
