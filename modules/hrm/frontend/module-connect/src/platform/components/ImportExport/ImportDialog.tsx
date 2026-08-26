@@ -606,6 +606,43 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     </div>
   ) : null;
 
+  const actionBar = schema ? (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t bg-card pt-4">
+      <div className="text-xs text-muted-foreground">
+        {step === "upload" && entryMode === "manual" && `${filledManualRows.length} manual rows ready for preview`}
+        {step === "upload" && entryMode === "upload" && fileRows.length === 0 && "Upload or paste a spreadsheet to continue"}
+        {step === "upload" && entryMode === "upload" && fileRows.length > 0 && `${fileRows.length} imported rows are still loaded`}
+        {step === "map" && `${Object.values(mapping).filter((v) => v && v !== SKIP).length} fields mapped from ${fileRows.length} rows`}
+        {step === "preview" && `${accepted} rows ready to import${(preview?.willError as number | undefined) ? `, ${String(preview?.willError)} need correction` : ""}`}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        {step === "map" ? (
+          <Button variant="outline" size="sm" onClick={editMappedRowsManually} disabled={!mappedRows.length}>
+            <Pen className="h-4 w-4" />
+            Manual edit rows
+          </Button>
+        ) : null}
+        {step === "upload" && entryMode === "upload" && fileRows.length > 0 ? (
+          <Button size="sm" onClick={() => setStep("map")}>
+            Continue mapping
+          </Button>
+        ) : null}
+        {(step === "upload" && entryMode === "manual") || step === "map" ? (
+          <Button size="sm" onClick={() => void runPreview()} disabled={busy || !canPreview}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Preview
+          </Button>
+        ) : null}
+        {step === "preview" ? (
+          <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            Submit import
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
+
   const workflow = (
     <>
       {embedded ? (
@@ -984,6 +1021,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
           </div>
         )}
       </ScrollArea>
+      {actionBar}
     </>
   );
 
