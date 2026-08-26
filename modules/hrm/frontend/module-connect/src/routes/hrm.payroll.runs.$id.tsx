@@ -1912,6 +1912,81 @@ function RunDetail() {
             const firstLiveExample = lines.data?.find((line) => line.components.length)
               ?.components[0];
             const firstLiveLine = lines.data?.find((line) => line.components.length);
+            const canCalculate =
+              USE_REAL &&
+              !calculating &&
+              calculationReadiness.data?.ready !== false &&
+              ["draft", "locked", "calculated"].includes(run.backendStatus);
+            const calculateLabel =
+              run.backendStatus === "calculated"
+                ? "Recalculate"
+                : run.backendStatus === "draft"
+                  ? "Lock and calculate"
+                  : "Calculate";
+            const canSubmitForReview =
+              USE_REAL &&
+              !submitting &&
+              run.backendStatus === "calculated" &&
+              Boolean(run.branchId);
+            const canLockInputs =
+              USE_REAL &&
+              !locking &&
+              calculationReadiness.data?.ready !== false &&
+              run.backendStatus === "draft";
+            const runCalculate = async () => {
+              setCalculating(true);
+              try {
+                if (run.backendStatus === "draft") {
+                  await realApi.lockPayrollRun(run.id);
+                }
+                await realApi.calculatePayrollRun(run.id);
+                feedback.submitted(
+                  "Calculation complete.",
+                  "Review pay lines and variances before sending for review.",
+                );
+                await state.reload();
+                await lines.reload();
+                await calculationReadiness.reload();
+              } catch (e) {
+                feedback.blocked(
+                  "Calculation failed",
+                  e instanceof Error ? e.message : "Unknown error.",
+                );
+              } finally {
+                setCalculating(false);
+              }
+            };
+            const submitForReview = async () => {
+              setSubmitting(true);
+              try {
+                await realApi.submitPayrollRun(run.id);
+                feedback.submitted(
+                  "Branch run sent for review.",
+                  "Organisation-wide HR can now review and approve this draft.",
+                );
+                await state.reload();
+              } catch (e) {
+                feedback.blocked(
+                  "Submit failed",
+                  e instanceof Error ? e.message : "Unknown error.",
+                );
+              } finally {
+                setSubmitting(false);
+              }
+            };
+            const lockInputs = async () => {
+              setLocking(true);
+              try {
+                await realApi.lockPayrollRun(run.id);
+                feedback.submitted("Payroll inputs locked.", "The run is ready to calculate.");
+                await state.reload();
+                await calculationReadiness.reload();
+              } catch (e) {
+                feedback.blocked("Lock failed", e instanceof Error ? e.message : "Unknown error.");
+              } finally {
+                setLocking(false);
+              }
+            };
 
             return (
               <RecordDetail
@@ -1945,7 +2020,7 @@ function RunDetail() {
               >
                 <Tabs defaultValue="overview" className="space-y-4">
                   <div className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-                    <TabsList className="h-auto min-w-max justify-start">
+                    <TabsList className="h-auto min-w-max justify-start gap-1">
                       <TabsTrigger value="overview">Overview</TabsTrigger>
                       <TabsTrigger value="calculate">Calculate</TabsTrigger>
                       <TabsTrigger value="review">Review</TabsTrigger>
@@ -1974,110 +2049,65 @@ function RunDetail() {
                   </TabsContent>
 
                   <TabsContent value="calculate" className="space-y-4">
+                    {USE_REAL ? (
+                      <div className="rounded-lg border bg-surface p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold">Calculation actions</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Current status:{" "}
+                              <span className="font-medium text-foreground">
+                                {run.backendStatus.replaceAll("-", " ")}
+                              </span>
+                              . Use this first, then review the calculated lines.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              disabled={!canCalculate}
+                              onClick={() => {
+                                void runCalculate();
+                              }}
+                            >
+                              {calculating ? "Calculating..." : calculateLabel}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              disabled={!canSubmitForReview}
+                              onClick={() => {
+                                void submitForReview();
+                              }}
+                            >
+                              {submitting ? "Sending..." : "Send for review"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="gap-1.5"
+                              disabled={!canLockInputs}
+                              onClick={() => {
+                                void lockInputs();
+                              }}
+                            >
+                              {locking ? "Locking..." : "Lock inputs"}
+                            </Button>
+                          </div>
+                        </div>
+                        {calculationReadiness.data?.ready === false ? (
+                          <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+                            Calculation is blocked until the readiness issues below are fixed.
+                          </p>
+                        ) : run.backendStatus === "calculated" ? (
+                          <p className="mt-3 rounded-md border bg-surface-muted p-3 text-sm text-muted-foreground">
+                            This run is already calculated. Use <strong>Recalculate</strong> only
+                            after changing inputs or configuration.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     <DetailSection
                       title="Calculate"
                       description="Gross to net for every included employee. The payroll engine does the work; this shows what it did, employee by employee."
-                      action={
-                        USE_REAL ? (
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                calculating ||
-                                calculationReadiness.data?.ready === false ||
-                                !["draft", "locked", "calculated"].includes(run.backendStatus)
-                              }
-                              onClick={async () => {
-                                setCalculating(true);
-                                try {
-                                  if (run.backendStatus === "draft") {
-                                    await realApi.lockPayrollRun(run.id);
-                                  }
-                                  await realApi.calculatePayrollRun(run.id);
-                                  feedback.submitted(
-                                    "Calculation complete.",
-                                    "Review pay lines and variances before sending for review.",
-                                  );
-                                  await state.reload();
-                                  await lines.reload();
-                                  await calculationReadiness.reload();
-                                } catch (e) {
-                                  feedback.blocked(
-                                    "Calculation failed",
-                                    e instanceof Error ? e.message : "Unknown error.",
-                                  );
-                                } finally {
-                                  setCalculating(false);
-                                }
-                              }}
-                            >
-                              {calculating ? "Calculating…" : "Calculate run"}
-                            </Button>
-                            {/* M46: branch payroll drafts flow up for organisation-wide
-                            HR approval. Organisation-wide runs skip review and
-                            go straight to approval. */}
-                            <Button
-                              variant="default"
-                              size="sm"
-                              disabled={
-                                submitting || run.backendStatus !== "calculated" || !run.branchId
-                              }
-                              onClick={async () => {
-                                setSubmitting(true);
-                                try {
-                                  await realApi.submitPayrollRun(run.id);
-                                  feedback.submitted(
-                                    "Branch run sent for review.",
-                                    "Organisation-wide HR can now review and approve this draft.",
-                                  );
-                                  await state.reload();
-                                } catch (e) {
-                                  feedback.blocked(
-                                    "Submit failed",
-                                    e instanceof Error ? e.message : "Unknown error.",
-                                  );
-                                } finally {
-                                  setSubmitting(false);
-                                }
-                              }}
-                            >
-                              {submitting ? "Sending…" : "Send for review"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              disabled={
-                                locking ||
-                                calculationReadiness.data?.ready === false ||
-                                run.backendStatus !== "draft"
-                              }
-                              onClick={async () => {
-                                setLocking(true);
-                                try {
-                                  await realApi.lockPayrollRun(run.id);
-                                  feedback.submitted(
-                                    "Payroll inputs locked.",
-                                    "The run is ready to calculate.",
-                                  );
-                                  await state.reload();
-                                  await calculationReadiness.reload();
-                                } catch (e) {
-                                  feedback.blocked(
-                                    "Lock failed",
-                                    e instanceof Error ? e.message : "Unknown error.",
-                                  );
-                                } finally {
-                                  setLocking(false);
-                                }
-                              }}
-                            >
-                              {locking ? "Locking…" : "Lock inputs"}
-                            </Button>
-                          </div>
-                        ) : undefined
-                      }
                     >
                       <CalculationReadinessCard readiness={calculationReadiness.data} />
                       <CalculationPanel
