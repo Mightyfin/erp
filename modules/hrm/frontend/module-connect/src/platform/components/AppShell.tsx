@@ -122,7 +122,7 @@ function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNav
     >
       {collapsed ? (
         <>
-          <ChevronRight className="size-3.5" aria-hidden />
+          <span className="size-1.5 rounded-full bg-current" aria-hidden />
           <span className="sr-only">{item.label}</span>
         </>
       ) : item.label}
@@ -163,6 +163,79 @@ function Section({ section, onNavigate, collapsed = false }: { section: NavSecti
         <Icon className="size-4 shrink-0" aria-hidden />
         {collapsed ? <span className="sr-only">{section.label}</span> : section.label}
       </Link>
+    );
+  }
+
+  if (collapsed) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={section.label}
+            className={cn(
+              "mx-auto flex size-10 items-center justify-center rounded-md text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-active",
+              childActive && "bg-rail-active text-rail-foreground",
+            )}
+            title={section.label}
+          >
+            <Icon className="size-4 shrink-0" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="right"
+          align="start"
+          sideOffset={10}
+          className="w-72 rounded-lg border bg-card p-2 text-card-foreground shadow-xl"
+        >
+          <DropdownMenuLabel className="flex items-center gap-2 px-2 py-2 text-sm">
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Icon className="size-4" aria-hidden />
+            </span>
+            <span>{section.label}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <div className="max-h-[70vh] space-y-1 overflow-y-auto">
+            {items?.map((i) => (
+              <DropdownMenuItem key={i.to + i.label} asChild>
+                <Link
+                  to={i.to}
+                  params={i.params as never}
+                  onClick={onNavigate}
+                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2 text-sm"
+                >
+                  <span className="min-w-0 truncate">{i.label}</span>
+                  {pathname.startsWith(i.to.split("/$")[0]) ? (
+                    <span className="ml-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                  ) : null}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            {groups?.map((g) => (
+              <div key={g.label} className="pt-1">
+                <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {g.label}
+                </p>
+                {g.items.map((i) => (
+                  <DropdownMenuItem key={i.to + i.label} asChild>
+                    <Link
+                      to={i.to}
+                      params={i.params as never}
+                      onClick={onNavigate}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2 text-sm"
+                    >
+                      <span className="min-w-0 truncate">{i.label}</span>
+                      {pathname.startsWith(i.to.split("/$")[0]) ? (
+                        <span className="ml-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                      ) : null}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            ))}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
