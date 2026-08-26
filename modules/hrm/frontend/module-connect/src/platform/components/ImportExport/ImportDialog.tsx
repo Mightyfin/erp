@@ -30,7 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Check, Download, FileSpreadsheet, Loader2, Search,
   ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen, Plus, Trash2,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -366,6 +366,22 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setStep("map");
   }
 
+  function clearSheet() {
+    setFileColumns([]);
+    setFileRows([]);
+    setFileName("");
+    setSheetName(null);
+    setMapping({});
+    setPreview(null);
+    setPasteError(null);
+    setEntryMode("upload");
+    setManualPage(1);
+    setMapPage(1);
+    setPreviewPage(1);
+    setStep("upload");
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
   async function handleFile(file: File) {
     try {
       const { headers, rows, sheetName: parsedSheetName } = await readFileRows(file);
@@ -417,6 +433,17 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       const seeded = mappedRows;
       setManualRows(seeded.length > 0 ? seeded : [{}]);
     }
+  }
+
+  function showUploadEntry() {
+    setEntryMode("upload");
+    setPreview(null);
+    setStep("upload");
+  }
+
+  function showManualEntry() {
+    switchEntryMode("manual");
+    setStep("upload");
   }
 
   function updateManualRow(index: number, fieldKey: string, value: string) {
@@ -550,6 +577,42 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreviewPage((page) => clampPage(page, previewRows?.length ?? 0));
   }, [previewRows?.length]);
 
+  const modeTabs = step !== "preview" ? (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface-muted/40 p-2">
+      <div className="flex flex-wrap gap-2 text-sm">
+        <button
+          type="button"
+          className={cn("rounded-md px-3 py-1.5", entryMode === "upload" ? "bg-primary text-primary-foreground" : "bg-muted")}
+          onClick={showUploadEntry}
+        >
+          Upload spreadsheet
+        </button>
+        <button
+          type="button"
+          className={cn("rounded-md px-3 py-1.5", entryMode === "manual" && !fileRows.length ? "bg-primary text-primary-foreground" : "bg-muted")}
+          onClick={showManualEntry}
+        >
+          Enter manually
+        </button>
+        {fileRows.length > 0 ? (
+          <button
+            type="button"
+            className={cn("rounded-md px-3 py-1.5", entryMode === "manual" && fileRows.length ? "bg-primary text-primary-foreground" : "bg-muted")}
+            onClick={editMappedRowsManually}
+          >
+            Edit imported rows
+          </button>
+        ) : null}
+      </div>
+      {fileRows.length > 0 ? (
+        <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={clearSheet}>
+          <X className="size-4" aria-hidden />
+          Remove spreadsheet
+        </Button>
+      ) : null}
+    </div>
+  ) : null;
+
   const workflow = (
     <>
       {embedded ? (
@@ -579,24 +642,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       )}
 
       <ScrollArea className={embedded ? "" : "flex-1 min-h-0"}>
+        {modeTabs ? <div className="p-1 pb-3">{modeTabs}</div> : null}
         {step === "upload" && (
           <div className="space-y-4 p-1">
-            <div className="flex gap-2 text-sm">
-              <button
-                type="button"
-                className={cn("rounded-md px-3 py-1.5", entryMode === "upload" ? "bg-primary text-primary-foreground" : "bg-muted")}
-                onClick={() => switchEntryMode("upload")}
-              >
-                Upload spreadsheet
-              </button>
-              <button
-                type="button"
-                className={cn("rounded-md px-3 py-1.5", entryMode === "manual" ? "bg-primary text-primary-foreground" : "bg-muted")}
-                onClick={() => switchEntryMode("manual")}
-              >
-                Manual edit
-              </button>
-            </div>
             {entryMode === "manual" && schema ? (
               <div className="space-y-3">
                 <div className="max-w-full overflow-x-auto rounded-md border pb-2">
