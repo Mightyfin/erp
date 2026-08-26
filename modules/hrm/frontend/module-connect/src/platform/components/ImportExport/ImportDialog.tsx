@@ -30,6 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Check, Download, FileSpreadsheet, Loader2, Search,
   ArrowUpFromLine, CircleCheck, CircleAlert, CircleMinus, Pen, Plus, Trash2,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
@@ -151,6 +152,7 @@ function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<str
 
 const SKIP = "__skip__";
 const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === "true";
+const IMPORT_PAGE_SIZE = 25;
 
 /* ---------------------------------------------------------------- demo data */
 /** Demo-mode schemas keep the offline preview flow usable. */
@@ -208,6 +210,62 @@ function demoPreview(rows: Array<Record<string, string>>) {
   };
 }
 
+function pageCount(totalRows: number) {
+  return Math.max(1, Math.ceil(totalRows / IMPORT_PAGE_SIZE));
+}
+
+function clampPage(page: number, totalRows: number) {
+  return Math.min(Math.max(page, 1), pageCount(totalRows));
+}
+
+function PageControls({
+  page,
+  totalRows,
+  onPageChange,
+}: {
+  page: number;
+  totalRows: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = pageCount(totalRows);
+  const start = totalRows === 0 ? 0 : (page - 1) * IMPORT_PAGE_SIZE + 1;
+  const end = Math.min(page * IMPORT_PAGE_SIZE, totalRows);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+      <span>
+        Showing {start}-{end} of {totalRows} rows
+      </span>
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="Previous import rows page"
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+        </Button>
+        <span className="min-w-20 text-center tabular-nums">
+          Page {page} / {totalPages}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label="Next import rows page"
+        >
+          <ChevronRight className="size-4" aria-hidden />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ----------------------------------------------------------------- dialog */
 export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dialog" }: ImportDialogProps) {
   const [open, setOpen] = useState(false);
@@ -220,6 +278,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [step, setStep] = useState<"upload" | "map" | "preview">("upload");
   const [entryMode, setEntryMode] = useState<"upload" | "manual">("upload");
   const [mode, setMode] = useState<"insert" | "update">("insert");
+  const [manualPage, setManualPage] = useState(1);
+  const [mapPage, setMapPage] = useState(1);
+  const [previewPage, setPreviewPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [pasteError, setPasteError] = useState<string | null>(null);
@@ -253,6 +314,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setMapping({});
     setManualRows([]);
     setEntryMode("upload");
+    setManualPage(1);
+    setMapPage(1);
+    setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
     void loadSchemas();
@@ -267,6 +331,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setMapping({});
     setManualRows([]);
     setEntryMode("upload");
+    setManualPage(1);
+    setMapPage(1);
+    setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
     void loadSchemas();
@@ -283,6 +350,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setFileRows(rows);
     setPreview(null);
     setPasteError(null);
+    setManualPage(1);
+    setMapPage(1);
+    setPreviewPage(1);
     if (!schema) {
       if (USE_REAL_API) {
         toast.error("This import type is not available because the live import schema could not be loaded.");
@@ -342,8 +412,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   function switchEntryMode(next: "upload" | "manual") {
     setEntryMode(next);
     setPreview(null);
+    setManualPage(1);
     if (next === "manual" && manualRows.length === 0) {
-      const seeded = mappedRows.slice(0, 20);
+      const seeded = mappedRows;
       setManualRows(seeded.length > 0 ? seeded : [{}]);
     }
   }
@@ -353,10 +424,12 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   }
 
   function editMappedRowsManually() {
-    const seeded = mappedRows.slice(0, 5000);
+    const seeded = mappedRows;
     setManualRows(seeded.length > 0 ? seeded : [{}]);
     setEntryMode("manual");
     setPreview(null);
+    setManualPage(1);
+    setPreviewPage(1);
     setStep("upload");
   }
 
@@ -368,13 +441,14 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setBusy(true);
     try {
       if (!schemas) {
-        setPreview(demoPreview(mappedRows.slice(0, 200)));
+        setPreview(demoPreview(mappedRows));
       } else {
-        const rows = mappedRows.slice(0, 5000).map((r) =>
+        const rows = mappedRows.map((r) =>
           Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? "")])) as Record<string, string>);
         const p = await realApi.importPreview(typeKey, fileName || "upload", mode, rows);
         setPreview(p);
       }
+      setPreviewPage(1);
       setStep("preview");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Preview failed");
@@ -407,6 +481,10 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
         setPreview(null);
         setMapping({});
         setFileName("");
+        setManualRows([]);
+        setManualPage(1);
+        setMapPage(1);
+        setPreviewPage(1);
       } else {
         setOpen(false);
       }
@@ -456,6 +534,21 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       .every((field) => String(row[field.key] ?? "").trim().length > 0)
   ) : false;
   const canPreview = entryMode === "manual" ? manualValid : requiredMapped;
+  const visibleManualRows = (manualRows.length ? manualRows : [{}]).slice((manualPage - 1) * IMPORT_PAGE_SIZE, manualPage * IMPORT_PAGE_SIZE);
+  const visibleMappedRows = mappedRows.slice((mapPage - 1) * IMPORT_PAGE_SIZE, mapPage * IMPORT_PAGE_SIZE);
+  const visiblePreviewRows = (previewRows ?? []).slice((previewPage - 1) * IMPORT_PAGE_SIZE, previewPage * IMPORT_PAGE_SIZE);
+
+  useEffect(() => {
+    setManualPage((page) => clampPage(page, manualRows.length || 1));
+  }, [manualRows.length]);
+
+  useEffect(() => {
+    setMapPage((page) => clampPage(page, mappedRows.length || 1));
+  }, [mappedRows.length]);
+
+  useEffect(() => {
+    setPreviewPage((page) => clampPage(page, previewRows?.length ?? 0));
+  }, [previewRows?.length]);
 
   const workflow = (
     <>
@@ -519,7 +612,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                       </tr>
                     </thead>
                     <tbody>
-                      {(manualRows.length ? manualRows : [{}]).map((row, rowIndex) => (
+                      {visibleManualRows.map((row, visibleRowIndex) => {
+                        const rowIndex = (manualPage - 1) * IMPORT_PAGE_SIZE + visibleRowIndex;
+                        return (
                         <tr key={rowIndex} className="border-t">
                           {schema.fields.map((field) => (
                             <td key={field.key} className="px-2 py-1.5">
@@ -544,9 +639,15 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                             </Button>
                           </td>
                         </tr>
-                      ))}
+                      );
+                      })}
                     </tbody>
                   </table>
+                  <PageControls
+                    page={manualPage}
+                    totalRows={manualRows.length || 1}
+                    onPageChange={(page) => setManualPage(clampPage(page, manualRows.length || 1))}
+                  />
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-muted-foreground">Enter data horizontally, the same way the setup wizard lets you review staff rows.</p>
@@ -666,7 +767,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
             {fileRows.length > 0 && (
               <div className="space-y-2">
                 <div className="text-xs font-medium text-muted-foreground">
-                  Map and preview — first 5 rows as the system will receive them
+                  Map and preview — rows {fileRows.length ? (mapPage - 1) * IMPORT_PAGE_SIZE + 1 : 0}-{Math.min(mapPage * IMPORT_PAGE_SIZE, mappedRows.length)} as the system will receive them
                 </div>
                 <div className="max-w-full overflow-x-auto rounded-lg border pb-2">
                   <table className="w-full min-w-[1600px] border-collapse text-left text-xs">
@@ -699,7 +800,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                       </tr>
                     </thead>
                     <tbody>
-                      {mappedRows.slice(0, 5).map((row, rowIndex) => (
+                      {visibleMappedRows.map((row, rowIndex) => (
                         <tr key={rowIndex} className="border-t">
                           {mappedPreviewFields.map((field) => (
                             <td key={field.key} className="max-w-56 px-3 py-2" title={row[field.key] ?? ""}>
@@ -710,6 +811,11 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                       ))}
                     </tbody>
                   </table>
+                  <PageControls
+                    page={mapPage}
+                    totalRows={mappedRows.length}
+                    onPageChange={(page) => setMapPage(clampPage(page, mappedRows.length))}
+                  />
                 </div>
               </div>
             )}
@@ -763,7 +869,8 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                     </tr>
                   </thead>
                   <tbody>
-                    {(previewRows ?? []).map((r, index) => {
+                    {visiblePreviewRows.map((r, visibleIndex) => {
+                      const index = (previewPage - 1) * IMPORT_PAGE_SIZE + visibleIndex;
                       const fileIndex = previewRowFileIndex(r, index);
                       const sourceRow = fileRows[fileIndex] ?? [];
                       return (
@@ -798,6 +905,11 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                     })}
                   </tbody>
                 </table>
+                <PageControls
+                  page={previewPage}
+                  totalRows={previewRows?.length ?? 0}
+                  onPageChange={(page) => setPreviewPage(clampPage(page, previewRows?.length ?? 0))}
+                />
               </div>
             </div>
             <div className="flex items-center justify-between pt-1">
