@@ -244,8 +244,10 @@ function ProfileTabs({
           <FieldGrid>
             <Field label="Pay group" value={p.payGroup} />
             <Field label="Payment method" value={p.paymentMethod} />
+            <Field label="Account holder" value={p.accountName} />
             <Field label="Bank" value={p.bankName} />
             <Field label="Branch" value={p.bankBranch} />
+            <Field label="Mobile money number" value={p.mobileMoneyNumber} />
           </FieldGrid>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
             <MaskedValue label="Bank account" value={p.bankAccount} />

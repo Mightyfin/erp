@@ -147,6 +147,30 @@ public class WorkerLifecycleServiceTests
     }
 
     [Fact]
+    public async Task BankDetail_AcceptsMobileMoneyAndCashPaymentMethods()
+    {
+        var (service, ctx, worker) = BuildWithWorker();
+
+        var mobile = await service.AddBankDetailAsync(worker.Id,
+            new BankDetailRequest("", "", "", "Lifecycle Worker", "mobile-money", "+260977000001", true),
+            CancellationToken.None);
+
+        Assert.Equal("mobile-money", mobile.PaymentMethod);
+        Assert.Equal("+260977000001", mobile.MobileMoneyNumber);
+        Assert.Equal("Mobile money", mobile.BankName);
+        Assert.Equal("+260977000001", mobile.AccountNumber);
+
+        var cash = await service.UpdateBankDetailAsync(worker.Id, mobile.Id,
+            new BankDetailRequest("", "", "", "Lifecycle Worker", "cash", null, true),
+            CancellationToken.None);
+
+        Assert.Equal("cash", cash.PaymentMethod);
+        Assert.Equal("Cash", cash.BankName);
+        Assert.Equal("N/A", cash.AccountNumber);
+        Assert.Single(await ctx.WorkerBankDetails.ToListAsync());
+    }
+
+    [Fact]
     public async Task Offboard_EndsCurrentAssignmentAndTerminatesWorker()
     {
         var (service, ctx, worker) = BuildWithWorker();

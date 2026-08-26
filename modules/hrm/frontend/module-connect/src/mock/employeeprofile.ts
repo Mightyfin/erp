@@ -85,9 +85,12 @@ export interface EmployeeProfile {
 
   /* Pay and statutory registrations */
   paymentMethod: string;
+  bankDetailId?: string;
   bankName: string;
   bankBranch: string;
   bankAccount: string;
+  accountName?: string;
+  mobileMoneyNumber?: string;
   tpin: string;
   napsaNumber: string;
   nhimaNumber: string;

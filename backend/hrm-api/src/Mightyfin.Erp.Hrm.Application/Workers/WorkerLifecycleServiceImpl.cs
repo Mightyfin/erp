@@ -286,13 +286,16 @@ public sealed class WorkerLifecycleServiceImpl(
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll", "employee");
         await RequireWorkerExistsAsync(workerId, ct);
-        if (string.IsNullOrWhiteSpace(request.BankName) || string.IsNullOrWhiteSpace(request.BranchCode) || string.IsNullOrWhiteSpace(request.AccountNumber))
-            throw new DomainException("validation-failed", "Bank name, branch code and account number are required.");
+        var method = NormalizePaymentMethod(request.PaymentMethod);
+        ValidatePaymentDetail(method, request);
         var detail = new WorkerBankDetail
         {
-            WorkerId = workerId, BankName = request.BankName.Trim(), BranchCode = request.BranchCode.Trim(),
-            AccountNumber = request.AccountNumber.Trim(), AccountName = request.AccountName.Trim(),
-            PaymentMethod = request.PaymentMethod, MobileMoneyNumber = request.MobileMoneyNumber?.Trim(),
+            WorkerId = workerId,
+            BankName = CleanPaymentValue(request.BankName, method == "bank" ? "Bank" : method == "mobile-money" ? "Mobile money" : method == "cash" ? "Cash" : "Accounts payable"),
+            BranchCode = CleanPaymentValue(request.BranchCode, "N/A"),
+            AccountNumber = CleanPaymentValue(request.AccountNumber, method == "mobile-money" ? request.MobileMoneyNumber ?? "N/A" : "N/A"),
+            AccountName = CleanPaymentValue(request.AccountName, "N/A"),
+            PaymentMethod = method, MobileMoneyNumber = request.MobileMoneyNumber?.Trim(),
             IsPrimary = request.IsPrimary,
         };
         var created = await repo.AddBankDetailAsync(detail, ct);
@@ -307,17 +310,55 @@ public sealed class WorkerLifecycleServiceImpl(
             ?? throw new DomainException("bank-detail-not-found", $"Bank detail {bankId} does not exist.");
         if (detail.WorkerId != workerId)
             throw new DomainException("bank-detail-not-found", $"Bank detail {bankId} does not belong to worker {workerId}.");
-        if (request.BankName is not null) detail.BankName = request.BankName.Trim();
-        if (request.BranchCode is not null) detail.BranchCode = request.BranchCode.Trim();
-        if (request.AccountNumber is not null) detail.AccountNumber = request.AccountNumber.Trim();
-        if (request.AccountName is not null) detail.AccountName = request.AccountName.Trim();
-        if (request.PaymentMethod is not null) detail.PaymentMethod = request.PaymentMethod;
-        if (request.MobileMoneyNumber is not null) detail.MobileMoneyNumber = request.MobileMoneyNumber.Trim();
+        var method = NormalizePaymentMethod(request.PaymentMethod);
+        ValidatePaymentDetail(method, request);
+        detail.BankName = CleanPaymentValue(request.BankName, method == "bank" ? "Bank" : method == "mobile-money" ? "Mobile money" : method == "cash" ? "Cash" : "Accounts payable");
+        detail.BranchCode = CleanPaymentValue(request.BranchCode, "N/A");
+        detail.AccountNumber = CleanPaymentValue(request.AccountNumber, method == "mobile-money" ? request.MobileMoneyNumber ?? "N/A" : "N/A");
+        detail.AccountName = CleanPaymentValue(request.AccountName, "N/A");
+        detail.PaymentMethod = method;
+        detail.MobileMoneyNumber = request.MobileMoneyNumber?.Trim();
         detail.IsPrimary = request.IsPrimary;
         await repo.UpdateBankDetailAsync(detail, ct);
         return new WorkerBankDetailDto(detail.Id, detail.BankName, detail.BranchCode,
             detail.AccountNumber, detail.AccountName, detail.PaymentMethod, detail.MobileMoneyNumber, detail.IsPrimary);
     }
+
+    private static string NormalizePaymentMethod(string? value)
+    {
+        var method = (value ?? "bank").Trim().ToLowerInvariant().Replace("_", "-");
+        return method switch
+        {
+            "bank transfer" => "bank",
+            "mobile money" => "mobile-money",
+            "paid through accounts payable, not payroll" => "accounts-payable",
+            "" => "bank",
+            _ => method,
+        };
+    }
+
+    private static void ValidatePaymentDetail(string method, BankDetailRequest request)
+    {
+        switch (method)
+        {
+            case "bank":
+                if (string.IsNullOrWhiteSpace(request.BankName) || string.IsNullOrWhiteSpace(request.BranchCode) || string.IsNullOrWhiteSpace(request.AccountNumber))
+                    throw new DomainException("validation-failed", "Bank name, branch code and account number are required for bank transfer.");
+                break;
+            case "mobile-money":
+                if (string.IsNullOrWhiteSpace(request.MobileMoneyNumber))
+                    throw new DomainException("validation-failed", "Mobile money number is required for mobile-money payout.");
+                break;
+            case "cash":
+            case "accounts-payable":
+                break;
+            default:
+                throw new DomainException("validation-failed", "Payment method must be bank, mobile-money, cash or accounts-payable.");
+        }
+    }
+
+    private static string CleanPaymentValue(string? value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 
     public async Task DeleteBankDetailAsync(Guid workerId, Guid bankId, CancellationToken ct)
     {

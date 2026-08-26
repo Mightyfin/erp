@@ -47,6 +47,24 @@ const BLOOD_GROUPS = ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"];
 const RELATIONSHIPS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
 const SHIFTS = ["Day shift, Monday to Friday", "Rotating shift", "Night shift", "Site roster — 14 on 7 off"];
 
+function paymentMethodKey(value: string) {
+  const normalized = value.toLowerCase().replace(/_/g, "-").trim();
+  if (normalized === "bank" || normalized === "bank transfer") return "bank";
+  if (normalized === "mobile-money" || normalized === "mobile money") return "mobile-money";
+  if (normalized === "cash") return "cash";
+  if (normalized === "accounts-payable" || normalized.startsWith("paid through accounts payable")) return "accounts-payable";
+  return normalized || "bank";
+}
+
+function paymentMethodLabel(value: string | undefined) {
+  const key = paymentMethodKey(value ?? "");
+  if (key === "bank") return "Bank transfer";
+  if (key === "mobile-money") return "Mobile money";
+  if (key === "cash") return "Cash";
+  if (key === "accounts-payable") return "Paid through accounts payable, not payroll";
+  return value || "Bank transfer";
+}
+
 function EditEmployee() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -211,21 +229,58 @@ function EditEmployee() {
             {
               id: "pay",
               title: "Pay and bank",
-              description: "Payroll reads these directly. A wrong account number is the most common cause of a failed payment.",
+              description: "Preferred payment method and payout details for this employee. Payroll reads the primary record directly.",
               fields: [
                 { name: "payGroup", label: "Pay group", required: !!pr?.payGroup },
-                { name: "paymentMethod", label: "Payment method", type: "select", options: PAYMENT_METHODS, required: true },
-                { name: "bankName", label: "Bank", type: "select", options: BANKS, required: true },
-                { name: "bankBranch", label: "Branch", required: !!pr?.bankBranch },
+                { name: "paymentMethod", label: "Preferred payment method", type: "select", options: PAYMENT_METHODS, required: true },
+                {
+                  name: "accountName",
+                  label: "Account holder name",
+                  hint: "For bank or mobile-money payouts, this should match the employee's registered account name.",
+                  validate: (v, all) =>
+                    ["bank", "mobile-money"].includes(paymentMethodKey(all.paymentMethod)) && !v
+                      ? "Account holder name is required for this payment method."
+                      : null,
+                },
+                {
+                  name: "bankName",
+                  label: "Bank",
+                  type: "select",
+                  options: BANKS,
+                  validate: (v, all) =>
+                    paymentMethodKey(all.paymentMethod) === "bank" && !v
+                      ? "Bank is required for bank transfer."
+                      : null,
+                },
+                {
+                  name: "bankBranch",
+                  label: "Branch / branch code",
+                  validate: (v, all) =>
+                    paymentMethodKey(all.paymentMethod) === "bank" && !v
+                      ? "Branch code is required for bank transfer."
+                      : null,
+                },
                 {
                   name: "bankAccount",
                   label: "Account number",
-                  required: !!(pr?.bankAccount ?? employee.bankAccount),
                   hint: "Verified against the bank before the next payment run.",
-                  validate: (v) =>
-                    v && v.replace(/\s/g, "").length < 10
+                  validate: (v, all) => {
+                    if (paymentMethodKey(all.paymentMethod) !== "bank") return null;
+                    if (!v) return "Account number is required for bank transfer.";
+                    return v.replace(/\s/g, "").length < 10
                       ? "A Zambian account number is at least 10 digits. Check it against the bank letter."
-                      : null,
+                      : null;
+                  },
+                },
+                {
+                  name: "mobileMoneyNumber",
+                  label: "Mobile money number",
+                  hint: "Use the full mobile number registered for payout.",
+                  validate: (v, all) => {
+                    if (paymentMethodKey(all.paymentMethod) !== "mobile-money") return null;
+                    if (!v) return "Mobile money number is required for mobile-money payout.";
+                    return v.replace(/\s/g, "").length < 9 ? "Enter a complete mobile money number." : null;
+                  },
                 },
               ],
             },
@@ -276,7 +331,8 @@ function EditEmployee() {
           const liveFields = new Set([
             "fullName", "preferredName", "nationality", "dateOfBirth", "nationalId",
             "passportNo", "email", "phone", "jobTitle", "grade", "tpin",
-            "napsaNumber", "nhimaNumber",
+            "napsaNumber", "nhimaNumber", "paymentMethod", "accountName", "bankName",
+            "bankBranch", "bankAccount", "mobileMoneyNumber",
           ]);
           const visibleSections = USE_REAL
             ? sections
@@ -365,10 +421,12 @@ function EditEmployee() {
                 attendanceDeviceId: pr?.attendanceDeviceId ?? "",
 
                 payGroup: pr?.payGroup ?? "",
-                paymentMethod: pr?.paymentMethod ?? "Bank transfer",
-                bankName: pr?.bankName ?? "Zanaco",
+                paymentMethod: paymentMethodLabel(pr?.paymentMethod),
+                accountName: pr?.accountName ?? employee.fullName,
+                bankName: pr?.bankName ?? "",
                 bankBranch: pr?.bankBranch ?? "",
-                bankAccount: pr?.bankAccount ?? employee.bankAccount,
+                bankAccount: pr?.bankAccount ?? employee.bankAccount ?? "",
+                mobileMoneyNumber: pr?.mobileMoneyNumber ?? "",
 
                 tpin: pr?.tpin ?? "",
                 napsaNumber: pr?.napsaNumber ?? "",
@@ -413,9 +471,29 @@ function EditEmployee() {
                         : values.employmentType === "Intern"
                           ? "intern"
                           : "employee";
+                  const paymentChanged = changed.some((field) =>
+                    ["paymentMethod", "accountName", "bankName", "bankBranch", "bankAccount", "mobileMoneyNumber"].includes(field),
+                  );
                   try {
                     if (Object.keys(body).length) {
                       await realApi.updateWorker(id, body);
+                    }
+                    if (paymentChanged) {
+                      const method = paymentMethodKey(values.paymentMethod);
+                      const paymentBody = {
+                        paymentMethod: method,
+                        accountName: values.accountName || employee.fullName,
+                        bankName: method === "bank" ? values.bankName : method === "mobile-money" ? "Mobile money" : method === "cash" ? "Cash" : "Accounts payable",
+                        branchCode: method === "bank" ? values.bankBranch : "N/A",
+                        accountNumber: method === "bank" ? values.bankAccount : method === "mobile-money" ? values.mobileMoneyNumber : "N/A",
+                        mobileMoneyNumber: method === "mobile-money" ? values.mobileMoneyNumber : null,
+                        isPrimary: true,
+                      };
+                      if (pr?.bankDetailId) {
+                        await realApi.updateBankDetails(id, pr.bankDetailId, paymentBody);
+                      } else {
+                        await realApi.addBankDetails(id, paymentBody);
+                      }
                     }
                     feedback.saved(`${employee.fullName} updated in the live HRM record.`);
                     navigate({ to: "/hrm/employees/$id", params: { id } });

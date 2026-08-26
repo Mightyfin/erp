@@ -219,6 +219,15 @@ export function adaptOrgUnits(raw: unknown): import("@/mock/structure").OrgUnit[
 }
 
 /** Maps only fields the live WorkerDto actually owns; unavailable profile fields remain blank. */
+function paymentMethodLabel(value: string) {
+  const normalized = value.toLowerCase().replace(/_/g, "-").trim();
+  if (normalized === "bank") return "Bank transfer";
+  if (normalized === "mobile-money") return "Mobile money";
+  if (normalized === "cash") return "Cash";
+  if (normalized === "accounts-payable") return "Paid through accounts payable, not payroll";
+  return value;
+}
+
 export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeeprofile").EmployeeProfile {
   const raw = (rawValue ?? {}) as Record<string, unknown>;
   const emergency = Array.isArray(raw.emergencyContacts) ? raw.emergencyContacts as Record<string, unknown>[] : [];
@@ -234,8 +243,10 @@ export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeepr
     })),
     noticePeriodDays: 0, reportsTo: text(raw.managerName), costCentre: "", payGroup: "",
     shiftPattern: "", holidayCalendar: "", leavePolicy: "", attendanceDeviceId: "",
-    paymentMethod: text(bank?.paymentMethod), bankName: text(bank?.bankName),
+    paymentMethod: paymentMethodLabel(text(bank?.paymentMethod)), bankDetailId: text(bank?.id),
+    bankName: text(bank?.bankName),
     bankBranch: text(bank?.branchCode), bankAccount: text(bank?.accountNumber),
+    accountName: text(bank?.accountName), mobileMoneyNumber: text(bank?.mobileMoneyNumber),
     tpin: text(raw.tpin), napsaNumber: text(raw.napsaNumber), nhimaNumber: text(raw.nhimaNumber),
     education: (Array.isArray(raw.education)
       ? (raw.education as Record<string, unknown>[]).map((item) => ({
@@ -1238,6 +1249,8 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/workers/${workerId}/offboard`, body),
   addBankDetails: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/bank-details`, body),
+  updateBankDetails: (workerId: string, bankId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/bank-details/${bankId}`, body),
   removeBankDetails: (workerId: string, bankId: string) =>
     hrmApi.delete<unknown>(`/hrm/workers/${workerId}/bank-details/${bankId}`),
   /** M33 worker history: education, external and internal work history. */
