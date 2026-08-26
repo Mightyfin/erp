@@ -37,6 +37,7 @@ public interface IPayrollService
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
     // M41 Gap 3: pay-basis control (salary | timesheet) per worker profile
     Task<WorkerPayrollProfileDto> SetPayBasisAsync(Guid workerId, PayBasisUpdateRequest request, CancellationToken ct);
+    Task<WorkerPayrollProfileDto> SetOvertimePolicyAsync(Guid workerId, OvertimePolicyUpdateRequest request, CancellationToken ct);
 
     // Run lifecycle
     Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
@@ -673,6 +674,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             normalizedValues.Add(new WorkerComponentValueCreate(comp.Id, comp.Code, v.Amount));
         }
         request = request with { Values = normalizedValues };
+        var hasOvertimePayload = request.OvertimeCategory is not null
+            || request.WeeklyOvertimeThresholdHours.HasValue
+            || request.MonthlyOvertimeDivisor.HasValue;
+        var overtime = NormalizeOvertimePolicy(request.OvertimeCategory, request.WeeklyOvertimeThresholdHours, request.MonthlyOvertimeDivisor);
 
         var defaultStructure = await repo.FindStructureAsync("ZMW-STANDARD", ct);
 
@@ -685,6 +690,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 WorkerId = workerId, PayGroupId = request.PayGroupId, EffectiveFrom = effective,
                 StructureId = defaultStructure?.Id ?? Guid.Empty,
                 PayBasis = request.PayBasis ?? "salary",
+                OvertimeCategory = overtime.Category,
+                WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold,
+                MonthlyOvertimeDivisor = overtime.MonthlyDivisor,
             };
             await repo.CreateProfileAsync(profile, ct);
         }
@@ -692,6 +700,12 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         {
             existing.PayGroupId = request.PayGroupId;
             existing.PayBasis = request.PayBasis ?? existing.PayBasis;
+            if (hasOvertimePayload)
+            {
+                existing.OvertimeCategory = overtime.Category;
+                existing.WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold;
+                existing.MonthlyOvertimeDivisor = overtime.MonthlyDivisor;
+            }
             profile = existing;
         }
         await repo.DeleteProfileValuesAsync(profile.Id, ct);
@@ -717,6 +731,37 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         profile.PayBasis = basis;
         await repo.UpdateProfileAsync(profile, ct);
         return MapProfile(profile);
+    }
+
+    public async Task<WorkerPayrollProfileDto> SetOvertimePolicyAsync(Guid workerId, OvertimePolicyUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var profile = await repo.FindOpenProfileAsync(workerId, ct);
+        if (profile is null)
+            throw new DomainException("payroll-profile-not-found", "This worker has no open payroll profile. Set up the profile first.");
+        var overtime = NormalizeOvertimePolicy(request.OvertimeCategory, request.WeeklyOvertimeThresholdHours, request.MonthlyOvertimeDivisor);
+        profile.OvertimeCategory = overtime.Category;
+        profile.WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold;
+        profile.MonthlyOvertimeDivisor = overtime.MonthlyDivisor;
+        await repo.UpdateProfileAsync(profile, ct);
+        return MapProfile(profile);
+    }
+
+    private static (string Category, decimal WeeklyThreshold, decimal MonthlyDivisor) NormalizeOvertimePolicy(
+        string? category, decimal? weeklyThreshold, decimal? monthlyDivisor)
+    {
+        var normalized = (category ?? "ordinary").Trim().ToLowerInvariant();
+        if (normalized is "watchperson" or "guard" or "watchperson_guard" or "watchperson-guard")
+            normalized = "watchperson-guard";
+        if (normalized != "ordinary" && normalized != "watchperson-guard")
+            throw new DomainException("bad-overtime-category", "Overtime category must be ordinary or watchperson-guard.");
+        var defaultWeekly = normalized == "watchperson-guard" ? 60m : 48m;
+        var defaultDivisor = normalized == "watchperson-guard" ? 240m : 208m;
+        var weekly = weeklyThreshold ?? defaultWeekly;
+        var divisor = monthlyDivisor ?? defaultDivisor;
+        if (weekly <= 0 || divisor <= 0)
+            throw new DomainException("bad-overtime-policy", "Weekly overtime threshold and monthly divisor must be greater than zero.");
+        return (normalized, weekly, divisor);
     }
 
     /// <summary>Locks the run for editing (freeze inputs before calculation).
@@ -1626,7 +1671,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
         p.ComponentValues.Select(v => new WorkerComponentValueDto(v.ComponentId,
             v.Component?.Code ?? "", v.Component?.Name ?? "", v.Amount)).ToList(),
-        p.PayBasis ?? "salary");
+        p.PayBasis ?? "salary", p.OvertimeCategory ?? "ordinary",
+        p.WeeklyOvertimeThresholdHours <= 0 ? 48 : p.WeeklyOvertimeThresholdHours,
+        p.MonthlyOvertimeDivisor <= 0 ? 208 : p.MonthlyOvertimeDivisor);
 
     private async Task<string> GetComponentCode(Guid componentId, CancellationToken ct)
     {
@@ -1770,17 +1817,19 @@ internal sealed class CalcContext
         if (records.Count == 0) return;
         var hours = records.Sum(r => r.OvertimeHours);
         if (hours <= 0) return;
-        // Zambia payroll's standard monthly base for hourly conversion is 26 x 8
-        // hours. The multiplier is sourced from the shift/calendar derivation.
-        const decimal standardMonthlyHours = 208m;
         var basic = Resolve("basic");
-        var amount = records.Sum(r => basic / standardMonthlyHours * r.OvertimeHours * r.OvertimeMultiplier);
+        var amount = records.Sum(r =>
+        {
+            var divisor = r.OvertimeHourlyDivisor > 0 ? r.OvertimeHourlyDivisor :
+                (_profile.MonthlyOvertimeDivisor > 0 ? _profile.MonthlyOvertimeDivisor : 208m);
+            return basic / divisor * r.OvertimeHours * r.OvertimeMultiplier;
+        });
         amount = Math.Round(amount, 2);
         if (amount <= 0) return;
         _values["overtime"] = amount;
         var sourceIds = string.Join(", ", records.Select(r => r.Id.ToString("D")));
         Components.Add(("overtime", "Overtime", "earning", amount,
-            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier; basic K{basic:N2} / {standardMonthlyHours:N0} standard monthly hours; source attendance {sourceIds}", false));
+            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier and configured hourly divisor; source attendance {sourceIds}", false));
         Gross += amount;
     }
 

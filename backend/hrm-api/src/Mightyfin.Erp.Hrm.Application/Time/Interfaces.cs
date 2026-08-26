@@ -19,6 +19,7 @@ public interface ITimeRepository
     Task<AttendanceRecord> CreateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
     Task<AttendanceRecord> UpdateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
     Task<List<AttendanceRecord>> ListAttendanceAsync(Guid workerId, DateOnly? from, DateOnly? to, CancellationToken ct);
+    Task<List<AttendanceRecord>> ListAttendanceForWorkerRangeAsync(Guid workerId, DateOnly from, DateOnly to, CancellationToken ct);
     Task<List<AttendanceRecord>> ListAttendanceForScopeAsync(DateOnly? from, DateOnly? to, Guid? locationId, Guid? orgUnitId, CancellationToken ct);
     Task<List<AttendanceRecord>> ListOvertimeAsync(Guid? workerId, DateOnly? from, DateOnly? to, string? status, CancellationToken ct);
     Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct);

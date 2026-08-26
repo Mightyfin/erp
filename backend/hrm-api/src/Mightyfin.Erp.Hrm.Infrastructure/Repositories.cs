@@ -452,6 +452,13 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         return await q.Include(a => a.Worker).Take(200).ToListAsync(ct); // already bounded by from/to window; keep insert order
     }
 
+    public async Task<List<AttendanceRecord>> ListAttendanceForWorkerRangeAsync(Guid workerId, DateOnly from, DateOnly to, CancellationToken ct)
+        => await db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.WorkerId == workerId && a.WorkDate >= from && a.WorkDate <= to)
+            .OrderBy(a => a.WorkDate)
+            .ToListAsync(ct);
+
     public async Task<List<AttendanceRecord>> ListAttendanceForScopeAsync(DateOnly? from, DateOnly? to, Guid? locationId, Guid? orgUnitId, CancellationToken ct)
     {
         var q = db.AttendanceRecords.Include(a => a.Worker).AsQueryable();

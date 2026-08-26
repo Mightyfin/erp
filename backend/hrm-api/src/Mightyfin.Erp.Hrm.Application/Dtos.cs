@@ -153,15 +153,20 @@ public sealed record PayrollCalculationReadinessIssueDto(Guid? WorkerId, string 
     string Issue, string Severity);
 // M41 Gap 3: PayBasis appended as an optional field so existing callers stay binary-compatible.
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
-    List<WorkerComponentValueCreate> Values, string? PayBasis = null);
+    List<WorkerComponentValueCreate> Values, string? PayBasis = null,
+    string? OvertimeCategory = null, decimal? WeeklyOvertimeThresholdHours = null,
+    decimal? MonthlyOvertimeDivisor = null);
 public sealed record WorkerComponentValueCreate(Guid ComponentId, string? ComponentCode = null, decimal Amount = 0);
 
 // M41 Gap 3: pay-basis control update (salary | timesheet). Timesheet pay is
 // not implemented yet — the flag is a planning control for HR.
 public sealed record PayBasisUpdateRequest(string PayBasis);
+public sealed record OvertimePolicyUpdateRequest(string OvertimeCategory,
+    decimal? WeeklyOvertimeThresholdHours = null, decimal? MonthlyOvertimeDivisor = null);
 public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? WorkerName, Guid PayGroupId, string? PayGroupName, string EffectiveFrom, List<WorkerComponentValueDto> Values,
     // M41 Gap 3: pay-basis control — "salary" | "timesheet" (timesheet pay not yet implemented; planning flag)
-    string PayBasis = "salary");
+    string PayBasis = "salary", string OvertimeCategory = "ordinary",
+    decimal WeeklyOvertimeThresholdHours = 48, decimal MonthlyOvertimeDivisor = 208);
 public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentCode, string ComponentName, decimal Amount);
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,

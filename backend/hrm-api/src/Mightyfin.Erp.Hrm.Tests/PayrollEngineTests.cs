@@ -154,6 +154,45 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task CalculateRun_UsesRecordedOvertimeDivisorForWatchpersonGuard()
+    {
+        var (service, ctx) = Build(tenant: "payroll-overtime-divisor");
+        var (group, _, p2, profile, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+        profile.OvertimeCategory = "watchperson-guard";
+        profile.WeeklyOvertimeThresholdHours = 60m;
+        profile.MonthlyOvertimeDivisor = 240m;
+        ctx.AttendanceRecords.Add(new AttendanceRecord
+        {
+            WorkerId = profile.WorkerId,
+            WorkDate = new DateOnly(2026, 7, 10),
+            ClockIn = new TimeOnly(8, 0),
+            ClockOut = new TimeOnly(18, 0),
+            Source = "device-import",
+            DerivedStatus = "present",
+            TotalHours = 10m,
+            RegularHours = 8m,
+            OvertimeHours = 2m,
+            OvertimeMultiplier = 1.5m,
+            OvertimeHourlyDivisor = 240m,
+            OvertimeRuleCode = "watchperson-guard",
+            OvertimeStatus = "approved",
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+
+        var line = await ctx.PayrollRunLines
+            .Include(l => l.Components)
+            .SingleAsync(l => l.RunId == run.Id);
+        var overtime = line.Components.Single(c => c.ComponentCode == "overtime");
+        Assert.Equal(312.50m, overtime.Amount);
+        Assert.Equal(30312.50m, line.GrossPay);
+        Assert.Contains("configured hourly divisor", overtime.Explanation);
+    }
+
+    [Fact]
     public async Task ReleaseRun_BlocksPayrollOfficerWhoApprovedSameRun()
     {
         var (service, ctx) = Build(tenant: "payroll-self-release", roles: ["payroll"]);

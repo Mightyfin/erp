@@ -1735,6 +1735,10 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("overtime_hours");
 
+                    b.Property<decimal>("OvertimeHourlyDivisor")
+                        .HasColumnType("numeric")
+                        .HasColumnName("overtime_hourly_divisor");
+
                     b.Property<decimal>("OvertimeMultiplier")
                         .HasColumnType("numeric")
                         .HasColumnName("overtime_multiplier");
@@ -1746,6 +1750,11 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.Property<Guid?>("OvertimePayrollRunId")
                         .HasColumnType("uuid")
                         .HasColumnName("overtime_payroll_run_id");
+
+                    b.Property<string>("OvertimeRuleCode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_rule_code");
 
                     b.Property<string>("OvertimeStatus")
                         .IsRequired()
@@ -7023,6 +7032,15 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_archived");
 
+                    b.Property<decimal>("MonthlyOvertimeDivisor")
+                        .HasColumnType("numeric")
+                        .HasColumnName("monthly_overtime_divisor");
+
+                    b.Property<string>("OvertimeCategory")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_category");
+
                     b.Property<string>("PayBasis")
                         .IsRequired()
                         .HasColumnType("text")
@@ -7052,6 +7070,10 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.Property<Guid>("WorkerId")
                         .HasColumnType("uuid")
                         .HasColumnName("worker_id");
+
+                    b.Property<decimal>("WeeklyOvertimeThresholdHours")
+                        .HasColumnType("numeric")
+                        .HasColumnName("weekly_overtime_threshold_hours");
 
                     b.HasKey("Id");
 

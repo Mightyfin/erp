@@ -121,6 +121,9 @@ function WorkerPayDialog({
 }) {
   const [payGroupId, setPayGroupId] = useState("");
   const [payBasis, setPayBasis] = useState<"salary" | "timesheet">("salary");
+  const [overtimeCategory, setOvertimeCategory] = useState<"ordinary" | "watchperson-guard">("ordinary");
+  const [weeklyOvertimeThresholdHours, setWeeklyOvertimeThresholdHours] = useState("48");
+  const [monthlyOvertimeDivisor, setMonthlyOvertimeDivisor] = useState("208");
   const [effectiveFrom, setEffectiveFrom] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
@@ -172,6 +175,11 @@ function WorkerPayDialog({
         );
         const existingBasis = String(existing?.payBasis ?? "salary").toLowerCase();
         setPayBasis(existingBasis === "timesheet" ? "timesheet" : "salary");
+        const existingOvertimeCategory = String(existing?.overtimeCategory ?? "ordinary").toLowerCase();
+        const normalizedOvertimeCategory = existingOvertimeCategory === "watchperson-guard" ? "watchperson-guard" : "ordinary";
+        setOvertimeCategory(normalizedOvertimeCategory);
+        setWeeklyOvertimeThresholdHours(String(existing?.weeklyOvertimeThresholdHours ?? (normalizedOvertimeCategory === "watchperson-guard" ? 60 : 48)));
+        setMonthlyOvertimeDivisor(String(existing?.monthlyOvertimeDivisor ?? (normalizedOvertimeCategory === "watchperson-guard" ? 240 : 208)));
         setValues(
           comps
             .filter((c) => Boolean(c.isActive) && !c.isArchived)
@@ -254,6 +262,12 @@ function WorkerPayDialog({
               setError("Basic pay is mandatory — every worker needs a starting basic.");
               return;
             }
+            const weeklyThreshold = Number(weeklyOvertimeThresholdHours);
+            const overtimeDivisor = Number(monthlyOvertimeDivisor);
+            if (!weeklyThreshold || weeklyThreshold <= 0 || !overtimeDivisor || overtimeDivisor <= 0) {
+              setError("Overtime weekly threshold and monthly divisor must be greater than zero.");
+              return;
+            }
             setBusy(true);
             try {
               await realApi.createPayrollProfile(workerId, {
@@ -261,6 +275,9 @@ function WorkerPayDialog({
                 effectiveFrom,
                 values: payload,
                 payBasis,
+                overtimeCategory,
+                weeklyOvertimeThresholdHours: weeklyThreshold,
+                monthlyOvertimeDivisor: overtimeDivisor,
               });
               feedback.saved(`${workerName}'s pay structure saved for the ${effectiveFrom} start date.`);
               onSaved();
@@ -323,6 +340,48 @@ function WorkerPayDialog({
             Nobody is paid hourly today. “Timesheet” is a planning flag HR can switch on ahead of
             the future timesheet-driven pay feature — every run still calculates salary-basis
             regardless of what is selected here.
+          </p>
+        </div>
+        <div className="rounded-md border border-border bg-surface-muted p-3">
+          <Label>Overtime policy</Label>
+          <div className="mt-2 grid gap-3 sm:grid-cols-[1fr_120px_120px]">
+            <Select
+              value={overtimeCategory}
+              onValueChange={(value) => {
+                const next = value === "watchperson-guard" ? "watchperson-guard" : "ordinary";
+                setOvertimeCategory(next);
+                setWeeklyOvertimeThresholdHours(next === "watchperson-guard" ? "60" : "48");
+                setMonthlyOvertimeDivisor(next === "watchperson-guard" ? "240" : "208");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ordinary">Ordinary employee</SelectItem>
+                <SelectItem value="watchperson-guard">Watchperson / guard</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              min={1}
+              step="0.01"
+              value={weeklyOvertimeThresholdHours}
+              onChange={(e) => setWeeklyOvertimeThresholdHours(e.target.value)}
+              aria-label="Weekly overtime threshold hours"
+            />
+            <Input
+              type="number"
+              min={1}
+              step="0.01"
+              value={monthlyOvertimeDivisor}
+              onChange={(e) => setMonthlyOvertimeDivisor(e.target.value)}
+              aria-label="Monthly overtime divisor"
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Ordinary employees use 48 weekly hours and basic / 208. Watchperson or guard profiles
+            use 60 weekly hours and basic / 240 unless HR overrides the figures here.
           </p>
         </div>
         <div className="space-y-2">
@@ -672,11 +731,11 @@ function CompensationPage() {
           <Async state={state} rows={5}>
             {(d) => (
               <div className="mt-4 overflow-x-auto rounded-lg border bg-surface">
-                <table className="w-full min-w-[48rem] text-left text-sm">
+                <table className="w-full min-w-[56rem] text-left text-sm">
                   <caption className="sr-only">Workers and their open pay profiles</caption>
                   <thead className="border-b bg-surface-muted">
                     <tr>
-                      {["Employee", "No.", "Department", "Branch", "Job title", "Pay group", "Effective from", "Pay basis", "Action"].map((h) => (
+                      {["Employee", "No.", "Department", "Branch", "Job title", "Pay group", "Effective from", "Pay basis", "Overtime", "Action"].map((h) => (
                         <th
                           key={h}
                           scope="col"
@@ -731,6 +790,43 @@ function CompensationPage() {
                               </Select>
                             ) : (
                               <span className="text-xs text-muted-foreground">{profile ? String(profile.payBasis ?? "salary") : "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
+                            {profile && canAct ? (
+                              <Select
+                                value={String(profile.overtimeCategory ?? "ordinary").toLowerCase() === "watchperson-guard" ? "watchperson-guard" : "ordinary"}
+                                onValueChange={async (next: string) => {
+                                  const category = next === "watchperson-guard" ? "watchperson-guard" : "ordinary";
+                                  try {
+                                    await realApi.setOvertimePolicy(String(w.id), {
+                                      overtimeCategory: category,
+                                      weeklyOvertimeThresholdHours: category === "watchperson-guard" ? 60 : 48,
+                                      monthlyOvertimeDivisor: category === "watchperson-guard" ? 240 : 208,
+                                    });
+                                    await state.reload();
+                                    feedback.saved(
+                                      category === "watchperson-guard"
+                                        ? "Overtime policy set to watchperson/guard: 60 weekly hours, basic divided by 240."
+                                        : "Overtime policy set to ordinary: 48 weekly hours, basic divided by 208.",
+                                    );
+                                  } catch {
+                                    feedback.error("Could not update the overtime policy.");
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-40">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="ordinary">Ordinary</SelectItem>
+                                  <SelectItem value="watchperson-guard">Watchperson / guard</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {profile ? String(profile.overtimeCategory ?? "ordinary") : "—"}
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-3 text-right">

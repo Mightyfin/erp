@@ -463,6 +463,35 @@ public class TimeServiceTests
     }
 
     [Fact]
+    public async Task AttendanceImport_RecalculatesWeeklyOvertimeAfterFortyEightHours()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var calendar = await ctx.WorkCalendars.SingleAsync();
+        calendar.WeekendDays = "";
+        await ctx.SaveChangesAsync();
+        var shift = await service.CreateShiftAsync(new ShiftCreateRequest(
+            "WK", "Weekly test shift", "08:00", "16:00", 0, 8, 8, 1.5m, 2, 2), CancellationToken.None);
+        await service.AssignShiftAsync(worker.Id,
+            new ShiftAssignmentRequest(shift.Id, calendar.Id, "2026-08-01"), CancellationToken.None);
+
+        await service.ImportAttendanceAsync(new AttendanceImportRequest("week.csv",
+            Enumerable.Range(17, 7)
+                .Select(day => new AttendanceImportRow(worker.EmployeeNo, $"2026-08-{day}", "08:00", "16:00"))
+                .ToList()),
+            "hr-admin", CancellationToken.None);
+
+        var records = await ctx.AttendanceRecords.OrderBy(r => r.WorkDate).ToListAsync();
+        Assert.Equal(7, records.Count);
+        Assert.Equal(48m, records.Take(6).Sum(r => r.RegularHours));
+        Assert.All(records.Take(6), r => Assert.Equal(0m, r.OvertimeHours));
+        Assert.Equal(0m, records[6].RegularHours);
+        Assert.Equal(8m, records[6].OvertimeHours);
+        Assert.Equal(1.5m, records[6].OvertimeMultiplier);
+        Assert.Equal(208m, records[6].OvertimeHourlyDivisor);
+        Assert.Equal("ordinary", records[6].OvertimeRuleCode);
+    }
+
+    [Fact]
     public async Task AttendanceImport_ReconcilesDuplicateAndUnknownEmployees()
     {
         var (service, ctx, worker, _, _) = Build();

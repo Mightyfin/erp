@@ -56,6 +56,13 @@ public class WorkerPayrollProfile : Entity, IEffectiveDated
     /// letting HR mark which workers would be timesheet-paid when that mode
     /// arrives. Until then, every worker is paid on the salary basis.</summary>
     public string PayBasis { get; set; } = "salary"; // salary | timesheet
+    /// <summary>Payroll overtime category. ordinary uses the Employment Code
+    /// 48-hour weekly threshold and 208 monthly divisor; watchperson-guard uses
+    /// 60 hours and 240. Values stay on the profile so this remains payroll
+    /// configuration, not a hardcoded employee master assumption.</summary>
+    public string OvertimeCategory { get; set; } = "ordinary"; // ordinary | watchperson-guard
+    public decimal WeeklyOvertimeThresholdHours { get; set; } = 48;
+    public decimal MonthlyOvertimeDivisor { get; set; } = 208;
     public Guid StructureId { get; set; }
     public SalaryStructure? Structure { get; set; }
     public Guid PayGroupId { get; set; }

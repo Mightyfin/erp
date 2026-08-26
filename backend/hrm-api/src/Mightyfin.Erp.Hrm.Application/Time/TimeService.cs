@@ -501,6 +501,7 @@ public sealed class TimeServiceImpl(
         }, ct);
         var errors = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var affectedWeeks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in request.Rows)
         {
             var key = $"{row.EmployeeNo}:{row.WorkDate}";
@@ -520,6 +521,12 @@ public sealed class TimeServiceImpl(
             await ApplyHoursAsync(record, ct);
             if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
             else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+            affectedWeeks.Add(WeekKey(worker.Id, date));
+        }
+        foreach (var affected in affectedWeeks)
+        {
+            var parts = affected.Split('|');
+            await RecalculateWeeklyOvertimeAsync(Guid.Parse(parts[0]), DateOnly.Parse(parts[1]), ct);
         }
         batch.RejectedCount = errors.Count;
         batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
@@ -748,6 +755,7 @@ public sealed class TimeServiceImpl(
                     };
                     await ApplyHoursAsync(corrected, ct);
                     await repo.CreateAttendanceAsync(corrected, ct);
+                    await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 else
                 {
@@ -757,6 +765,7 @@ public sealed class TimeServiceImpl(
                     existing.Source = "corrected";
                     await ApplyHoursAsync(existing, ct);
                     await repo.UpdateAttendanceAsync(existing, ct);
+                    await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 break;
             case "return":
@@ -841,6 +850,8 @@ public sealed class TimeServiceImpl(
         await ApplyHoursAsync(rec, ct);
 
         rec = await repo.UpdateAttendanceAsync(rec, ct);
+        await RecalculateWeeklyOvertimeAsync(rec.WorkerId, rec.WorkDate, ct);
+        rec = await repo.GetAttendanceAsync(workerId, date, ct) ?? rec;
         var state = rec.ClockIn is null ? "out" : rec.ClockOut is null ? "in" : "done";
         return new PunchResultDto(rec.Id, rec.WorkerId, rec.WorkDate.ToString(),
             rec.ClockIn?.ToString() ?? "", rec.ClockOut?.ToString() ?? "",
@@ -864,6 +875,8 @@ public sealed class TimeServiceImpl(
         record.RegularHours = 0;
         record.OvertimeHours = 0;
         record.OvertimeMultiplier = 0;
+        record.OvertimeHourlyDivisor = 208;
+        record.OvertimeRuleCode = "ordinary";
         if (record.ClockIn.HasValue && record.ClockOut.HasValue)
         {
             var elapsed = record.ClockOut.Value - record.ClockIn.Value;
@@ -911,6 +924,97 @@ public sealed class TimeServiceImpl(
             record.DerivedStatus = "late";
         if (shift is not null && record.ClockOut.HasValue && record.DerivedStatus == "present" && record.ClockOut < shift.EndTime)
             record.DerivedStatus = "early-departure";
+    }
+
+    private async Task RecalculateWeeklyOvertimeAsync(Guid workerId, DateOnly affectedDate, CancellationToken ct)
+    {
+        var weekStart = StartOfWeek(affectedDate);
+        var weekEnd = weekStart.AddDays(6);
+        var records = await repo.ListAttendanceForWorkerRangeAsync(workerId, weekStart, weekEnd, ct);
+        if (records.Count == 0) return;
+
+        var profile = payroll is null ? null : await payroll.FindOpenProfileAsync(workerId, ct);
+        var category = profile?.OvertimeCategory ?? "ordinary";
+        var weeklyThreshold = profile?.WeeklyOvertimeThresholdHours > 0
+            ? profile.WeeklyOvertimeThresholdHours
+            : (category == "watchperson-guard" ? 60m : 48m);
+        var hourlyDivisor = profile?.MonthlyOvertimeDivisor > 0
+            ? profile.MonthlyOvertimeDivisor
+            : (category == "watchperson-guard" ? 240m : 208m);
+
+        decimal regularWeekHours = 0;
+        var defaultCalendar = (await repo.ListCalendarsAsync(ct)).FirstOrDefault(c => c.IsDefault);
+        foreach (var record in records.OrderBy(r => r.WorkDate).ThenBy(r => r.ClockIn ?? TimeOnly.MinValue))
+        {
+            if (record.OvertimePayrollRunId.HasValue) continue;
+            var before = (record.RegularHours, record.OvertimeHours, record.OvertimeMultiplier, record.OvertimeHourlyDivisor, record.OvertimeRuleCode);
+
+            record.RegularHours = 0;
+            record.OvertimeHours = 0;
+            record.OvertimeMultiplier = 0;
+            record.OvertimeHourlyDivisor = hourlyDivisor;
+            record.OvertimeRuleCode = category;
+
+            if (record.ClockIn.HasValue && record.ClockOut.HasValue && record.TotalHours > 0)
+            {
+                var assignment = await repo.GetShiftAssignmentAsync(record.WorkerId, record.WorkDate, ct);
+                var shift = assignment?.Shift;
+                var calendar = assignment?.Calendar ?? defaultCalendar;
+                var weekend = calendar is not null && IsWeekend(calendar, record.WorkDate);
+                var holiday = calendar?.Holidays.Any(h => HolidayDate(h) == record.WorkDate) == true;
+
+                if (holiday)
+                {
+                    record.OvertimeHours = record.TotalHours;
+                    record.OvertimeMultiplier = shift?.HolidayOvertimeMultiplier ?? 2m;
+                }
+                else if (weekend)
+                {
+                    record.OvertimeHours = record.TotalHours;
+                    record.OvertimeMultiplier = shift?.RestDayOvertimeMultiplier ?? 2m;
+                }
+                else
+                {
+                    var dailyThreshold = shift?.DailyOvertimeThresholdHours > 0 ? shift.DailyOvertimeThresholdHours : 8m;
+                    var remainingWeeklyRegular = Math.Max(0, weeklyThreshold - regularWeekHours);
+                    var regularCap = Math.Min(dailyThreshold, remainingWeeklyRegular);
+                    record.RegularHours = Math.Min(record.TotalHours, regularCap);
+                    record.OvertimeHours = Math.Max(0, record.TotalHours - record.RegularHours);
+                    if (record.OvertimeHours > 0)
+                        record.OvertimeMultiplier = shift?.WeekdayOvertimeMultiplier ?? 1.5m;
+                    regularWeekHours += record.RegularHours;
+                }
+            }
+
+            var changed = before.RegularHours != record.RegularHours
+                || before.OvertimeHours != record.OvertimeHours
+                || before.OvertimeMultiplier != record.OvertimeMultiplier
+                || before.OvertimeHourlyDivisor != record.OvertimeHourlyDivisor
+                || before.OvertimeRuleCode != record.OvertimeRuleCode;
+            if (record.OvertimeHours > 0 && changed)
+            {
+                record.OvertimeStatus = "pending";
+                record.OvertimeDecisionReason = null;
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+            else if (record.OvertimeHours <= 0)
+            {
+                record.OvertimeStatus = "none";
+                record.OvertimeDecisionReason = null;
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+            await repo.UpdateAttendanceAsync(record, ct);
+        }
+    }
+
+    private static string WeekKey(Guid workerId, DateOnly date) => $"{workerId:D}|{StartOfWeek(date):yyyy-MM-dd}";
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        var offset = ((int)date.DayOfWeek + 6) % 7;
+        return date.AddDays(-offset);
     }
 
     private static bool IsWeekend(WorkCalendar calendar, DateOnly date)

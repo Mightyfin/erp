@@ -76,6 +76,8 @@ public class AttendanceRecord : Entity
     public decimal RegularHours { get; set; }
     public decimal OvertimeHours { get; set; }
     public decimal OvertimeMultiplier { get; set; }
+    public decimal OvertimeHourlyDivisor { get; set; } = 208;
+    public string OvertimeRuleCode { get; set; } = "ordinary";
     // Milestone 1: derived overtime must be explicitly reviewed before payroll.
     public string OvertimeStatus { get; set; } = "none"; // none | pending | approved | rejected | paid
     public string? OvertimeDecisionReason { get; set; }
