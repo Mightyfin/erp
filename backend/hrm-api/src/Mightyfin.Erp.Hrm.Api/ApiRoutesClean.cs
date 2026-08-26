@@ -852,7 +852,18 @@ public static class Routes
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var _p = WorkerPrincipal.FromClaims(http.User.Claims);
             if (!_p.IsRole("hr_ops") && !_p.IsRole("hr_admin"))
-                return Results.Created("", await svc.CreateMyRequestAsync(ResolveSubjectId(http) ?? "", request, ct));
+            {
+                var subject = ResolveSubjectId(http);
+                if (!string.IsNullOrEmpty(subject))
+                {
+                    var ownWorker = await ws.GetBySubjectAsync(subject, ct);
+                    if (ownWorker is not null)
+                        return Results.Created("", await svc.CreateRequestAsync(ownWorker.Id, request with { WorkerId = ownWorker.Id }, ct));
+                }
+                if (_p.IsRole("payroll"))
+                    return Results.Created("", await svc.CreateRequestAsync(null, request with { WorkerId = null }, ct));
+                return Results.Created("", await svc.CreateMyRequestAsync(subject ?? "", request, ct));
+            }
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             // M22: without a worker_id claim, resolve the caller via the M14
             // subject identity link instead of the raw sub Guid (a Keycloak

@@ -8,8 +8,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
@@ -38,7 +51,14 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 function emptyType(): Row {
-  return { code: "", name: "", description: "", annualCap: 0, requiresEvidence: false, isActive: true };
+  return {
+    code: "",
+    name: "",
+    description: "",
+    annualCap: 0,
+    requiresEvidence: false,
+    isActive: true,
+  };
 }
 
 function text(value: unknown) {
@@ -47,7 +67,9 @@ function text(value: unknown) {
 
 function money(value: unknown) {
   const amount = Number(value ?? 0);
-  return Number.isFinite(amount) ? amount.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "0";
+  return Number.isFinite(amount)
+    ? amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : "0";
 }
 
 function employeeLabel(row: Row) {
@@ -65,7 +87,10 @@ function Benefits() {
   const employees = useApi(() => realApi.employees({ pageSize: 200 }), []);
   const orgUnits = useApi(realApi.orgUnits, []);
   const locations = useApi(realApi.locations, []);
-  const claims = useApi(() => realApi.benefitClaims({ status: statusFilter || undefined, pageSize: 50 }), [statusFilter]);
+  const claims = useApi(
+    () => realApi.benefitClaims({ status: statusFilter || undefined, pageSize: 50 }),
+    [statusFilter],
+  );
 
   const [typeForm, setTypeForm] = useState<Row>(emptyType());
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
@@ -108,10 +133,15 @@ function Benefits() {
     () => ((types.data ?? []) as Row[]).filter((row) => Boolean(row.isActive)),
     [types.data],
   );
-  const workerRows = ((employees.data?.items ?? []) as Row[]);
-  const bulkWorkerRows = ((bulkWorkers.data?.items ?? []) as Row[]);
-  const employeeOptions = workerRows.map((row) => ({ value: text(row.id), label: employeeLabel(row) }));
-  const grades = Array.from(new Set(workerRows.map((row) => text(row.grade)).filter(Boolean))).sort();
+  const workerRows = (employees.data?.items ?? []) as Row[];
+  const bulkWorkerRows = (bulkWorkers.data?.items ?? []) as Row[];
+  const employeeOptions = workerRows.map((row) => ({
+    value: text(row.id),
+    label: employeeLabel(row),
+  }));
+  const grades = Array.from(
+    new Set(workerRows.map((row) => text(row.grade)).filter(Boolean)),
+  ).sort();
   const selectedType = activeTypes.find((row) => text(row.code) === allowanceType);
   const selectedBulkType = activeTypes.find((row) => text(row.code) === bulkType);
   const selectedClaimType = activeTypes.find((row) => text(row.code) === claimType);
@@ -149,24 +179,35 @@ function Benefits() {
       return;
     }
     if (editingTypeId) {
-      await run("Benefit type updated", () =>
-        realApi.updateBenefitType(editingTypeId, {
-          code: typeForm.code,
-          name: typeForm.name,
-          description: typeForm.description || null,
-          annualCap,
-          requiresEvidence: Boolean(typeForm.requiresEvidence),
-          isActive: Boolean(typeForm.isActive),
-        }), () => { setEditingTypeId(null); setTypeForm(emptyType()); });
+      await run(
+        "Benefit type updated",
+        () =>
+          realApi.updateBenefitType(editingTypeId, {
+            code: typeForm.code,
+            name: typeForm.name,
+            description: typeForm.description || null,
+            annualCap,
+            requiresEvidence: Boolean(typeForm.requiresEvidence),
+            isActive: Boolean(typeForm.isActive),
+          }),
+        () => {
+          setEditingTypeId(null);
+          setTypeForm(emptyType());
+        },
+      );
     } else {
-      await run("Benefit type created", () =>
-        realApi.createBenefitType({
-          code: typeForm.code,
-          name: typeForm.name,
-          description: typeForm.description || null,
-          annualCap,
-          requiresEvidence: Boolean(typeForm.requiresEvidence),
-        }), () => setTypeForm(emptyType()));
+      await run(
+        "Benefit type created",
+        () =>
+          realApi.createBenefitType({
+            code: typeForm.code,
+            name: typeForm.name,
+            description: typeForm.description || null,
+            annualCap,
+            requiresEvidence: Boolean(typeForm.requiresEvidence),
+          }),
+        () => setTypeForm(emptyType()),
+      );
     }
   };
 
@@ -184,38 +225,60 @@ function Benefits() {
       return;
     }
     if (amountOverCap(allowanceAmount, selectedType)) {
-      toast.error(`Amount cannot exceed the ${text(selectedType?.name)} cap of ${money(selectedType?.annualCap)}.`);
+      toast.error(
+        `Amount cannot exceed the ${text(selectedType?.name)} cap of ${money(selectedType?.annualCap)}.`,
+      );
       return;
     }
-    await run("Allowance saved", () =>
-      realApi.setBenefitAllowance({
-        workerId: allowanceWorker,
-        benefitTypeCode: allowanceType,
-        annualAmount: Number(allowanceAmount) || 0,
-        year: Number(allowanceYear) || new Date().getFullYear(),
-      }), () => { setAllowanceWorker(""); setAllowanceAmount(""); setMode("list"); });
+    await run(
+      "Allowance saved",
+      () =>
+        realApi.setBenefitAllowance({
+          workerId: allowanceWorker,
+          benefitTypeCode: allowanceType,
+          annualAmount: Number(allowanceAmount) || 0,
+          year: Number(allowanceYear) || new Date().getFullYear(),
+        }),
+      () => {
+        setAllowanceWorker("");
+        setAllowanceAmount("");
+        setMode("list");
+      },
+    );
   };
 
   const applyBulk = async () => {
-    const ids = Object.entries(selectedWorkers).filter(([, selected]) => selected).map(([id]) => id);
+    const ids = Object.entries(selectedWorkers)
+      .filter(([, selected]) => selected)
+      .map(([id]) => id);
     if (!bulkType || !bulkAmount || !ids.length) {
       toast.error("Select a benefit type, amount and at least one employee.");
       return;
     }
     if (amountOverCap(bulkAmount, selectedBulkType)) {
-      toast.error(`Amount cannot exceed the ${text(selectedBulkType?.name)} cap of ${money(selectedBulkType?.annualCap)}.`);
+      toast.error(
+        `Amount cannot exceed the ${text(selectedBulkType?.name)} cap of ${money(selectedBulkType?.annualCap)}.`,
+      );
       return;
     }
-    await run(`${ids.length} allowance${ids.length === 1 ? "" : "s"} assigned`, async () => {
-      for (const workerId of ids) {
-        await realApi.setBenefitAllowance({
-          workerId,
-          benefitTypeCode: bulkType,
-          annualAmount: Number(bulkAmount) || 0,
-          year: Number(bulkYear) || new Date().getFullYear(),
-        });
-      }
-    }, () => { setSelectedWorkers({}); setBulkAmount(""); setMode("list"); });
+    await run(
+      `${ids.length} allowance${ids.length === 1 ? "" : "s"} assigned`,
+      async () => {
+        for (const workerId of ids) {
+          await realApi.setBenefitAllowance({
+            workerId,
+            benefitTypeCode: bulkType,
+            annualAmount: Number(bulkAmount) || 0,
+            year: Number(bulkYear) || new Date().getFullYear(),
+          });
+        }
+      },
+      () => {
+        setSelectedWorkers({});
+        setBulkAmount("");
+        setMode("list");
+      },
+    );
   };
 
   const submitClaim = async () => {
@@ -224,15 +287,23 @@ function Benefits() {
       return;
     }
     const evidenceAttached = Boolean(claimEvidence) || selectedClaimType?.requiresEvidence === true;
-    await run("Claim submitted", () =>
-      realApi.createBenefitClaim({
-        workerId: claimWorker,
-        benefitTypeCode: claimType,
-        amountClaimed: Number(claimAmount) || 0,
-        currency: claimCurrency || "ZMW",
-        note: claimNote || null,
-        evidenceAttached,
-      }), () => { setClaimAmount(""); setClaimNote(""); setClaimEvidence(false); });
+    await run(
+      "Claim submitted",
+      () =>
+        realApi.createBenefitClaim({
+          workerId: claimWorker,
+          benefitTypeCode: claimType,
+          amountClaimed: Number(claimAmount) || 0,
+          currency: claimCurrency || "ZMW",
+          note: claimNote || null,
+          evidenceAttached,
+        }),
+      () => {
+        setClaimAmount("");
+        setClaimNote("");
+        setClaimEvidence(false);
+      },
+    );
   };
 
   const decide = async (id: string, action: string) => {
@@ -242,7 +313,8 @@ function Benefits() {
         action,
         reason: decisionReason[id] || undefined,
         ...(action === "approve" && raw ? { approvedAmount: Number(raw) } : {}),
-      }));
+      }),
+    );
   };
 
   return (
@@ -256,36 +328,90 @@ function Benefits() {
         />
 
         <div className="mb-4 flex flex-wrap gap-2">
-          <Button variant={mode === "list" ? "default" : "outline"} onClick={() => setMode("list")}>Assignment list</Button>
-          <Button variant={mode === "assign" ? "default" : "outline"} onClick={() => setMode("assign")}><Plus className="size-4" aria-hidden /> Assign one</Button>
-          <Button variant={mode === "bulk" ? "default" : "outline"} onClick={() => setMode("bulk")}><UsersRound className="size-4" aria-hidden /> Bulk assign</Button>
-          <Button variant={mode === "types" ? "default" : "outline"} onClick={() => setMode("types")}>Benefit types</Button>
-          <Button variant={mode === "claims" ? "default" : "outline"} onClick={() => setMode("claims")}>Claims</Button>
+          <Button variant={mode === "list" ? "default" : "outline"} onClick={() => setMode("list")}>
+            Assignment list
+          </Button>
+          <Button
+            variant={mode === "assign" ? "default" : "outline"}
+            onClick={() => setMode("assign")}
+          >
+            <Plus className="size-4" aria-hidden /> Assign one
+          </Button>
+          <Button variant={mode === "bulk" ? "default" : "outline"} onClick={() => setMode("bulk")}>
+            <UsersRound className="size-4" aria-hidden /> Bulk assign
+          </Button>
+          <Button
+            variant={mode === "types" ? "default" : "outline"}
+            onClick={() => setMode("types")}
+          >
+            Benefit types
+          </Button>
+          <Button
+            variant={mode === "claims" ? "default" : "outline"}
+            onClick={() => setMode("claims")}
+          >
+            Claims
+          </Button>
         </div>
 
         {mode === "list" ? (
           <Card>
             <CardHeader>
               <CardTitle>Allowance assignments</CardTitle>
-              <CardDescription>One employee can have one allowance per benefit type per year. Editing updates the existing assignment.</CardDescription>
+              <CardDescription>
+                One employee can have one allowance per benefit type per year. Editing updates the
+                existing assignment.
+              </CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
-              {allowances.loading ? <p className="text-sm text-muted-foreground">Loading assignments...</p> : null}
-              {allowances.error ? <p className="text-sm text-destructive">{allowances.error}</p> : null}
-              {allowances.data && !(allowances.data as Row[]).length ? <p className="text-sm text-muted-foreground">No allowance assignments yet.</p> : null}
+              {allowances.loading ? (
+                <p className="text-sm text-muted-foreground">Loading assignments...</p>
+              ) : null}
+              {allowances.error ? (
+                <p className="text-sm text-destructive">{allowances.error}</p>
+              ) : null}
+              {allowances.data && !(allowances.data as Row[]).length ? (
+                <p className="text-sm text-muted-foreground">No allowance assignments yet.</p>
+              ) : null}
               {allowances.data && (allowances.data as Row[]).length ? (
                 <Table>
                   <TableHeader>
-                    <TableRow><TableHead>Employee</TableHead><TableHead>Benefit</TableHead><TableHead>Year</TableHead><TableHead className="text-right">Annual amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
+                    <TableRow>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Benefit</TableHead>
+                      <TableHead>Year</TableHead>
+                      <TableHead className="text-right">Annual amount</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(allowances.data as Row[]).map((row) => (
                       <TableRow key={text(row.id)}>
-                        <TableCell><div className="font-medium">{text(row.workerName)}</div><div className="text-xs text-muted-foreground">{text(row.employeeNo)}</div></TableCell>
-                        <TableCell><div>{text(row.benefitTypeName)}</div><div className="text-xs text-muted-foreground">{text(row.benefitTypeCode)}</div></TableCell>
+                        <TableCell>
+                          <div className="font-medium">{text(row.workerName)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {text(row.employeeNo)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{text(row.benefitTypeName)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {text(row.benefitTypeCode)}
+                          </div>
+                        </TableCell>
                         <TableCell>{text(row.year)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{money(row.annualAmount)}</TableCell>
-                        <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => startEditAllowance(row)}><Edit className="size-4" aria-hidden /> Edit</Button></TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {money(row.annualAmount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => startEditAllowance(row)}
+                          >
+                            <Edit className="size-4" aria-hidden /> Edit
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -297,39 +423,276 @@ function Benefits() {
 
         {mode === "assign" ? (
           <Card>
-            <CardHeader><CardTitle>Assign allowance</CardTitle><CardDescription>Save one employee allowance. The amount cannot exceed the benefit type annual cap.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>Assign allowance</CardTitle>
+              <CardDescription>
+                Save one employee allowance. The amount cannot exceed the benefit type annual cap.
+              </CardDescription>
+            </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2"><Label>Employee</Label><Select value={allowanceWorker || undefined} onValueChange={setAllowanceWorker}><SelectTrigger><SelectValue placeholder="Select employee..." /></SelectTrigger><SelectContent className="max-h-64">{employeeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
-              <div><Label>Benefit type</Label><Select value={allowanceType || undefined} onValueChange={setAllowanceType}><SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger><SelectContent>{typeOptions(activeTypes)}</SelectContent></Select></div>
-              <div><Label htmlFor="allowance-year">Year</Label><Input id="allowance-year" type="number" value={allowanceYear} onChange={(e) => setAllowanceYear(e.target.value)} /></div>
-              <div><Label htmlFor="allowance-amount">Annual amount</Label><Input id="allowance-amount" type="number" min="0" step="0.01" value={allowanceAmount} onChange={(e) => setAllowanceAmount(e.target.value)} />{selectedType ? <p className="mt-1 text-xs text-muted-foreground">Cap: {money(selectedType.annualCap)}</p> : null}{amountOverCap(allowanceAmount, selectedType) ? <p className="mt-1 text-xs text-destructive">Amount is above the configured cap.</p> : null}</div>
-              <div className="flex items-end justify-end gap-2"><Button variant="outline" onClick={() => setMode("list")}>Cancel</Button><Button onClick={submitAllowance} disabled={busy || amountOverCap(allowanceAmount, selectedType)}>Save allowance</Button></div>
+              <div className="md:col-span-2">
+                <Label>Employee</Label>
+                <Select value={allowanceWorker || undefined} onValueChange={setAllowanceWorker}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select employee..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {employeeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Benefit type</Label>
+                <Select value={allowanceType || undefined} onValueChange={setAllowanceType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type..." />
+                  </SelectTrigger>
+                  <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="allowance-year">Year</Label>
+                <Input
+                  id="allowance-year"
+                  type="number"
+                  value={allowanceYear}
+                  onChange={(e) => setAllowanceYear(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="allowance-amount">Annual amount</Label>
+                <Input
+                  id="allowance-amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={allowanceAmount}
+                  onChange={(e) => setAllowanceAmount(e.target.value)}
+                />
+                {selectedType ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Cap: {money(selectedType.annualCap)}
+                  </p>
+                ) : null}
+                {amountOverCap(allowanceAmount, selectedType) ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    Amount is above the configured cap.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-end justify-end gap-2">
+                <Button variant="outline" onClick={() => setMode("list")}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={submitAllowance}
+                  disabled={busy || amountOverCap(allowanceAmount, selectedType)}
+                >
+                  Save allowance
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : null}
 
         {mode === "bulk" ? (
           <Card>
-            <CardHeader><CardTitle>Bulk assign allowances</CardTitle><CardDescription>Filter employees by department, branch, grade or status, select the matching people, then assign one allowance to all selected employees.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>Bulk assign allowances</CardTitle>
+              <CardDescription>
+                Filter employees by department, branch, grade or status, select the matching people,
+                then assign one allowance to all selected employees.
+              </CardDescription>
+            </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-4">
-                <div><Label>Department</Label><Select value={bulkOrgUnit || "all"} onValueChange={(v) => setBulkOrgUnit(v === "all" ? "" : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All departments</SelectItem>{((orgUnits.data ?? []) as Row[]).map((row) => <SelectItem key={text(row.id)} value={text(row.id)}>{text(row.name)}</SelectItem>)}</SelectContent></Select></div>
-                <div><Label>Branch</Label><Select value={bulkLocation || "all"} onValueChange={(v) => setBulkLocation(v === "all" ? "" : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{((locations.data ?? []) as Row[]).map((row) => <SelectItem key={text(row.id)} value={text(row.id)}>{text(row.name)}</SelectItem>)}</SelectContent></Select></div>
-                <div><Label>Pay grade</Label><Select value={bulkGrade || "all"} onValueChange={(v) => setBulkGrade(v === "all" ? "" : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All grades</SelectItem>{grades.map((grade) => <SelectItem key={grade} value={grade}>{grade}</SelectItem>)}</SelectContent></Select></div>
-                <div><Label>Status</Label><Select value={bulkStatus || "all"} onValueChange={(v) => setBulkStatus(v === "all" ? "" : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pre-hire">Pre-hire</SelectItem><SelectItem value="on-leave">On leave</SelectItem></SelectContent></Select></div>
+                <div>
+                  <Label>Department</Label>
+                  <Select
+                    value={bulkOrgUnit || "all"}
+                    onValueChange={(v) => setBulkOrgUnit(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {((orgUnits.data ?? []) as Row[]).map((row) => (
+                        <SelectItem key={text(row.id)} value={text(row.id)}>
+                          {text(row.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Branch</Label>
+                  <Select
+                    value={bulkLocation || "all"}
+                    onValueChange={(v) => setBulkLocation(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All branches</SelectItem>
+                      {((locations.data ?? []) as Row[]).map((row) => (
+                        <SelectItem key={text(row.id)} value={text(row.id)}>
+                          {text(row.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Pay grade</Label>
+                  <Select
+                    value={bulkGrade || "all"}
+                    onValueChange={(v) => setBulkGrade(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All grades</SelectItem>
+                      {grades.map((grade) => (
+                        <SelectItem key={grade} value={grade}>
+                          {grade}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select
+                    value={bulkStatus || "all"}
+                    onValueChange={(v) => setBulkStatus(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="pre-hire">Pre-hire</SelectItem>
+                      <SelectItem value="on-leave">On leave</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div><Label>Benefit type</Label><Select value={bulkType || undefined} onValueChange={setBulkType}><SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger><SelectContent>{typeOptions(activeTypes)}</SelectContent></Select></div>
-                <div><Label htmlFor="bulk-year">Year</Label><Input id="bulk-year" type="number" value={bulkYear} onChange={(e) => setBulkYear(e.target.value)} /></div>
-                <div><Label htmlFor="bulk-amount">Annual amount</Label><Input id="bulk-amount" type="number" min="0" step="0.01" value={bulkAmount} onChange={(e) => setBulkAmount(e.target.value)} />{selectedBulkType ? <p className="mt-1 text-xs text-muted-foreground">Cap: {money(selectedBulkType.annualCap)}</p> : null}{amountOverCap(bulkAmount, selectedBulkType) ? <p className="mt-1 text-xs text-destructive">Amount is above the configured cap.</p> : null}</div>
+                <div>
+                  <Label>Benefit type</Label>
+                  <Select value={bulkType || undefined} onValueChange={setBulkType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type..." />
+                    </SelectTrigger>
+                    <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="bulk-year">Year</Label>
+                  <Input
+                    id="bulk-year"
+                    type="number"
+                    value={bulkYear}
+                    onChange={(e) => setBulkYear(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="bulk-amount">Annual amount</Label>
+                  <Input
+                    id="bulk-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={bulkAmount}
+                    onChange={(e) => setBulkAmount(e.target.value)}
+                  />
+                  {selectedBulkType ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Cap: {money(selectedBulkType.annualCap)}
+                    </p>
+                  ) : null}
+                  {amountOverCap(bulkAmount, selectedBulkType) ? (
+                    <p className="mt-1 text-xs text-destructive">
+                      Amount is above the configured cap.
+                    </p>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground">{bulkWorkerRows.length} employee{bulkWorkerRows.length === 1 ? "" : "s"} listed.</p><div className="flex gap-2"><Button variant="outline" onClick={() => setSelectedWorkers(Object.fromEntries(bulkWorkerRows.map((row) => [text(row.id), true])))}>Select all listed</Button><Button variant="outline" onClick={() => setSelectedWorkers({})}>Clear</Button><Button onClick={applyBulk} disabled={busy || amountOverCap(bulkAmount, selectedBulkType)}>Apply to selected</Button></div></div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {bulkWorkerRows.length} employee{bulkWorkerRows.length === 1 ? "" : "s"} listed.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setSelectedWorkers(
+                        Object.fromEntries(bulkWorkerRows.map((row) => [text(row.id), true])),
+                      )
+                    }
+                  >
+                    Select all listed
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedWorkers({})}>
+                    Clear
+                  </Button>
+                  <Button
+                    onClick={applyBulk}
+                    disabled={busy || amountOverCap(bulkAmount, selectedBulkType)}
+                  >
+                    Apply to selected
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto rounded-md border">
                 <Table>
-                  <TableHeader><TableRow><TableHead className="w-12">Use</TableHead><TableHead>Employee</TableHead><TableHead>Department</TableHead><TableHead>Branch</TableHead><TableHead>Grade</TableHead></TableRow></TableHeader>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">Use</TableHead>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Branch</TableHead>
+                      <TableHead>Grade</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
-                    {bulkWorkerRows.map((row) => { const id = text(row.id); return <TableRow key={id}><TableCell><Checkbox checked={Boolean(selectedWorkers[id])} onCheckedChange={(checked) => setSelectedWorkers((s) => ({ ...s, [id]: Boolean(checked) }))} /></TableCell><TableCell>{employeeLabel(row)}</TableCell><TableCell>{text(row.orgUnitName) || "-"}</TableCell><TableCell>{text(row.locationName) || "-"}</TableCell><TableCell>{text(row.grade) || "-"}</TableCell></TableRow>; })}
-                    {!bulkWorkerRows.length ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">No employees match these filters.</TableCell></TableRow> : null}
+                    {bulkWorkerRows.map((row) => {
+                      const id = text(row.id);
+                      return (
+                        <TableRow key={id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={Boolean(selectedWorkers[id])}
+                              onCheckedChange={(checked) =>
+                                setSelectedWorkers((s) => ({ ...s, [id]: Boolean(checked) }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>{employeeLabel(row)}</TableCell>
+                          <TableCell>{text(row.orgUnitName) || "-"}</TableCell>
+                          <TableCell>{text(row.locationName) || "-"}</TableCell>
+                          <TableCell>{text(row.grade) || "-"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {!bulkWorkerRows.length ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={5}
+                          className="py-8 text-center text-sm text-muted-foreground"
+                        >
+                          No employees match these filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                   </TableBody>
                 </Table>
               </div>
@@ -339,20 +702,117 @@ function Benefits() {
 
         {mode === "types" ? (
           <Card>
-            <CardHeader><CardTitle>Benefit types</CardTitle><CardDescription>Configure claimable benefits and annual caps. These are configuration records.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>Benefit types</CardTitle>
+              <CardDescription>
+                Configure claimable benefits and annual caps. These are configuration records.
+              </CardDescription>
+            </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
-                <div><Label htmlFor="type-code">Code</Label><Input id="type-code" value={text(typeForm.code)} disabled={editingTypeId !== null} onChange={(e) => setTypeForm({ ...typeForm, code: e.target.value })} /></div>
-                <div><Label htmlFor="type-name">Name</Label><Input id="type-name" value={text(typeForm.name)} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} /></div>
-                <div><Label htmlFor="type-cap">Annual cap</Label><Input id="type-cap" type="number" min="0.01" step="0.01" value={text(typeForm.annualCap)} onChange={(e) => setTypeForm({ ...typeForm, annualCap: Number(e.target.value) })} /></div>
-                <div className="flex items-end gap-2 pb-2"><Checkbox id="type-evidence" checked={Boolean(typeForm.requiresEvidence)} onCheckedChange={(checked) => setTypeForm({ ...typeForm, requiresEvidence: Boolean(checked) })} /><Label htmlFor="type-evidence">Requires evidence</Label></div>
-                <div className="md:col-span-2"><Label htmlFor="type-description">Description</Label><Textarea id="type-description" rows={2} value={text(typeForm.description)} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} /></div>
+                <div>
+                  <Label htmlFor="type-code">Code</Label>
+                  <Input
+                    id="type-code"
+                    value={text(typeForm.code)}
+                    disabled={editingTypeId !== null}
+                    onChange={(e) => setTypeForm({ ...typeForm, code: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="type-name">Name</Label>
+                  <Input
+                    id="type-name"
+                    value={text(typeForm.name)}
+                    onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="type-cap">Annual cap</Label>
+                  <Input
+                    id="type-cap"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={text(typeForm.annualCap)}
+                    onChange={(e) =>
+                      setTypeForm({ ...typeForm, annualCap: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="flex items-end gap-2 pb-2">
+                  <Checkbox
+                    id="type-evidence"
+                    checked={Boolean(typeForm.requiresEvidence)}
+                    onCheckedChange={(checked) =>
+                      setTypeForm({ ...typeForm, requiresEvidence: Boolean(checked) })
+                    }
+                  />
+                  <Label htmlFor="type-evidence">Requires evidence</Label>
+                </div>
+                <div className="md:col-span-2">
+                  <Label htmlFor="type-description">Description</Label>
+                  <Textarea
+                    id="type-description"
+                    rows={2}
+                    value={text(typeForm.description)}
+                    onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="flex gap-2">{editingTypeId ? <Button variant="outline" onClick={() => { setEditingTypeId(null); setTypeForm(emptyType()); }}>Cancel edit</Button> : null}<Button onClick={submitType} disabled={busy}>{editingTypeId ? "Save type" : "Create type"}</Button></div>
+              <div className="flex gap-2">
+                {editingTypeId ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditingTypeId(null);
+                      setTypeForm(emptyType());
+                    }}
+                  >
+                    Cancel edit
+                  </Button>
+                ) : null}
+                <Button onClick={submitType} disabled={busy}>
+                  {editingTypeId ? "Save type" : "Create type"}
+                </Button>
+              </div>
               <div className="overflow-x-auto rounded-md border">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Code</TableHead><TableHead className="text-right">Cap</TableHead><TableHead>Evidence</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
-                  <TableBody>{((types.data ?? []) as Row[]).map((row) => <TableRow key={text(row.id)}><TableCell>{text(row.name)}</TableCell><TableCell>{text(row.code)}</TableCell><TableCell className="text-right tabular-nums">{money(row.annualCap)}</TableCell><TableCell>{row.requiresEvidence ? "Required" : "No"}</TableCell><TableCell>{row.isActive ? "Active" : "Inactive"}</TableCell><TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => { setEditingTypeId(text(row.id)); setTypeForm(row); }}>Edit</Button></TableCell></TableRow>)}</TableBody>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Code</TableHead>
+                      <TableHead className="text-right">Cap</TableHead>
+                      <TableHead>Evidence</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {((types.data ?? []) as Row[]).map((row) => (
+                      <TableRow key={text(row.id)}>
+                        <TableCell>{text(row.name)}</TableCell>
+                        <TableCell>{text(row.code)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {money(row.annualCap)}
+                        </TableCell>
+                        <TableCell>{row.requiresEvidence ? "Required" : "No"}</TableCell>
+                        <TableCell>{row.isActive ? "Active" : "Inactive"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingTypeId(text(row.id));
+                              setTypeForm(row);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
                 </Table>
               </div>
             </CardContent>
@@ -361,24 +821,199 @@ function Benefits() {
 
         {mode === "claims" ? (
           <Card>
-            <CardHeader><CardTitle>Claims</CardTitle><CardDescription>Submit and decide claims against the configured allowance caps.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>Claims</CardTitle>
+              <CardDescription>
+                Submit and decide claims against the configured allowance caps.
+              </CardDescription>
+            </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-3 md:grid-cols-3">
-                <div><Label>Employee</Label><Select value={claimWorker || undefined} onValueChange={setClaimWorker}><SelectTrigger><SelectValue placeholder="Select employee..." /></SelectTrigger><SelectContent className="max-h-64">{employeeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>
-                <div><Label>Benefit type</Label><Select value={claimType || undefined} onValueChange={setClaimType}><SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger><SelectContent>{typeOptions(activeTypes)}</SelectContent></Select></div>
-                <div><Label htmlFor="claim-amount">Amount claimed</Label><Input id="claim-amount" type="number" min="0.01" step="0.01" value={claimAmount} onChange={(e) => setClaimAmount(e.target.value)} /></div>
-                <div><Label htmlFor="claim-currency">Currency</Label><Select value={claimCurrency} onValueChange={setClaimCurrency}><SelectTrigger id="claim-currency"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ZMW">ZMW</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent></Select></div>
-                <div><Label htmlFor="claim-note">Note</Label><Input id="claim-note" value={claimNote} onChange={(e) => setClaimNote(e.target.value)} /></div>
-                <div className="flex items-end gap-2 pb-2"><Checkbox id="claim-evidence" checked={claimEvidence} onCheckedChange={(checked) => setClaimEvidence(Boolean(checked))} /><Label htmlFor="claim-evidence">Evidence attached</Label></div>
-                <Button className="md:col-span-3" onClick={submitClaim} disabled={busy}>Submit claim</Button>
+                <div>
+                  <Label>Employee</Label>
+                  <Select value={claimWorker || undefined} onValueChange={setClaimWorker}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {employeeOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Benefit type</Label>
+                  <Select value={claimType || undefined} onValueChange={setClaimType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type..." />
+                    </SelectTrigger>
+                    <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="claim-amount">Amount claimed</Label>
+                  <Input
+                    id="claim-amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={claimAmount}
+                    onChange={(e) => setClaimAmount(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="claim-currency">Currency</Label>
+                  <Select value={claimCurrency} onValueChange={setClaimCurrency}>
+                    <SelectTrigger id="claim-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ZMW">ZMW</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="claim-note">Note</Label>
+                  <Input
+                    id="claim-note"
+                    value={claimNote}
+                    onChange={(e) => setClaimNote(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-end gap-2 pb-2">
+                  <Checkbox
+                    id="claim-evidence"
+                    checked={claimEvidence}
+                    onCheckedChange={(checked) => setClaimEvidence(Boolean(checked))}
+                  />
+                  <Label htmlFor="claim-evidence">Evidence attached</Label>
+                </div>
+                <Button className="md:col-span-3" onClick={submitClaim} disabled={busy}>
+                  Submit claim
+                </Button>
               </div>
-              <div className="flex justify-end"><Select value={statusFilter || "all"} onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.entries(STATUS_LABEL).map(([key, label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select></div>
+              <div className="flex justify-end">
+                <Select
+                  value={statusFilter || "all"}
+                  onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {Object.entries(STATUS_LABEL).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="overflow-x-auto rounded-md border">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Benefit</TableHead><TableHead className="text-right">Claimed</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Benefit</TableHead>
+                      <TableHead className="text-right">Claimed</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Decision</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
-                    {(claims.data?.items ?? []).map((row) => <TableRow key={text(row.id)}><TableCell>{text(row.workerName)}<div className="text-xs text-muted-foreground">{text(row.employeeNo)}</div></TableCell><TableCell>{text(row.benefitTypeName)}</TableCell><TableCell className="text-right">{money(row.amountClaimed)} {text(row.currency || "ZMW")}</TableCell><TableCell><span className={STATUS_CLASS[text(row.status)] ?? ""}>{STATUS_LABEL[text(row.status)] ?? text(row.status)}</span></TableCell><TableCell><Input className="mb-1 h-8 min-w-36" placeholder="Reason" value={decisionReason[text(row.id)] ?? ""} onChange={(e) => setDecisionReason((s) => ({ ...s, [text(row.id)]: e.target.value }))} /><Input className="h-8 min-w-36" placeholder="Approved amount" value={approveAmount[text(row.id)] ?? ""} onChange={(e) => setApproveAmount((s) => ({ ...s, [text(row.id)]: e.target.value }))} /></TableCell><TableCell>{row.status === "submitted" || row.status === "returned" ? <div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" onClick={() => decide(text(row.id), "approve")} disabled={busy}>Approve</Button><Button size="sm" variant="outline" onClick={() => decide(text(row.id), "reject")} disabled={busy}>Reject</Button><Button size="sm" variant="outline" onClick={() => decide(text(row.id), "return")} disabled={busy}>Return</Button></div> : row.status === "approved" ? <Button size="sm" onClick={() => run("Claim paid", () => realApi.payBenefitClaim(text(row.id)))} disabled={busy}>Mark paid</Button> : null}</TableCell></TableRow>)}
-                    {!claims.data?.items?.length ? <TableRow><TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">No claims found.</TableCell></TableRow> : null}
+                    {(claims.data?.items ?? []).map((row) => (
+                      <TableRow key={text(row.id)}>
+                        <TableCell>
+                          {text(row.workerName)}
+                          <div className="text-xs text-muted-foreground">
+                            {text(row.employeeNo)}
+                          </div>
+                        </TableCell>
+                        <TableCell>{text(row.benefitTypeName)}</TableCell>
+                        <TableCell className="text-right">
+                          {money(row.amountClaimed)} {text(row.currency || "ZMW")}
+                        </TableCell>
+                        <TableCell>
+                          <span className={STATUS_CLASS[text(row.status)] ?? ""}>
+                            {STATUS_LABEL[text(row.status)] ?? text(row.status)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            className="mb-1 h-8 min-w-36"
+                            placeholder="Reason"
+                            value={decisionReason[text(row.id)] ?? ""}
+                            onChange={(e) =>
+                              setDecisionReason((s) => ({ ...s, [text(row.id)]: e.target.value }))
+                            }
+                          />
+                          <Input
+                            className="h-8 min-w-36"
+                            placeholder="Approved amount"
+                            value={approveAmount[text(row.id)] ?? ""}
+                            onChange={(e) =>
+                              setApproveAmount((s) => ({ ...s, [text(row.id)]: e.target.value }))
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {row.status === "submitted" || row.status === "returned" ? (
+                            <div className="flex flex-wrap gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => decide(text(row.id), "approve")}
+                                disabled={busy}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => decide(text(row.id), "reject")}
+                                disabled={busy}
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => decide(text(row.id), "return")}
+                                disabled={busy}
+                              >
+                                Return
+                              </Button>
+                            </div>
+                          ) : row.status === "approved" ? (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                run("Claim paid", () => realApi.payBenefitClaim(text(row.id)))
+                              }
+                              disabled={busy}
+                            >
+                              Mark paid
+                            </Button>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!claims.data?.items?.length ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="py-8 text-center text-sm text-muted-foreground"
+                        >
+                          No claims found.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                   </TableBody>
                 </Table>
               </div>

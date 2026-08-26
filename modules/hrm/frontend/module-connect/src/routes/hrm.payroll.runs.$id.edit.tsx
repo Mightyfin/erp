@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertTriangle, Ban, Info, Lock, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { EditPage } from "@/platform/components/EditPage";
 import type { EditSection } from "@/platform/components/EditPage";
 import { RestrictedState } from "@/platform/components/States";
 import { feedback } from "@/platform/feedback";
+import { useAuth } from "@/platform/auth";
 import { adaptPayrollLines, realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
@@ -350,6 +351,7 @@ const lockedStatuses = new Set(["approved", "released", "paid", "closed", "rever
 function EditRun() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const runState = useApi(
     async () => adaptRunDisplay(USE_REAL ? await realApi.payrollRun(id) : null),
@@ -365,6 +367,8 @@ function EditRun() {
     {},
   );
   const [saving, setSaving] = useState(false);
+  const [requestingCorrection, setRequestingCorrection] = useState(false);
+  const [correctionRequestId, setCorrectionRequestId] = useState<string | null>(null);
 
   return (
     <AuthGate>
@@ -375,13 +379,54 @@ function EditRun() {
 
             const isDraft = run.status === "draft";
             const canCorrectLines = run.status === "calculated";
-            const locked = !canCorrectLines || lockedStatuses.has(run.status);
+            const roles = new Set((user?.roles ?? []).map((role) => role.toLowerCase()));
+            const canManagePostedRun =
+              roles.has("hr_admin") || roles.has("payroll") || roles.has("payroll_admin");
+            const canUseLineCorrections = canCorrectLines && canManagePostedRun;
+            const locked = !canUseLineCorrections || lockedStatuses.has(run.status);
             const lines: RunLine[] = USE_REAL ? (linesState.data ?? []) : [];
             const pageDescription = isDraft
               ? `${run.entityName}. Change the pay group or pay period before calculation.`
-              : canCorrectLines
-                ? `${run.entityName}. This run has already been calculated, so only one-off employee corrections can be added here.`
-                : `${run.entityName}. This run is ${run.status}, so it is shown for review only.`;
+              : canUseLineCorrections
+                ? `${run.entityName}. This run has already been calculated. Users with payroll correction access can add one-off employee corrections here.`
+                : canCorrectLines
+                  ? `${run.entityName}. This run has already been calculated, so changes now need payroll admin approval.`
+                  : `${run.entityName}. This run is ${run.status}, so it is shown for review only.`;
+            const requestAdminCorrection = async () => {
+              if (requestingCorrection) return;
+              setRequestingCorrection(true);
+              try {
+                const created = (await realApi.createExperienceRequest({
+                  category: "payroll",
+                  subject: `Payroll correction needed for ${run.period || run.id}`,
+                  body: [
+                    `Payroll run: ${run.id}`,
+                    `Status: ${run.status}`,
+                    `Pay group: ${run.payGroup || "Not shown"}`,
+                    `Entity: ${run.entityName || "Not shown"}`,
+                    "",
+                    "Requested action:",
+                    "Please review this posted payroll run and make the required admin correction, cancellation, or reversal.",
+                  ].join("\n"),
+                  confidentiality: "confidential",
+                })) as { id?: unknown };
+                const requestId = typeof created?.id === "string" ? created.id : null;
+                setCorrectionRequestId(requestId);
+                feedback.submitted(
+                  "Payroll correction request sent",
+                  "HR/admin can review it from HR requests and approvals.",
+                );
+              } catch (error) {
+                feedback.blocked(
+                  "Could not send the request",
+                  error instanceof Error
+                    ? error.message
+                    : "The HR request could not be created. Try again from HR requests.",
+                );
+              } finally {
+                setRequestingCorrection(false);
+              }
+            };
 
             const sections: EditSection[] = [
               ...(run.status === "draft"
@@ -401,20 +446,54 @@ function EditRun() {
                 id: "lines",
                 title: canCorrectLines ? "Employee corrections" : "Pay lines",
                 description: USE_REAL
-                  ? canCorrectLines
+                  ? canUseLineCorrections
                     ? "Add a one-off correction to an employee line when the calculated result needs a payroll adjustment."
-                    : "One line per employee, read from the calculated run. Open a line to see how its figures were derived."
+                    : canCorrectLines
+                      ? "This run is already calculated. If you do not have payroll correction access, send a request for HR/admin approval."
+                      : "One line per employee, read from the calculated run. Open a line to see how its figures were derived."
                   : "Pay lines are shown from the demo data until onboarding of the run editor is complete.",
                 render: () =>
                   USE_REAL ? (
                     <div className="space-y-3">
-                      {canCorrectLines ? (
+                      {canUseLineCorrections ? (
                         <Alert>
                           <Info className="size-4" aria-hidden />
                           <AlertTitle>Calculated run</AlertTitle>
                           <AlertDescription>
                             Pay group and pay period are locked now. Add corrections below only when
                             one employee needs a clear adjustment before approval.
+                          </AlertDescription>
+                        </Alert>
+                      ) : canCorrectLines ? (
+                        <Alert className="border-warning/40 bg-warning-soft">
+                          <Lock className="size-4" aria-hidden />
+                          <AlertTitle>Admin approval is needed</AlertTitle>
+                          <AlertDescription>
+                            This run is no longer a draft. You can review the lines, but changes
+                            need a payroll admin or an approved correction request.
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => {
+                                  void requestAdminCorrection();
+                                }}
+                                disabled={requestingCorrection || Boolean(correctionRequestId)}
+                              >
+                                {requestingCorrection
+                                  ? "Sending request..."
+                                  : correctionRequestId
+                                    ? "Request sent"
+                                    : "Request payroll admin correction"}
+                              </Button>
+                              {correctionRequestId ? (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link to="/hrm/requests/$id" params={{ id: correctionRequestId }}>
+                                    Open request
+                                  </Link>
+                                </Button>
+                              ) : null}
+                            </div>
                           </AlertDescription>
                         </Alert>
                       ) : locked ? (
@@ -424,6 +503,34 @@ function EditRun() {
                           <AlertDescription>
                             Current status: {run.status}. Use the correct payroll action from the
                             run page, or cancel/reverse it if a top admin needs to fix a mistake.
+                            {!isDraft ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => {
+                                    void requestAdminCorrection();
+                                  }}
+                                  disabled={requestingCorrection || Boolean(correctionRequestId)}
+                                >
+                                  {requestingCorrection
+                                    ? "Sending request..."
+                                    : correctionRequestId
+                                      ? "Request sent"
+                                      : "Request payroll admin correction"}
+                                </Button>
+                                {correctionRequestId ? (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link
+                                      to="/hrm/requests/$id"
+                                      params={{ id: correctionRequestId }}
+                                    >
+                                      Open request
+                                    </Link>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </AlertDescription>
                         </Alert>
                       ) : null}
@@ -589,7 +696,7 @@ function EditRun() {
                   isDraft
                     ? "Draft runs can change pay group, period and approver note. Calculate after saving."
                     : locked
-                      ? "Only calculated runs can receive line corrections here."
+                      ? "Only users with payroll correction access can change a posted run here. Others should send an HR/admin request."
                       : USE_REAL
                         ? "Corrections are saved on the calculated payroll line and recorded in payroll history."
                         : "Demonstration build — nothing is saved."

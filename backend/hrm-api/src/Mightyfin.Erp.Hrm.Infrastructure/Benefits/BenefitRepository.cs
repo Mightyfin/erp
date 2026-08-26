@@ -13,7 +13,7 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         ctx.BenefitTypes.ToListAsync(ct);
 
     public Task<BenefitType?> GetBenefitTypeByCodeAsync(string code, CancellationToken ct) =>
-        ctx.BenefitTypes.FirstOrDefaultAsync(x => x.Code == code, ct);
+        ctx.BenefitTypes.FirstOrDefaultAsync(x => x.Code.ToLower() == code.ToLower(), ct);
 
     public async Task<BenefitType> CreateBenefitTypeAsync(BenefitType type, CancellationToken ct)
     {
@@ -39,6 +39,7 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
 
     public Task<List<WorkerBenefitAllowance>> ListAllowancesAsync(Guid? workerId, CancellationToken ct) =>
         ctx.WorkerBenefitAllowances
+            .Include(x => x.Worker)
             .Include(x => x.BenefitType)
             .Where(x => !workerId.HasValue || x.WorkerId == workerId.Value)
             .ToListAsync(ct);
@@ -107,4 +108,3 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
 
     public Task SaveChangesAsync(CancellationToken ct) => ctx.SaveChangesAsync(ct);
 }
-
