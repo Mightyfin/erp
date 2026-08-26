@@ -855,6 +855,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         // M46: a branch run pays only the workers attached to its branch;
         // an organisation-wide run pays everyone.
         var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        var payrollBenefits = (await repo.LoadPayrollBenefitAllowancesAsync(run.PayPeriodId, run.LocationId, ct))
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(x => x.Key, x => x.ToList());
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
         int exceptions = 0;
@@ -877,6 +880,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             // It is intentionally added before statutory components so PAYE and
             // percentage-based deductions see the same explainable gross basis.
             ctx.AddOvertime(approvedOvertime.Where(a => a.WorkerId == worker.Id).ToList());
+            ctx.AddPayrollBenefits(payrollBenefits.TryGetValue(worker.Id, out var benefits) ? benefits : []);
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
             var net = ctx.Gross - ctx.Deductions;
@@ -1777,6 +1781,27 @@ internal sealed class CalcContext
         Gross += amount;
     }
 
+    public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances)
+    {
+        foreach (var allowance in allowances
+            .Where(a => a.AnnualAmount > 0 && a.BenefitType?.IncludeInPayroll == true && a.BenefitType.IsActive)
+            .OrderBy(a => a.BenefitType!.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var type = allowance.BenefitType!;
+            var monthlyAmount = Math.Round(allowance.AnnualAmount / 12m, 2);
+            if (WorkingDays > 0 && PaymentDays < WorkingDays)
+                monthlyAmount = Math.Round(monthlyAmount * PaymentDays / WorkingDays, 2);
+            if (monthlyAmount <= 0) continue;
+            var code = $"benefit-{type.Code.Trim().ToLowerInvariant()}";
+            _values[code] = monthlyAmount;
+            Components.Add((code, type.Name, "earning", monthlyAmount,
+                WorkingDays > 0 && PaymentDays < WorkingDays
+                    ? $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months, prorated for {PaymentDays:N0}/{WorkingDays:N0} paid days."
+                    : $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months.", false));
+            Gross += monthlyAmount;
+        }
+    }
+
     public void SetProration(int workingDays, int paymentDays, string? note)
     {
         WorkingDays = workingDays;
@@ -1811,6 +1836,7 @@ public interface IPayrollRepository
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
     Task<PayPeriod?> GetPeriodAsync(Guid id, CancellationToken ct);
+    Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
     Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct);
     Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct);

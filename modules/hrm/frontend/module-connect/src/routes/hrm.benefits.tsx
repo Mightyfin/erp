@@ -57,6 +57,7 @@ function emptyType(): Row {
     description: "",
     annualCap: 0,
     requiresEvidence: false,
+    includeInPayroll: false,
     isActive: true,
   };
 }
@@ -133,6 +134,10 @@ function Benefits() {
     () => ((types.data ?? []) as Row[]).filter((row) => Boolean(row.isActive)),
     [types.data],
   );
+  const claimOnlyTypes = useMemo(
+    () => activeTypes.filter((row) => !Boolean(row.includeInPayroll)),
+    [activeTypes],
+  );
   const workerRows = (employees.data?.items ?? []) as Row[];
   const bulkWorkerRows = (bulkWorkers.data?.items ?? []) as Row[];
   const employeeOptions = workerRows.map((row) => ({
@@ -145,6 +150,10 @@ function Benefits() {
   const selectedType = activeTypes.find((row) => text(row.code) === allowanceType);
   const selectedBulkType = activeTypes.find((row) => text(row.code) === bulkType);
   const selectedClaimType = activeTypes.find((row) => text(row.code) === claimType);
+  const typeByCode = useMemo(
+    () => new Map(((types.data ?? []) as Row[]).map((row) => [text(row.code).toLowerCase(), row])),
+    [types.data],
+  );
 
   const run = async <T,>(name: string, operation: () => Promise<T>, onSuccess?: () => void) => {
     setBusy(true);
@@ -169,6 +178,7 @@ function Benefits() {
     rows.map((row) => (
       <SelectItem key={text(row.code)} value={text(row.code)}>
         {text(row.name)} · cap {money(row.annualCap)}
+        {row.includeInPayroll ? " · payslip" : " · claim"}
       </SelectItem>
     ));
 
@@ -188,6 +198,7 @@ function Benefits() {
             description: typeForm.description || null,
             annualCap,
             requiresEvidence: Boolean(typeForm.requiresEvidence),
+            includeInPayroll: Boolean(typeForm.includeInPayroll),
             isActive: Boolean(typeForm.isActive),
           }),
         () => {
@@ -205,6 +216,7 @@ function Benefits() {
             description: typeForm.description || null,
             annualCap,
             requiresEvidence: Boolean(typeForm.requiresEvidence),
+            includeInPayroll: Boolean(typeForm.includeInPayroll),
           }),
         () => setTypeForm(emptyType()),
       );
@@ -379,41 +391,50 @@ function Benefits() {
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead>Benefit</TableHead>
+                      <TableHead>Payroll use</TableHead>
                       <TableHead>Year</TableHead>
                       <TableHead className="text-right">Annual amount</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(allowances.data as Row[]).map((row) => (
-                      <TableRow key={text(row.id)}>
-                        <TableCell>
-                          <div className="font-medium">{text(row.workerName)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {text(row.employeeNo)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>{text(row.benefitTypeName)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {text(row.benefitTypeCode)}
-                          </div>
-                        </TableCell>
-                        <TableCell>{text(row.year)}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {money(row.annualAmount)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startEditAllowance(row)}
-                          >
-                            <Edit className="size-4" aria-hidden /> Edit
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {(allowances.data as Row[]).map((row) => {
+                      const benefitType = typeByCode.get(text(row.benefitTypeCode).toLowerCase());
+                      return (
+                        <TableRow key={text(row.id)}>
+                          <TableCell>
+                            <div className="font-medium">{text(row.workerName)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {text(row.employeeNo)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>{text(row.benefitTypeName)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {text(row.benefitTypeCode)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+                              {benefitType?.includeInPayroll ? "Added to payslip" : "Claim only"}
+                            </span>
+                          </TableCell>
+                          <TableCell>{text(row.year)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {money(row.annualAmount)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startEditAllowance(row)}
+                            >
+                              <Edit className="size-4" aria-hidden /> Edit
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               ) : null}
@@ -750,6 +771,16 @@ function Benefits() {
                   />
                   <Label htmlFor="type-evidence">Requires evidence</Label>
                 </div>
+                <div className="flex items-end gap-2 pb-2">
+                  <Checkbox
+                    id="type-payroll"
+                    checked={Boolean(typeForm.includeInPayroll)}
+                    onCheckedChange={(checked) =>
+                      setTypeForm({ ...typeForm, includeInPayroll: Boolean(checked) })
+                    }
+                  />
+                  <Label htmlFor="type-payroll">Add to payslip</Label>
+                </div>
                 <div className="md:col-span-2">
                   <Label htmlFor="type-description">Description</Label>
                   <Textarea
@@ -784,6 +815,7 @@ function Benefits() {
                       <TableHead>Code</TableHead>
                       <TableHead className="text-right">Cap</TableHead>
                       <TableHead>Evidence</TableHead>
+                      <TableHead>Payroll use</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead />
                     </TableRow>
@@ -797,6 +829,9 @@ function Benefits() {
                           {money(row.annualCap)}
                         </TableCell>
                         <TableCell>{row.requiresEvidence ? "Required" : "No"}</TableCell>
+                        <TableCell>
+                          {row.includeInPayroll ? "Added to payslip" : "Claim only"}
+                        </TableCell>
                         <TableCell>{row.isActive ? "Active" : "Inactive"}</TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -850,7 +885,7 @@ function Benefits() {
                     <SelectTrigger>
                       <SelectValue placeholder="Select type..." />
                     </SelectTrigger>
-                    <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                    <SelectContent>{typeOptions(claimOnlyTypes)}</SelectContent>
                   </Select>
                 </div>
                 <div>

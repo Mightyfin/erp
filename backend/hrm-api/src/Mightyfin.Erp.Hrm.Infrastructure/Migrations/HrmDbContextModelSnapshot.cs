@@ -2022,6 +2022,10 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_archived");
 
+                    b.Property<bool>("IncludeInPayroll")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_in_payroll");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")

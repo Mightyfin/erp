@@ -1175,6 +1175,23 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (profiles, components, rules, slabs, period.CutoffDate);
     }
 
+    public async Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var query = db.WorkerBenefitAllowances
+            .Include(a => a.Worker)
+            .Include(a => a.BenefitType)
+            .Where(a => a.Year == period.StartDate.Year
+                && a.AnnualAmount > 0
+                && a.BenefitType != null
+                && a.BenefitType.IsActive
+                && a.BenefitType.IncludeInPayroll);
+        if (locationId.HasValue)
+            query = query.Where(a => a.Worker != null && a.Worker.LocationId == locationId);
+        return await query.ToListAsync(ct);
+    }
+
     public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)

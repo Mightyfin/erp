@@ -70,7 +70,7 @@ public class M41Gap6bBenefitClaimsTests
             new NoOpAuthz("hr_admin"), new WorkerRepository(ctx));
         await Assert.ThrowsAsync<DomainException>(() =>
             hrAdmin.CreateBenefitTypeAsync(
-                new BenefitTypeCreateRequest("medical", "Dup Medical", null, 1000m, false), default));
+                new BenefitTypeCreateRequest("medical", "Dup Medical", null, 1000m, false, false), default));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public class M41Gap6bBenefitClaimsTests
             new NoOpAuthz("hr_ops"), new WorkerRepository(ctx));
         await Assert.ThrowsAsync<DomainException>(() =>
             hrOps.CreateBenefitTypeAsync(
-                new BenefitTypeCreateRequest("housing", "Housing", null, 2000m, false), default));
+                new BenefitTypeCreateRequest("housing", "Housing", null, 2000m, false, false), default));
     }
 
     [Fact]

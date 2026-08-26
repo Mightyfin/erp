@@ -31,7 +31,7 @@ public sealed class BenefitServiceImpl(
         authz.RequireAnyRole("hr_admin", "hr_ops", "employee", "payroll");
         var types = await repo.ListBenefitTypesAsync(ct);
         return types.Select(t => new BenefitTypeDto(t.Id, t.Code, t.Name, t.Description,
-            t.AnnualCap, t.RequiresEvidence, t.IsActive)).ToList();
+            t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive)).ToList();
     }
 
     public async Task<BenefitTypeDto> CreateBenefitTypeAsync(BenefitTypeCreateRequest request, CancellationToken ct)
@@ -49,6 +49,7 @@ public sealed class BenefitServiceImpl(
         {
             Code = code, Name = request.Name.Trim(), Description = request.Description?.Trim(),
             AnnualCap = request.AnnualCap, RequiresEvidence = request.RequiresEvidence,
+            IncludeInPayroll = request.IncludeInPayroll,
             IsActive = true,
         };
         await repo.CreateBenefitTypeAsync(type, ct);
@@ -74,6 +75,7 @@ public sealed class BenefitServiceImpl(
         type.Description = request.Description?.Trim();
         type.AnnualCap = request.AnnualCap;
         type.RequiresEvidence = request.RequiresEvidence;
+        type.IncludeInPayroll = request.IncludeInPayroll;
         type.IsActive = request.IsActive;
         await repo.UpdateBenefitTypeAsync(type, ct);
         return MapType(type);
@@ -154,6 +156,9 @@ public sealed class BenefitServiceImpl(
             ?? throw new DomainException("benefit-type-not-found", $"Unknown benefit type {code}.");
         if (!type.IsActive)
             throw new DomainException("benefit-type-inactive", "Inactive benefit types cannot be claimed.");
+        if (type.IncludeInPayroll)
+            throw new DomainException("benefit-claim-payroll-benefit",
+                $"{type.Name} is paid through payroll and cannot be submitted as a separate claim.");
         if (type.RequiresEvidence && !request.EvidenceAttached)
             throw new DomainException("benefit-claim-evidence",
                 $"Evidence is required for {type.Name} claims.");
@@ -248,7 +253,7 @@ public sealed class BenefitServiceImpl(
     }
 
     private static BenefitTypeDto MapType(BenefitType t) =>
-        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IsActive);
+        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive);
 
     private static string NormalizeCode(string code) =>
         (code ?? "").Trim().ToLowerInvariant();

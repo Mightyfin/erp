@@ -114,6 +114,46 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task CalculateRun_IncludesPayrollBenefitAllowancesAsEarnings()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, profile, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var lunch = new BenefitType
+        {
+            Code = "lunch",
+            Name = "Lunch",
+            AnnualCap = 12000m,
+            RequiresEvidence = false,
+            IncludeInPayroll = true,
+            IsActive = true,
+        };
+        ctx.BenefitTypes.Add(lunch);
+        ctx.WorkerBenefitAllowances.Add(new WorkerBenefitAllowance
+        {
+            WorkerId = profile.WorkerId,
+            BenefitTypeId = lunch.Id,
+            BenefitType = lunch,
+            AnnualAmount = 12000m,
+            Year = 2026,
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+
+        var line = await ctx.PayrollRunLines
+            .Include(l => l.Components)
+            .SingleAsync(l => l.RunId == run.Id);
+        Assert.Equal(31000m, line.GrossPay);
+        var benefit = line.Components.Single(c => c.ComponentCode == "benefit-lunch");
+        Assert.Equal("earning", benefit.ComponentType);
+        Assert.Equal(1000m, benefit.Amount);
+        Assert.Contains("annual allowance K12,000.00 / 12 months", benefit.Explanation);
+    }
+
+    [Fact]
     public async Task Ytd_AccumulatesAcrossReleasedRunsInSameTaxYear()
     {
         var (service, ctx) = Build();

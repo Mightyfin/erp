@@ -88,6 +88,9 @@ public class BenefitType : Entity
     /// worker-specific allowance exists. 0 = no cap configured.</summary>
     public decimal AnnualCap { get; set; }
     public bool RequiresEvidence { get; set; }
+    /// <summary>When enabled, the worker's annual allowance is paid through
+    /// payroll as a monthly earning. When disabled, it remains claim-only.</summary>
+    public bool IncludeInPayroll { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
