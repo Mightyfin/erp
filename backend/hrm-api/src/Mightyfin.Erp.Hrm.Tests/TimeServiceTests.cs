@@ -511,6 +511,60 @@ public class TimeServiceTests
     }
 
     [Fact]
+    public async Task OvertimeImport_CreatesPendingAuditedOvertimeRecord()
+    {
+        var (service, ctx, worker, _, _) = Build();
+
+        var result = await service.ImportOvertimeAsync(new OvertimeImportRequest("overtime.csv",
+            [new OvertimeImportRow(worker.EmployeeNo, "2026-08-20", 2.5m, null, "Supervisor sheet")]),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed", result.Status);
+        Assert.Equal(1, result.ImportedCount);
+        var record = await ctx.AttendanceRecords.SingleAsync();
+        Assert.Equal("overtime-import", record.Source);
+        Assert.Equal(2.5m, record.OvertimeHours);
+        Assert.Equal(1.5m, record.OvertimeMultiplier);
+        Assert.Equal(208m, record.OvertimeHourlyDivisor);
+        Assert.Equal("ordinary", record.OvertimeRuleCode);
+        Assert.Equal("pending", record.OvertimeStatus);
+
+        var audit = await ctx.AuditEntries.SingleAsync(a => a.EntityType == "time.overtime");
+        Assert.Equal("overtime-import-create", audit.Action);
+        Assert.Equal("hr-admin", audit.ActorSubjectId);
+        Assert.Contains("Supervisor sheet", audit.AfterJson);
+    }
+
+    [Fact]
+    public async Task OvertimeImport_CannotChangePayrollLinkedOvertime()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        ctx.AttendanceRecords.Add(new AttendanceRecord
+        {
+            WorkerId = worker.Id,
+            WorkDate = new DateOnly(2026, 8, 20),
+            Source = "overtime-import",
+            DerivedStatus = "present",
+            OvertimeHours = 2m,
+            OvertimeMultiplier = 1.5m,
+            OvertimeStatus = "paid",
+            OvertimePayrollRunId = Guid.CreateVersion7(),
+            TenantId = "test-tenant",
+        });
+        await ctx.SaveChangesAsync();
+
+        var result = await service.ImportOvertimeAsync(new OvertimeImportRequest("overtime.csv",
+            [new OvertimeImportRow(worker.EmployeeNo, "2026-08-20", 3m)]),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed-with-errors", result.Status);
+        Assert.Equal(0, result.UpdatedCount);
+        Assert.Contains(result.Errors, error => error.Contains("already linked to payroll"));
+        var record = await ctx.AttendanceRecords.SingleAsync();
+        Assert.Equal(2m, record.OvertimeHours);
+    }
+
+    [Fact]
     public async Task AccrualRun_IsIdempotent_AndAdjustmentChangesAvailableBalance()
     {
         var (service, _, worker, _, _) = Build();

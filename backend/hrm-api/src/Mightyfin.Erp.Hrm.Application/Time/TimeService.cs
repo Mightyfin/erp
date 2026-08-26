@@ -44,6 +44,7 @@ public interface ITimeService
     Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct);
     Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct);
     Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request, string actorSubjectId, CancellationToken ct);
+    Task<AttendanceImportResultDto> ImportOvertimeAsync(OvertimeImportRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request, string actorSubjectId, CancellationToken ct);
     Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
@@ -318,6 +319,7 @@ public sealed class TimeServiceImpl(
             throw new DomainException("overtime-not-present", "This attendance record has no derived overtime hours.");
         if (record.OvertimePayrollRunId.HasValue)
             throw new DomainException("overtime-already-paid", "This overtime record is already linked to a payroll run and cannot be changed.");
+        var beforeJson = AttendanceSnapshot(record);
         var action = (request.Action ?? "").Trim().ToLowerInvariant();
         if (action is not ("approve" or "reject"))
             throw new DomainException("overtime-invalid-decision", "Decision action must be approve or reject.");
@@ -330,6 +332,8 @@ public sealed class TimeServiceImpl(
         async Task Decide(CancellationToken transactionCt)
         {
             record = await repo.UpdateAttendanceAsync(record, transactionCt);
+            await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                "decision", actorSubjectId, beforeJson, AttendanceSnapshot(record), transactionCt);
             if (outbox is not null)
             {
                 await outbox.EnqueueAsync(HrmEventTypes.OvertimeDecided,
@@ -513,6 +517,7 @@ public sealed class TimeServiceImpl(
                 (row.ClockOut is not null && !TimeOnly.TryParse(row.ClockOut, out _)))
             { errors.Add($"{key}: invalid date or time"); continue; }
             var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
             var record = existing ?? new AttendanceRecord { WorkerId = worker.Id, WorkDate = date };
             record.ClockIn = row.ClockIn is null ? null : TimeOnly.Parse(row.ClockIn);
             record.ClockOut = row.ClockOut is null ? null : TimeOnly.Parse(row.ClockOut);
@@ -521,6 +526,9 @@ public sealed class TimeServiceImpl(
             await ApplyHoursAsync(record, ct);
             if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
             else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+            await WriteTimeAuditAsync("time.attendance", record.Id.ToString("D"), record.WorkerId,
+                existing is null ? "import-create" : "import-update", actorSubjectId, beforeJson,
+                AttendanceSnapshot(record), ct);
             affectedWeeks.Add(WeekKey(worker.Id, date));
         }
         foreach (var affected in affectedWeeks)
@@ -528,6 +536,95 @@ public sealed class TimeServiceImpl(
             var parts = affected.Split('|');
             await RecalculateWeeklyOvertimeAsync(Guid.Parse(parts[0]), DateOnly.Parse(parts[1]), ct);
         }
+        batch.RejectedCount = errors.Count;
+        batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
+        batch.Status = errors.Count == 0 ? "completed" : "completed-with-errors";
+        await repo.UpdateImportBatchAsync(batch, ct);
+        return new AttendanceImportResultDto(batch.Id, batch.FileName, batch.Status, batch.RowCount,
+            batch.ImportedCount, batch.UpdatedCount, batch.RejectedCount, errors);
+    }
+
+    public async Task<AttendanceImportResultDto> ImportOvertimeAsync(OvertimeImportRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        if (string.IsNullOrWhiteSpace(request.FileName) || request.Rows.Count == 0)
+            throw new DomainException("overtime-import-empty", "A file name and at least one overtime row are required.");
+        if (request.Rows.Count > 10_000)
+            throw new DomainException("overtime-import-too-large", "An overtime batch cannot exceed 10,000 rows.");
+
+        var batch = await repo.CreateImportBatchAsync(new AttendanceImportBatch
+        {
+            FileName = $"overtime:{request.FileName.Trim()}",
+            Status = "processing",
+            RowCount = request.Rows.Count,
+            ImportedBySubjectId = actorSubjectId,
+        }, ct);
+
+        var errors = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in request.Rows)
+        {
+            var key = $"{row.EmployeeNo}:{row.WorkDate}";
+            if (!seen.Add(key)) { errors.Add($"{key}: duplicate row in batch"); continue; }
+            if (row.OvertimeHours <= 0) { errors.Add($"{key}: overtime hours must be greater than zero"); continue; }
+            var worker = await repo.FindWorkerByEmployeeNoAsync(row.EmployeeNo.Trim(), ct);
+            if (worker is null) { errors.Add($"{key}: employee not found"); continue; }
+            if (!DateOnly.TryParse(row.WorkDate, out var date)) { errors.Add($"{key}: invalid work date"); continue; }
+
+            var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            if (existing?.OvertimePayrollRunId.HasValue == true)
+            {
+                errors.Add($"{key}: overtime is already linked to payroll and cannot be changed");
+                continue;
+            }
+
+            var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
+            var record = existing ?? new AttendanceRecord
+            {
+                WorkerId = worker.Id,
+                WorkDate = date,
+                DerivedStatus = "present",
+            };
+            var profile = payroll is null ? null : await payroll.FindOpenProfileAsync(worker.Id, ct);
+            var category = profile?.OvertimeCategory ?? "ordinary";
+            var divisor = profile?.MonthlyOvertimeDivisor > 0
+                ? profile.MonthlyOvertimeDivisor
+                : (category == "watchperson-guard" ? 240m : 208m);
+            var assignment = await repo.GetShiftAssignmentAsync(worker.Id, date, ct);
+            var shiftMultiplier = assignment?.Shift?.WeekdayOvertimeMultiplier is > 0
+                ? assignment.Shift.WeekdayOvertimeMultiplier
+                : 1.5m;
+            record.Source = "overtime-import";
+            record.ImportBatchId = batch.Id;
+            record.ShiftId = assignment?.ShiftId;
+            record.LocationId ??= (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : worker.LocationId;
+            record.OvertimeHours = row.OvertimeHours;
+            record.OvertimeMultiplier = row.OvertimeMultiplier is > 0 ? row.OvertimeMultiplier.Value : shiftMultiplier;
+            record.OvertimeHourlyDivisor = divisor;
+            record.OvertimeRuleCode = category;
+            record.OvertimeStatus = NormalizeImportedOvertimeStatus(row.Status, request.MarkApproved);
+            record.OvertimeDecisionReason = string.IsNullOrWhiteSpace(row.Reason)
+                ? "Imported overtime hours"
+                : row.Reason.Trim();
+            if (record.OvertimeStatus == "approved")
+            {
+                record.OvertimeDecidedBySubjectId = actorSubjectId;
+                record.OvertimeDecidedAt = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+
+            if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
+            else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+            await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                existing is null ? "overtime-import-create" : "overtime-import-update", actorSubjectId,
+                beforeJson, AttendanceSnapshot(record), ct);
+        }
+
         batch.RejectedCount = errors.Count;
         batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
         batch.Status = errors.Count == 0 ? "completed" : "completed-with-errors";
@@ -628,7 +725,10 @@ public sealed class TimeServiceImpl(
             .Select(e => new LeaveEncashmentHistoryDto(
                 e.Id, e.WorkerId, e.Worker?.FullName ?? "", e.LeaveTypeCode, e.Days,
                 e.GrossAmount, e.Status, e.CreatedBySubjectId, e.CreatedAt)).ToList();
-        return new TimeOperationsHistoryDto(imports, accruals, adjustments, encashments);
+        var timeAudits = (await repo.ListTimeAuditEntriesAsync(ct)).Select(a => new TimeAuditEntryDto(
+            a.Id, a.EntityType, a.EntityId, a.Action, a.ActorSubjectId,
+            a.BeforeJson, a.AfterJson, a.CreatedAt)).ToList();
+        return new TimeOperationsHistoryDto(imports, accruals, adjustments, encashments, timeAudits);
     }
 
     // ===================== M41 Gap 6a: leave encashment =====================
@@ -743,6 +843,7 @@ public sealed class TimeServiceImpl(
                 c.Status = "approved";
                 // apply the proposed values to the underlying attendance record (or create one)
                 var existing = await repo.GetAttendanceAsync(c.WorkerId, c.WorkDate, ct);
+                var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
                 if (existing is null)
                 {
                     var corrected = new AttendanceRecord
@@ -755,6 +856,9 @@ public sealed class TimeServiceImpl(
                     };
                     await ApplyHoursAsync(corrected, ct);
                     await repo.CreateAttendanceAsync(corrected, ct);
+                    await WriteTimeAuditAsync("time.attendance", corrected.Id.ToString("D"), corrected.WorkerId,
+                        "correction-create", authz.CurrentSubjectId ?? "system", beforeJson,
+                        AttendanceSnapshot(corrected), ct);
                     await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 else
@@ -765,6 +869,9 @@ public sealed class TimeServiceImpl(
                     existing.Source = "corrected";
                     await ApplyHoursAsync(existing, ct);
                     await repo.UpdateAttendanceAsync(existing, ct);
+                    await WriteTimeAuditAsync("time.attendance", existing.Id.ToString("D"), existing.WorkerId,
+                        "correction-update", authz.CurrentSubjectId ?? "system", beforeJson,
+                        AttendanceSnapshot(existing), ct);
                     await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 break;
@@ -833,6 +940,7 @@ public sealed class TimeServiceImpl(
     private async Task<PunchResultDto> GetOrCreatePunchAsync(Guid workerId, DateOnly date, bool? clockIn, CancellationToken ct)
     {
         var rec = await repo.GetAttendanceAsync(workerId, date, ct);
+        var beforeJson = rec is null ? null : AttendanceSnapshot(rec);
         if (rec is null)
         {
             rec = new AttendanceRecord { WorkerId = workerId, WorkDate = date, Source = "self-service",
@@ -850,6 +958,9 @@ public sealed class TimeServiceImpl(
         await ApplyHoursAsync(rec, ct);
 
         rec = await repo.UpdateAttendanceAsync(rec, ct);
+        await WriteTimeAuditAsync("time.attendance", rec.Id.ToString("D"), rec.WorkerId,
+            clockIn == true ? "clock-in" : clockIn == false ? "clock-out" : "view-today",
+            authz.CurrentSubjectId ?? "system", beforeJson, AttendanceSnapshot(rec), ct);
         await RecalculateWeeklyOvertimeAsync(rec.WorkerId, rec.WorkDate, ct);
         rec = await repo.GetAttendanceAsync(workerId, date, ct) ?? rec;
         var state = rec.ClockIn is null ? "out" : rec.ClockOut is null ? "in" : "done";
@@ -1006,6 +1117,12 @@ public sealed class TimeServiceImpl(
                 record.OvertimeDecidedAt = null;
             }
             await repo.UpdateAttendanceAsync(record, ct);
+            if (changed)
+            {
+                await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                    "weekly-recalculation", "system", null,
+                    AttendanceSnapshot(record), ct);
+            }
         }
     }
 
@@ -1027,6 +1144,53 @@ public sealed class TimeServiceImpl(
     private static DateOnly HolidayDate(PublicHoliday holiday)
         => holiday.ObservedOn is not null && DateOnly.TryParse(holiday.ObservedOn, out var observed)
             ? observed : holiday.HolidayDate;
+
+    private static string NormalizeImportedOvertimeStatus(string? status, bool markApproved)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return markApproved ? "approved" : "pending";
+        var normalized = status.Trim().ToLowerInvariant();
+        return normalized is "approved" or "pending" or "rejected" ? normalized
+            : throw new DomainException("overtime-import-status-invalid", "Overtime status must be pending, approved, or rejected.");
+    }
+
+    private async Task WriteTimeAuditAsync(string entityType, string entityId, Guid? workerId,
+        string action, string actorSubjectId, string? beforeJson, string? afterJson, CancellationToken ct)
+    {
+        await repo.AddTimeAuditEntryAsync(new AuditEntry
+        {
+            EntityType = entityType,
+            EntityId = entityId,
+            Action = action,
+            BeforeJson = beforeJson,
+            AfterJson = afterJson,
+            ActorSubjectId = string.IsNullOrWhiteSpace(actorSubjectId) ? "system" : actorSubjectId,
+            CorrelationId = workerId?.ToString("D"),
+        }, ct);
+    }
+
+    private static string AttendanceSnapshot(AttendanceRecord record) => JsonSerializer.Serialize(new
+    {
+        record.Id,
+        record.WorkerId,
+        record.WorkDate,
+        record.ClockIn,
+        record.ClockOut,
+        record.Source,
+        record.DerivedStatus,
+        record.TotalHours,
+        record.RegularHours,
+        record.OvertimeHours,
+        record.OvertimeMultiplier,
+        record.OvertimeHourlyDivisor,
+        record.OvertimeRuleCode,
+        record.OvertimeStatus,
+        record.OvertimeDecisionReason,
+        record.OvertimeDecidedBySubjectId,
+        record.OvertimeDecidedAt,
+        record.OvertimePayrollRunId,
+        record.ImportBatchId,
+        record.LocationId,
+    });
 
     // ===================== M16: self-service leave =====================
 

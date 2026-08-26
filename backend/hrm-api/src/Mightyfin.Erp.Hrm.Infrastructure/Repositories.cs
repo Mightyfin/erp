@@ -485,6 +485,20 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         return await q.OrderByDescending(a => a.WorkDate).ThenBy(a => a.Worker!.EmployeeNo).Take(1000).ToListAsync(ct);
     }
 
+    public async Task<List<AuditEntry>> ListTimeAuditEntriesAsync(CancellationToken ct)
+        => (await db.AuditEntries
+            .Where(a => a.EntityType.StartsWith("time."))
+            .Take(100)
+            .ToListAsync(ct))
+            .OrderByDescending(a => a.CreatedAt)
+            .ToList();
+
+    public async Task AddTimeAuditEntryAsync(AuditEntry entry, CancellationToken ct)
+    {
+        db.AuditEntries.Add(entry);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct)
         => await db.AttendanceCorrections.Include(c => c.Worker).FirstOrDefaultAsync(c => c.Id == id, ct);
 

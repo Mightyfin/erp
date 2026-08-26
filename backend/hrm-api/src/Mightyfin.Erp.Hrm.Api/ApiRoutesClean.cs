@@ -787,6 +787,11 @@ public static class Routes
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ImportAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
         });
+        g.MapPost("/overtime/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OvertimeImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ImportOvertimeAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
         g.MapPost("/leave/accruals/run", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<LeaveAccrualRunRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

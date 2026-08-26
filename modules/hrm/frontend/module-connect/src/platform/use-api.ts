@@ -473,6 +473,8 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/time/shifts/assign/${workerId}`, body),
   importAttendance: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/time/attendance/import", body),
+  importOvertime: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/overtime/import", body),
   runLeaveAccrual: (period: string) =>
     hrmApi.post<Record<string, unknown>>("/hrm/time/leave/accruals/run", { period }),
   adjustLeaveBalance: (body: Record<string, unknown>) =>
@@ -500,6 +502,7 @@ export const realApi = {
   timeOperationsHistory: () =>
     hrmApi.get<{
       imports: Record<string, unknown>[];
+      timeAudits?: Record<string, unknown>[];
       accruals: Record<string, unknown>[];
       adjustments: Record<string, unknown>[];
     }>("/hrm/time/operations/history"),

@@ -457,10 +457,15 @@ public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, str
 public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
 public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount, List<string> Errors);
+public sealed record OvertimeImportRow(string EmployeeNo, string WorkDate, decimal OvertimeHours,
+    decimal? OvertimeMultiplier = null, string? Reason = null, string? Status = null);
+public sealed record OvertimeImportRequest(string FileName, List<OvertimeImportRow> Rows, bool MarkApproved = false);
 public sealed record OvertimeDecisionRequest(string Action, string? Reason = null);
 public sealed record AttendanceImportHistoryDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount,
     string ImportedBySubjectId, DateTimeOffset CreatedAt);
+public sealed record TimeAuditEntryDto(Guid Id, string EntityType, string EntityId, string Action,
+    string ActorSubjectId, string? BeforeJson, string? AfterJson, DateTimeOffset CreatedAt);
 public sealed record LeaveAccrualRunRequest(string Period);
 public sealed record LeaveAccrualRunDto(Guid Id, string Period, string Status, int WorkerCount,
     int LedgerEntryCount, decimal TotalDaysAccrued, string RunBySubjectId, DateTimeOffset CreatedAt);
@@ -480,7 +485,7 @@ public sealed record LeaveEncashmentHistoryDto(Guid Id, Guid WorkerId, string Wo
     decimal Days, decimal GrossAmount, string Status, string CreatedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record TimeOperationsHistoryDto(List<AttendanceImportHistoryDto> Imports,
     List<LeaveAccrualRunDto> Accruals, List<LeaveBalanceAdjustmentDto> Adjustments,
-    List<LeaveEncashmentHistoryDto> Encashments);
+    List<LeaveEncashmentHistoryDto> Encashments, List<TimeAuditEntryDto>? TimeAudits = null);
 
 /// <summary>Roster day for the worker: expected shift, attendance, exceptions, cutoff.</summary>
 public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDay, string? ClockIn, string? ClockOut,
