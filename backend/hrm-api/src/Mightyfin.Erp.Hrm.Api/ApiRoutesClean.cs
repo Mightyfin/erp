@@ -928,7 +928,19 @@ public static class Routes
         });
         g.MapPatch("/contribution-rules/{ruleId:guid}", async (Guid ruleId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
         {
-            var request = await ReadBodyAsync<ContributionRuleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+                throw new DomainException("bad-request", "Request body is missing or invalid.");
+            decimal? ReadDecimal(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetDecimal()
+                    : null;
+            var request = new ContributionRuleUpdateRequest(
+                Rate: ReadDecimal("rate"),
+                Ceiling: ReadDecimal("ceiling"),
+                Floor: ReadDecimal("floor"),
+                CeilingSpecified: body.TryGetProperty("ceiling", out _),
+                FloorSpecified: body.TryGetProperty("floor", out _));
             return Results.Ok(await svc.UpdateContributionRuleAsync(ruleId, request, ct));
         });
         g.MapPatch("/components/{componentId:guid}", async (Guid componentId, IPayrollService svc, HttpContext http, CancellationToken ct) =>

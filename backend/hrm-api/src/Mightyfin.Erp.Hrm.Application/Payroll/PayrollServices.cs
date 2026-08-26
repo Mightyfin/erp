@@ -114,7 +114,12 @@ public sealed record PayGroupUpdateRequest(string? Code = null, string? Name = n
     string? Frequency = null, string? Currency = null, int? CalendarDayOfMonth = null,
     int? InputCutoffDaysBeforePayday = null, bool? IsDefault = null);
 public sealed record TaxSlabUpdateRequest(decimal? Rate = null, decimal? MaxAmount = null);
-public sealed record ContributionRuleUpdateRequest(decimal? Rate = null, decimal? Ceiling = null, decimal? Floor = null);
+public sealed record ContributionRuleUpdateRequest(
+    decimal? Rate = null,
+    decimal? Ceiling = null,
+    decimal? Floor = null,
+    bool CeilingSpecified = false,
+    bool FloorSpecified = false);
 public sealed record SalaryComponentUpdateRequest(string? Name = null, string? CalculationBasis = null,
     string? BasisComponentCode = null, decimal? Rate = null, decimal? FixedAmount = null,
     decimal? Ceiling = null, bool? IsTaxable = null, bool? IsArchived = null);
@@ -250,8 +255,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 throw new DomainException("contribution-rate-out-of-range", "Contribution rate must be between 0 and 100 percent.");
             rule.Rate = request.Rate.Value;
         }
-        if (request.Ceiling is not null) rule.Ceiling = request.Ceiling;
-        if (request.Floor is not null) rule.Floor = request.Floor;
+        if (request.CeilingSpecified) rule.Ceiling = request.Ceiling;
+        else if (request.Ceiling is not null) rule.Ceiling = request.Ceiling;
+        if (request.FloorSpecified) rule.Floor = request.Floor;
+        else if (request.Floor is not null) rule.Floor = request.Floor;
         await repo.UpdateContributionRuleAsync(rule, ct);
         return new ContributionRuleDto(rule.Id, rule.Code, rule.Name, rule.Payer, rule.Rate, rule.Ceiling, rule.Floor);
     }

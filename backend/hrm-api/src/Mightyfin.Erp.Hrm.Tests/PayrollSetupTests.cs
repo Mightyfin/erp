@@ -87,6 +87,22 @@ public class PayrollSetupTests
     }
 
     [Fact]
+    public async Task UpdateContributionRule_Can_Clear_Nullable_Ceiling()
+    {
+        var (service, ctx) = Build();
+        var rule = new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, Ceiling = 50m, Floor = 50m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
+        ctx.ContributionRules.Add(rule);
+        ctx.SaveChanges();
+
+        var updated = await service.UpdateContributionRuleAsync(rule.Id,
+            new ContributionRuleUpdateRequest(Ceiling: null, Floor: 50m, CeilingSpecified: true, FloorSpecified: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.Ceiling);
+        Assert.Equal(50m, updated.Floor);
+    }
+
+    [Fact]
     public async Task UpdatePayGroup_Sets_Calendar_And_Clears_Other_Default()
     {
         var (service, ctx) = Build();

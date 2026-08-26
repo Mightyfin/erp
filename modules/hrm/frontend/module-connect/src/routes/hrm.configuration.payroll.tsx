@@ -1339,9 +1339,9 @@ function PayrollSetup() {
                       NAPSA and NHIMA deductions and employer shares
                     </p>
                     <p className="mt-1.5 pl-6">
-                      Each rule names a rate, a ceiling (and optionally a floor) in kwacha per
-                      month, tied to the basic-pay component. Contributions stop growing above the
-                      ceiling even when basic pay does.
+                      Each rule names a rate tied to the basic-pay component. A ceiling is a maximum
+                      monthly contribution; a floor is a minimum monthly contribution. For NHIMA
+                      employee, use floor K50 and leave ceiling blank.
                     </p>
                   </div>
                   <RuleTable rows={data.rules} canAct={canAct} onEdit={(r) => setEditingRule(r)} />

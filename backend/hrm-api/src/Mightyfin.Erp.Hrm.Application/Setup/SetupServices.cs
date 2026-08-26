@@ -571,7 +571,7 @@ public sealed class SetupServiceImpl(
         {
             new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
             new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
-            new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, Ceiling = 50m,   Floor = 50m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, Floor = 50m, TiedComponentCode = "basic", EffectiveFrom = today },
             new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer Contribution", Payer = "employer", Rate = 1, TiedComponentCode = "basic", EffectiveFrom = today },
         };
         foreach (var rule in rules)
