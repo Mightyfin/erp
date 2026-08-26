@@ -80,9 +80,9 @@ const CONTRACT_DEFAULTS = [
 
 const PAYE_BANDS = [
   { band: "ZMW 0 – 5,100", rate: "0%" },
-  { band: "ZMW 5,100.01 – 6,700", rate: "20%" },
-  { band: "ZMW 6,700.01 – 8,400", rate: "30%" },
-  { band: "Above ZMW 8,400", rate: "37.5%" },
+  { band: "ZMW 5,100.01 – 7,100", rate: "20%" },
+  { band: "ZMW 7,100.01 – 9,200", rate: "30%" },
+  { band: "Above ZMW 9,200", rate: "37%" },
 ];
 
 // ---------- Employees step: user-driven column mapping ----------

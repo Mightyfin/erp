@@ -131,7 +131,7 @@ public class PayrollSetupTests
     }
 
     [Fact]
-    public async Task UpdateSalaryComponent_Archives_Standard_Component_And_Protects_Statutory()
+    public async Task UpdateSalaryComponent_Archives_Standard_Component_And_Allows_Statutory_Metadata()
     {
         var (service, ctx) = Build();
         var housing = SeedComponent(ctx, "housing-allowance", "earning");
@@ -141,8 +141,36 @@ public class PayrollSetupTests
         Assert.False(archived.IsActive);
         Assert.False((await ctx.SalaryComponents.FirstAsync(c => c.Id == housing.Id)).IsActive); // archive request applied
 
-        await Assert.ThrowsAsync<DomainException>(() =>
-            service.UpdateSalaryComponentAsync(paye.Id, new SalaryComponentUpdateRequest { Rate = 10m }, CancellationToken.None));
+        var updatedStatutory = await service.UpdateSalaryComponentAsync(paye.Id,
+            new SalaryComponentUpdateRequest { Name = "PAYE (ZRA)", IsTaxable = false },
+            CancellationToken.None);
+        Assert.Equal("PAYE (ZRA)", updatedStatutory.Name);
+        Assert.False(updatedStatutory.IsTaxable);
+    }
+
+    [Fact]
+    public async Task UpdateSalaryComponent_Can_Clear_Nullable_Amounts()
+    {
+        var (service, ctx) = Build();
+        var component = SeedComponent(ctx, "lunch", "earning");
+        component.Rate = 10m;
+        component.FixedAmount = 800m;
+        component.Ceiling = 1000m;
+        ctx.SaveChanges();
+
+        var updated = await service.UpdateSalaryComponentAsync(component.Id,
+            new SalaryComponentUpdateRequest(
+                Rate: null,
+                FixedAmount: null,
+                Ceiling: null,
+                RateSpecified: true,
+                FixedAmountSpecified: true,
+                CeilingSpecified: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.Rate);
+        Assert.Null(updated.FixedAmount);
+        Assert.Null(updated.Ceiling);
     }
 
     [Fact]

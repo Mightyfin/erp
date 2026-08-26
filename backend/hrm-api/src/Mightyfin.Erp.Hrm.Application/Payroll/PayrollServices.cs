@@ -120,9 +120,18 @@ public sealed record ContributionRuleUpdateRequest(
     decimal? Floor = null,
     bool CeilingSpecified = false,
     bool FloorSpecified = false);
-public sealed record SalaryComponentUpdateRequest(string? Name = null, string? CalculationBasis = null,
-    string? BasisComponentCode = null, decimal? Rate = null, decimal? FixedAmount = null,
-    decimal? Ceiling = null, bool? IsTaxable = null, bool? IsArchived = null);
+public sealed record SalaryComponentUpdateRequest(
+    string? Name = null,
+    string? CalculationBasis = null,
+    string? BasisComponentCode = null,
+    decimal? Rate = null,
+    decimal? FixedAmount = null,
+    decimal? Ceiling = null,
+    bool? IsTaxable = null,
+    bool? IsArchived = null,
+    bool RateSpecified = false,
+    bool FixedAmountSpecified = false,
+    bool CeilingSpecified = false);
 // ---------- M20 DTO extras ----------
 public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string Frequency, string Currency,
     int CalendarDayOfMonth, int InputCutoffDaysBeforePayday, bool IsDefault, string Status);
@@ -268,9 +277,6 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var comp = await repo.GetComponentByIdAsync(id, ct)
             ?? throw new DomainException("salary-component-not-found", $"Salary component {id} does not exist.");
-        if (comp.IsStatutory)
-            throw new DomainException("statutory-component-protected",
-                "Statutory components (PAYE/NAPSA/NHIMA) are managed through tax slabs and contribution rules — update those instead.");
         if (request.IsArchived == true)
         {
             comp.IsArchived = true;
@@ -282,10 +288,18 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             if (request.Name is not null) comp.Name = request.Name.Trim();
             if (request.CalculationBasis is not null) comp.CalculationBasis = request.CalculationBasis;
             if (request.BasisComponentCode is not null) comp.BasisComponentCode = request.BasisComponentCode;
-            if (request.Rate is not null) comp.Rate = request.Rate;
-            if (request.FixedAmount is not null) comp.FixedAmount = request.FixedAmount;
-            if (request.Ceiling is not null) comp.Ceiling = request.Ceiling;
+            if (request.RateSpecified) comp.Rate = request.Rate;
+            else if (request.Rate is not null) comp.Rate = request.Rate;
+            if (request.FixedAmountSpecified) comp.FixedAmount = request.FixedAmount;
+            else if (request.FixedAmount is not null) comp.FixedAmount = request.FixedAmount;
+            if (request.CeilingSpecified) comp.Ceiling = request.Ceiling;
+            else if (request.Ceiling is not null) comp.Ceiling = request.Ceiling;
             if (request.IsTaxable is not null) comp.IsTaxable = request.IsTaxable.Value;
+            if (request.IsArchived == false)
+            {
+                comp.IsArchived = false;
+                comp.IsActive = true;
+            }
             await repo.UpdateComponentAsync(comp, ct);
         }
         return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,

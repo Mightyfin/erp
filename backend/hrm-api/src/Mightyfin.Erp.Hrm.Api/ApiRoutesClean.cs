@@ -945,7 +945,33 @@ public static class Routes
         });
         g.MapPatch("/components/{componentId:guid}", async (Guid componentId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
         {
-            var request = await ReadBodyAsync<SalaryComponentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+                throw new DomainException("bad-request", "Request body is missing or invalid.");
+            string? ReadString(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetString()
+                    : null;
+            decimal? ReadDecimal(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetDecimal()
+                    : null;
+            bool? ReadBool(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetBoolean()
+                    : null;
+            var request = new SalaryComponentUpdateRequest(
+                Name: ReadString("name"),
+                CalculationBasis: ReadString("calculationBasis"),
+                BasisComponentCode: ReadString("basisComponentCode"),
+                Rate: ReadDecimal("rate"),
+                FixedAmount: ReadDecimal("fixedAmount"),
+                Ceiling: ReadDecimal("ceiling"),
+                IsTaxable: ReadBool("isTaxable"),
+                IsArchived: ReadBool("isArchived"),
+                RateSpecified: body.TryGetProperty("rate", out _),
+                FixedAmountSpecified: body.TryGetProperty("fixedAmount", out _),
+                CeilingSpecified: body.TryGetProperty("ceiling", out _));
             return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
         });
         // M21: salary structure administration

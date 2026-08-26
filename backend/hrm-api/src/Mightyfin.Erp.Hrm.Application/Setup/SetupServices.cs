@@ -513,15 +513,15 @@ public sealed class SetupServiceImpl(
         SalaryComponent NapsaEe() => new SalaryComponent
         {
             Code = "napsa-ee", Name = "NAPSA Employee", ComponentType = "deduction",
-              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
-              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 60,
+              CalculationBasis = "percent-of",   BasisComponentCode = "gross",   Rate = 5,
+              Ceiling = 1861.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 60,
               EffectiveFrom = today,
         };
         SalaryComponent NapsaEr() => new SalaryComponent
         {
             Code = "napsa-er", Name = "NAPSA Employer", ComponentType = "employer-contribution",
-              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
-              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 110,
+              CalculationBasis = "percent-of",   BasisComponentCode = "gross",   Rate = 5,
+              Ceiling = 1861.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 110,
               EffectiveFrom = today,
         };
         SalaryComponent NhimaEe() => new SalaryComponent
@@ -541,7 +541,7 @@ public sealed class SetupServiceImpl(
         SalaryComponent Paye() => new SalaryComponent
         {
             Code = "paye", Name = "PAYE (ZRA)", ComponentType = "tax",
-              CalculationBasis = "slab",   IsTaxable = false,   IsStatutory = true,   Priority = 80,
+              CalculationBasis = "slab",   BasisComponentCode = "gross",   IsTaxable = false,   IsStatutory = true,   Priority = 80,
               EffectiveFrom = today,
         };
         var codes = new[] { "basic", "napsa-ee", "napsa-er", "nhima-ee", "nhima-er", "paye" };
@@ -569,8 +569,8 @@ public sealed class SetupServiceImpl(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rules = new List<ContributionRule>
         {
-            new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
-            new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1861.80m, TiedComponentCode = "gross", EffectiveFrom = today },
+            new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1861.80m, TiedComponentCode = "gross", EffectiveFrom = today },
             new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, Floor = 50m, TiedComponentCode = "basic", EffectiveFrom = today },
             new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer Contribution", Payer = "employer", Rate = 1, TiedComponentCode = "basic", EffectiveFrom = today },
         };
@@ -582,9 +582,9 @@ public sealed class SetupServiceImpl(
         if (!(await payrollRepo.ListTaxSlabsAsync("2026", ct)).Any())
         {
             await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 0, MaxAmount = 5100, Rate = 0, Sequence = 1, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 5100.01m, MaxAmount = 6700, Rate = 20, Sequence = 2, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 6700.01m, MaxAmount = 8400, Rate = 30, Sequence = 3, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 8400.01m,   MaxAmount = null, Rate = 37.5m, Sequence = 4, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 5100, MaxAmount = 7100, Rate = 20, Sequence = 2, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 7100, MaxAmount = 9200, Rate = 30, Sequence = 3, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 9200,   MaxAmount = null, Rate = 37, Sequence = 4, EffectiveFrom = today }, ct);
         }
 
         // --- Default pay group. ---

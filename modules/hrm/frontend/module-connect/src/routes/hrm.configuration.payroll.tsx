@@ -517,6 +517,9 @@ function ComponentDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
+  const [name, setName] = useState("");
+  const [calculationBasis, setCalculationBasis] = useState("fixed");
+  const [basisComponentCode, setBasisComponentCode] = useState("");
   const [rate, setRate] = useState("");
   const [fixedAmount, setFixedAmount] = useState("");
   const [ceiling, setCeiling] = useState("");
@@ -534,6 +537,9 @@ function ComponentDialog({
       onOpenChange={(o) => {
         onOpenChange(o);
         if (o) {
+          setName(String(comp.name ?? comp.code ?? ""));
+          setCalculationBasis(String(comp.calculationBasis ?? "fixed"));
+          setBasisComponentCode(String(comp.basisComponentCode ?? ""));
           setRate(comp.rate === undefined || comp.rate === null ? "" : String(comp.rate));
           setFixedAmount(
             comp.fixedAmount === undefined || comp.fixedAmount === null ? "" : String(comp.fixedAmount),
@@ -547,11 +553,11 @@ function ComponentDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isStatutory ? `${String(comp.code ?? "")} — statutory` : "Edit salary component"}
+            Edit salary component
           </DialogTitle>
           <DialogDescription>
             {isStatutory
-              ? "PAYE, NAPSA and NHIMA are driven by the tax-slab and contribution-rule screens — their rates cannot be retyped here, only switched on or off for runs."
+              ? "This component is statutory. You can edit its component setup, but PAYE slabs and NAPSA/NHIMA contribution rules still control the legal calculation amounts."
               : "A standard component a run can post to. Archiving keeps every past run correct but hides it from new ones."}
           </DialogDescription>
         </DialogHeader>
@@ -560,16 +566,19 @@ function ComponentDialog({
           onSubmit={async (e) => {
             e.preventDefault();
             setError(null);
-            if (isStatutory && !isArchived) {
-              setError("Statutory components are read-only here. Archive it to disable it for new runs.");
+            if (!name.trim()) {
+              setError("Component name is required.");
               return;
             }
             setBusy(true);
             try {
               await realApi.updateSalaryComponent(id, {
-                rate: rate.trim() === "" ? undefined : Number(rate),
-                fixedAmount: fixedAmount.trim() === "" ? undefined : Number(fixedAmount),
-                ceiling: ceiling.trim() === "" ? undefined : Number(ceiling),
+                name: name.trim(),
+                calculationBasis,
+                basisComponentCode: basisComponentCode.trim() || undefined,
+                rate: rate.trim() === "" ? null : Number(rate),
+                fixedAmount: fixedAmount.trim() === "" ? null : Number(fixedAmount),
+                ceiling: ceiling.trim() === "" ? null : Number(ceiling),
                 isTaxable,
                 isArchived,
               });
@@ -587,6 +596,44 @@ function ComponentDialog({
             }
           }}
         >
+          <div className="min-w-0">
+            <Label htmlFor="comp-name">Name</Label>
+            <Input
+              id="comp-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1.5"
+              required
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Code: <span className="font-mono">{String(comp.code ?? "")}</span>
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <Label htmlFor="comp-basis">Calculation basis</Label>
+              <Select value={calculationBasis} onValueChange={setCalculationBasis}>
+                <SelectTrigger id="comp-basis" className="mt-1.5">
+                  <SelectValue placeholder="Select basis" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed amount</SelectItem>
+                  <SelectItem value="percent-of">Percent of component</SelectItem>
+                  <SelectItem value="slab">Tax slab</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0">
+              <Label htmlFor="comp-basis-code">Basis component code</Label>
+              <Input
+                id="comp-basis-code"
+                value={basisComponentCode}
+                onChange={(e) => setBasisComponentCode(e.target.value)}
+                className="mt-1.5"
+                placeholder="basic or gross"
+              />
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="min-w-0">
               <Label htmlFor="comp-rate">Rate (%)</Label>
@@ -598,7 +645,6 @@ function ComponentDialog({
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
                 className="mt-1.5"
-                disabled={isStatutory}
                 aria-describedby="comp-rate-hint"
               />
               <p id="comp-rate-hint" className="mt-1 text-xs text-muted-foreground">
@@ -615,7 +661,6 @@ function ComponentDialog({
                 value={fixedAmount}
                 onChange={(e) => setFixedAmount(e.target.value)}
                 className="mt-1.5"
-                disabled={isStatutory}
               />
             </div>
             <div className="min-w-0">
@@ -628,26 +673,24 @@ function ComponentDialog({
                 value={ceiling}
                 onChange={(e) => setCeiling(e.target.value)}
                 className="mt-1.5"
-                disabled={isStatutory}
               />
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <Switch checked={isTaxable} onCheckedChange={setIsTaxable} aria-label="Taxable component" disabled={isStatutory} />
+            <Switch checked={isTaxable} onCheckedChange={setIsTaxable} aria-label="Taxable component" />
             <span>Taxable — PAYE applies to this component</span>
           </label>
-          {!isStatutory ? (
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={isArchived} onCheckedChange={setIsArchived} aria-label="Archive component" />
-              <span>Archive — keep history, hide from new runs</span>
-            </label>
-          ) : (
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={isArchived} onCheckedChange={setIsArchived} aria-label="Archive component" />
+            <span>Archive — keep history, hide from new runs</span>
+          </label>
+          {isStatutory ? (
             <p className="flex items-start gap-2 rounded-md border border-info/30 bg-info-soft px-3 py-2 text-xs text-info">
               <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              This component exists because ZRA or the pension authority mandates it. Its rate comes
-              from the slab or rule it is tied to.
+              For statutory components, contribution rules and tax slabs override the legal amount
+              calculation during payroll. Keep those rules aligned after changing component setup.
             </p>
-          )}
+          ) : null}
           {error ? (
             <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning">
               {error}
@@ -658,7 +701,7 @@ function ComponentDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : isStatutory ? (isArchived ? "Disable for new runs" : "Save component") : "Save component"}
+              {busy ? "Saving…" : "Save component"}
             </Button>
           </div>
         </form>
