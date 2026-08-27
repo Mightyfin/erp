@@ -14,14 +14,14 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 {
     private readonly IWorkerRepository repo;
     private readonly IWorkerService workers;
-    private readonly IPayrollRepository payrollRepo;
-    private readonly IPayrollService payroll;
-    private readonly ITimeService time;
+    private readonly IPayrollRepository? payrollRepo;
+    private readonly IPayrollService? payroll;
+    private readonly ITimeService? time;
     private readonly IAuthzService authz;
     private readonly ShellContext scope;
 
     public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz, ShellContext scope,
-        IPayrollRepository payrollRepo, IPayrollService payroll, ITimeService time)
+        IPayrollRepository? payrollRepo = null, IPayrollService? payroll = null, ITimeService? time = null)
     {
         this.repo = repo;
         this.workers = workers;
@@ -402,6 +402,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         var basic = row.Get("basicSalary").Trim();
         if (!string.IsNullOrWhiteSpace(basic))
         {
+            if (payrollRepo is null) return "Basic salary import is unavailable in this environment.";
             if (!decimal.TryParse(basic, NumberStyles.Number, CultureInfo.InvariantCulture, out _) || decimal.Parse(basic, CultureInfo.InvariantCulture) <= 0)
                 return $"Basic salary '{basic}' is not valid — use a positive plain number, e.g. 12000.";
             var component = (await payrollRepo.ListAllComponentsAsync(ct)).FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase) && c.IsActive);
@@ -427,6 +428,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         if (string.IsNullOrWhiteSpace(overtimeDate) != string.IsNullOrWhiteSpace(overtimeHours)) return "Overtime requires both Overtime: Work date and Overtime: Hours.";
         if (!string.IsNullOrWhiteSpace(overtimeDate))
         {
+            if (time is null) return "Overtime import is unavailable in this environment.";
             if (!TryParseImportDate(overtimeDate, out var date)) return $"Overtime work date '{overtimeDate}' is not valid — use DD-MM-YYYY.";
             if (!decimal.TryParse(overtimeHours, NumberStyles.Number, CultureInfo.InvariantCulture, out var hours) || hours <= 0) return $"Overtime hours '{overtimeHours}' must be a positive number.";
             var multiplier = row.Get("overtime.multiplier").Trim();
@@ -443,6 +445,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     {
         if (row.TryGetValue("__basicComponentId", out var componentId))
         {
+            if (payrollRepo is null || payroll is null) throw new DomainException("import-payroll-unavailable", "Basic salary import is unavailable in this environment.");
             var existing = await payrollRepo.FindOpenProfileAsync(worker.Id, ct);
             var fillMissing = mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase);
             var values = existing?.ComponentValues.Select(v => new WorkerComponentValueCreate(v.ComponentId, v.Component?.Code, v.Amount)).ToList() ?? [];
@@ -455,6 +458,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         }
         if (row.TryGetValue("__overtimeDate", out var overtimeDate))
         {
+            if (time is null) throw new DomainException("import-overtime-unavailable", "Overtime import is unavailable in this environment.");
             var multiplier = decimal.TryParse(row.Get("overtime.multiplier"), NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : (decimal?)null;
             await time.ImportOvertimeAsync(new OvertimeImportRequest("employee-import", [new OvertimeImportRow(worker.EmployeeNo ?? throw new DomainException("import-overtime-employee-number", "Overtime needs an employee number."), overtimeDate, decimal.Parse(row.Get("overtime.hours"), CultureInfo.InvariantCulture), multiplier, OrNull(row.Get("overtime.reason")), OrNull(row.Get("overtime.status")))], row.Get("overtime.status").Equals("approved", StringComparison.OrdinalIgnoreCase)), authz.CurrentSubjectId ?? "system", ct);
         }
