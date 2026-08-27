@@ -55,6 +55,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
         new("payGroup", "Pay group", false, FormatNote: "required when Basic salary is supplied, e.g. Monthly ZMW"),
         new("basicSalary", "Basic salary", false, FormatNote: "plain ZMW amount; creates or updates the basic pay assignment"),
+        new("costOfLivingAllowance", "Cost of living allowance", false, FormatNote: "plain ZMW amount; requires an active Cost of Living Allowance payroll component"),
         new("salaryEffectiveFrom", "Salary effective from", false, FormatNote: "DD-MM-YYYY; defaults to start date or today"),
         new("overtime.workDate", "Overtime: Work date", false, FormatNote: "DD-MM-YYYY; required with overtime hours"),
         new("overtime.hours", "Overtime: Hours", false, FormatNote: "positive number; required with overtime work date"),
@@ -400,18 +401,29 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private async Task<string?> ValidateEnrichmentAsync(IDictionary<string, string> row, Worker? target, CancellationToken ct)
     {
         var basic = row.Get("basicSalary").Trim();
-        if (!string.IsNullOrWhiteSpace(basic))
+        var cola = row.Get("costOfLivingAllowance").Trim();
+        if (!string.IsNullOrWhiteSpace(basic) || !string.IsNullOrWhiteSpace(cola))
         {
-            if (payrollRepo is null) return "Basic salary import is unavailable in this environment.";
-            if (!decimal.TryParse(basic, NumberStyles.Number, CultureInfo.InvariantCulture, out _) || decimal.Parse(basic, CultureInfo.InvariantCulture) <= 0)
+            if (payrollRepo is null) return "Payroll pay import is unavailable in this environment.";
+            if (!string.IsNullOrWhiteSpace(basic) && (!decimal.TryParse(basic, NumberStyles.Number, CultureInfo.InvariantCulture, out _) || decimal.Parse(basic, CultureInfo.InvariantCulture) <= 0))
                 return $"Basic salary '{basic}' is not valid — use a positive plain number, e.g. 12000.";
-            var component = (await payrollRepo.ListAllComponentsAsync(ct)).FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase) && c.IsActive);
-            if (component is null) return "No active Basic Salary component is configured. Configure it under Payroll configuration before importing salaries.";
+            if (!string.IsNullOrWhiteSpace(cola) && (!decimal.TryParse(cola, NumberStyles.Number, CultureInfo.InvariantCulture, out _) || decimal.Parse(cola, CultureInfo.InvariantCulture) < 0))
+                return $"Cost of living allowance '{cola}' is not valid — use zero or a positive plain number.";
+            var components = await payrollRepo.ListAllComponentsAsync(ct);
+            var basicComponent = components.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase) && c.IsActive);
+            if (!string.IsNullOrWhiteSpace(basic) && basicComponent is null) return "No active Basic Salary component is configured. Configure it under Payroll configuration before importing salaries.";
+            var colaComponent = components.FirstOrDefault(c => c.IsActive &&
+                (c.Code.Equals("cost-of-living-allowance", StringComparison.OrdinalIgnoreCase) ||
+                 c.Code.Equals("cola", StringComparison.OrdinalIgnoreCase) ||
+                 c.Name.Equals("Cost of Living Allowance", StringComparison.OrdinalIgnoreCase)));
+            if (!string.IsNullOrWhiteSpace(cola) && colaComponent is null)
+                return "No active Cost of Living Allowance payroll component is configured. Add it under Payroll configuration, then import again.";
             var groups = await payrollRepo.ListPayGroupsAsync(ct);
             var groupName = row.Get("payGroup").Trim();
             var group = !string.IsNullOrWhiteSpace(groupName) ? groups.FirstOrDefault(g => g.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase)) : groups.Count == 1 ? groups[0] : null;
-            if (group is null) return string.IsNullOrWhiteSpace(groupName) ? "Basic salary needs a Pay group because more than one pay group is configured." : $"No pay group named '{groupName}' exists.";
-            row["__basicComponentId"] = component.Id.ToString();
+            if (group is null) return string.IsNullOrWhiteSpace(groupName) ? "Payroll pay needs a Pay group because more than one pay group is configured." : $"No pay group named '{groupName}' exists.";
+            if (!string.IsNullOrWhiteSpace(basic) && basicComponent is not null) row["__basicComponentId"] = basicComponent.Id.ToString();
+            if (!string.IsNullOrWhiteSpace(cola) && colaComponent is not null) row["__colaComponentId"] = colaComponent.Id.ToString();
             row["__payGroupId"] = group.Id.ToString();
             var effectiveRaw = row.Get("salaryEffectiveFrom").Trim();
             if (!string.IsNullOrWhiteSpace(effectiveRaw) && !TryParseImportDate(effectiveRaw, out _)) return $"Salary effective date '{effectiveRaw}' is not valid — use DD-MM-YYYY.";
@@ -443,17 +455,16 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 
     private async Task ApplyPayrollAndOvertimeAsync(Worker worker, IDictionary<string, string> row, string mode, CancellationToken ct)
     {
-        if (row.TryGetValue("__basicComponentId", out var componentId))
+        if (row.ContainsKey("__basicComponentId") || row.ContainsKey("__colaComponentId"))
         {
-            if (payrollRepo is null || payroll is null) throw new DomainException("import-payroll-unavailable", "Basic salary import is unavailable in this environment.");
+            if (payrollRepo is null || payroll is null) throw new DomainException("import-payroll-unavailable", "Payroll pay import is unavailable in this environment.");
             var existing = await payrollRepo.FindOpenProfileAsync(worker.Id, ct);
             var fillMissing = mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase);
             var values = existing?.ComponentValues.Select(v => new WorkerComponentValueCreate(v.ComponentId, v.Component?.Code, v.Amount)).ToList() ?? [];
-            var basicId = Guid.Parse(componentId);
-            var basicIndex = values.FindIndex(v => v.ComponentId == basicId);
-            if (basicIndex < 0) values.Add(new WorkerComponentValueCreate(basicId, "basic", decimal.Parse(row.Get("basicSalary"), CultureInfo.InvariantCulture)));
-            else if (!fillMissing) values[basicIndex] = new WorkerComponentValueCreate(basicId, "basic", decimal.Parse(row.Get("basicSalary"), CultureInfo.InvariantCulture));
-            if (basicIndex < 0 || !fillMissing)
+            var changed = false;
+            changed |= ApplyImportedComponent(values, row, "__basicComponentId", "basicSalary", "basic", fillMissing);
+            changed |= ApplyImportedComponent(values, row, "__colaComponentId", "costOfLivingAllowance", "cost-of-living-allowance", fillMissing);
+            if (changed)
                 await payroll.UpsertProfileAsync(worker.Id, new WorkerPayrollProfileCreate(worker.Id, Guid.Parse(row["__payGroupId"]), row["__salaryEffectiveFrom"], values), ct);
         }
         if (row.TryGetValue("__overtimeDate", out var overtimeDate))
@@ -462,6 +473,18 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
             var multiplier = decimal.TryParse(row.Get("overtime.multiplier"), NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : (decimal?)null;
             await time.ImportOvertimeAsync(new OvertimeImportRequest("employee-import", [new OvertimeImportRow(worker.EmployeeNo ?? throw new DomainException("import-overtime-employee-number", "Overtime needs an employee number."), overtimeDate, decimal.Parse(row.Get("overtime.hours"), CultureInfo.InvariantCulture), multiplier, OrNull(row.Get("overtime.reason")), OrNull(row.Get("overtime.status")))], row.Get("overtime.status").Equals("approved", StringComparison.OrdinalIgnoreCase)), authz.CurrentSubjectId ?? "system", ct);
         }
+    }
+
+    private static bool ApplyImportedComponent(List<WorkerComponentValueCreate> values, IDictionary<string, string> row,
+        string idKey, string amountKey, string code, bool fillMissing)
+    {
+        if (!row.TryGetValue(idKey, out var rawId)) return false;
+        var id = Guid.Parse(rawId);
+        var index = values.FindIndex(v => v.ComponentId == id);
+        if (index >= 0 && fillMissing) return false;
+        var value = new WorkerComponentValueCreate(id, code, decimal.Parse(row.Get(amountKey), CultureInfo.InvariantCulture));
+        if (index < 0) values.Add(value); else values[index] = value;
+        return true;
     }
 
     private static string? ValueToApply(string? existing, string imported, bool fillMissing)
