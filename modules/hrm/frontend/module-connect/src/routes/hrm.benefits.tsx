@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Edit, Plus, UsersRound } from "lucide-react";
+import { Edit, Plus, Trash2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ScopeBadge } from "@/platform/components/ScopeBadge";
+import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/benefits")({ component: Benefits });
@@ -95,6 +96,7 @@ function Benefits() {
 
   const [typeForm, setTypeForm] = useState<Row>(emptyType());
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [deletingType, setDeletingType] = useState<Row | null>(null);
 
   const [allowanceWorker, setAllowanceWorker] = useState("");
   const [allowanceType, setAllowanceType] = useState("");
@@ -148,7 +150,7 @@ function Benefits() {
     new Set(workerRows.map((row) => text(row.grade)).filter(Boolean)),
   ).sort();
   const selectedType = activeTypes.find((row) => text(row.code) === allowanceType);
-  const selectedBulkType = activeTypes.find((row) => text(row.code) === bulkType);
+  const selectedBulkType = activeTypes.find((row) => text(row.id) === bulkType);
   const selectedClaimType = activeTypes.find((row) => text(row.code) === claimType);
   const typeByCode = useMemo(
     () => new Map(((types.data ?? []) as Row[]).map((row) => [text(row.code).toLowerCase(), row])),
@@ -188,6 +190,14 @@ function Benefits() {
       toast.error("Code, name and a positive annual cap are required.");
       return;
     }
+    const duplicate = ((types.data ?? []) as Row[]).find((row) =>
+      text(row.id) !== editingTypeId &&
+      (text(row.code).trim().toLowerCase() === text(typeForm.code).trim().toLowerCase() ||
+       text(row.name).trim().toLowerCase() === text(typeForm.name).trim().toLowerCase()));
+    if (duplicate) {
+      toast.error("A benefit type with this code or name already exists.");
+      return;
+    }
     if (editingTypeId) {
       await run(
         "Benefit type updated",
@@ -221,6 +231,18 @@ function Benefits() {
         () => setTypeForm(emptyType()),
       );
     }
+  };
+
+  const deleteType = async () => {
+    if (!deletingType) return;
+    const name = text(deletingType.name);
+    await run("Benefit type deleted", () => realApi.deleteBenefitType(text(deletingType.id)), () => {
+      if (editingTypeId === text(deletingType.id)) {
+        setEditingTypeId(null);
+        setTypeForm(emptyType());
+      }
+      setDeletingType(null);
+    });
   };
 
   const startEditAllowance = (row: Row) => {
@@ -263,8 +285,16 @@ function Benefits() {
     const ids = Object.entries(selectedWorkers)
       .filter(([, selected]) => selected)
       .map(([id]) => id);
-    if (!bulkType || !bulkAmount || !ids.length) {
-      toast.error("Select a benefit type, amount and at least one employee.");
+    if (!selectedBulkType) {
+      toast.error("Select the benefit type to assign.");
+      return;
+    }
+    if (!bulkAmount || Number(bulkAmount) <= 0) {
+      toast.error("Enter a positive annual amount.");
+      return;
+    }
+    if (!ids.length) {
+      toast.error("Select at least one employee.");
       return;
     }
     if (amountOverCap(bulkAmount, selectedBulkType)) {
@@ -279,7 +309,7 @@ function Benefits() {
         for (const workerId of ids) {
           await realApi.setBenefitAllowance({
             workerId,
-            benefitTypeCode: bulkType,
+            benefitTypeCode: text(selectedBulkType.code),
             annualAmount: Number(bulkAmount) || 0,
             year: Number(bulkYear) || new Date().getFullYear(),
           });
@@ -613,7 +643,14 @@ function Benefits() {
                     <SelectTrigger>
                       <SelectValue placeholder="Select type..." />
                     </SelectTrigger>
-                    <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                    <SelectContent>
+                      {activeTypes.map((row) => (
+                        <SelectItem key={text(row.id)} value={text(row.id)}>
+                          {text(row.name)} · cap {money(row.annualCap)}
+                          {row.includeInPayroll ? " · payslip" : " · claim"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 </div>
                 <div>
@@ -667,7 +704,7 @@ function Benefits() {
                   </Button>
                   <Button
                     onClick={applyBulk}
-                    disabled={busy || amountOverCap(bulkAmount, selectedBulkType)}
+                    disabled={busy || !selectedBulkType || amountOverCap(bulkAmount, selectedBulkType)}
                   >
                     Apply to selected
                   </Button>
@@ -834,16 +871,26 @@ function Benefits() {
                         </TableCell>
                         <TableCell>{row.isActive ? "Active" : "Inactive"}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingTypeId(text(row.id));
-                              setTypeForm(row);
-                            }}
-                          >
-                            Edit
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingTypeId(text(row.id));
+                                setTypeForm(row);
+                              }}
+                            >
+                              <Edit className="size-4" aria-hidden /> Edit
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`Delete ${text(row.name)}`}
+                              onClick={() => setDeletingType(row)}
+                            >
+                              <Trash2 className="size-4 text-destructive" aria-hidden />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1055,6 +1102,16 @@ function Benefits() {
             </CardContent>
           </Card>
         ) : null}
+
+        <ConfirmDialog
+          open={Boolean(deletingType)}
+          onOpenChange={(open) => { if (!open) setDeletingType(null); }}
+          title="Delete benefit type"
+          consequence={`Delete ${text(deletingType?.name)}. This is only available when it has no employee allowances or claims.`}
+          confirmLabel="Delete benefit type"
+          destructive
+          onConfirm={() => void deleteType()}
+        />
       </AppShell>
     </AuthGate>
   );

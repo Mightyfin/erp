@@ -11,6 +11,7 @@ public interface IBenefitRepository
     Task<BenefitType> CreateBenefitTypeAsync(BenefitType type, CancellationToken ct);
     Task<BenefitType> UpdateBenefitTypeAsync(BenefitType type, CancellationToken ct);
     Task DeleteBenefitTypeAsync(Guid id, CancellationToken ct);
+    Task<bool> BenefitTypeHasUsageAsync(Guid id, CancellationToken ct);
 
     // Worker allowances
     Task<List<WorkerBenefitAllowance>> ListAllowancesAsync(Guid? workerId, CancellationToken ct);

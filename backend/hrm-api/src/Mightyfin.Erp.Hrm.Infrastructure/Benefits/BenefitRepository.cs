@@ -37,6 +37,10 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         await ctx.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> BenefitTypeHasUsageAsync(Guid id, CancellationToken ct) =>
+        await ctx.WorkerBenefitAllowances.AnyAsync(x => x.BenefitTypeId == id, ct) ||
+        await ctx.BenefitClaims.AnyAsync(x => x.BenefitTypeId == id, ct);
+
     public Task<List<WorkerBenefitAllowance>> ListAllowancesAsync(Guid? workerId, CancellationToken ct) =>
         ctx.WorkerBenefitAllowances
             .Include(x => x.Worker)

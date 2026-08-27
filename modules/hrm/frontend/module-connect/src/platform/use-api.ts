@@ -518,6 +518,8 @@ export const realApi = {
     hrmApi.post<unknown>("/hrm/benefits/types", body),
   updateBenefitType: (id: string, body: Record<string, unknown>) =>
     hrmApi.put<unknown>(`/hrm/benefits/types/${id}`, body),
+  deleteBenefitType: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/benefits/types/${id}`),
   benefitAllowances: (params?: Record<string, unknown>) =>
     hrmApi.get<unknown[]>("/hrm/benefits/allowances", params ?? {}),
   setBenefitAllowance: (body: Record<string, unknown>) =>

@@ -42,9 +42,9 @@ public sealed class BenefitServiceImpl(
             throw new DomainException("benefit-type-invalid", "Code and name are required.");
         if (request.AnnualCap < 0)
             throw new DomainException("benefit-type-invalid", "Annual cap cannot be negative.");
-        var existing = await repo.GetBenefitTypeByCodeAsync(code, ct);
-        if (existing is not null)
-            throw new DomainException("benefit-type-duplicate", $"A benefit type with code {code} already exists.");
+        var types = await repo.ListBenefitTypesAsync(ct);
+        if (types.Any(x => NormalizeCode(x.Code) == code || SameName(x.Name, request.Name)))
+            throw new DomainException("benefit-type-duplicate", "A benefit type with this code or name already exists.");
         var type = new BenefitType
         {
             Code = code, Name = request.Name.Trim(), Description = request.Description?.Trim(),
@@ -67,9 +67,10 @@ public sealed class BenefitServiceImpl(
             throw new DomainException("benefit-type-invalid", "Code and name are required.");
         if (request.AnnualCap < 0)
             throw new DomainException("benefit-type-invalid", "Annual cap cannot be negative.");
-        var duplicate = types.FirstOrDefault(x => x.Id != id && NormalizeCode(x.Code) == code);
+        var duplicate = types.FirstOrDefault(x => x.Id != id &&
+            (NormalizeCode(x.Code) == code || SameName(x.Name, request.Name)));
         if (duplicate is not null)
-            throw new DomainException("benefit-type-duplicate", $"A benefit type with code {code} already exists.");
+            throw new DomainException("benefit-type-duplicate", "A benefit type with this code or name already exists.");
         type.Code = code;
         type.Name = request.Name.Trim();
         type.Description = request.Description?.Trim();
@@ -84,8 +85,13 @@ public sealed class BenefitServiceImpl(
     public async Task DeleteBenefitTypeAsync(Guid id, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_admin");
+        if (await repo.BenefitTypeHasUsageAsync(id, ct))
+            throw new DomainException("benefit-type-in-use", "This benefit type has employee allowances or claims and cannot be deleted. Set it inactive instead.");
         await repo.DeleteBenefitTypeAsync(id, ct);
     }
+
+    private static bool SameName(string existing, string incoming) =>
+        string.Equals(existing.Trim(), incoming.Trim(), StringComparison.OrdinalIgnoreCase);
 
     public async Task<List<BenefitAllowanceDto>> ListAllowancesAsync(Guid? workerId, CancellationToken ct)
     {
