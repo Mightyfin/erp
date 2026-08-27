@@ -1181,7 +1181,11 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         var profiles = (await db.WorkerPayrollProfiles
             .Include(p => p.Worker).ThenInclude(w => w!.BankDetails)
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
-            .Where(p => p.PayGroupId == period.PayGroupId)
+            // Payroll is an operational process. A retained payroll profile
+            // must never make an archived worker payable again.
+            .Where(p => p.PayGroupId == period.PayGroupId
+                && p.Worker != null
+                && !p.Worker.IsArchived)
             .ToListAsync(ct))
             .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTime.UtcNow))
             // M46: a run scoped to a branch only pays the workers attached to
@@ -1205,6 +1209,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Include(a => a.BenefitType)
             .Where(a => a.Year == period.StartDate.Year
                 && a.AnnualAmount > 0
+                && a.Worker != null
+                && !a.Worker.IsArchived
                 && a.BenefitType != null
                 && a.BenefitType.IsActive
                 && a.BenefitType.IncludeInPayroll);
@@ -1253,7 +1259,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 && a.DeductFromPayslip
                 && a.DeductionStartDate <= period.EndDate
                 && a.Amount > 0
-                && a.InstallmentAmount > 0);
+                && a.InstallmentAmount > 0
+                && a.Worker != null
+                && !a.Worker.IsArchived);
         if (locationId.HasValue)
             query = query.Where(a => a.Worker != null && a.Worker.LocationId == locationId);
         return await query.ToListAsync(ct);
@@ -1286,7 +1294,9 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Include(a => a.Worker)
             .Where(a => a.WorkDate >= period.StartDate && a.WorkDate <= period.EndDate
                 && a.OvertimeHours > 0 && a.OvertimeStatus == "approved"
-                && a.OvertimePayrollRunId == null);
+                && a.OvertimePayrollRunId == null
+                && a.Worker != null
+                && !a.Worker.IsArchived);
         if (locationId.HasValue)
             q = q.Where(a => a.LocationId == locationId || a.Worker!.LocationId == locationId);
         return await q.OrderBy(a => a.Worker!.EmployeeNo).ThenBy(a => a.WorkDate).ToListAsync(ct);

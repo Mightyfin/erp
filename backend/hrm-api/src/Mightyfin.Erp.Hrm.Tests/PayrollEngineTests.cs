@@ -154,6 +154,43 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task CalculateRun_ExcludesArchivedWorkersEvenWhenTheirPayrollProfileRemains()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, activeProfile, basic, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+        var archivedWorker = TestWorker("ARCHIVED-001");
+        archivedWorker.Status = "archived";
+        archivedWorker.IsArchived = true;
+        ctx.Workers.Add(archivedWorker);
+
+        var archivedProfile = new WorkerPayrollProfile
+        {
+            WorkerId = archivedWorker.Id,
+            PayGroupId = group.Id,
+            EffectiveFrom = activeProfile.EffectiveFrom,
+            StructureId = activeProfile.StructureId,
+        };
+        archivedProfile.ComponentValues.Add(new WorkerComponentValue
+        {
+            ComponentId = basic.Id,
+            Component = basic,
+            Amount = 99999m,
+        });
+        ctx.WorkerPayrollProfiles.Add(archivedProfile);
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        var calculated = await service.CalculateRunAsync(run.Id, CancellationToken.None);
+        var lines = await ctx.PayrollRunLines.Where(line => line.RunId == run.Id).ToListAsync();
+
+        Assert.Equal(1, calculated.EmployeeCount);
+        Assert.Single(lines);
+        Assert.Equal(activeProfile.WorkerId, lines[0].WorkerId);
+        Assert.DoesNotContain(lines, line => line.WorkerId == archivedWorker.Id);
+    }
+
+    [Fact]
     public async Task CalculateRun_UsesRecordedOvertimeDivisorForWatchpersonGuard()
     {
         var (service, ctx) = Build(tenant: "payroll-overtime-divisor");
