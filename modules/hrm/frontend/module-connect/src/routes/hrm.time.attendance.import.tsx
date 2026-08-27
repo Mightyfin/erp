@@ -4,6 +4,7 @@ import { ArrowRight, FileSpreadsheet, History, ShieldCheck, Upload } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
@@ -60,7 +61,6 @@ function AttendanceImportPage() {
           meta={<Badge variant="outline" className="gap-1.5 border-info/30 bg-info-soft text-info-foreground"><FileSpreadsheet className="size-3" aria-hidden /> Shared Import/Export workflow</Badge>}
           primaryAction={
             <div className="flex flex-wrap gap-2">
-              <ImportDialog typeKey="attendance" onDone={() => history.reload()} />
               <ExportButton typeKey="attendance" fileName="attendance" />
             </div>
           }
@@ -78,8 +78,8 @@ function AttendanceImportPage() {
               <div className="flex items-start gap-3">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Upload className="size-5" aria-hidden /></span>
                 <div>
-                  <p className="font-semibold">Use the shared import flow</p>
-                  <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">The same mapping and server-preview experience is used across HRM data types. Nothing is written until you confirm the accepted rows.</p>
+                  <p className="font-semibold">Attendance uses the shared import tool</p>
+                  <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Upload CSV or Excel, map the real column titles, manually edit rows if needed, preview server validation, then confirm only accepted rows. Nothing is written before the preview step.</p>
                 </div>
               </div>
             </CardContent>
@@ -87,6 +87,10 @@ function AttendanceImportPage() {
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-6">
+              <ImportDialog typeKey="attendance" presentation="embedded" onDone={() => history.reload()} />
+
+              <Separator />
+
               <Card className="shadow-none" data-testid="overtime-import-card">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="size-4" aria-hidden />Import overtime hours only</CardTitle>
