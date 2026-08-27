@@ -118,13 +118,23 @@ async function readFileRows(file: File): Promise<{ headers: string[]; rows: stri
     const raw: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
     const rows = raw.filter((r) => r.some((c) => String(c ?? "").trim() !== "")) as string[][];
     if (rows.length === 0) throw new Error("The workbook has no data rows.");
-    return { headers: rows[0].map(String), rows: rows.slice(1).map((r) => r.map(String)), sheetName };
+    return { ...splitHeadersAndRows(rows.map((r) => r.map(String))), sheetName };
   }
   const text = new TextDecoder("utf-8").decode(buf);
   // Strip the UTF-8 BOM if present.
   const all = parseCsvText(text.startsWith("\uFEFF") ? text.slice(1) : text);
   if (all.length === 0) throw new Error("The CSV file is empty.");
-  return { headers: all[0], rows: all.slice(1) };
+  return splitHeadersAndRows(all);
+}
+
+function splitHeadersAndRows(rows: string[][]): { headers: string[]; rows: string[][] } {
+  const firstRow = rows[0] ?? [];
+  const hasTextHeader = firstRow.some((cell) => /\p{L}/u.test(String(cell ?? "")));
+  if (hasTextHeader) return { headers: firstRow, rows: rows.slice(1) };
+  // A sheet without headings must not silently lose its first data row. Give
+  // it neutral headings and let the user map the columns in the next step.
+  const width = Math.max(...rows.map((row) => row.length), 1);
+  return { headers: Array.from({ length: width }, (_, index) => `Column ${index + 1}`), rows };
 }
 
 /* ---------------------------------------------------------------- fuzzy map */
@@ -158,6 +168,45 @@ function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<str
 const SKIP = "__skip__";
 const USE_REAL_API = import.meta.env.VITE_USE_REAL_API === "true";
 const IMPORT_PAGE_SIZE = 25;
+
+/** Keep the editable preview clean without changing meaningful identifiers. */
+function cleanImportValue(fieldKey: string, rawValue: unknown) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "";
+
+  if (["firstName", "middleName", "lastName"].includes(fieldKey))
+    return value.replace(/[^\p{L}\p{M}\s.'-]/gu, "").replace(/\s+/g, " ").trim();
+  if (fieldKey === "tpin" || fieldKey === "nhimaNumber" || fieldKey === "napsaNumber")
+    return value.replace(/\D/g, "");
+  if (fieldKey === "nrc")
+    return value.replace(/[^\d/]/g, "").replace(/\/{2,}/g, "/");
+  if (fieldKey === "phone")
+    return `${value.startsWith("+") ? "+" : ""}${value.replace(/\D/g, "")}`;
+  if (["basicSalary", "costOfLivingAllowance", "overtime.hours", "overtime.multiplier"].includes(fieldKey)) {
+    const digits = value.replace(/[^\d.]/g, "");
+    const [whole, ...decimal] = digits.split(".");
+    return decimal.length ? `${whole}.${decimal.join("")}` : whole;
+  }
+  return value;
+}
+
+function validateCleanWorkerRows(rows: Array<Record<string, string>>, mode: "insert" | "update" | "fill-missing") {
+  const errors: string[] = [];
+  rows.forEach((row, index) => {
+    const rowLabel = `Row ${index + 2}`;
+    for (const [key, label] of [["firstName", "First name"], ["middleName", "Middle name"], ["lastName", "Last name"]] as const) {
+      const value = row[key] ?? "";
+      if (value && !/\p{L}/u.test(value)) errors.push(`${rowLabel}: ${label} must contain text, not numbers.`);
+    }
+    if (mode === "insert" && !(row.firstName ?? "")) errors.push(`${rowLabel}: First name has no letters after cleanup.`);
+    if (mode === "insert" && !(row.lastName ?? "")) errors.push(`${rowLabel}: Last name has no letters after cleanup.`);
+    if (row.tpin && !/^\d{10}$/.test(row.tpin)) errors.push(`${rowLabel}: TPIN must contain exactly 10 digits.`);
+    if (row.nhimaNumber && !/^\d+$/.test(row.nhimaNumber)) errors.push(`${rowLabel}: NHIMA number must contain digits only.`);
+    if (row.napsaNumber && !/^\d+$/.test(row.napsaNumber)) errors.push(`${rowLabel}: NAPSA number must contain digits only.`);
+    if (row.nrc && !/^\d{6}\/\d{2}\/\d$/.test(row.nrc)) errors.push(`${rowLabel}: NRC must use the format 123456/78/1.`);
+  });
+  return errors;
+}
 
 function uniqueClean(values: unknown[]) {
   const seen = new Set<string>();
@@ -340,6 +389,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [missingReferences, setMissingReferences] = useState<MissingReferencePlan | null>(null);
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [pasteError, setPasteError] = useState<string | null>(null);
+  const [clientValidationErrors, setClientValidationErrors] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [schemas, setSchemas] = useState<ImportSchema[] | null>(null);
@@ -375,6 +425,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
+    setClientValidationErrors([]);
     setMissingReferences(null);
     setReferencesOpen(false);
     void loadSchemas();
@@ -394,6 +445,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setPreviewPage(1);
     setSchemaError(null);
     setPasteError(null);
+    setClientValidationErrors([]);
     setMissingReferences(null);
     setReferencesOpen(false);
     void loadSchemas();
@@ -410,6 +462,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     setFileRows(rows);
     setPreview(null);
     setPasteError(null);
+    setClientValidationErrors([]);
     setManualPage(1);
     setMapPage(1);
     setPreviewPage(1);
@@ -472,7 +525,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       return manualRows
         .filter((row) => Object.values(row).some((value) => String(value ?? "").trim().length > 0))
         .map((row) =>
-          Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value ?? "").trim()])) as Record<string, string>
+          Object.fromEntries(Object.entries(row).map(([key, value]) => [key, cleanImportValue(key, value)])) as Record<string, string>
         );
     }
     if (fileColumns.length === 0 || fileRows.length === 0) return [];
@@ -481,7 +534,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       fileColumns.forEach((col, ci) => {
         const key = mapping[col.name];
         if (!key || key === SKIP) return;
-        out[key] = (row[ci] ?? "").trim();
+        out[key] = cleanImportValue(key, row[ci]);
       });
       return out;
     });
@@ -509,7 +562,9 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   }
 
   function updateManualRow(index: number, fieldKey: string, value: string) {
-    setManualRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [fieldKey]: value } : row)));
+    const cleaned = cleanImportValue(fieldKey, value);
+    setClientValidationErrors([]);
+    setManualRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, [fieldKey]: cleaned } : row)));
   }
 
   function addManualRow() {
@@ -654,6 +709,13 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
     }
     setBusy(true);
     try {
+      const localErrors = typeKey === "workers" ? validateCleanWorkerRows(mappedRows, mode) : [];
+      if (localErrors.length) {
+        setClientValidationErrors(localErrors);
+        toast.error("Fix the cleaned values shown below before previewing the import.");
+        return;
+      }
+      setClientValidationErrors([]);
       setMissingReferences(null);
       if (!schemas) {
         setPreview(demoPreview(mappedRows));
@@ -720,6 +782,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const selectedColumnForField = (fieldKey: string) =>
     fileColumns.find((col) => mapping[col.name] === fieldKey)?.name ?? SKIP;
   const setFieldColumn = (fieldKey: string, columnName: string) => {
+    setClientValidationErrors([]);
     setMapping((current) => {
       const next = { ...current };
       for (const [colName, mappedField] of Object.entries(next)) {
@@ -871,6 +934,15 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
 
       <div className={cn("min-w-0", embedded ? "w-full overflow-visible" : "flex-1 min-h-0 overflow-y-auto pr-2")}>
         {modeTabs ? <div className="p-1 pb-3">{modeTabs}</div> : null}
+        {clientValidationErrors.length > 0 && step !== "preview" ? (
+          <div role="alert" className="mx-1 mb-3 rounded-lg border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive">
+            <p className="font-medium">Some cleaned values still need correction</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+              {clientValidationErrors.slice(0, 8).map((error) => <li key={error}>{error}</li>)}
+              {clientValidationErrors.length > 8 && <li>{clientValidationErrors.length - 8} more rows need correction.</li>}
+            </ul>
+          </div>
+        ) : null}
         {step === "upload" && (
           <div className="space-y-4 p-1">
             {entryMode === "manual" && schema ? (
