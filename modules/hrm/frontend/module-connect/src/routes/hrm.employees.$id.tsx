@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Eye,
   FileText,
   KeyRound,
@@ -466,13 +467,17 @@ function ComponentList({
 
 type EmployeeReportKind =
   | "master"
+  | "profile"
+  | "payment"
+  | "salary-history"
   | "payroll"
   | "payslips"
   | "benefits"
   | "attendance"
   | "overtime"
   | "leave"
-  | "advances";
+  | "advances"
+  | "documents";
 
 type EmployeeReport = {
   title: string;
@@ -484,6 +489,9 @@ type EmployeeReport = {
 
 const employeeReports: Array<{ value: EmployeeReportKind; label: string }> = [
   { value: "master", label: "Employee master and profile" },
+  { value: "profile", label: "Employee employment and contract" },
+  { value: "payment", label: "Employee payment details" },
+  { value: "salary-history", label: "Employee salary history" },
   { value: "payroll", label: "Payroll and payment history" },
   { value: "payslips", label: "Payslip report" },
   { value: "benefits", label: "Benefits and claims" },
@@ -491,6 +499,7 @@ const employeeReports: Array<{ value: EmployeeReportKind; label: string }> = [
   { value: "overtime", label: "Overtime report" },
   { value: "leave", label: "Leave and leave balances" },
   { value: "advances", label: "Salary advances" },
+  { value: "documents", label: "Employee documents" },
 ];
 
 function date(value: unknown) {
@@ -502,6 +511,17 @@ function dataRows(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value as Record<string, unknown>[];
   const object = (value ?? {}) as Record<string, unknown>;
   return Array.isArray(object.items) ? (object.items as Record<string, unknown>[]) : [];
+}
+
+function downloadReportCsv(employee: EmployeeRecord, report: EmployeeReport) {
+  const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
+  const csv = [report.columns, ...report.rows].map((row) => row.map(escape).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${employee.employeeNo}-${report.title.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/(^-|-$)/g, "")}.csv`;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function ReportTable({ report }: { report: EmployeeReport }) {
@@ -542,6 +562,37 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
       empty: "No employee master data is available.",
     };
     if (!USE_REAL || selected === "master") return master;
+
+    if (selected === "profile") {
+      return {
+        title: "Employee employment and contract",
+        description: "Employment, position, reporting and contract facts for this employee.",
+        columns: ["Employee", "Employment type", "Department", "Position", "Grade", "Reports to", "Start date", "End date", "Status"],
+        rows: [[employee.fullName, employee.employmentType, employee.department, employee.jobTitle, employee.grade, profile.reportsTo, employee.startDate, employee.endDate ?? "", employee.status]],
+        empty: "No employment profile is available.",
+      };
+    }
+
+    if (selected === "payment") {
+      return {
+        title: "Employee payment details",
+        description: "Recorded payment method and destination details. Sensitive account numbers stay on the protected Pay and statutory tab.",
+        columns: ["Employee", "Payment method", "Account holder", "Bank", "Bank branch", "Mobile money"],
+        rows: [[employee.fullName, profile.paymentMethod, profile.accountName, profile.bankName, profile.bankBranch, profile.mobileMoneyNumber]],
+        empty: "No payment details are recorded for this employee.",
+      };
+    }
+
+    if (selected === "salary-history") {
+      const profiles = dataRows(await realApi.payrollProfiles({ workerId: employee.id }));
+      return {
+        title: "Employee salary history",
+        description: "Effective payroll profiles and their active pay basis. Use payroll and payslip history to see calculated amounts for each period.",
+        columns: ["Effective from", "Effective to", "Pay group", "Pay basis", "Overtime policy", "Status"],
+        rows: profiles.map((row) => [text(row.effectiveFrom), text(row.effectiveTo), text(row.payGroupName ?? row.payGroup), text(row.payBasis), text(row.overtimeCategory), text(row.isActive) === "false" ? "Inactive" : "Active"]),
+        empty: "No salary profile is recorded for this employee.",
+      };
+    }
 
     if (selected === "payroll" || selected === "payslips") {
       const payslips = dataRows(await realApi.workerPayslips(employee.id));
@@ -612,6 +663,16 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
       };
     }
 
+    if (selected === "documents") {
+      const documents = dataRows(await realApi.workerDocuments(employee.id));
+      return {
+        title: "Employee documents", description: "Documents held against this employee record, including their category and current status.",
+        columns: ["Document", "Category", "Issued", "Expires", "Status"],
+        rows: documents.map((row) => [text(row.title ?? row.fileName ?? row.name), text(row.category), date(row.issueDate ?? row.createdAt), date(row.expiryDate), text(row.status)]),
+        empty: "No employee documents are recorded.",
+      };
+    }
+
     const advances = dataRows(await realApi.salaryAdvances({ workerId: employee.id }));
     return {
       title: "Salary advances", description: "Advances issued to this employee, recoveries through payroll and remaining balances.",
@@ -623,12 +684,21 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
 
   return (
     <div className="space-y-4">
-      <div className="max-w-md">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="w-full max-w-md">
         <label className="text-sm font-medium" htmlFor="employee-report">Report</label>
         <Select value={selected} onValueChange={(value) => setSelected(value as EmployeeReportKind)}>
           <SelectTrigger id="employee-report" className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>{employeeReports.map((report) => <SelectItem key={report.value} value={report.value}>{report.label}</SelectItem>)}</SelectContent>
         </Select>
+        </div>
+        <Button
+          variant="outline"
+          disabled={!state.data || state.loading}
+          onClick={() => state.data && downloadReportCsv(employee, state.data)}
+        >
+          <Download className="size-4" aria-hidden /> Download CSV
+        </Button>
       </div>
       <Async state={state} rows={5}>{(report) => <ReportTable report={report} />}</Async>
     </div>
