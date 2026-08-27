@@ -141,6 +141,7 @@ function splitHeadersAndRows(rows: string[][]): { headers: string[]; rows: strin
 /** Loose label→field matching so most Excel headers map without clicks. */
 function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<string, string> {
   const map: Record<string, string> = {};
+  const claimedFields = new Set<string>();
   for (const col of fileColumns) {
     const lc = col.toLowerCase();
     const score = (key: string, label: string) => {
@@ -156,10 +157,14 @@ function autoMap(fileColumns: string[], fields: ImportSchemaField[]): Record<str
     let bestKey = "";
     let bestScore = 0;
     for (const f of fields) {
+      if (claimedFields.has(f.key)) continue;
       const s = score(f.key, f.label);
       if (s > bestScore) { bestScore = s; bestKey = f.key; }
     }
-    if (bestScore > 0) map[col] = bestKey;
+    if (bestScore > 0) {
+      map[col] = bestKey;
+      claimedFields.add(bestKey);
+    }
     else map[col] = "__skip__";
   }
   return map;
@@ -534,7 +539,10 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
       fileColumns.forEach((col, ci) => {
         const key = mapping[col.name];
         if (!key || key === SKIP) return;
-        out[key] = cleanImportValue(key, row[ci]);
+        const value = cleanImportValue(key, row[ci]);
+        // A duplicate or blank source column must never overwrite a useful
+        // value that was already mapped to the same system field.
+        if (!out[key] || value) out[key] = value;
       });
       return out;
     });
