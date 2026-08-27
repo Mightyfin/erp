@@ -304,6 +304,7 @@ public sealed class NatsHrmEventPublisher : IHrmEventPublisher
 public interface ISmtpNotificationFallback
 {
     bool Enabled { get; }
+    bool CanDeliver(OutboxMessage row);
     Task DeliverAsync(OutboxMessage row, CancellationToken ct);
 }
 
@@ -320,10 +321,33 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
         Enabled = string.Equals(configuration["HRM:NotificationFallback"], "smtp", StringComparison.OrdinalIgnoreCase);
     }
 
+    public bool CanDeliver(OutboxMessage row)
+    {
+        if (row.EventType is not (
+            HrmEventTypes.PayslipReleased or
+            HrmEventTypes.RequestDecided or
+            HrmEventTypes.LeaveRequested or
+            HrmEventTypes.LeaveDecided or
+            HrmEventTypes.LeaveCancelled))
+            return false;
+        try
+        {
+            using var payload = JsonDocument.Parse(row.PayloadJson);
+            return payload.RootElement.TryGetProperty("email", out var value) &&
+                !string.IsNullOrWhiteSpace(value.GetString());
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public async Task DeliverAsync(OutboxMessage row, CancellationToken ct)
     {
         if (!Enabled)
             throw new InvalidOperationException("SMTP fallback is not enabled.");
+        if (!CanDeliver(row))
+            throw new InvalidOperationException($"No SMTP fallback template exists for {row.EventType}.");
         using var payload = JsonDocument.Parse(row.PayloadJson);
         var root = payload.RootElement;
         var email = Required(root, "email");
@@ -351,11 +375,22 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
 
         var host = RequiredConfig("HRM:Smtp:Host");
         var from = RequiredConfig("HRM:Smtp:From");
+        var fromName = configuration["HRM:Smtp:FromName"] ?? "New World Cargo HRM";
         var port = int.TryParse(configuration["HRM:Smtp:Port"], out var parsedPort) ? parsedPort : 587;
-        using var message = new MailMessage(from, email, subject, body);
+        var timeoutMs = int.TryParse(configuration["HRM:Smtp:TimeoutMs"], out var parsedTimeout)
+            ? Math.Clamp(parsedTimeout, 5000, 120000)
+            : 20000;
+        using var message = new MailMessage
+        {
+            From = new MailAddress(from, fromName),
+            Subject = subject,
+            Body = body,
+        };
+        message.To.Add(email);
         using var smtp = new SmtpClient(host, port)
         {
             EnableSsl = !string.Equals(configuration["HRM:Smtp:UseTls"], "false", StringComparison.OrdinalIgnoreCase),
+            Timeout = timeoutMs,
         };
         var username = configuration["HRM:Smtp:Username"];
         if (!string.IsNullOrWhiteSpace(username))

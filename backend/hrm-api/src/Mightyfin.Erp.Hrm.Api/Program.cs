@@ -424,8 +424,13 @@ app.Run();
 static async Task RunOutboxPublisherAsync(IServiceProvider services, IConfiguration configuration)
 {
     var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("HrmOutboxPublisher");
-    var publisher = services.GetRequiredService<IHrmEventPublisher>();
     var smtpFallback = services.GetRequiredService<ISmtpNotificationFallback>();
+    var transport = (configuration["HRM:NotificationTransport"] ?? "nats").Trim().ToLowerInvariant();
+    var smtpPrimary = transport == "smtp";
+    var publisher = smtpPrimary ? null : services.GetRequiredService<IHrmEventPublisher>();
+    var deliveryTimeoutSeconds = int.TryParse(configuration["HRM:NotificationDeliveryTimeoutSeconds"], out var configuredDeliveryTimeout)
+        ? Math.Clamp(configuredDeliveryTimeout, 5, 120)
+        : 20;
     var pollSeconds = int.TryParse(configuration["HRM:OutboxPollSeconds"], out var configuredPoll)
         ? Math.Clamp(configuredPoll, 1, 60)
         : 1;
@@ -445,9 +450,18 @@ static async Task RunOutboxPublisherAsync(IServiceProvider services, IConfigurat
         {
             if (!streamReady)
             {
-                await publisher.EnsureStreamAsync(stopping.Token);
+                if (smtpPrimary)
+                {
+                    if (!smtpFallback.Enabled)
+                        throw new InvalidOperationException("HRM:NotificationTransport=smtp requires HRM:NotificationFallback=smtp and HRM:Smtp settings.");
+                    logger.LogInformation("HRM outbox publisher using SMTP as primary notification transport");
+                }
+                else
+                {
+                    await publisher!.EnsureStreamAsync(stopping.Token);
+                    logger.LogInformation("HRM outbox publisher connected to HRM_EVENTS; SMTP fallback enabled={SmtpFallbackEnabled}", smtpFallback.Enabled);
+                }
                 streamReady = true;
-                logger.LogInformation("HRM outbox publisher connected to HRM_EVENTS; SMTP fallback enabled={SmtpFallbackEnabled}", smtpFallback.Enabled);
             }
             await using var scope = services.CreateAsyncScope();
             var store = scope.ServiceProvider.GetRequiredService<IOutboxPublisherStore>();
@@ -456,14 +470,43 @@ static async Task RunOutboxPublisherAsync(IServiceProvider services, IConfigurat
             {
                 try
                 {
-                    await publisher.PublishAsync(row, stopping.Token);
-                    await store.CompleteAsync(row.Id, true, "nats", null, stopping.Token);
-                    logger.LogInformation("Published HRM event {EventId} {EventType}", row.PublicId, row.EventType);
+                    using var rowDelivery = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+                    rowDelivery.CancelAfter(TimeSpan.FromSeconds(deliveryTimeoutSeconds));
+                    if (smtpPrimary)
+                    {
+                        if (!smtpFallback.CanDeliver(row))
+                        {
+                            await store.CompleteAsync(row.Id, true, "smtp-skipped", "No SMTP template for this event type.", rowDelivery.Token);
+                            logger.LogInformation("Skipped non-email HRM event {EventId} {EventType} in SMTP transport mode", row.PublicId, row.EventType);
+                            continue;
+                        }
+                        await smtpFallback.DeliverAsync(row, rowDelivery.Token);
+                        await store.CompleteAsync(row.Id, true, "smtp", null, rowDelivery.Token);
+                        logger.LogInformation("Delivered HRM event {EventId} {EventType} by SMTP", row.PublicId, row.EventType);
+                    }
+                    else
+                    {
+                        await publisher!.PublishAsync(row, rowDelivery.Token);
+                        await store.CompleteAsync(row.Id, true, "nats", null, rowDelivery.Token);
+                        logger.LogInformation("Published HRM event {EventId} {EventType}", row.PublicId, row.EventType);
+                    }
                 }
                 catch (Exception publishError) when (!stopping.IsCancellationRequested)
                 {
-                    if (smtpFallback.Enabled)
+                    if (smtpPrimary)
                     {
+                        await store.CompleteAsync(row.Id, false, "smtp", publishError.Message, stopping.Token);
+                        logger.LogError(publishError, "SMTP delivery failed for HRM event {EventId}; retry scheduled", row.PublicId);
+                        continue;
+                    }
+                    if (!smtpPrimary && smtpFallback.Enabled)
+                    {
+                        if (!smtpFallback.CanDeliver(row))
+                        {
+                            await store.CompleteAsync(row.Id, true, "smtp-skipped", "No SMTP template or recipient for this event.", stopping.Token);
+                            logger.LogInformation("Skipped non-email HRM event {EventId} {EventType} after NATS failure", row.PublicId, row.EventType);
+                            continue;
+                        }
                         try
                         {
                             await smtpFallback.DeliverAsync(row, stopping.Token);
