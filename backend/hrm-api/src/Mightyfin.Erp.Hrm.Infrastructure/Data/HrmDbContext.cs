@@ -64,6 +64,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<TenantRoleAssignment> TenantRoleAssignments => Set<TenantRoleAssignment>();
     public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
+    public DbSet<LocalCredentialLink> LocalCredentialLinks => Set<LocalCredentialLink>();
     public DbSet<LocalSession> LocalSessions => Set<LocalSession>();
     public DbSet<HrUserBranchAssignment> UserBranchAssignments => Set<HrUserBranchAssignment>();
     public DbSet<RetentionRule> RetentionRules => Set<RetentionRule>();
@@ -189,6 +190,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e.HasIndex(x => new { x.TenantId, x.WorkerId }).HasFilter("worker_id IS NOT NULL");
         });
         ConfigureEntity<LocalSession>(modelBuilder, "local_sessions", e =>
+        {
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.LocalUserId, x.ExpiresAt });
+        });
+        ConfigureEntity<LocalCredentialLink>(modelBuilder, "local_credential_links", e =>
         {
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => new { x.TenantId, x.LocalUserId, x.ExpiresAt });

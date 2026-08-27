@@ -268,7 +268,7 @@ function SalaryAdvancesPage() {
                 <Field label="Advance amount">
                   <Input type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} disabled={Boolean(editing)} />
                 </Field>
-                <Field label="Deduction per payslip">
+                <Field label="Amount deduction per payslip">
                   <Input type="number" min="0" step="0.01" value={form.installmentAmount} onChange={(event) => setForm((current) => ({ ...current, installmentAmount: event.target.value }))} />
                 </Field>
                 <Field label="Issue date">

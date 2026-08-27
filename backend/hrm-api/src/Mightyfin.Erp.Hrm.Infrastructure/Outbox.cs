@@ -329,7 +329,8 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
             HrmEventTypes.RequestDecided or
             HrmEventTypes.LeaveRequested or
             HrmEventTypes.LeaveDecided or
-            HrmEventTypes.LeaveCancelled))
+            HrmEventTypes.LeaveCancelled or
+            HrmEventTypes.AccountAccessLink))
             return false;
         try
         {
@@ -405,6 +406,16 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
                     $"View leave request",
                     $"{portalUrl}/hrm/leave",
                     "If you did not expect this message, contact HR.")
+            ),
+            HrmEventTypes.AccountAccessLink => (
+                "Set up your NewWorldCargo HRM account",
+                $"Hello {firstName},\n\nAn HR administrator created or reset your account. Set your password using this one-time link: {Optional(root, "account_link")}\n\nThis link expires on {Optional(root, "expires_at")}.\n",
+                BuildHtmlEmail(
+                    "An HR administrator created or reset your account. Use the secure link below to choose your password.",
+                    firstName,
+                    "Set password",
+                    Required(root, "account_link"),
+                    $"This one-time link expires on {Optional(root, "expires_at")}. If you did not expect this message, contact HR.")
             ),
             _ => throw new InvalidOperationException($"No SMTP fallback template exists for {row.EventType}."),
         };

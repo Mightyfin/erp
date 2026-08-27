@@ -27,3 +27,12 @@ public sealed class LocalSession : Entity
     public DateTimeOffset LastSeenAt { get; set; }
     public string? UserAgent { get; set; }
 }
+
+/// <summary>One-time, expiring token for an account activation or password reset.</summary>
+public sealed class LocalCredentialLink : Entity
+{
+    public Guid LocalUserId { get; set; }
+    public string TokenHash { get; set; } = null!;
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? UsedAt { get; set; }
+}

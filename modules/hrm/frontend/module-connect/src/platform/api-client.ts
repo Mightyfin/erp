@@ -166,12 +166,17 @@ export const hrmApi = {
     changePassword: (currentPassword: string, newPassword: string) =>
       hrmApi.post<{ changed: boolean }>("/hrm/auth/change-password", { currentPassword, newPassword }),
     users: () => hrmApi.get<{ items: LocalAuthUser[] }>("/hrm/auth/users"),
-    createUser: (body: { email: string; displayName: string; password: string; roles: string[]; workerId?: string }) =>
+    user: (id: string) => hrmApi.get<{ user: LocalAuthUser; activity: { action: string; actor: string; at: string }[]; sessions: { createdAt: string; lastSeenAt: string; expiresAt: string; revokedAt?: string | null; userAgent?: string | null }[] }>(`/hrm/auth/users/${id}`),
+    createUser: (body: { email: string; displayName: string; roles: string[]; workerId?: string }) =>
       hrmApi.post<LocalAuthUser>("/hrm/auth/users", body),
     updateUser: (id: string, body: Partial<{ email: string; displayName: string; roles: string[]; isActive: boolean; workerId: string }>) =>
       hrmApi.patch<LocalAuthUser>(`/hrm/auth/users/${id}`, body),
     resetPassword: (id: string, newPassword: string) =>
       hrmApi.post<{ reset: boolean }>(`/hrm/auth/users/${id}/reset-password`, { newPassword }),
+    sendPasswordLink: (id: string) =>
+      hrmApi.post<{ sent: boolean }>(`/hrm/auth/users/${id}/send-password-link`, {}),
+    setPassword: (token: string, newPassword: string) =>
+      hrmApi.post<{ changed: boolean }>("/hrm/auth/set-password", { token, newPassword }),
   },
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {

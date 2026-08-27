@@ -51,12 +51,10 @@ function UsersConfiguration() {
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState("hr_ops");
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<LocalAuthUser | null>(null);
-  const [resetPassword, setResetPassword] = useState("");
   const [ownPasswordOpen, setOwnPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -105,15 +103,13 @@ function UsersConfiguration() {
       await hrmApi.auth.createUser({
         email: email.trim(),
         displayName: displayName.trim(),
-        password,
         roles: [role],
       });
       setEmail("");
       setDisplayName("");
-      setPassword("");
       setRole(activeRoles[0]?.roleKey ?? "employee");
       setCreateOpen(false);
-      setNotice("The local account was created. Give the user their temporary password securely.");
+      setNotice("The account was created and a secure password setup link was emailed to the user.");
       await loadUsers();
     } catch (err) {
       setError(messageFor(err, "Unable to create the local account."));
@@ -146,15 +142,13 @@ function UsersConfiguration() {
     }
   };
 
-  const resetUserPassword = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const resetUserPassword = async () => {
     if (!selectedUser) return;
     setError(null);
     setNotice(null);
     try {
-      await hrmApi.auth.resetPassword(selectedUser.id, resetPassword);
-      setResetPassword("");
-      setNotice(`Password reset for ${selectedUser.email}. Share the temporary password securely.`);
+      await hrmApi.auth.sendPasswordLink(selectedUser.id);
+      setNotice(`A secure password reset link was emailed to ${selectedUser.email}.`);
       setSelectedUser(null);
     } catch (err) {
       setError(messageFor(err, "Unable to reset the account password."));
@@ -211,10 +205,10 @@ function UsersConfiguration() {
                   {!loading && users.map((user) => {
                     const currentRole = user.roles[0] ?? "auditor";
                     return <tr key={user.id}>
-                      <td className="px-3 py-3"><div className="font-medium">{user.displayName}</div><div className="text-xs text-muted-foreground">{user.email}</div>{user.mustChangePassword ? <div className="mt-1 text-[11px] text-amber-700">Password change required</div> : null}</td>
+                      <td className="px-3 py-3"><a className="font-medium text-primary hover:underline" href={`/hrm/configuration/users/${user.id}`}>{user.displayName}</a><div className="text-xs text-muted-foreground">{user.email}</div>{user.mustChangePassword ? <div className="mt-1 text-[11px] text-amber-700">Password setup required</div> : null}</td>
                       <td className="px-3 py-3"><select className="h-8 rounded-md border bg-background px-2 text-xs" value={currentRole} onChange={(event) => void changeRole(user, event.target.value)} aria-label={`Role for ${user.email}`}>{roles.map((role) => <option key={role.roleKey} value={role.roleKey} disabled={!role.active}>{role.roleName}{role.active ? "" : " (inactive)"}</option>)}</select></td>
                       <td className="px-3 py-3"><StatusBadge status={user.isActive ? "active" : "inactive"} /></td>
-                      <td className="px-3 py-3"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => { setSelectedUser(user); setResetPassword(""); }}><KeyRound className="mr-1.5 size-3.5" aria-hidden />Reset</Button><Switch checked={user.isActive} onCheckedChange={(checked) => void toggleUser(user, checked)} aria-label={`${user.isActive ? "Deactivate" : "Activate"} ${user.email}`} /></div></td>
+                      <td className="px-3 py-3"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setSelectedUser(user)}><KeyRound className="mr-1.5 size-3.5" aria-hidden />Send reset link</Button><Switch checked={user.isActive} onCheckedChange={(checked) => void toggleUser(user, checked)} aria-label={`${user.isActive ? "Deactivate" : "Activate"} ${user.email}`} /></div></td>
                     </tr>;
                   })}
                 </tbody>
@@ -227,12 +221,11 @@ function UsersConfiguration() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create account</DialogTitle>
-              <DialogDescription>Add a local HRMS login and give the user a temporary password.</DialogDescription>
+              <DialogDescription>Add a local HRMS login. The user will receive a secure email to choose their password.</DialogDescription>
             </DialogHeader>
             <form className="space-y-3" onSubmit={createUser}>
               <div><Label htmlFor="new-display-name">Name</Label><Input id="new-display-name" className="mt-1" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></div>
               <div><Label htmlFor="new-email">Email</Label><Input id="new-email" type="email" autoComplete="off" className="mt-1" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
-              <div><Label htmlFor="new-password">Temporary password</Label><Input id="new-password" type="password" autoComplete="new-password" className="mt-1" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} required /></div>
               <div><Label htmlFor="new-role">Role</Label><select id="new-role" className="mt-1 flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{activeRoles.map((role) => <option key={role.roleKey} value={role.roleKey}>{role.roleName}</option>)}</select></div>
               <DialogFooter><Button variant="outline" type="button" onClick={() => setCreateOpen(false)}>Cancel</Button><Button type="submit" disabled={creating}>{creating ? "Creating…" : "Create account"}</Button></DialogFooter>
             </form>
@@ -256,13 +249,10 @@ function UsersConfiguration() {
         <Dialog open={Boolean(selectedUser)} onOpenChange={(open) => { if (!open) setSelectedUser(null); }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Reset password</DialogTitle>
-              <DialogDescription>Set a temporary password for {selectedUser?.email}.</DialogDescription>
+              <DialogTitle>Send password reset link</DialogTitle>
+              <DialogDescription>Email a one-time password reset link to {selectedUser?.email}. The link expires after 24 hours.</DialogDescription>
             </DialogHeader>
-            <form className="space-y-3" onSubmit={resetUserPassword}>
-              <div><Label htmlFor="reset-password">Temporary password</Label><Input id="reset-password" type="password" autoComplete="new-password" className="mt-1" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} minLength={12} required /></div>
-              <DialogFooter><Button variant="outline" type="button" onClick={() => setSelectedUser(null)}>Cancel</Button><Button type="submit">Reset password</Button></DialogFooter>
-            </form>
+            <DialogFooter><Button variant="outline" type="button" onClick={() => setSelectedUser(null)}>Cancel</Button><Button onClick={() => void resetUserPassword()}>Send reset link</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </AppShell>

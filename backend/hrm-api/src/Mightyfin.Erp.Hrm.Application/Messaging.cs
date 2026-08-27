@@ -11,6 +11,7 @@ public static class HrmEventTypes
     public const string LeaveCancelled = "hrm.leave.cancelled";
     public const string OvertimeDecided = "hrm.overtime.decided";
     public const string IntegrationReady = "hrm.integration.ready";
+    public const string AccountAccessLink = "hrm.account.access-link";
 }
 
 /// <summary>Adds an event to the current scoped DbContext. The surrounding

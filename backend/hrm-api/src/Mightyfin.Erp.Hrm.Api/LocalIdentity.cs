@@ -113,10 +113,13 @@ internal static class LocalIdentityRoutes
             g.MapGet("/me", MeAsync).AllowAnonymous();
             g.MapPost("/logout", LogoutAsync).RequireAuthorization();
             g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization();
+            g.MapPost("/set-password", CompletePasswordSetupAsync).AllowAnonymous();
             g.MapGet("/users", ListUsersAsync).RequireAuthorization("hrm-admin");
+            g.MapGet("/users/{id:guid}", GetUserAsync).RequireAuthorization("hrm-admin");
             g.MapPost("/users", CreateUserAsync).RequireAuthorization("hrm-admin");
             g.MapPatch("/users/{id:guid}", UpdateUserAsync).RequireAuthorization("hrm-admin");
             g.MapPost("/users/{id:guid}/reset-password", ResetPasswordAsync).RequireAuthorization("hrm-admin");
+            g.MapPost("/users/{id:guid}/send-password-link", SendPasswordLinkAsync).RequireAuthorization("hrm-admin");
         }
     }
 
@@ -266,7 +269,22 @@ internal static class LocalIdentityRoutes
     private static async Task<IResult> ListUsersAsync(HrmDbContext db, CancellationToken ct)
         => Results.Ok(new { items = await db.LocalUsers.OrderBy(x => x.Email).Select(x => UserDto(x)).ToListAsync(ct) });
 
-    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, HrmDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetUserAsync(Guid id, HrmDbContext db, CancellationToken ct)
+    {
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (user is null) return Results.NotFound(new { code = "user-not-found", message = "User account not found." });
+        var activity = await db.AuditEntries.Where(x => x.EntityType == nameof(LocalUser) && x.EntityId == id.ToString())
+            .OrderByDescending(x => x.CreatedAt).Take(50)
+            .Select(x => new { action = x.Action, actor = x.ActorSubjectId, at = x.CreatedAt })
+            .ToListAsync(ct);
+        var sessions = await db.LocalSessions.Where(x => x.LocalUserId == id)
+            .OrderByDescending(x => x.LastSeenAt).Take(20)
+            .Select(x => new { createdAt = x.CreatedAt, lastSeenAt = x.LastSeenAt, expiresAt = x.ExpiresAt, revokedAt = x.RevokedAt, userAgent = x.UserAgent })
+            .ToListAsync(ct);
+        return Results.Ok(new { user = UserDto(user), activity, sessions });
+    }
+
+    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, HrmDbContext db, IOutboxWriter outbox, IConfiguration config, CancellationToken ct)
     {
         var email = request.Email?.Trim() ?? "";
         var roles = await RequireAssignableRolesAsync(db, request.Roles, ct);
@@ -279,13 +297,15 @@ internal static class LocalIdentityRoutes
             Email = email,
             NormalizedEmail = NormalizeEmail(email),
             DisplayName = request.DisplayName.Trim(),
-            PasswordHash = LocalPasswordHash.Hash(request.Password ?? ""),
+            // The recipient chooses their password from the one-time email link.
+            PasswordHash = LocalPasswordHash.Hash(CreateUnusablePassword()),
             RolesCsv = string.Join(',', roles),
             WorkerId = request.WorkerId,
             MustChangePassword = true,
         };
         db.LocalUsers.Add(user);
         await db.SaveChangesAsync(ct);
+        await QueueCredentialLinkAsync(user, db, outbox, config, ct);
         return Results.Created($"/api/hrm/auth/users/{user.Id}", UserDto(user));
     }
 
@@ -329,6 +349,55 @@ internal static class LocalIdentityRoutes
         return Results.Ok(new { reset = true });
     }
 
+    private static async Task<IResult> SendPasswordLinkAsync(Guid id, HrmDbContext db, IOutboxWriter outbox, IConfiguration config, CancellationToken ct)
+    {
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == id && x.IsActive && !x.IsArchived, ct);
+        if (user is null) return Results.NotFound(new { code = "user-not-found", message = "Active user account not found." });
+        await QueueCredentialLinkAsync(user, db, outbox, config, ct);
+        return Results.Ok(new { sent = true });
+    }
+
+    private static async Task<IResult> CompletePasswordSetupAsync(CompletePasswordSetupRequest request, HrmDbContext db, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return Results.BadRequest(new { code = "invalid-link", message = "This account link is invalid or has expired." });
+        LocalCredentialLink? link;
+        try { link = await db.LocalCredentialLinks.FirstOrDefaultAsync(x => x.TokenHash == LocalSessionTokens.Hash(request.Token) && x.UsedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow, ct); }
+        catch { link = null; }
+        if (link is null) return Results.BadRequest(new { code = "invalid-link", message = "This account link is invalid or has expired." });
+        var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.Id == link.LocalUserId && x.IsActive && !x.IsArchived, ct);
+        if (user is null) return Results.BadRequest(new { code = "invalid-link", message = "This account link is invalid or has expired." });
+        user.PasswordHash = LocalPasswordHash.Hash(request.NewPassword ?? "");
+        user.MustChangePassword = false;
+        user.PasswordChangedAt = DateTimeOffset.UtcNow;
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        link.UsedAt = DateTimeOffset.UtcNow;
+        await db.LocalCredentialLinks.Where(x => x.LocalUserId == user.Id && x.Id != link.Id && x.UsedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAt, DateTimeOffset.UtcNow), ct);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { changed = true });
+    }
+
+    private static async Task QueueCredentialLinkAsync(LocalUser user, HrmDbContext db, IOutboxWriter outbox, IConfiguration config, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await db.LocalCredentialLinks.Where(x => x.LocalUserId == user.Id && x.UsedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAt, now), ct);
+        var token = LocalSessionTokens.Create();
+        db.LocalCredentialLinks.Add(new LocalCredentialLink { TenantId = user.TenantId, LocalUserId = user.Id, TokenHash = LocalSessionTokens.Hash(token), ExpiresAt = now.AddHours(24) });
+        user.MustChangePassword = true;
+        await db.SaveChangesAsync(ct);
+        var publicUrl = config["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.newworldcargo.com";
+        await outbox.EnqueueAsync(HrmEventTypes.AccountAccessLink, user.Id.ToString("D"), new
+        {
+            email = user.Email,
+            first_name = user.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? user.DisplayName,
+            account_link = $"{publicUrl}/sign-in?token={Uri.EscapeDataString(token)}",
+            expires_at = now.AddHours(24).ToString("O")
+        }, ct);
+    }
+
+    private static string CreateUnusablePassword() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)) + "aA1!";
+
     private static async Task<LocalUser?> CurrentUserAsync(HttpContext http, HrmDbContext db, CancellationToken ct)
     {
         var raw = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -361,6 +430,7 @@ internal static class LocalIdentityRoutes
     public sealed record CreateUserRequest(string? Email, string? DisplayName, string? Password, string[]? Roles, Guid? WorkerId);
     public sealed record UpdateUserRequest(string? Email, string? DisplayName, string[]? Roles, bool? IsActive, Guid? WorkerId);
     public sealed record ResetPasswordRequest(string? NewPassword);
+    public sealed record CompletePasswordSetupRequest(string? Token, string? NewPassword);
 }
 
 internal static class LocalIdentityBootstrap

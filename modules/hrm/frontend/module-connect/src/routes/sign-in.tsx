@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/platform/app-context";
 import { useAuth } from "@/platform/auth";
+import { hrmApi } from "@/platform/api-client";
 
 export const Route = createFileRoute("/sign-in")({
   head: () => ({
@@ -30,6 +31,9 @@ function SignIn() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const accessToken = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("token");
 
   useEffect(() => {
     if (USE_REAL && authenticated) void navigate({ to: "/hrm", replace: true });
@@ -56,6 +60,23 @@ function SignIn() {
   const continueDemo = () => {
     setRole("hr_admin");
     void navigate({ to: "/" });
+  };
+
+  const completeSetup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!accessToken) return;
+    setError(null);
+    setSetupBusy(true);
+    try {
+      await hrmApi.auth.setPassword(accessToken, setupPassword);
+      setSetupPassword("");
+      window.history.replaceState({}, "", "/sign-in");
+      setError("Password set. You can now sign in.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "This account link is invalid or has expired.");
+    } finally {
+      setSetupBusy(false);
+    }
   };
 
   if (!USE_REAL) {
@@ -89,15 +110,19 @@ function SignIn() {
       <main className="flex items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden"><img src="/newworld-cargo-logo.png" alt="New World Cargo HRM" className="h-9 w-auto object-contain object-left" /></div>
-          <h2 className="mt-6 text-xl font-semibold lg:mt-0">Sign in</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Use an account created by a New World Cargo HRM administrator.</p>
+          <h2 className="mt-6 text-xl font-semibold lg:mt-0">{accessToken ? "Set your password" : "Sign in"}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{accessToken ? "Choose a password for your NewWorldCargo HRM account." : "Use an account created by a NewWorldCargo HRM administrator."}</p>
 
-          <form className="mt-6 space-y-4" onSubmit={submit}>
+          {accessToken ? <form className="mt-6 space-y-4" onSubmit={completeSetup}>
+            <div><Label htmlFor="setup-password">New password</Label><Input id="setup-password" type="password" autoComplete="new-password" className="mt-1" value={setupPassword} onChange={(e) => setSetupPassword(e.target.value)} minLength={12} required /></div>
+            {error && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert"><AlertTriangle className="mr-2 inline size-4" aria-hidden />{error}</div>}
+            <Button className="w-full" type="submit" disabled={setupBusy}>{setupBusy ? "Setting password…" : "Set password"}</Button>
+          </form> : <form className="mt-6 space-y-4" onSubmit={submit}>
             <div><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" className="mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@newworldcargo.com" required /></div>
             <div><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" className="mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
             {error && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert"><AlertTriangle className="mr-2 inline size-4" aria-hidden />{error}</div>}
             <Button className="w-full" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
-          </form>
+          </form>}
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground"><LifeBuoy className="size-3.5" aria-hidden />Need to report something confidentially? <a href="/speak-up" className="text-primary underline underline-offset-2">Speak up without signing in</a></p>
         </div>
