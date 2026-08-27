@@ -3,6 +3,8 @@
 // lifecycle as the UI form (naming rules, entity/unit resolution, validations),
 // and adds Update mode matched on employee number with NRC/NAPSA fallback.
 using System.Globalization;
+using Mightyfin.Erp.Hrm.Application.Payroll;
+using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
@@ -12,13 +14,20 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 {
     private readonly IWorkerRepository repo;
     private readonly IWorkerService workers;
+    private readonly IPayrollRepository payrollRepo;
+    private readonly IPayrollService payroll;
+    private readonly ITimeService time;
     private readonly IAuthzService authz;
     private readonly ShellContext scope;
 
-    public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz, ShellContext scope)
+    public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz, ShellContext scope,
+        IPayrollRepository payrollRepo, IPayrollService payroll, ITimeService time)
     {
         this.repo = repo;
         this.workers = workers;
+        this.payrollRepo = payrollRepo;
+        this.payroll = payroll;
+        this.time = time;
         this.authz = authz;
         this.scope = scope;
     }
@@ -44,6 +53,14 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("locationId", "Branch", false, FormatNote: "guid of the work location, optional — current work scope is used when empty"),
         new("workerType", "Employment type", true, Example: "employee | contingent | intern | volunteer"),
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
+        new("payGroup", "Pay group", false, FormatNote: "required when Basic salary is supplied, e.g. Monthly ZMW"),
+        new("basicSalary", "Basic salary", false, FormatNote: "plain ZMW amount; creates or updates the basic pay assignment"),
+        new("salaryEffectiveFrom", "Salary effective from", false, FormatNote: "DD-MM-YYYY; defaults to start date or today"),
+        new("overtime.workDate", "Overtime: Work date", false, FormatNote: "DD-MM-YYYY; required with overtime hours"),
+        new("overtime.hours", "Overtime: Hours", false, FormatNote: "positive number; required with overtime work date"),
+        new("overtime.multiplier", "Overtime: Multiplier", false, FormatNote: "optional; uses the employee shift rule when empty"),
+        new("overtime.reason", "Overtime: Reason", false),
+        new("overtime.status", "Overtime: Status", false, FormatNote: "pending or approved; defaults to pending"),
 
         // M31b flattening: history child fields (export-only in v1; import
         // matches parent and ignores these or uses them for bulk child init)
@@ -71,7 +88,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         var employeeNo = row.Get("employeeNo").Trim();
         var nrc = row.Get("nrc").Trim();
         var napsa = row.Get("napsaNumber").Trim();
-        var target = await repo.FindByNaturalKeyAsync(employeeNo, nrc, napsa, ct);
+        var target = await ResolveTargetAsync(employeeNo, nrc, napsa, row.Get("email"), row.Get("phone"), row.Get("tpin"), ct);
         if (!isUpdate && target is not null)
             return new ImportRowOutcome("error",
                 !string.IsNullOrWhiteSpace(employeeNo) ? $"Employee number '{employeeNo}' is already assigned to an existing employee ({target.FullName}). Insert mode never overwrites — review the spreadsheet or switch to Update mode."
@@ -148,8 +165,9 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         // then each row checks against them plus the in-file Seen sets. ----
         if (!IdentitiesLoaded)
         {
-            IdentitiesLoaded = true;
             var all = await repo.ListAllWorkersAsync(null, ct);
+            ExistingWorkers = all;
+            IdentitiesLoaded = true;
             foreach (var w in all)
             {
                 if (!string.IsNullOrWhiteSpace(w.Email)) ExistingEmails.Add(w.Email.ToLowerInvariant());
@@ -219,10 +237,15 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
             !orgUnits.Any(u => u.Name.Equals(orgUnitName, StringComparison.OrdinalIgnoreCase)))
             return new ImportRowOutcome("error", $"No department named '{orgUnitName}' exists. Create it under Organisation structure first.");
 
+        var resolved = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase);
+        var enrichmentError = await ValidateEnrichmentAsync(resolved, target, ct);
+        if (enrichmentError is not null) return new ImportRowOutcome("error", enrichmentError);
+        if (target is not null) resolved["__workerId"] = target.Id.ToString();
+
         // ---- Natural-key match drives the Insert-vs-Update status in the preview. ----
         if (target is not null)
-            return new ImportRowOutcome("update", mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase) ? $"Existing record: {target.FullName}; only blank fields will be filled." : $"Existing record: {target.FullName}", row);
-        return new ImportRowOutcome("create", null, row);
+            return new ImportRowOutcome("update", mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase) ? $"Existing record: {target.FullName}; only blank fields will be filled." : $"Existing record: {target.FullName}", resolved);
+        return new ImportRowOutcome("create", null, resolved);
     }
 
     // --- Batch-level identity uniqueness sets (cleared per schema instance).
@@ -237,6 +260,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private readonly HashSet<string> ExistingPhones = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> ExistingTpins = new(StringComparer.OrdinalIgnoreCase);
     private bool IdentitiesLoaded;
+    private List<Worker> ExistingWorkers = [];
 
     private static readonly System.Text.RegularExpressions.Regex EmailRx = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
     private static bool EmailInvalid(string email) => !string.IsNullOrWhiteSpace(email) && !EmailRx.IsMatch(email);
@@ -255,10 +279,44 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         return await repo.FindByEmailAsync(email, ct);
     }
 
+    // Any supplied identity may locate an existing employee. If identities point
+    // to different people, do not guess: the spreadsheet must be corrected.
+    private async Task<Worker?> ResolveTargetAsync(string employeeNo, string nrc, string napsa,
+        string email, string phone, string tpin, CancellationToken ct)
+    {
+        if (!IdentitiesLoaded)
+        {
+            ExistingWorkers = await repo.ListAllWorkersAsync(null, ct);
+            foreach (var worker in ExistingWorkers)
+            {
+                if (!string.IsNullOrWhiteSpace(worker.Email)) ExistingEmails.Add(worker.Email.ToLowerInvariant());
+                if (!string.IsNullOrWhiteSpace(worker.Phone)) ExistingPhones.Add(worker.Phone);
+                if (!string.IsNullOrWhiteSpace(worker.Nrc)) ExistingNrcs.Add(worker.Nrc.ToLowerInvariant());
+                if (!string.IsNullOrWhiteSpace(worker.Tpin)) ExistingTpins.Add(worker.Tpin);
+                if (!string.IsNullOrWhiteSpace(worker.EmployeeNo)) ExistingEmployeeNos.Add(worker.EmployeeNo.ToLowerInvariant());
+            }
+            IdentitiesLoaded = true;
+        }
+        var matches = ExistingWorkers.Where(w =>
+            (!string.IsNullOrWhiteSpace(employeeNo) && string.Equals(w.EmployeeNo, employeeNo, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(nrc) && string.Equals(w.Nrc, nrc, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(napsa) && string.Equals(w.NapsaNumber, napsa, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(email) && string.Equals(w.Email, email, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(phone) && string.Equals(w.Phone, phone, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(tpin) && string.Equals(w.Tpin, tpin, StringComparison.OrdinalIgnoreCase)))
+            .DistinctBy(w => w.Id).ToList();
+        if (matches.Count > 1)
+            throw new DomainException("import-identity-conflict", "The identifiers on this row belong to different employees. Correct the employee number, email, phone, NRC, TPIN or NAPSA number before importing.");
+        return matches.SingleOrDefault();
+    }
+
     public async Task ApplyRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        var target = await repo.FindByNaturalKeyAsync(row.Get("employeeNo"), row.Get("nrc"), row.Get("napsaNumber"), ct);
+        Worker? target = null;
+        if (row.TryGetValue("__workerId", out var targetId) && Guid.TryParse(targetId, out var workerId))
+            target = await repo.GetByIdAsync(workerId, ct);
+        target ??= await ResolveTargetAsync(row.Get("employeeNo"), row.Get("nrc"), row.Get("napsaNumber"), row.Get("email"), row.Get("phone"), row.Get("tpin"), ct);
         var orgUnits = await repo.ListAllOrgUnitsAsync(ct);
         var orgUnitName = row.Get("orgUnitName");
         Guid? orgUnitId = null;
@@ -334,6 +392,71 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 ?? throw new DomainException("import-create-lost",
                     "The worker row was applied but could not be re-located for history records — report this to support.");
             await ApplyChildRowsAsync(created.Id, row, orgUnits, ct);
+            target = created;
+        }
+        await ApplyPayrollAndOvertimeAsync(target ?? throw new DomainException("import-worker-missing", "Imported employee could not be located."), row, mode, ct);
+    }
+
+    private async Task<string?> ValidateEnrichmentAsync(IDictionary<string, string> row, Worker? target, CancellationToken ct)
+    {
+        var basic = row.Get("basicSalary").Trim();
+        if (!string.IsNullOrWhiteSpace(basic))
+        {
+            if (!decimal.TryParse(basic, NumberStyles.Number, CultureInfo.InvariantCulture, out _) || decimal.Parse(basic, CultureInfo.InvariantCulture) <= 0)
+                return $"Basic salary '{basic}' is not valid — use a positive plain number, e.g. 12000.";
+            var component = (await payrollRepo.ListAllComponentsAsync(ct)).FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase) && c.IsActive);
+            if (component is null) return "No active Basic Salary component is configured. Configure it under Payroll configuration before importing salaries.";
+            var groups = await payrollRepo.ListPayGroupsAsync(ct);
+            var groupName = row.Get("payGroup").Trim();
+            var group = !string.IsNullOrWhiteSpace(groupName) ? groups.FirstOrDefault(g => g.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase)) : groups.Count == 1 ? groups[0] : null;
+            if (group is null) return string.IsNullOrWhiteSpace(groupName) ? "Basic salary needs a Pay group because more than one pay group is configured." : $"No pay group named '{groupName}' exists.";
+            row["__basicComponentId"] = component.Id.ToString();
+            row["__payGroupId"] = group.Id.ToString();
+            var effectiveRaw = row.Get("salaryEffectiveFrom").Trim();
+            if (!string.IsNullOrWhiteSpace(effectiveRaw) && !TryParseImportDate(effectiveRaw, out _)) return $"Salary effective date '{effectiveRaw}' is not valid — use DD-MM-YYYY.";
+            DateOnly effective;
+            if (!string.IsNullOrWhiteSpace(effectiveRaw))
+                _ = TryParseImportDate(effectiveRaw, out effective);
+            else if (!TryParseImportDate(row.Get("startDate"), out effective))
+                effective = DateOnly.FromDateTime(DateTime.UtcNow);
+            row["__salaryEffectiveFrom"] = effective.ToString("yyyy-MM-dd");
+        }
+
+        var overtimeDate = row.Get("overtime.workDate").Trim();
+        var overtimeHours = row.Get("overtime.hours").Trim();
+        if (string.IsNullOrWhiteSpace(overtimeDate) != string.IsNullOrWhiteSpace(overtimeHours)) return "Overtime requires both Overtime: Work date and Overtime: Hours.";
+        if (!string.IsNullOrWhiteSpace(overtimeDate))
+        {
+            if (!TryParseImportDate(overtimeDate, out var date)) return $"Overtime work date '{overtimeDate}' is not valid — use DD-MM-YYYY.";
+            if (!decimal.TryParse(overtimeHours, NumberStyles.Number, CultureInfo.InvariantCulture, out var hours) || hours <= 0) return $"Overtime hours '{overtimeHours}' must be a positive number.";
+            var multiplier = row.Get("overtime.multiplier").Trim();
+            if (!string.IsNullOrWhiteSpace(multiplier) && (!decimal.TryParse(multiplier, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) || value <= 0)) return $"Overtime multiplier '{multiplier}' must be a positive number.";
+            var status = row.Get("overtime.status").Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(status) && status is not ("pending" or "approved")) return "Overtime status must be pending or approved.";
+            if (target is null && string.IsNullOrWhiteSpace(row.Get("employeeNo"))) return "Overtime on a new employee requires an Employee number so the attendance record can be linked.";
+            row["__overtimeDate"] = date.ToString("yyyy-MM-dd");
+        }
+        return null;
+    }
+
+    private async Task ApplyPayrollAndOvertimeAsync(Worker worker, IDictionary<string, string> row, string mode, CancellationToken ct)
+    {
+        if (row.TryGetValue("__basicComponentId", out var componentId))
+        {
+            var existing = await payrollRepo.FindOpenProfileAsync(worker.Id, ct);
+            var fillMissing = mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase);
+            var values = existing?.ComponentValues.Select(v => new WorkerComponentValueCreate(v.ComponentId, v.Component?.Code, v.Amount)).ToList() ?? [];
+            var basicId = Guid.Parse(componentId);
+            var basicIndex = values.FindIndex(v => v.ComponentId == basicId);
+            if (basicIndex < 0) values.Add(new WorkerComponentValueCreate(basicId, "basic", decimal.Parse(row.Get("basicSalary"), CultureInfo.InvariantCulture)));
+            else if (!fillMissing) values[basicIndex] = new WorkerComponentValueCreate(basicId, "basic", decimal.Parse(row.Get("basicSalary"), CultureInfo.InvariantCulture));
+            if (basicIndex < 0 || !fillMissing)
+                await payroll.UpsertProfileAsync(worker.Id, new WorkerPayrollProfileCreate(worker.Id, Guid.Parse(row["__payGroupId"]), row["__salaryEffectiveFrom"], values), ct);
+        }
+        if (row.TryGetValue("__overtimeDate", out var overtimeDate))
+        {
+            var multiplier = decimal.TryParse(row.Get("overtime.multiplier"), NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : (decimal?)null;
+            await time.ImportOvertimeAsync(new OvertimeImportRequest("employee-import", [new OvertimeImportRow(worker.EmployeeNo ?? throw new DomainException("import-overtime-employee-number", "Overtime needs an employee number."), overtimeDate, decimal.Parse(row.Get("overtime.hours"), CultureInfo.InvariantCulture), multiplier, OrNull(row.Get("overtime.reason")), OrNull(row.Get("overtime.status")))], row.Get("overtime.status").Equals("approved", StringComparison.OrdinalIgnoreCase)), authz.CurrentSubjectId ?? "system", ct);
         }
     }
 
