@@ -161,7 +161,7 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
             existing is not null ? $"Existing profile: {worker.FullName}" : $"New profile for {worker.FullName}", resolved);
     }
 
-    public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
+    public async Task ApplyRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         // Apply runs on a fresh schema instance (per-request DI) — the component

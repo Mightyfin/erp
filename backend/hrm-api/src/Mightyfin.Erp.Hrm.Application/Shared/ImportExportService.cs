@@ -110,7 +110,7 @@ public sealed class ImportExportServiceImpl : IImportExportService
             {
                 try
                 {
-                    await schema.ApplyRowAsync(preview.Rows[idx].Resolved ?? new Dictionary<string, string>(), ct);
+                    await schema.ApplyRowAsync(preview.Rows[idx].Resolved ?? new Dictionary<string, string>(), preview.Mode, ct);
                     if (status == "create") created++; else updated++;
                     rowOutcomes.Add(new ImportRowPreviewDto(idx + 2, "ok", null));
                 }

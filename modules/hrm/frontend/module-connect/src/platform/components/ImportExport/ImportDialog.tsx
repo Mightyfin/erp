@@ -330,7 +330,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [step, setStep] = useState<"upload" | "map" | "preview">("upload");
   const [entryMode, setEntryMode] = useState<"upload" | "manual">("upload");
-  const [mode, setMode] = useState<"insert" | "update">("insert");
+  const [mode, setMode] = useState<"insert" | "update" | "fill-missing">("insert");
   const [manualPage, setManualPage] = useState(1);
   const [mapPage, setMapPage] = useState(1);
   const [previewPage, setPreviewPage] = useState(1);
@@ -1019,6 +1019,13 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                 >
                   Match & update
                 </Button>
+                {typeKey === "workers" && <Button
+                  variant="outline" size="sm"
+                  className={cn("h-7 text-xs", mode === "fill-missing" ? "bg-accent" : "")}
+                  onClick={() => setMode("fill-missing")}
+                >
+                  Match & fill missing
+                </Button>}
               </div>
             </div>
             <div className="rounded-lg border p-4">

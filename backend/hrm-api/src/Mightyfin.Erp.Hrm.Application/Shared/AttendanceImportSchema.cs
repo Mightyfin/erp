@@ -73,7 +73,7 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
         return new ImportRowOutcome("create", "Row is valid and will be imported.");
     }
 
-    public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
+    public async Task ApplyRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         // ITimeService.ImportAttendanceAsync already handles the batch and persistence.
         // For the shared tool, we call it with a single-row request.

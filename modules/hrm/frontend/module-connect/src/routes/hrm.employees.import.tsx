@@ -29,7 +29,7 @@ function EmployeeImportPage() {
           <PageHeader
             eyebrow="People / employees"
             title="Import employees"
-            description="Bring employees in from CSV or Excel. The file is mapped first, then the server previews every create, update, skip or error before anything is written."
+            description="Bring employees in from CSV or Excel. The file is mapped first, then the server previews every create, update, fill-missing result, skip or error before anything is written."
             meta={
               <Badge variant="outline" className="gap-1.5 border-info/30 bg-info-soft text-info-foreground">
                 <ShieldCheck className="size-3" aria-hidden />
@@ -60,7 +60,7 @@ function EmployeeImportPage() {
             <Safeguard
               icon={UsersRound}
               title="Protect identity"
-              detail="Employee number and statutory identifiers are treated as matching keys, not throwaway text."
+              detail="Employee number, email, phone, NRC and TPIN are checked for duplicate identities before anything is written."
             />
           </section>
 

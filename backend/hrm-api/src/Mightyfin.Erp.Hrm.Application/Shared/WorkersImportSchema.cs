@@ -63,7 +63,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     public async Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
-        var isUpdate = mode.Equals("update", StringComparison.OrdinalIgnoreCase);
+        var isUpdate = mode.Equals("update", StringComparison.OrdinalIgnoreCase) || mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase);
 
         // ---- Non-negotiable required fields. Nothing processes without them —
         // except Update mode on an existing record: it already carries its
@@ -153,7 +153,9 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
             foreach (var w in all)
             {
                 if (!string.IsNullOrWhiteSpace(w.Email)) ExistingEmails.Add(w.Email.ToLowerInvariant());
+                if (!string.IsNullOrWhiteSpace(w.Phone)) ExistingPhones.Add(w.Phone);
                 if (!string.IsNullOrWhiteSpace(w.Nrc)) ExistingNrcs.Add(w.Nrc.ToLowerInvariant());
+                if (!string.IsNullOrWhiteSpace(w.Tpin)) ExistingTpins.Add(w.Tpin);
                 if (!string.IsNullOrWhiteSpace(w.EmployeeNo)) ExistingEmployeeNos.Add(w.EmployeeNo.ToLowerInvariant());
             }
         }
@@ -166,6 +168,18 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                 return new ImportRowOutcome("error", $"Work email '{email}' is already in use by an existing employee.");
             if (!targetOwnsThis && !SeenEmails.Add(email.ToLowerInvariant()))
                 return new ImportRowOutcome("error", $"Work email '{email}' appears twice in this file. Each employee must have a unique email.");
+        }
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            var targetOwnsThis = target is not null && string.Equals(target.Phone, phone, StringComparison.OrdinalIgnoreCase);
+            if (!targetOwnsThis && ExistingPhones.Contains(phone)) return new ImportRowOutcome("error", $"Phone '{phone}' is already in use by an existing employee.");
+            if (!targetOwnsThis && !SeenPhones.Add(phone)) return new ImportRowOutcome("error", $"Phone '{phone}' appears twice in this file. Each employee must have a unique phone number.");
+        }
+        if (!string.IsNullOrWhiteSpace(tpin))
+        {
+            var targetOwnsThis = target is not null && string.Equals(target.Tpin, tpin, StringComparison.OrdinalIgnoreCase);
+            if (!targetOwnsThis && ExistingTpins.Contains(tpin)) return new ImportRowOutcome("error", $"TPIN '{tpin}' is already in use by an existing employee.");
+            if (!targetOwnsThis && !SeenTpins.Add(tpin)) return new ImportRowOutcome("error", $"TPIN '{tpin}' appears twice in this file. Each employee must have a unique TPIN.");
         }
         // Update mode matched THIS record — its own identifiers are exempt
         // from the within-file uniqueness check (updating yourself is allowed).
@@ -207,7 +221,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 
         // ---- Natural-key match drives the Insert-vs-Update status in the preview. ----
         if (target is not null)
-            return new ImportRowOutcome("update", $"Existing record: {target.FullName}", row);
+            return new ImportRowOutcome("update", mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase) ? $"Existing record: {target.FullName}; only blank fields will be filled." : $"Existing record: {target.FullName}", row);
         return new ImportRowOutcome("create", null, row);
     }
 
@@ -215,9 +229,13 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private readonly HashSet<string> SeenEmails = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> SeenEmployeeNos = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> SeenNrcs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> SeenPhones = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> SeenTpins = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> ExistingEmails = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> ExistingEmployeeNos = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> ExistingNrcs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> ExistingPhones = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> ExistingTpins = new(StringComparer.OrdinalIgnoreCase);
     private bool IdentitiesLoaded;
 
     private static readonly System.Text.RegularExpressions.Regex EmailRx = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -237,7 +255,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         return await repo.FindByEmailAsync(email, ct);
     }
 
-    public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
+    public async Task ApplyRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var target = await repo.FindByNaturalKeyAsync(row.Get("employeeNo"), row.Get("nrc"), row.Get("napsaNumber"), ct);
@@ -253,16 +271,21 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 
         if (target is not null)
         {
+            var fillMissing = mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase);
             // Update mode — patch only the fields the row actually supplies;
             // blank values leave the record's existing values untouched.
             var patch = new WorkerUpdateRequest(
-                FirstName: OrNull(row.Get("firstName")),
-                MiddleName: OrNull(row.Get("middleName")),
-                LastName: OrNull(row.Get("lastName")),
-                Email: OrNull(row.Get("email")),
-                Phone: OrNull(row.Get("phone")),
-                Grade: OrNull(row.Get("grade")),
-                JobTitle: OrNull(row.Get("jobTitle")),
+                FirstName: ValueToApply(target.FirstName, row.Get("firstName"), fillMissing),
+                MiddleName: ValueToApply(target.MiddleName, row.Get("middleName"), fillMissing),
+                LastName: ValueToApply(target.LastName, row.Get("lastName"), fillMissing),
+                Email: ValueToApply(target.Email, row.Get("email"), fillMissing),
+                Phone: ValueToApply(target.Phone, row.Get("phone"), fillMissing),
+                Nrc: ValueToApply(target.Nrc, row.Get("nrc"), fillMissing),
+                Tpin: ValueToApply(target.Tpin, row.Get("tpin"), fillMissing),
+                NapsaNumber: ValueToApply(target.NapsaNumber, row.Get("napsaNumber"), fillMissing),
+                NhimaNumber: ValueToApply(target.NhimaNumber, row.Get("nhimaNumber"), fillMissing),
+                Grade: ValueToApply(target.Grade, row.Get("grade"), fillMissing),
+                JobTitle: ValueToApply(target.JobTitle, row.Get("jobTitle"), fillMissing),
                 OrgUnitId: orgUnitId);
             await workers.UpdateAsync(target.Id, patch, ct);
             await ApplyChildRowsAsync(target.Id, row, orgUnits, ct);
@@ -312,6 +335,12 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
                     "The worker row was applied but could not be re-located for history records — report this to support.");
             await ApplyChildRowsAsync(created.Id, row, orgUnits, ct);
         }
+    }
+
+    private static string? ValueToApply(string? existing, string imported, bool fillMissing)
+    {
+        var value = OrNull(imported);
+        return value is null || (fillMissing && !string.IsNullOrWhiteSpace(existing)) ? null : value;
     }
 
     /// Applies the optional education / external / internal history child rows
