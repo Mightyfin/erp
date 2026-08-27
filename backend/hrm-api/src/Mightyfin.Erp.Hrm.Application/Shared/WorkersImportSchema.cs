@@ -3,6 +3,7 @@
 // lifecycle as the UI form (naming rules, entity/unit resolution, validations),
 // and adds Update mode matched on employee number with NRC/NAPSA fallback.
 using System.Globalization;
+using Mightyfin.Erp.Hrm.Application.Benefits;
 using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Time;
 using Mightyfin.Erp.Hrm.Application.Workers;
@@ -17,17 +18,20 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private readonly IPayrollRepository? payrollRepo;
     private readonly IPayrollService? payroll;
     private readonly ITimeService? time;
+    private readonly IBenefitRepository? benefits;
     private readonly IAuthzService authz;
     private readonly ShellContext scope;
 
     public WorkersImportSchema(IWorkerRepository repo, IWorkerService workers, IAuthzService authz, ShellContext scope,
-        IPayrollRepository? payrollRepo = null, IPayrollService? payroll = null, ITimeService? time = null)
+        IPayrollRepository? payrollRepo = null, IPayrollService? payroll = null, ITimeService? time = null,
+        IBenefitRepository? benefits = null)
     {
         this.repo = repo;
         this.workers = workers;
         this.payrollRepo = payrollRepo;
         this.payroll = payroll;
         this.time = time;
+        this.benefits = benefits;
         this.authz = authz;
         this.scope = scope;
     }
@@ -55,7 +59,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         new("orgUnitName", "Department", false, FormatNote: "exact department name, e.g. Finance"),
         new("payGroup", "Pay group", false, FormatNote: "required when Basic salary is supplied, e.g. Monthly ZMW"),
         new("basicSalary", "Basic salary", false, FormatNote: "plain ZMW amount; creates or updates the basic pay assignment"),
-        new("costOfLivingAllowance", "Cost of living allowance", false, FormatNote: "plain ZMW amount; requires an active Cost of Living Allowance payroll component"),
+        new("costOfLivingAllowance", "Cost of living allowance", false, FormatNote: "monthly ZMW amount; uses an active Cost of Living Allowance salary component or payroll benefit"),
         new("salaryEffectiveFrom", "Salary effective from", false, FormatNote: "DD-MM-YYYY; defaults to start date or today"),
         new("overtime.workDate", "Overtime: Work date", false, FormatNote: "DD-MM-YYYY; required with overtime hours"),
         new("overtime.hours", "Overtime: Hours", false, FormatNote: "positive number; required with overtime work date"),
@@ -412,12 +416,19 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
             var components = await payrollRepo.ListAllComponentsAsync(ct);
             var basicComponent = components.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase) && c.IsActive);
             if (!string.IsNullOrWhiteSpace(basic) && basicComponent is null) return "No active Basic Salary component is configured. Configure it under Payroll configuration before importing salaries.";
-            var colaComponent = components.FirstOrDefault(c => c.IsActive &&
-                (c.Code.Equals("cost-of-living-allowance", StringComparison.OrdinalIgnoreCase) ||
-                 c.Code.Equals("cola", StringComparison.OrdinalIgnoreCase) ||
-                 c.Name.Equals("Cost of Living Allowance", StringComparison.OrdinalIgnoreCase)));
-            if (!string.IsNullOrWhiteSpace(cola) && colaComponent is null)
-                return "No active Cost of Living Allowance payroll component is configured. Add it under Payroll configuration, then import again.";
+            var colaComponent = components.FirstOrDefault(IsCostOfLiving);
+            var colaBenefit = benefits is null ? null : (await benefits.ListBenefitTypesAsync(ct))
+                .FirstOrDefault(type => type.IsActive && type.IncludeInPayroll && IsCostOfLiving(type));
+            if (!string.IsNullOrWhiteSpace(cola) && colaComponent is null && colaBenefit is null)
+                return "No active Cost of Living Allowance salary component or payroll benefit is configured. Add one under Payroll configuration or Benefits, mark the benefit as Added to payslip, then import again.";
+            if (!string.IsNullOrWhiteSpace(cola) && colaComponent is null && colaBenefit is not null)
+            {
+                var annualAmount = decimal.Parse(cola, CultureInfo.InvariantCulture) * 12m;
+                if (annualAmount > colaBenefit.AnnualCap)
+                    return $"Cost of living allowance {cola} per month is {annualAmount:N2} per year, which exceeds the {colaBenefit.Name} annual cap of {colaBenefit.AnnualCap:N2}. Increase the configured cap or correct the import value.";
+                row["__colaBenefitTypeId"] = colaBenefit.Id.ToString();
+                row["__colaBenefitAnnualAmount"] = annualAmount.ToString(CultureInfo.InvariantCulture);
+            }
             var groups = await payrollRepo.ListPayGroupsAsync(ct);
             var groupName = row.Get("payGroup").Trim();
             var group = !string.IsNullOrWhiteSpace(groupName) ? groups.FirstOrDefault(g => g.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase)) : groups.Count == 1 ? groups[0] : null;
@@ -455,7 +466,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
 
     private async Task ApplyPayrollAndOvertimeAsync(Worker worker, IDictionary<string, string> row, string mode, CancellationToken ct)
     {
-        if (row.ContainsKey("__basicComponentId") || row.ContainsKey("__colaComponentId"))
+        if (row.ContainsKey("__basicComponentId") || row.ContainsKey("__colaComponentId") || row.ContainsKey("__colaBenefitTypeId"))
         {
             if (payrollRepo is null || payroll is null) throw new DomainException("import-payroll-unavailable", "Payroll pay import is unavailable in this environment.");
             var existing = await payrollRepo.FindOpenProfileAsync(worker.Id, ct);
@@ -464,8 +475,25 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
             var changed = false;
             changed |= ApplyImportedComponent(values, row, "__basicComponentId", "basicSalary", "basic", fillMissing);
             changed |= ApplyImportedComponent(values, row, "__colaComponentId", "costOfLivingAllowance", "cost-of-living-allowance", fillMissing);
-            if (changed)
+            if (changed || existing is null)
                 await payroll.UpsertProfileAsync(worker.Id, new WorkerPayrollProfileCreate(worker.Id, Guid.Parse(row["__payGroupId"]), row["__salaryEffectiveFrom"], values), ct);
+        }
+        if (row.TryGetValue("__colaBenefitTypeId", out var colaBenefitTypeId))
+        {
+            if (benefits is null) throw new DomainException("import-benefit-unavailable", "Payroll benefit import is unavailable in this environment.");
+            var benefitTypeId = Guid.Parse(colaBenefitTypeId);
+            var year = DateOnly.Parse(row["__salaryEffectiveFrom"], CultureInfo.InvariantCulture).Year;
+            var existingAllowance = await benefits.GetAllowanceAsync(worker.Id, benefitTypeId, year, ct);
+            if (!mode.Equals("fill-missing", StringComparison.OrdinalIgnoreCase) || existingAllowance is null)
+            {
+                await benefits.SetAllowanceAsync(new WorkerBenefitAllowance
+                {
+                    WorkerId = worker.Id,
+                    BenefitTypeId = benefitTypeId,
+                    AnnualAmount = decimal.Parse(row["__colaBenefitAnnualAmount"], CultureInfo.InvariantCulture),
+                    Year = year,
+                }, ct);
+            }
         }
         if (row.TryGetValue("__overtimeDate", out var overtimeDate))
         {
@@ -486,6 +514,19 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
         if (index < 0) values.Add(value); else values[index] = value;
         return true;
     }
+
+    private static bool IsCostOfLiving(SalaryComponent component) =>
+        IsCostOfLiving(component.Code, component.Name);
+
+    private static bool IsCostOfLiving(BenefitTypeDto type) =>
+        IsCostOfLiving(type.Code, type.Name);
+
+    private static bool IsCostOfLiving(string? code, string? name) =>
+        string.Equals(code, "cost-of-living-allowance", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(code, "cost-of-living", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(code, "cola", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(name, "Cost of Living Allowance", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(name, "Cost of Living", StringComparison.OrdinalIgnoreCase);
 
     private static string? ValueToApply(string? existing, string imported, bool fillMissing)
     {
