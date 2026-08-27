@@ -524,6 +524,8 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/benefits/allowances", params ?? {}),
   setBenefitAllowance: (body: Record<string, unknown>) =>
     hrmApi.post<unknown>("/hrm/benefits/allowances", body),
+  deleteBenefitAllowance: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/benefits/allowances/${id}`),
   benefitClaims: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: Record<string, unknown>[]; totalCount: number }>(
       "/hrm/benefits/claims",

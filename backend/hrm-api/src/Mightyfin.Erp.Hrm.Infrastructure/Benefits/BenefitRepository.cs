@@ -52,6 +52,17 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         ctx.WorkerBenefitAllowances
             .FirstOrDefaultAsync(x => x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId && x.Year == year, ct);
 
+    public Task<WorkerBenefitAllowance?> GetAllowanceByIdAsync(Guid id, CancellationToken ct) =>
+        ctx.WorkerBenefitAllowances.FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    public Task<bool> AllowanceHasClaimsAsync(Guid workerId, Guid benefitTypeId, int year, CancellationToken ct)
+    {
+        var start = new DateTimeOffset(year, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var end = start.AddYears(1);
+        return ctx.BenefitClaims.AnyAsync(x => x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId &&
+            x.CreatedAt >= start && x.CreatedAt < end, ct);
+    }
+
     public async Task<WorkerBenefitAllowance> SetAllowanceAsync(WorkerBenefitAllowance allowance, CancellationToken ct)
     {
         var existing = await GetAllowanceAsync(allowance.WorkerId, allowance.BenefitTypeId, allowance.Year, ct);
@@ -61,6 +72,12 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
             existing.AnnualAmount = allowance.AnnualAmount;
         await ctx.SaveChangesAsync(ct);
         return existing ?? allowance;
+    }
+
+    public async Task DeleteAllowanceAsync(WorkerBenefitAllowance allowance, CancellationToken ct)
+    {
+        ctx.WorkerBenefitAllowances.Remove(allowance);
+        await ctx.SaveChangesAsync(ct);
     }
 
     public async Task<(List<BenefitClaim> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct)

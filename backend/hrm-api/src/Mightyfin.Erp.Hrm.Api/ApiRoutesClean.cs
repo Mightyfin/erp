@@ -2025,6 +2025,12 @@ public static void RegisterBenefits(WebApplication app)
         await svc.SetAllowanceAsync(request, ct);
         return Results.Ok();
     });
+    g.MapDelete("/allowances/{id:guid}", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        await svc.DeleteAllowanceAsync(id, ct);
+        return Results.Ok();
+    });
 
     // Claims (submit by employee/hr, decide by HR, pay by payroll)
     g.MapGet("/claims", async (Guid? workerId, string? status, int? page, int? pageSize,

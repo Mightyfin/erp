@@ -137,6 +137,17 @@ public sealed class BenefitServiceImpl(
         await repo.SetAllowanceAsync(allowance, ct);
     }
 
+    public async Task DeleteAllowanceAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "hr_ops");
+        var allowance = await repo.GetAllowanceByIdAsync(id, ct)
+            ?? throw new DomainException("benefit-allowance-not-found", "Benefit assignment not found.");
+        if (await repo.AllowanceHasClaimsAsync(allowance.WorkerId, allowance.BenefitTypeId, allowance.Year, ct))
+            throw new DomainException("benefit-allowance-has-claims",
+                "This assignment has benefit claims for the same employee and year, so it cannot be deleted. Edit the amount instead.");
+        await repo.DeleteAllowanceAsync(allowance, ct);
+    }
+
     public async Task<(List<BenefitClaimDto> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_admin", "hr_ops", "manager", "payroll", "employee");

@@ -97,6 +97,7 @@ function Benefits() {
   const [typeForm, setTypeForm] = useState<Row>(emptyType());
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<Row | null>(null);
+  const [deletingAllowance, setDeletingAllowance] = useState<Row | null>(null);
 
   const [allowanceWorker, setAllowanceWorker] = useState("");
   const [allowanceType, setAllowanceType] = useState("");
@@ -251,6 +252,12 @@ function Benefits() {
     setAllowanceYear(text(row.year) || String(new Date().getFullYear()));
     setAllowanceAmount(text(row.annualAmount));
     setMode("assign");
+  };
+
+  const deleteAllowance = async () => {
+    if (!deletingAllowance) return;
+    await run("Benefit assignment deleted", () =>
+      realApi.deleteBenefitAllowance(text(deletingAllowance.id)), () => setDeletingAllowance(null));
   };
 
   const submitAllowance = async () => {
@@ -454,13 +461,22 @@ function Benefits() {
                             {money(row.annualAmount)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => startEditAllowance(row)}
-                            >
-                              <Edit className="size-4" aria-hidden /> Edit
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => startEditAllowance(row)}
+                              >
+                                <Edit className="size-4" aria-hidden /> Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setDeletingAllowance(row)}
+                              >
+                                <Trash2 className="size-4" aria-hidden /> Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -1111,6 +1127,16 @@ function Benefits() {
           confirmLabel="Delete benefit type"
           destructive
           onConfirm={() => void deleteType()}
+        />
+        <ConfirmDialog
+          open={Boolean(deletingAllowance)}
+          onOpenChange={(open) => { if (!open) setDeletingAllowance(null); }}
+          title="Delete benefit assignment"
+          consequence={`Remove ${text(deletingAllowance?.benefitTypeName)} for ${text(deletingAllowance?.workerName)} in ${text(deletingAllowance?.year)}. This cannot be undone.`}
+          detail="Assignments with benefit claims for the same employee and year cannot be deleted. Edit the amount instead."
+          confirmLabel="Delete assignment"
+          destructive
+          onConfirm={() => void deleteAllowance()}
         />
       </AppShell>
     </AuthGate>

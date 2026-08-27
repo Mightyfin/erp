@@ -17,6 +17,9 @@ public interface IBenefitRepository
     Task<List<WorkerBenefitAllowance>> ListAllowancesAsync(Guid? workerId, CancellationToken ct);
     Task<WorkerBenefitAllowance?> GetAllowanceAsync(Guid workerId, Guid benefitTypeId, int year, CancellationToken ct);
     Task<WorkerBenefitAllowance> SetAllowanceAsync(WorkerBenefitAllowance allowance, CancellationToken ct);
+    Task<WorkerBenefitAllowance?> GetAllowanceByIdAsync(Guid id, CancellationToken ct);
+    Task<bool> AllowanceHasClaimsAsync(Guid workerId, Guid benefitTypeId, int year, CancellationToken ct);
+    Task DeleteAllowanceAsync(WorkerBenefitAllowance allowance, CancellationToken ct);
 
     // Claims
     Task<(List<BenefitClaim> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct);
@@ -37,6 +40,7 @@ public interface IBenefitService
 
     Task<List<BenefitAllowanceDto>> ListAllowancesAsync(Guid? workerId, CancellationToken ct);
     Task SetAllowanceAsync(AllowanceSetRequest request, CancellationToken ct);
+    Task DeleteAllowanceAsync(Guid id, CancellationToken ct);
 
     Task<(List<BenefitClaimDto> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct);
     Task<BenefitClaimDto> CreateClaimAsync(BenefitClaimCreateRequest request, CancellationToken ct);
