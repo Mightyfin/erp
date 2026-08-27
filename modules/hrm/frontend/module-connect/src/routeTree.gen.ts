@@ -75,6 +75,7 @@ import { Route as HrmPayrollIndexRouteImport } from './routes/hrm.payroll.index'
 import { Route as HrmPayrollExceptionsRouteImport } from './routes/hrm.payroll.exceptions'
 import { Route as HrmPayrollQueueRouteImport } from './routes/hrm.payroll.queue'
 import { Route as HrmPayrollRunsRouteImport } from './routes/hrm.payroll.runs'
+import { Route as HrmPayrollSalaryAdvancesRouteImport } from './routes/hrm.payroll.salary-advances'
 import { Route as HrmPayslipsIndexRouteImport } from './routes/hrm.payslips.index'
 import { Route as HrmPayslipsIdRouteImport } from './routes/hrm.payslips.$id'
 import { Route as HrmPeopleDataQualityRouteImport } from './routes/hrm.people.data-quality'
@@ -472,6 +473,12 @@ const HrmPayrollRunsRoute = HrmPayrollRunsRouteImport.update({
   path: '/hrm/payroll/runs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmPayrollSalaryAdvancesRoute =
+  HrmPayrollSalaryAdvancesRouteImport.update({
+    id: '/hrm/payroll/salary-advances',
+    path: '/hrm/payroll/salary-advances',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const HrmPayslipsIndexRoute = HrmPayslipsIndexRouteImport.update({
   id: '/hrm/payslips/',
   path: '/hrm/payslips/',
@@ -822,6 +829,7 @@ export interface FileRoutesByFullPath {
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payroll/salary-advances': typeof HrmPayrollSalaryAdvancesRoute
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
@@ -946,6 +954,7 @@ export interface FileRoutesByTo {
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payroll/salary-advances': typeof HrmPayrollSalaryAdvancesRoute
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
@@ -1071,6 +1080,7 @@ export interface FileRoutesById {
   '/hrm/payroll/exceptions': typeof HrmPayrollExceptionsRoute
   '/hrm/payroll/queue': typeof HrmPayrollQueueRoute
   '/hrm/payroll/runs': typeof HrmPayrollRunsRouteWithChildren
+  '/hrm/payroll/salary-advances': typeof HrmPayrollSalaryAdvancesRoute
   '/hrm/payslips/$id': typeof HrmPayslipsIdRoute
   '/hrm/people/data-quality': typeof HrmPeopleDataQualityRoute
   '/hrm/people/documents': typeof HrmPeopleDocumentsRoute
@@ -1197,6 +1207,7 @@ export interface FileRouteTypes {
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
+    | '/hrm/payroll/salary-advances'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
@@ -1321,6 +1332,7 @@ export interface FileRouteTypes {
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
+    | '/hrm/payroll/salary-advances'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
@@ -1445,6 +1457,7 @@ export interface FileRouteTypes {
     | '/hrm/payroll/exceptions'
     | '/hrm/payroll/queue'
     | '/hrm/payroll/runs'
+    | '/hrm/payroll/salary-advances'
     | '/hrm/payslips/$id'
     | '/hrm/people/data-quality'
     | '/hrm/people/documents'
@@ -1570,6 +1583,7 @@ export interface RootRouteChildren {
   HrmPayrollExceptionsRoute: typeof HrmPayrollExceptionsRoute
   HrmPayrollQueueRoute: typeof HrmPayrollQueueRoute
   HrmPayrollRunsRoute: typeof HrmPayrollRunsRouteWithChildren
+  HrmPayrollSalaryAdvancesRoute: typeof HrmPayrollSalaryAdvancesRoute
   HrmPayslipsIdRoute: typeof HrmPayslipsIdRoute
   HrmPeopleDataQualityRoute: typeof HrmPeopleDataQualityRoute
   HrmPeopleDocumentsRoute: typeof HrmPeopleDocumentsRoute
@@ -2085,6 +2099,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/payroll/runs'
       fullPath: '/hrm/payroll/runs'
       preLoaderRoute: typeof HrmPayrollRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/payroll/salary-advances': {
+      id: '/hrm/payroll/salary-advances'
+      path: '/hrm/payroll/salary-advances'
+      fullPath: '/hrm/payroll/salary-advances'
+      preLoaderRoute: typeof HrmPayrollSalaryAdvancesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/payslips/': {
@@ -2681,6 +2702,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmPayrollExceptionsRoute: HrmPayrollExceptionsRoute,
   HrmPayrollQueueRoute: HrmPayrollQueueRoute,
   HrmPayrollRunsRoute: HrmPayrollRunsRouteWithChildren,
+  HrmPayrollSalaryAdvancesRoute: HrmPayrollSalaryAdvancesRoute,
   HrmPayslipsIdRoute: HrmPayslipsIdRoute,
   HrmPeopleDataQualityRoute: HrmPeopleDataQualityRoute,
   HrmPeopleDocumentsRoute: HrmPeopleDocumentsRoute,

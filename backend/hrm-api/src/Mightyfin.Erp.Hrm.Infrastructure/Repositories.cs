@@ -1213,6 +1213,71 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return await query.ToListAsync(ct);
     }
 
+    public async Task<List<SalaryAdvance>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        var query = db.SalaryAdvances
+            .Include(a => a.Worker)
+            .AsQueryable();
+        if (workerId.HasValue) query = query.Where(a => a.WorkerId == workerId.Value);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(a => a.Status == status);
+        var rows = await query.ToListAsync(ct);
+        return rows.OrderByDescending(a => a.CreatedAt).ToList();
+    }
+
+    public Task<SalaryAdvance?> GetSalaryAdvanceAsync(Guid id, CancellationToken ct) =>
+        db.SalaryAdvances
+            .Include(a => a.Worker)
+            .FirstOrDefaultAsync(a => a.Id == id, ct);
+
+    public async Task<SalaryAdvance> CreateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct)
+    {
+        db.SalaryAdvances.Add(advance);
+        await db.SaveChangesAsync(ct);
+        return advance;
+    }
+
+    public async Task UpdateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct)
+    {
+        if (db.Entry(advance).State == EntityState.Detached)
+            db.SalaryAdvances.Update(advance);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<SalaryAdvance>> LoadDeductibleSalaryAdvancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var query = db.SalaryAdvances
+            .Include(a => a.Worker)
+            .Where(a => a.Status == "active"
+                && a.DeductFromPayslip
+                && a.DeductionStartDate <= period.EndDate
+                && a.Amount > 0
+                && a.InstallmentAmount > 0);
+        if (locationId.HasValue)
+            query = query.Where(a => a.Worker != null && a.Worker.LocationId == locationId);
+        return await query.ToListAsync(ct);
+    }
+
+    public async Task<Dictionary<Guid, decimal>> GetSalaryAdvanceRecoveredAmountsAsync(List<Guid> advanceIds, CancellationToken ct)
+    {
+        if (advanceIds.Count == 0) return new Dictionary<Guid, decimal>();
+        var codeById = advanceIds.Distinct().ToDictionary(id => $"salary-advance-{id:N}", id => id);
+        var codes = codeById.Keys.ToList();
+        var rows = await db.PayrollLineComponents
+            .Include(c => c.RunLine).ThenInclude(l => l!.Run)
+            .Where(c => codes.Contains(c.ComponentCode)
+                && c.RunLine != null
+                && c.RunLine.Run != null
+                && (c.RunLine.Run.Status == "released" || c.RunLine.Run.Status == "closed"))
+            .GroupBy(c => c.ComponentCode)
+            .Select(g => new { Code = g.Key, Amount = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        return rows
+            .Where(row => codeById.ContainsKey(row.Code))
+            .ToDictionary(row => codeById[row.Code], row => row.Amount);
+    }
+
     public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)

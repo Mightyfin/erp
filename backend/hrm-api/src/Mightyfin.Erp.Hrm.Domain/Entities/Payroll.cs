@@ -134,6 +134,28 @@ public class BenefitClaim : Entity
     public DateTimeOffset? PaidAt { get; set; }
 }
 
+/// <summary>Salary advance issued to an employee. When DeductFromPayslip is
+/// enabled, payroll recovers the configured instalment from future payslips
+/// until the advance amount has been fully recovered.</summary>
+public class SalaryAdvance : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public decimal Amount { get; set; }
+    public decimal InstallmentAmount { get; set; }
+    public string Currency { get; set; } = "ZMW";
+    public DateOnly IssueDate { get; set; }
+    public DateOnly DeductionStartDate { get; set; }
+    public bool DeductFromPayslip { get; set; }
+    public string Status { get; set; } = "active"; // active | settled | cancelled
+    public string? Reason { get; set; }
+    public string? Reference { get; set; }
+    public string? CreatedBySubjectId { get; set; }
+    public string? CancelledBySubjectId { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
+    public string? CancellationReason { get; set; }
+}
+
 /// <summary>J-groups 03-04: Pay group defining frequency, calendar and currency.</summary>
 public class PayGroup : Entity
 {

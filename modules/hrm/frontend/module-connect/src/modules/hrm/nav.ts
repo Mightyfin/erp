@@ -136,6 +136,7 @@ export const hrmModule: ModuleDefinition = {
         { label: "My payslips", to: "/hrm/payslips" },
         { label: "Compensation and benefits", to: "/hrm/pay/compensation" },
         { label: "Benefits", to: "/hrm/benefits", roles: ["hr_ops", "hr_admin", "payroll"] },
+        { label: "Salary advances", to: "/hrm/payroll/salary-advances", roles: ["hr_ops", "hr_admin", "payroll"] },
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
         { label: "Pay runs", to: "/hrm/payroll/runs", roles: ["payroll", "hr_admin"] },
         { label: "Approval queue", to: "/hrm/payroll/queue", roles: ["payroll", "hr_admin"] },

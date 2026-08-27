@@ -112,6 +112,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<BenefitType> BenefitTypes => Set<BenefitType>();
     public DbSet<WorkerBenefitAllowance> WorkerBenefitAllowances => Set<WorkerBenefitAllowance>();
     public DbSet<BenefitClaim> BenefitClaims => Set<BenefitClaim>();
+    public DbSet<SalaryAdvance> SalaryAdvances => Set<SalaryAdvance>();
     public DbSet<PayGroup> PayGroups => Set<PayGroup>();
     public DbSet<PayPeriod> PayPeriods => Set<PayPeriod>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
@@ -253,6 +254,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.BenefitTypeId, x.Year }).IsUnique());
         ConfigureEntity<BenefitClaim>(modelBuilder, "benefit_claims",
             e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status }));
+        ConfigureEntity<SalaryAdvance>(modelBuilder, "salary_advances", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status });
+            e.HasIndex(x => new { x.TenantId, x.DeductFromPayslip, x.DeductionStartDate });
+        });
         ConfigureEntity<PayGroup>(modelBuilder, "pay_groups");
         ConfigureEntity<PayPeriod>(modelBuilder, "pay_periods", e => e.HasIndex(x => new { x.TenantId, x.PayGroupId, x.PeriodLabel }).IsUnique());
         ConfigureEntity<TaxSlab>(modelBuilder, "tax_slabs");

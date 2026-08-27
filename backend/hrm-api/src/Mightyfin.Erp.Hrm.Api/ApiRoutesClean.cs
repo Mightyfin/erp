@@ -1029,6 +1029,23 @@ public static class Routes
             var request = await ReadBodyAsync<OvertimePolicyUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.SetOvertimePolicyAsync(workerId, request, ct));
         });
+        g.MapGet("/salary-advances", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.ListSalaryAdvancesAsync(workerId, status, ct)));
+        g.MapPost("/salary-advances", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateSalaryAdvanceAsync(request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPatch("/salary-advances/{advanceId:guid}", async (Guid advanceId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateSalaryAdvanceAsync(advanceId, request, ct));
+        });
+        g.MapPost("/salary-advances/{advanceId:guid}/cancel", async (Guid advanceId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceCancelRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.CancelSalaryAdvanceAsync(advanceId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapPost("/runs", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

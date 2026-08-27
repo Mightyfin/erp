@@ -460,6 +460,7 @@ const QUICK_ACCESS_GROUPS: QuickAccessGroup[] = [
     items: [
       { label: "My payslips", detail: "View your payroll statements", to: "/hrm/payslips", icon: WalletCards },
       { label: "Pay runs", detail: "Open payroll processing", to: "/hrm/payroll/runs", icon: Banknote, roles: ["payroll", "hr_admin"] },
+      { label: "Salary advances", detail: "Record advances and payslip deductions", to: "/hrm/payroll/salary-advances", icon: WalletCards, roles: ["hr_ops", "payroll", "hr_admin"] },
       { label: "Benefits", detail: "Manage benefits and claims", to: "/hrm/benefits", icon: WalletCards, roles: ["hr_ops", "hr_admin", "payroll"] },
     ],
   },

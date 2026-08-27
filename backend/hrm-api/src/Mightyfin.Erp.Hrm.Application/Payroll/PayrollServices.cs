@@ -39,6 +39,12 @@ public interface IPayrollService
     Task<WorkerPayrollProfileDto> SetPayBasisAsync(Guid workerId, PayBasisUpdateRequest request, CancellationToken ct);
     Task<WorkerPayrollProfileDto> SetOvertimePolicyAsync(Guid workerId, OvertimePolicyUpdateRequest request, CancellationToken ct);
 
+    // Salary advances: issued by HR/payroll and optionally recovered through payslip deductions.
+    Task<List<SalaryAdvanceDto>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<SalaryAdvanceDto> CreateSalaryAdvanceAsync(SalaryAdvanceCreateRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<SalaryAdvanceDto> UpdateSalaryAdvanceAsync(Guid id, SalaryAdvanceUpdateRequest request, CancellationToken ct);
+    Task<SalaryAdvanceDto> CancelSalaryAdvanceAsync(Guid id, SalaryAdvanceCancelRequest request, CancellationToken ct, string actorSubjectId = "system");
+
     // Run lifecycle
     Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
     // M48: the top-HR approval queue — in-review branch runs with their
@@ -112,6 +118,16 @@ public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, deci
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
 public sealed record WorkerPayslipPreviewDto(string Status, string PeriodLabel, string Currency,
     List<string> Guardrails, PayrollRunLineDto? Line);
+public sealed record SalaryAdvanceDto(Guid Id, Guid WorkerId, string WorkerName, string? EmployeeNo,
+    decimal Amount, decimal InstallmentAmount, decimal RecoveredAmount, decimal RemainingAmount,
+    string Currency, string IssueDate, string DeductionStartDate, bool DeductFromPayslip,
+    string Status, string? Reason, string? Reference, DateTimeOffset CreatedAt);
+public sealed record SalaryAdvanceCreateRequest(Guid WorkerId, decimal Amount, decimal InstallmentAmount,
+    string? Currency, string IssueDate, string DeductionStartDate, bool DeductFromPayslip,
+    string? Reason, string? Reference);
+public sealed record SalaryAdvanceUpdateRequest(decimal? InstallmentAmount = null, bool? DeductFromPayslip = null,
+    string? DeductionStartDate = null, string? Reason = null, string? Reference = null);
+public sealed record SalaryAdvanceCancelRequest(string Reason);
 
 // ---------- M20: payroll setup admin (write surface) ----------
 public sealed record PayGroupUpdateRequest(string? Code = null, string? Name = null,
@@ -750,6 +766,102 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapProfile(profile);
     }
 
+    public async Task<List<SalaryAdvanceDto>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var requestedStatus = status?.Trim().ToLowerInvariant();
+        var advances = await repo.ListSalaryAdvancesAsync(workerId, requestedStatus == "settled" ? null : requestedStatus, ct);
+        var recovered = await repo.GetSalaryAdvanceRecoveredAmountsAsync(advances.Select(a => a.Id).ToList(), ct);
+        var mapped = advances.Select(a => MapAdvance(a, recovered.TryGetValue(a.Id, out var paid) ? paid : 0m)).ToList();
+        return string.IsNullOrWhiteSpace(requestedStatus) || requestedStatus == "all"
+            ? mapped
+            : mapped.Where(a => string.Equals(a.Status, requestedStatus, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    public async Task<SalaryAdvanceDto> CreateSalaryAdvanceAsync(SalaryAdvanceCreateRequest request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var worker = await repo.GetWorkerAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", "Employee not found.");
+        if (request.Amount <= 0)
+            throw new DomainException("salary-advance-invalid", "Advance amount must be greater than zero.");
+        if (request.InstallmentAmount <= 0)
+            throw new DomainException("salary-advance-invalid", "Deduction amount must be greater than zero.");
+        if (request.InstallmentAmount > request.Amount)
+            throw new DomainException("salary-advance-invalid", "Deduction amount cannot be more than the advance amount.");
+        if (!DateOnly.TryParse(request.IssueDate, out var issueDate))
+            throw new DomainException("bad-date", "Issue date must be a valid date.");
+        if (!DateOnly.TryParse(request.DeductionStartDate, out var startDate))
+            throw new DomainException("bad-date", "Deduction start date must be a valid date.");
+        var advance = new SalaryAdvance
+        {
+            WorkerId = worker.Id,
+            Amount = Math.Round(request.Amount, 2),
+            InstallmentAmount = Math.Round(request.InstallmentAmount, 2),
+            Currency = string.IsNullOrWhiteSpace(request.Currency) ? "ZMW" : request.Currency.Trim().ToUpperInvariant(),
+            IssueDate = issueDate,
+            DeductionStartDate = startDate,
+            DeductFromPayslip = request.DeductFromPayslip,
+            Status = "active",
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
+            Reference = string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim(),
+            CreatedBySubjectId = actorSubjectId,
+        };
+        await repo.CreateSalaryAdvanceAsync(advance, ct);
+        advance.Worker = worker;
+        return MapAdvance(advance, 0m);
+    }
+
+    public async Task<SalaryAdvanceDto> UpdateSalaryAdvanceAsync(Guid id, SalaryAdvanceUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var advance = await repo.GetSalaryAdvanceAsync(id, ct)
+            ?? throw new DomainException("salary-advance-not-found", "Salary advance not found.");
+        if (advance.Status != "active")
+            throw new DomainException("salary-advance-closed", "Only active salary advances can be changed.");
+        var recovered = (await repo.GetSalaryAdvanceRecoveredAmountsAsync([advance.Id], ct))
+            .GetValueOrDefault(advance.Id);
+        if (request.InstallmentAmount.HasValue)
+        {
+            if (request.InstallmentAmount.Value <= 0)
+                throw new DomainException("salary-advance-invalid", "Deduction amount must be greater than zero.");
+            if (request.InstallmentAmount.Value > advance.Amount - recovered + 0.0001m)
+                throw new DomainException("salary-advance-invalid", "Deduction amount cannot be more than the remaining advance balance.");
+            advance.InstallmentAmount = Math.Round(request.InstallmentAmount.Value, 2);
+        }
+        if (request.DeductFromPayslip.HasValue) advance.DeductFromPayslip = request.DeductFromPayslip.Value;
+        if (request.DeductionStartDate is not null)
+        {
+            if (!DateOnly.TryParse(request.DeductionStartDate, out var startDate))
+                throw new DomainException("bad-date", "Deduction start date must be a valid date.");
+            advance.DeductionStartDate = startDate;
+        }
+        if (request.Reason is not null) advance.Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+        if (request.Reference is not null) advance.Reference = string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim();
+        await repo.UpdateSalaryAdvanceAsync(advance, ct);
+        return MapAdvance(advance, recovered);
+    }
+
+    public async Task<SalaryAdvanceDto> CancelSalaryAdvanceAsync(Guid id, SalaryAdvanceCancelRequest request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin", "payroll");
+        var advance = await repo.GetSalaryAdvanceAsync(id, ct)
+            ?? throw new DomainException("salary-advance-not-found", "Salary advance not found.");
+        if (advance.Status != "active")
+            throw new DomainException("salary-advance-closed", "Only active salary advances can be cancelled.");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("salary-advance-cancel-reason", "Cancellation reason is required.");
+        var recovered = (await repo.GetSalaryAdvanceRecoveredAmountsAsync([advance.Id], ct))
+            .GetValueOrDefault(advance.Id);
+        advance.Status = "cancelled";
+        advance.DeductFromPayslip = false;
+        advance.CancelledBySubjectId = actorSubjectId;
+        advance.CancelledAt = DateTimeOffset.UtcNow;
+        advance.CancellationReason = request.Reason.Trim();
+        await repo.UpdateSalaryAdvanceAsync(advance, ct);
+        return MapAdvance(advance, recovered);
+    }
+
     private static (string Category, decimal WeeklyThreshold, decimal MonthlyDivisor) NormalizeOvertimePolicy(
         string? category, decimal? weeklyThreshold, decimal? monthlyDivisor)
     {
@@ -906,6 +1018,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var payrollBenefits = (await repo.LoadPayrollBenefitAllowancesAsync(run.PayPeriodId, run.LocationId, ct))
             .GroupBy(x => x.WorkerId)
             .ToDictionary(x => x.Key, x => x.ToList());
+        var salaryAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(run.PayPeriodId, run.LocationId, ct))
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(x => x.Key, x => x.ToList());
+        var advanceRecovered = await repo.GetSalaryAdvanceRecoveredAmountsAsync(
+            salaryAdvances.Values.SelectMany(x => x).Select(x => x.Id).Distinct().ToList(), ct);
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
         int exceptions = 0;
@@ -931,6 +1048,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             ctx.AddPayrollBenefits(payrollBenefits.TryGetValue(worker.Id, out var benefits) ? benefits : []);
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
+            ctx.AddSalaryAdvances(
+                salaryAdvances.TryGetValue(worker.Id, out var advances) ? advances : [],
+                advanceRecovered);
             var net = ctx.Gross - ctx.Deductions;
             if (net < 0) { exceptions++; ctx.ExceptionReason = "negative-net"; }
             if (!worker.BankDetails.Any(b => b.IsPrimary)) { exceptions++; ctx.ExceptionReason ??= "missing-bank"; }
@@ -1032,6 +1152,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             .Where(a => a.WorkerId == worker.Id).ToList());
         foreach (var comp in activeComponents)
             ctx.Evaluate(comp);
+        var previewAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList();
+        ctx.AddSalaryAdvances(previewAdvances,
+            await repo.GetSalaryAdvanceRecoveredAmountsAsync(previewAdvances.Select(a => a.Id).ToList(), ct));
         var net = ctx.Gross - ctx.Deductions;
         if (ctx.Gross <= 0)
             guardrails.Add("Gross pay is zero. Check basic salary, earning components and salary profile setup.");
@@ -1745,6 +1869,17 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         p.WeeklyOvertimeThresholdHours <= 0 ? 48 : p.WeeklyOvertimeThresholdHours,
         p.MonthlyOvertimeDivisor <= 0 ? 208 : p.MonthlyOvertimeDivisor);
 
+    private static SalaryAdvanceDto MapAdvance(SalaryAdvance a, decimal recovered)
+    {
+        recovered = Math.Round(Math.Max(0, recovered), 2);
+        var remaining = Math.Round(Math.Max(0, a.Amount - recovered), 2);
+        return new SalaryAdvanceDto(a.Id, a.WorkerId, a.Worker?.FullName ?? $"Employee {a.WorkerId}",
+            a.Worker?.EmployeeNo, a.Amount, a.InstallmentAmount, recovered, remaining,
+            a.Currency, a.IssueDate.ToString("yyyy-MM-dd"), a.DeductionStartDate.ToString("yyyy-MM-dd"),
+            a.DeductFromPayslip, remaining <= 0 && a.Status == "active" ? "settled" : a.Status,
+            a.Reason, a.Reference, a.CreatedAt);
+    }
+
     private async Task<string> GetComponentCode(Guid componentId, CancellationToken ct)
     {
         var c = await repo.GetComponentByIdAsync(componentId, ct);
@@ -1924,6 +2059,25 @@ internal sealed class CalcContext
         }
     }
 
+    public void AddSalaryAdvances(List<SalaryAdvance> advances, Dictionary<Guid, decimal> recoveredByAdvance)
+    {
+        foreach (var advance in advances
+            .Where(a => a.Status == "active" && a.DeductFromPayslip && a.Amount > 0 && a.InstallmentAmount > 0)
+            .OrderBy(a => a.DeductionStartDate)
+            .ThenBy(a => a.CreatedAt))
+        {
+            var recovered = recoveredByAdvance.TryGetValue(advance.Id, out var paid) ? paid : 0m;
+            var remaining = Math.Round(Math.Max(0, advance.Amount - recovered), 2);
+            if (remaining <= 0) continue;
+            var deduction = Math.Round(Math.Min(advance.InstallmentAmount, remaining), 2);
+            if (deduction <= 0) continue;
+            var code = $"salary-advance-{advance.Id:N}";
+            Components.Add((code, "Salary advance recovery", "deduction", deduction,
+                $"Salary advance deduction: K{deduction:N2} of K{advance.Amount:N2}; K{Math.Max(0, remaining - deduction):N2} remains after this payroll. Reference {advance.Reference ?? advance.Id.ToString("D")}.", false));
+            Deductions += deduction;
+        }
+    }
+
     public void SetProration(int workingDays, int paymentDays, string? note)
     {
         WorkingDays = workingDays;
@@ -1959,6 +2113,12 @@ public interface IPayrollRepository
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
     Task<PayPeriod?> GetPeriodAsync(Guid id, CancellationToken ct);
     Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task<List<SalaryAdvance>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<SalaryAdvance?> GetSalaryAdvanceAsync(Guid id, CancellationToken ct);
+    Task<SalaryAdvance> CreateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct);
+    Task UpdateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct);
+    Task<List<SalaryAdvance>> LoadDeductibleSalaryAdvancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task<Dictionary<Guid, decimal>> GetSalaryAdvanceRecoveredAmountsAsync(List<Guid> advanceIds, CancellationToken ct);
     Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct);
     Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct);

@@ -604,6 +604,14 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/profiles", params ?? {}),
   createPayrollProfile: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/payroll/profiles/${workerId}`, body),
+  salaryAdvances: (params?: Record<string, unknown>) =>
+    hrmApi.get<unknown[]>("/hrm/payroll/salary-advances", params ?? {}),
+  createSalaryAdvance: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/payroll/salary-advances", body),
+  updateSalaryAdvance: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/payroll/salary-advances/${id}`, body),
+  cancelSalaryAdvance: (id: string, reason: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/salary-advances/${id}/cancel`, { reason }),
   /** M41 Gap 3: pay-basis control — salary (default) vs timesheet (planning
    *  flag; timesheet-driven pay is not implemented yet). */
   setPayBasis: (workerId: string, payBasis: "salary" | "timesheet") =>
