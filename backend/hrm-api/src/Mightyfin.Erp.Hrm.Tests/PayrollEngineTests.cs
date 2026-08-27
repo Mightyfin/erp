@@ -191,6 +191,29 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task MissingBankDetails_WarnsButDoesNotBlockPayrollCalculationOrApproval()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, CancellationToken.None);
+        var bankCheck = Assert.Single(readiness.Checks.Where(check => check.Id == "bank-details"));
+        Assert.Equal("warn", bankCheck.State);
+        Assert.True(readiness.Ready);
+
+        var calculated = await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(item => item.RunId == run.Id);
+        Assert.False(line.HasException);
+        Assert.Equal(0, calculated.ExceptionCount);
+
+        var approved = await service.ApproveRunAsync(run.Id, "Payment details will be completed before bank-file generation.", CancellationToken.None, "reviewer");
+        Assert.Equal("approved", approved.Status);
+    }
+
+    [Fact]
     public async Task CalculateRun_UsesRecordedOvertimeDivisorForWatchpersonGuard()
     {
         var (service, ctx) = Build(tenant: "payroll-overtime-divisor");

@@ -921,6 +921,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var activeComponents = components.Where(c => c.IsActive).ToList();
         var earningComponents = activeComponents.Where(c => c.ComponentType == "earning").ToList();
         var basicComponent = activeComponents.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase));
+        var missingBankProfiles = profiles.Where(p =>
+            p.Worker?.BankDetails is null ||
+            !p.Worker.BankDetails.Any(b => b.IsPrimary && !string.IsNullOrWhiteSpace(b.AccountNumber))).ToList();
         foreach (var profile in profiles)
         {
             var worker = profile.Worker;
@@ -959,6 +962,12 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 ? "The configured component code 'basic' is missing."
                 : "Every included worker has a positive basic salary value.",
             issues.Count(i => i.Issue.Contains("Basic salary", StringComparison.OrdinalIgnoreCase))));
+        checks.Add(new("bank-details", "Payment details recorded",
+            missingBankProfiles.Count == 0 ? "pass" : "warn",
+            missingBankProfiles.Count == 0
+                ? "Every included worker has primary payment details."
+                : $"{missingBankProfiles.Count} included worker{(missingBankProfiles.Count == 1 ? "" : "s")} are missing primary payment details. Payroll can be reviewed and released, but a bank payment file cannot be generated for them until this is fixed.",
+            missingBankProfiles.Count));
         checks.Add(new("tax-slabs", "Tax slabs configured for period year",
             slabs.Count > 0 ? "pass" : "fail",
             slabs.Count > 0
@@ -1053,7 +1062,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 advanceRecovered);
             var net = ctx.Gross - ctx.Deductions;
             if (net < 0) { exceptions++; ctx.ExceptionReason = "negative-net"; }
-            if (!worker.BankDetails.Any(b => b.IsPrimary)) { exceptions++; ctx.ExceptionReason ??= "missing-bank"; }
+            // Missing payment details do not affect gross-to-net calculation or
+            // payslip release. They remain a payment-readiness warning and block
+            // the bank-file step until HR records a primary payment method.
             run.EmployeeCount++;
             run.TotalGross += ctx.Gross;
             run.TotalDeductions += ctx.Deductions;
