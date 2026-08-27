@@ -33,6 +33,13 @@ import { RestrictedState } from "@/platform/components/States";
 import { MaskedValue } from "@/platform/components/Sensitive";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Field,
   FieldGrid,
   SubRecordCard,
@@ -457,6 +464,177 @@ function ComponentList({
   );
 }
 
+type EmployeeReportKind =
+  | "master"
+  | "payroll"
+  | "payslips"
+  | "benefits"
+  | "attendance"
+  | "overtime"
+  | "leave"
+  | "advances";
+
+type EmployeeReport = {
+  title: string;
+  description: string;
+  columns: string[];
+  rows: string[][];
+  empty: string;
+};
+
+const employeeReports: Array<{ value: EmployeeReportKind; label: string }> = [
+  { value: "master", label: "Employee master and profile" },
+  { value: "payroll", label: "Payroll and payment history" },
+  { value: "payslips", label: "Payslip report" },
+  { value: "benefits", label: "Benefits and claims" },
+  { value: "attendance", label: "Attendance report" },
+  { value: "overtime", label: "Overtime report" },
+  { value: "leave", label: "Leave and leave balances" },
+  { value: "advances", label: "Salary advances" },
+];
+
+function date(value: unknown) {
+  const raw = text(value);
+  return raw ? raw.replace("T", " ").replace("Z", "") : "—";
+}
+
+function dataRows(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value as Record<string, unknown>[];
+  const object = (value ?? {}) as Record<string, unknown>;
+  return Array.isArray(object.items) ? (object.items as Record<string, unknown>[]) : [];
+}
+
+function ReportTable({ report }: { report: EmployeeReport }) {
+  return (
+    <DetailSection title={report.title} description={report.description}>
+      {report.rows.length ? (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+              <tr>
+                {report.columns.map((column) => <th key={column} className="px-3 py-2 font-medium">{column}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {report.rows.map((row, index) => (
+                <tr key={`${row.join("-")}-${index}`}>
+                  {row.map((value, cell) => <td key={`${cell}-${value}`} className="px-3 py-2 align-top">{value || "—"}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{report.empty}</p>
+      )}
+    </DetailSection>
+  );
+}
+
+function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; profile: EmployeeProfile }) {
+  const [selected, setSelected] = useState<EmployeeReportKind>("master");
+  const state = useApi(async (): Promise<EmployeeReport> => {
+    const master: EmployeeReport = {
+      title: "Employee master and profile",
+      description: "Core identity, employment, branch and payment details for this employee.",
+      columns: ["Employee number", "Employee", "Department", "Position", "Branch", "Payment method", "Status", "Joined"],
+      rows: [[employee.employeeNo, employee.fullName, employee.department, employee.jobTitle, employee.branch, profile.paymentMethod, employee.status, employee.startDate]],
+      empty: "No employee master data is available.",
+    };
+    if (!USE_REAL || selected === "master") return master;
+
+    if (selected === "payroll" || selected === "payslips") {
+      const payslips = dataRows(await realApi.workerPayslips(employee.id));
+      return {
+        title: selected === "payroll" ? "Payroll and payment history" : "Payslip report",
+        description: selected === "payroll"
+          ? "Each generated payroll result for this employee, including gross pay, deductions, net pay and payment status."
+          : "Payslips generated for this employee by payroll period.",
+        columns: ["Period", "Gross pay", "Deductions", "Net pay", "Payment date", "Status"],
+        rows: payslips.map((row) => [
+          text(row.periodLabel) || text(row.payslipNo), money(Number(row.grossPay ?? 0), text(row.currency) || "ZMW"),
+          money(Number(row.totalDeductions ?? 0), text(row.currency) || "ZMW"), money(Number(row.netPay ?? 0), text(row.currency) || "ZMW"),
+          date(row.payDate ?? row.releasedAt), text(row.status),
+        ]),
+        empty: selected === "payroll" ? "No payroll payment has been generated for this employee." : "No payslips have been generated for this employee.",
+      };
+    }
+
+    if (selected === "benefits") {
+      const [allowances, claims] = await Promise.all([
+        realApi.benefitAllowances({ workerId: employee.id }),
+        realApi.benefitClaims({ workerId: employee.id, pageSize: 100 }),
+      ]);
+      const rows = [
+        ...dataRows(allowances).map((row) => ["Allowance", text(row.benefitTypeName), money(Number(row.annualAmount ?? 0)), text(row.year), "Assigned"]),
+        ...dataRows(claims).map((row) => ["Claim", text(row.benefitTypeName), money(Number(row.approvedAmount ?? row.amountClaimed ?? 0), text(row.currency) || "ZMW"), date(row.createdAt), text(row.status)]),
+      ];
+      return {
+        title: "Benefits and claims",
+        description: "Benefit allowances and employee claims, including their current decision or payment status.",
+        columns: ["Record", "Benefit", "Amount", "Year or date", "Status"], rows,
+        empty: "No benefit allowances or claims are recorded for this employee.",
+      };
+    }
+
+    if (selected === "attendance") {
+      const records = dataRows(await realApi.attendanceHistory(employee.id));
+      return {
+        title: "Attendance report", description: "Clock-in/out records, attendance status and recorded working time.",
+        columns: ["Date", "Clock in", "Clock out", "Status", "Hours", "Source"],
+        rows: records.map((row) => [text(row.workDate), date(row.clockIn), date(row.clockOut), text(row.derivedStatus), text(row.totalHours), text(row.source)]),
+        empty: "No attendance records are available for this employee.",
+      };
+    }
+
+    if (selected === "overtime") {
+      const records = dataRows(await realApi.overtime({ workerId: employee.id }));
+      return {
+        title: "Overtime report", description: "Recorded and approved overtime. Only approved overtime is included in payroll.",
+        columns: ["Work date", "Regular hours", "Overtime hours", "Multiplier", "Status", "Payroll"],
+        rows: records.map((row) => [text(row.workDate), text(row.regularHours), text(row.overtimeHours), text(row.overtimeMultiplier), text(row.overtimeStatus), text(row.overtimePayrollRunId) ? "Included" : "Not included"]),
+        empty: "No overtime records are available for this employee.",
+      };
+    }
+
+    if (selected === "leave") {
+      const [requests, balances] = await Promise.all([
+        realApi.leaveRequests({ workerId: employee.id }), realApi.leaveBalances(employee.id),
+      ]);
+      const rows = [
+        ...dataRows(requests).map((row) => ["Leave request", text(row.leaveTypeCode), `${text(row.startDate)} to ${text(row.endDate)}`, text(row.requestedDays), text(row.status)]),
+        ...dataRows(balances).map((row) => ["Leave balance", text(row.leaveTypeName ?? row.leaveTypeCode), "", text(row.available), "Available days"]),
+      ];
+      return {
+        title: "Leave and leave balances", description: "Leave requested or taken, together with the current available balance by leave type.",
+        columns: ["Record", "Leave type", "Period", "Days", "Status"], rows,
+        empty: "No leave requests or balances are available for this employee.",
+      };
+    }
+
+    const advances = dataRows(await realApi.salaryAdvances({ workerId: employee.id }));
+    return {
+      title: "Salary advances", description: "Advances issued to this employee, recoveries through payroll and remaining balances.",
+      columns: ["Issued", "Amount", "Deduction per payslip", "Recovered", "Remaining", "Status"],
+      rows: advances.map((row) => [text(row.issueDate), money(Number(row.amount ?? 0), text(row.currency) || "ZMW"), money(Number(row.installmentAmount ?? 0), text(row.currency) || "ZMW"), money(Number(row.recoveredAmount ?? 0), text(row.currency) || "ZMW"), money(Number(row.remainingAmount ?? 0), text(row.currency) || "ZMW"), text(row.status)]),
+      empty: "No salary advances are recorded for this employee.",
+    };
+  }, [employee.id, employee.employeeNo, employee.fullName, employee.department, employee.jobTitle, employee.branch, employee.employmentType, employee.status, employee.startDate, selected, profile.paymentMethod]);
+
+  return (
+    <div className="space-y-4">
+      <div className="max-w-md">
+        <label className="text-sm font-medium" htmlFor="employee-report">Report</label>
+        <Select value={selected} onValueChange={(value) => setSelected(value as EmployeeReportKind)}>
+          <SelectTrigger id="employee-report" className="mt-1.5"><SelectValue /></SelectTrigger>
+          <SelectContent>{employeeReports.map((report) => <SelectItem key={report.value} value={report.value}>{report.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <Async state={state} rows={5}>{(report) => <ReportTable report={report} />}</Async>
+    </div>
+  );
+}
+
 /**
  * The whole record, grouped so someone can find one fact quickly.
  *
@@ -482,6 +660,7 @@ function ProfileTabs({
           <TabsTrigger value="employment">Employment terms</TabsTrigger>
           <TabsTrigger value="pay">Pay and statutory</TabsTrigger>
           <TabsTrigger value="history">Background</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           {p.exit ? <TabsTrigger value="exit">Leaving</TabsTrigger> : null}
         </TabsList>
       </div>
@@ -529,6 +708,10 @@ function ProfileTabs({
             </FieldGrid>
           </DetailSection>
         ) : null}
+      </TabsContent>
+
+      <TabsContent value="reports" className="mt-4">
+        <EmployeeReportsTab employee={e} profile={p} />
       </TabsContent>
 
       {/* ---------------------------------------------------------------- */}
