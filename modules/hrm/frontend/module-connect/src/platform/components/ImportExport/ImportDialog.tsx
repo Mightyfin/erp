@@ -1104,7 +1104,7 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
                   className={cn("h-7 text-xs", mode === "fill-missing" ? "bg-accent" : "")}
                   onClick={() => setMode("fill-missing")}
                 >
-                  Match & fill missing
+                  Update current data
                 </Button>}
               </div>
             </div>
@@ -1213,9 +1213,31 @@ export function ImportDialog({ typeKey, onDone, demoSample, presentation = "dial
               </div>
               <Button size="sm" onClick={() => void applyAccepted()} disabled={busy || accepted === 0}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Confirm import
+                {mode === "fill-missing" ? "Update current data" : "Confirm import"}
               </Button>
             </div>
+            {typeKey === "workers" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-info/30 bg-info-soft/30 p-3">
+                <div>
+                  <p className="text-sm font-medium text-info-foreground">Update current data</p>
+                  <p className="text-xs text-muted-foreground">
+                    {mode === "fill-missing"
+                      ? "Selected: matched employees will only receive values where their current fields are empty."
+                      : "Use this when the spreadsheet completes employee records that already exist. It never overwrites populated fields."}
+                  </p>
+                </div>
+                {mode !== "fill-missing" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setMode("fill-missing"); setPreview(null); setStep("map"); }}
+                  >
+                    Update current data
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             {typeKey === "workers" ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft/30 p-3">
                 <div>
