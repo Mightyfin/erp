@@ -377,7 +377,7 @@ internal static class LocalIdentityBootstrap
         {
             Email = email,
             NormalizedEmail = email.ToUpperInvariant(),
-            DisplayName = config["HRM:LocalAdminDisplayName"]?.Trim() ?? "New World Cargo Administrator",
+            DisplayName = config["HRM:LocalAdminDisplayName"]?.Trim() ?? "NewWorldCargo Administrator",
             PasswordHash = LocalPasswordHash.Hash(password),
             RolesCsv = "hr_admin,employee,hr_ops,finance_approver,investigator,payroll,manager",
             MustChangePassword = true,

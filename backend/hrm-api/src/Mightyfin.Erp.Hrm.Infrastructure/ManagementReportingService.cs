@@ -350,7 +350,7 @@ public sealed class ManagementReportingService(HrmDbContext db, IAuthzService au
         foreach (var dataRow in rows.Skip(1))
             html.Append("<tr>").Append(string.Join("", dataRow.Select(x => $"<td>{esc(x)}</td>"))).AppendLine("</tr>");
         html.AppendLine("</tbody></table>");
-        html.AppendLine("<div class=\"footer\">Source-backed management report. Payroll totals include released and closed runs only. New World Cargo HRM.</div></body></html>");
+        html.AppendLine("<div class=\"footer\">Source-backed management report. Payroll totals include released and closed runs only. NewWorldCargo HRM.</div></body></html>");
         return html.ToString();
     }
 
