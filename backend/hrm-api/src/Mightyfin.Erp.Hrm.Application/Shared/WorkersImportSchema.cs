@@ -518,7 +518,7 @@ public sealed class WorkersImportSchema : IImportSchemaWithExport
     private static bool IsCostOfLiving(SalaryComponent component) =>
         IsCostOfLiving(component.Code, component.Name);
 
-    private static bool IsCostOfLiving(BenefitTypeDto type) =>
+    private static bool IsCostOfLiving(BenefitType type) =>
         IsCostOfLiving(type.Code, type.Name);
 
     private static bool IsCostOfLiving(string? code, string? name) =>
