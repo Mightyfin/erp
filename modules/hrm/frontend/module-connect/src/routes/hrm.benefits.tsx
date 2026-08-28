@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Edit, Plus, Trash2, UsersRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit, Plus, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +34,8 @@ export const Route = createFileRoute("/hrm/benefits")({ component: Benefits });
 
 type Row = Record<string, unknown>;
 type Mode = "list" | "assign" | "bulk" | "types" | "claims";
+
+const ASSIGNMENT_PAGE_SIZE = 25;
 
 const STATUS_LABEL: Record<string, string> = {
   submitted: "Submitted",
@@ -100,6 +102,10 @@ function Benefits() {
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [assignmentYearFilter, setAssignmentYearFilter] = useState(() => String(new Date().getFullYear()));
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+  const [assignmentPayrollFilter, setAssignmentPayrollFilter] = useState("all");
+  const [assignmentBenefitFilter, setAssignmentBenefitFilter] = useState("all");
+  const [assignmentPage, setAssignmentPage] = useState(1);
 
   const types = useApi(realApi.benefitTypes, []);
   const allowances = useApi(realApi.benefitAllowances, []);
@@ -179,12 +185,39 @@ function Benefits() {
       .sort((a, b) => Number(b) - Number(a)),
     [allowances.data],
   );
-  const visibleAllowanceRows = useMemo(
-    () => ((allowances.data ?? []) as Row[]).filter((row) =>
-      assignmentYearFilter === "all" || text(row.year) === assignmentYearFilter,
-    ),
-    [allowances.data, assignmentYearFilter],
+  const visibleAllowanceRows = useMemo(() => {
+    const search = assignmentSearch.trim().toLowerCase();
+    return ((allowances.data ?? []) as Row[]).filter((row) => {
+      const benefitType = typeByCode.get(text(row.benefitTypeCode).toLowerCase());
+      const isPayroll = Boolean(benefitType?.includeInPayroll);
+      const matchesYear = assignmentYearFilter === "all" || text(row.year) === assignmentYearFilter;
+      const matchesPayroll = assignmentPayrollFilter === "all"
+        || (assignmentPayrollFilter === "payslip" ? isPayroll : !isPayroll);
+      const matchesBenefit = assignmentBenefitFilter === "all"
+        || text(row.benefitTypeCode).toLowerCase() === assignmentBenefitFilter;
+      const searchText = [
+        row.workerName,
+        row.employeeNo,
+        row.benefitTypeName,
+        row.benefitTypeCode,
+        row.year,
+      ].map(text).join(" ").toLowerCase();
+      return matchesYear && matchesPayroll && matchesBenefit && (!search || searchText.includes(search));
+    });
+  }, [allowances.data, assignmentYearFilter, assignmentSearch, assignmentPayrollFilter, assignmentBenefitFilter, typeByCode]);
+  const assignmentTotalPages = Math.max(1, Math.ceil(visibleAllowanceRows.length / ASSIGNMENT_PAGE_SIZE));
+  const currentAssignmentPage = Math.min(assignmentPage, assignmentTotalPages);
+  const assignmentPageStart = visibleAllowanceRows.length === 0 ? 0 : (currentAssignmentPage - 1) * ASSIGNMENT_PAGE_SIZE + 1;
+  const assignmentPageEnd = Math.min(currentAssignmentPage * ASSIGNMENT_PAGE_SIZE, visibleAllowanceRows.length);
+  const paginatedAllowanceRows = visibleAllowanceRows.slice(
+    (currentAssignmentPage - 1) * ASSIGNMENT_PAGE_SIZE,
+    currentAssignmentPage * ASSIGNMENT_PAGE_SIZE,
   );
+
+  const updateAssignmentFilters = (update: () => void) => {
+    update();
+    setAssignmentPage(1);
+  };
 
   const run = async <T,>(name: string, operation: () => Promise<T>, onSuccess?: () => void) => {
     setBusy(true);
@@ -440,25 +473,76 @@ function Benefits() {
                 type per year; choose all years only when reviewing payroll history.
               </CardDescription>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                <div className="w-full max-w-52">
+            <CardContent>
+              <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_11rem_12rem_12rem_auto]">
+                <div>
+                  <Label htmlFor="assignment-search">Search assignments</Label>
+                  <div className="relative mt-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                    <Input
+                      id="assignment-search"
+                      value={assignmentSearch}
+                      onChange={(event) => updateAssignmentFilters(() => setAssignmentSearch(event.target.value))}
+                      placeholder="Employee, number or benefit"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <div>
                   <Label htmlFor="assignment-year-filter">Benefit year</Label>
-                  <Select value={assignmentYearFilter} onValueChange={setAssignmentYearFilter}>
-                    <SelectTrigger id="assignment-year-filter" className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={assignmentYearFilter} onValueChange={(value) => updateAssignmentFilters(() => setAssignmentYearFilter(value))}>
+                    <SelectTrigger id="assignment-year-filter" className="mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All years (history)</SelectItem>
-                      {assignmentYears.map((year) => (
-                        <SelectItem key={year} value={year}>{year}</SelectItem>
+                      <SelectItem value="all">All years</SelectItem>
+                      {assignmentYears.map((year) => <SelectItem key={year} value={year}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="assignment-benefit-filter">Benefit type</Label>
+                  <Select value={assignmentBenefitFilter} onValueChange={(value) => updateAssignmentFilters(() => setAssignmentBenefitFilter(value))}>
+                    <SelectTrigger id="assignment-benefit-filter" className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All benefits</SelectItem>
+                      {((types.data ?? []) as Row[]).map((type) => (
+                        <SelectItem key={text(type.code)} value={text(type.code).toLowerCase()}>{text(type.name)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {visibleAllowanceRows.length} assignment{visibleAllowanceRows.length === 1 ? "" : "s"} shown
-                </p>
+                <div>
+                  <Label htmlFor="assignment-payroll-filter">Payroll use</Label>
+                  <Select value={assignmentPayrollFilter} onValueChange={(value) => updateAssignmentFilters(() => setAssignmentPayrollFilter(value))}>
+                    <SelectTrigger id="assignment-payroll-filter" className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All uses</SelectItem>
+                      <SelectItem value="payslip">Added to payslip</SelectItem>
+                      <SelectItem value="claim">Claim only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button type="button" variant="outline" onClick={() => allowances.reload()} disabled={allowances.loading}>
+                    <RefreshCw className="size-4" aria-hidden />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {visibleAllowanceRows.length === 0 ? "No" : `Showing ${assignmentPageStart}-${assignmentPageEnd} of ${visibleAllowanceRows.length}`} assignment{visibleAllowanceRows.length === 1 ? "" : "s"}
+                </span>
+                {(assignmentSearch || assignmentYearFilter !== String(new Date().getFullYear()) || assignmentBenefitFilter !== "all" || assignmentPayrollFilter !== "all") ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                    setAssignmentSearch("");
+                    setAssignmentYearFilter(String(new Date().getFullYear()));
+                    setAssignmentBenefitFilter("all");
+                    setAssignmentPayrollFilter("all");
+                    setAssignmentPage(1);
+                  }}>
+                    Clear filters
+                  </Button>
+                ) : null}
               </div>
               {allowances.loading ? (
                 <p className="text-sm text-muted-foreground">Loading assignments...</p>
@@ -472,7 +556,8 @@ function Benefits() {
                 </p>
               ) : null}
               {allowances.data && visibleAllowanceRows.length ? (
-                <Table>
+                <div className="overflow-x-auto">
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Employee</TableHead>
@@ -485,7 +570,7 @@ function Benefits() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleAllowanceRows.map((row) => {
+                    {paginatedAllowanceRows.map((row) => {
                       const benefitType = typeByCode.get(text(row.benefitTypeCode).toLowerCase());
                       return (
                         <TableRow key={text(row.id)}>
@@ -538,6 +623,20 @@ function Benefits() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
+              ) : null}
+              {visibleAllowanceRows.length > ASSIGNMENT_PAGE_SIZE ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">Page {currentAssignmentPage} of {assignmentTotalPages}</span>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={currentAssignmentPage <= 1} onClick={() => setAssignmentPage((page) => Math.max(1, page - 1))}>
+                      <ChevronLeft className="mr-1 size-4" aria-hidden /> Previous
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" disabled={currentAssignmentPage >= assignmentTotalPages} onClick={() => setAssignmentPage((page) => Math.min(assignmentTotalPages, page + 1))}>
+                      Next <ChevronRight className="ml-1 size-4" aria-hidden />
+                    </Button>
+                  </div>
+                </div>
               ) : null}
             </CardContent>
           </Card>
