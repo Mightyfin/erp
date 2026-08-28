@@ -60,8 +60,8 @@ public class PayrollBranchDraftTests
         foreach (var s in slabs) ctx.TaxSlabs.Add(s);
         var rules = new[]
         {
-            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
-            new ContributionRule { Code = "napsa-er", Name = "NAPSA ER", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "napsa-er", Name = "NAPSA ER", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
             new ContributionRule { Code = "nhima-ee", Name = "NHIMA EE", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
             new ContributionRule { Code = "nhima-er", Name = "NHIMA ER", Payer = "employer", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         };

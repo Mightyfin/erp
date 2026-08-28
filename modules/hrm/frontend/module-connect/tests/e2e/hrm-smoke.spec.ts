@@ -122,6 +122,63 @@ test("HR admin home is assembled from live tenant APIs, not seeded dashboard rec
   await expect(page.getByText("Live Zambia Entity")).toBeVisible();
 });
 
+test("attendance import page exposes overtime-only import and time audit evidence", async ({
+  page,
+}) => {
+  let imported = false;
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({
+      sub: "playwright-time-admin",
+      preferred_username: "playwright.time.admin",
+      realm_access: { roles: ["hr_admin", "hr_ops", "payroll"] },
+    }));
+    const token = `test.${payload}.signature`;
+    localStorage.setItem("erp.oidc.session", JSON.stringify({
+      accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000,
+    }));
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith("/time/overtime/import") && route.request().method() === "POST") {
+      imported = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "completed", importedCount: 1, updatedCount: 0, rejectedCount: 0 }),
+      });
+      return;
+    }
+    if (path.endsWith("/time/operations/history")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          imports: [],
+          accruals: [],
+          adjustments: [],
+          encashments: [],
+          timeAudits: [{ id: "audit-1", entityType: "time.overtime", entityId: "att-1", action: "overtime-import-create", actorSubjectId: "playwright-time-admin" }],
+        }),
+      });
+      return;
+    }
+    if (path.endsWith("/me/notifications")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ unreadCount: 0, items: [] }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+
+  await page.goto("/hrm/time/attendance/import");
+
+  await expect(page.getByTestId("overtime-import-card")).toContainText("Import overtime hours only");
+  await expect(page.getByText("overtime-import-create")).toBeVisible();
+  await page.getByRole("button", { name: "Import overtime" }).click();
+  await expect(page.getByTestId("overtime-import-result")).toContainText("Imported: 1");
+  expect(imported).toBe(true);
+});
+
 test("HR admin can inspect and retry a failed notification handoff without seeing payload data", async ({
   page,
 }) => {

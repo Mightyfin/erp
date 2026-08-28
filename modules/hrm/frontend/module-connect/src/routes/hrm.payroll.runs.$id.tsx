@@ -1,8 +1,31 @@
 import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, Ban, Check, CircleDashed, Info, Lock, ShieldAlert, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  Check,
+  CircleDashed,
+  Download,
+  Info,
+  Lock,
+  RotateCcw,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CURRENT_USER, isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { isOutstanding, money, payrollRunApi } from "@/mock/payrollrun";
 import { CalculationPanel } from "@/platform/components/CalculationPanel";
 import type { ControlTotals, PayRun, RunLine, RunStage } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
@@ -18,17 +41,18 @@ import { StatusTimeline } from "@/platform/components/StatusTimeline";
 import { hrmApi } from "@/platform/api-client";
 import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
+import { useAuth } from "@/platform/auth";
 
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
   head: () => ({
     meta: [
-      { title: "Pay run — Mightyfin ERP HRM" },
+      { title: "Pay run — New World Cargo HRM" },
       {
         name: "description",
         content:
           "A pay run stage by stage: population, calculation, variances, approval and controlled release.",
       },
-      { property: "og:title", content: "Pay run — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Pay run — New World Cargo HRM" },
       {
         property: "og:description",
         content:
@@ -217,6 +241,108 @@ type StatutoryWorker = {
   ready?: boolean;
 };
 
+type CalculationReadiness = {
+  ready: boolean;
+  includedWorkerCount: number;
+  blockingCount: number;
+  warningCount: number;
+  checks: Array<{ id: string; label: string; state: string; detail: string; count: number }>;
+  issues: Array<{
+    workerId?: string;
+    employeeNo: string;
+    workerName: string;
+    issue: string;
+    severity: string;
+  }>;
+};
+
+function CalculationReadinessCard({ readiness }: { readiness: CalculationReadiness | null }) {
+  if (!readiness) return null;
+  const blockers = readiness.issues.filter((issue) => issue.severity === "fail");
+  const warnings = readiness.issues.filter((issue) => issue.severity === "warn");
+  const tone = readiness.ready
+    ? "border-success/30 bg-success-soft text-success"
+    : "border-danger/40 bg-danger-soft text-danger";
+
+  return (
+    <div className={`rounded-lg border p-4 ${tone}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            {readiness.ready ? (
+              <Check className="size-4" aria-hidden />
+            ) : (
+              <ShieldAlert className="size-4" aria-hidden />
+            )}
+            {readiness.ready ? "Calculation inputs ready" : "Calculation inputs blocked"}
+          </p>
+          <p className="mt-1 text-xs text-foreground">
+            {readiness.includedWorkerCount} worker{readiness.includedWorkerCount === 1 ? "" : "s"}{" "}
+            checked. Payroll rules remain configured in setup; this panel verifies the active setup
+            for this run.
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <span className="rounded-full border bg-background px-2.5 py-1 text-foreground">
+            {readiness.blockingCount} blocker{readiness.blockingCount === 1 ? "" : "s"}
+          </span>
+          <span className="rounded-full border bg-background px-2.5 py-1 text-foreground">
+            {readiness.warningCount} warning{readiness.warningCount === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2">
+        {readiness.checks.map((check) => (
+          <div key={check.id} className="rounded-md border bg-background p-3 text-foreground">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              {check.state === "pass" ? (
+                <Check className="size-3.5 text-success" aria-hidden />
+              ) : check.state === "warn" ? (
+                <AlertTriangle className="size-3.5 text-warning" aria-hidden />
+              ) : (
+                <X className="size-3.5 text-danger" aria-hidden />
+              )}
+              {check.label}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      {blockers.length || warnings.length ? (
+        <div className="mt-4 rounded-md border bg-background p-3 text-foreground">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">Affected workers</p>
+          <ul className="mt-2 space-y-1.5 text-xs">
+            {[...blockers, ...warnings].slice(0, 8).map((issue) => (
+              <li
+                key={`${issue.workerId ?? issue.employeeNo}-${issue.issue}`}
+                className="flex flex-wrap gap-x-2 gap-y-1"
+              >
+                <span className="font-medium">
+                  {issue.workerName || issue.employeeNo || "Worker"}
+                </span>
+                {issue.employeeNo ? (
+                  <span className="text-muted-foreground">({issue.employeeNo})</span>
+                ) : null}
+                <span className={issue.severity === "fail" ? "text-danger" : "text-warning"}>
+                  {issue.issue}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {readiness.issues.length > 8 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {readiness.issues.length - 8} more issue{readiness.issues.length - 8 === 1 ? "" : "s"}{" "}
+              not shown.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * M24: the backend refuses to release while any worker in the run is missing an
  * NRC, TPIN, NAPSA or NHIMA number. This card shows exactly who blocks release
@@ -320,7 +446,7 @@ function ReleaseActions({
     },
   ];
 
-    const active = steps.find((s) => s.id === confirming);
+  const active = steps.find((s) => s.id === confirming);
   return (
     <>
       <ul className="space-y-3 text-sm">
@@ -421,9 +547,45 @@ function PaymentWorkflow({
   run: OperationalPayRun;
   onChanged: () => Promise<unknown>;
 }) {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [reference, setReference] = useState("");
+  const [reportKind, setReportKind] = useState("jv-summary");
+  const [reportFormat, setReportFormat] = useState<"csv" | "pdf">("csv");
+  const [bankFormat, setBankFormat] = useState<"csv">("csv");
+  const readinessState = useApi(async () => {
+    const raw = (await realApi.payrollPaymentReadiness(run.id)) as Record<string, unknown>;
+    const issues = Array.isArray(raw.issues)
+      ? (raw.issues as Record<string, unknown>[]).map((issue) => ({
+          workerId: String(issue.workerId ?? ""),
+          employeeNo: String(issue.employeeNo ?? ""),
+          workerName: String(issue.workerName ?? ""),
+          netPay: Number(issue.netPay ?? 0),
+          issue: String(issue.issue ?? "Payment readiness issue"),
+        }))
+      : [];
+    return {
+      ready: Boolean(raw.ready),
+      payableCount: Number(raw.payableCount ?? 0),
+      totalNet: Number(raw.totalNet ?? 0),
+      missingBankDetailsCount: Number(raw.missingBankDetailsCount ?? issues.length),
+      issues,
+    };
+  }, [run.id, run.paymentStatus, run.backendStatus]);
   const status = run.paymentStatus;
+  const readiness = readinessState.data;
+  const currentSubjectId = user?.id ? String(user.id) : "";
+  const generatedByMe = Boolean(
+    currentSubjectId && run.paymentFileGeneratedBySubjectId === currentSubjectId,
+  );
+  const approvedByMe = Boolean(
+    currentSubjectId && run.paymentApprovedBySubjectId === currentSubjectId,
+  );
+  const isTopAdmin = (user?.roles ?? []).some((role) => role.toLowerCase() === "hr_admin");
+  const canGenerate =
+    run.backendStatus === "released" && status === "not-created" && readiness?.ready === true;
+  const canApprove = status === "generated" && (isTopAdmin || !generatedByMe);
+  const canRelease = status === "approved" && (isTopAdmin || (!approvedByMe && !generatedByMe));
   const invoke = async (label: string, action: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -452,10 +614,7 @@ function PaymentWorkflow({
   // M41: accounting-facing reports — the accounts team books the salary from
   // these (JV = debits/credits per transaction; dept = net per department).
   const downloadReport = async (kind: string, format: "csv" | "pdf") => {
-    const blob = await hrmApi.getBlob(
-      `/hrm/payroll/runs/${run.id}/reports/${kind}`,
-      { format },
-    );
+    const blob = await hrmApi.getBlob(`/hrm/payroll/runs/${run.id}/reports/${kind}`, { format });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -463,6 +622,116 @@ function PaymentWorkflow({
     anchor.click();
     URL.revokeObjectURL(url);
   };
+  const paymentSteps = [
+    {
+      key: "released",
+      label: "Payslips released",
+      done: ["released", "closed"].includes(run.backendStatus),
+      actor: run.releasedBy,
+      blocked: !["released", "closed"].includes(run.backendStatus),
+    },
+    {
+      key: "generated",
+      label: "Bank file generated",
+      done: status !== "not-created",
+      actor: run.paymentFileGeneratedBySubjectId,
+      blocked: run.backendStatus !== "released" && run.backendStatus !== "closed",
+    },
+    {
+      key: "approved",
+      label: "Payment approved",
+      done: ["approved", "released", "reconciled"].includes(status),
+      actor: run.paymentApprovedBySubjectId,
+      blocked: status === "not-created",
+    },
+    {
+      key: "bank-released",
+      label: "Released to bank",
+      done: ["released", "reconciled"].includes(status),
+      actor: run.paymentReleasedBySubjectId,
+      blocked: status !== "approved" && !["released", "reconciled"].includes(status),
+    },
+    {
+      key: "reconciled",
+      label: "Reconciled and closed",
+      done: status === "reconciled",
+      actor: run.reconciliationReference,
+      blocked: status !== "released" && status !== "reconciled",
+    },
+  ];
+  const closeoutChecks = [
+    {
+      key: "payslips",
+      label: "Payslips released",
+      detail: ["released", "closed"].includes(run.backendStatus)
+        ? "Employees can see released payslips."
+        : "Release payslips before generating a bank file.",
+      state: ["released", "closed"].includes(run.backendStatus) ? "done" : "blocked",
+    },
+    {
+      key: "reports",
+      label: "Accounting reports available",
+      detail: ["released", "closed"].includes(run.backendStatus)
+        ? "JV and department payroll reports can be exported."
+        : "Reports open once the run is released.",
+      state: ["released", "closed"].includes(run.backendStatus) ? "done" : "blocked",
+    },
+    {
+      key: "bank-file",
+      label: "Bank file generated",
+      detail:
+        status === "not-created"
+          ? readiness?.ready === false
+            ? "Fix worker bank details before generating the file."
+            : "Generate the payment file after payslip release."
+          : run.paymentFileReference
+            ? run.paymentFileReference
+            : "Payment file exists for this run.",
+      state: status === "not-created" ? "blocked" : "done",
+    },
+    {
+      key: "maker-checker",
+      label: "Maker-checker approval",
+      detail: ["approved", "released", "reconciled"].includes(status)
+        ? "A different authorised user approved the payment file."
+        : status === "generated"
+          ? "Waiting for a different user to approve."
+          : "Approval starts after bank file generation.",
+      state: ["approved", "released", "reconciled"].includes(status)
+        ? "done"
+        : status === "generated"
+          ? "current"
+          : "blocked",
+    },
+    {
+      key: "bank-release",
+      label: "Released to bank",
+      detail: ["released", "reconciled"].includes(status)
+        ? "Bank instruction release has been recorded."
+        : status === "approved"
+          ? "Waiting for a separate payroll user to release."
+          : "Release starts after payment approval.",
+      state: ["released", "reconciled"].includes(status)
+        ? "done"
+        : status === "approved"
+          ? "current"
+          : "blocked",
+    },
+    {
+      key: "reconciled",
+      label: "Reconciled and closed",
+      detail:
+        status === "reconciled"
+          ? run.reconciliationReference
+            ? `Closed with reference ${run.reconciliationReference}.`
+            : "Bank acknowledgement matched payroll net."
+          : status === "released"
+            ? "Enter the bank acknowledgement reference to close this payroll."
+            : "Closeout starts after bank release.",
+      state: status === "reconciled" ? "done" : status === "released" ? "current" : "blocked",
+    },
+  ];
+  const closeoutDone = closeoutChecks.filter((check) => check.state === "done").length;
 
   return (
     <div className="mt-4 rounded-lg border p-4" data-testid="payment-workflow">
@@ -474,76 +743,204 @@ function PaymentWorkflow({
             <span className="font-medium text-foreground">{status.replaceAll("-", " ")}</span>
             {run.paymentFileReference ? ` · ${run.paymentFileReference}` : ""}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Payment workflow is maker-checker for payroll officers: generate the bank file, approve
+            it, release it to the bank, then reconcile the bank acknowledgement before the run is
+            closed. HR admin can override this when they carry final payroll authority.
+          </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void download("audit")}>
           Export audit CSV
         </Button>
       </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-5">
+        {paymentSteps.map((step) => {
+          const Icon = step.done ? Check : step.blocked ? Lock : CircleDashed;
+          return (
+            <div
+              key={step.key}
+              className={`rounded-md border p-3 ${
+                step.done
+                  ? "border-success/30 bg-success-soft"
+                  : step.blocked
+                    ? "border-border bg-muted/30"
+                    : "border-primary/30 bg-primary-soft"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon
+                  className={`size-4 ${
+                    step.done
+                      ? "text-success"
+                      : step.blocked
+                        ? "text-muted-foreground"
+                        : "text-primary"
+                  }`}
+                  aria-hidden
+                />
+                <span className="text-xs font-medium">{step.label}</span>
+              </div>
+              <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                {step.done
+                  ? step.actor
+                    ? `By ${step.actor}`
+                    : "Completed"
+                  : step.blocked
+                    ? "Waiting for prior step"
+                    : "Ready"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 rounded-md border bg-surface p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-medium">Payroll closeout readiness</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {closeoutDone} of {closeoutChecks.length} controls complete before payroll is fully
+              closed.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              closeoutDone === closeoutChecks.length
+                ? "bg-success-soft text-success"
+                : "bg-primary-soft text-primary"
+            }`}
+          >
+            {closeoutDone === closeoutChecks.length ? "Closed" : "In progress"}
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {closeoutChecks.map((check) => {
+            const Icon =
+              check.state === "done" ? Check : check.state === "current" ? CircleDashed : Lock;
+            return (
+              <div key={check.key} className="flex gap-2 rounded-md border bg-background p-2.5">
+                <Icon
+                  className={`mt-0.5 size-4 shrink-0 ${
+                    check.state === "done"
+                      ? "text-success"
+                      : check.state === "current"
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                  }`}
+                  aria-hidden
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">{check.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{check.detail}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {run.backendStatus !== "released" && run.backendStatus !== "closed" ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          Payment file generation is blocked until payslips are released. Releasing payslips still
+          does not pay anyone; it only makes the payslip records visible.
+        </p>
+      ) : null}
+      {status === "not-created" ? (
+        <div className="mt-4 rounded-md border bg-surface p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">Bank readiness</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {readinessState.loading
+                  ? "Checking primary bank details for payable workers."
+                  : readiness
+                    ? `${readiness.payableCount} payable worker${readiness.payableCount === 1 ? "" : "s"} · ${money(readiness.totalNet, run.currency)} net`
+                    : "Bank readiness could not be loaded."}
+              </p>
+            </div>
+            {readiness ? (
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  readiness.ready ? "bg-success-soft text-success" : "bg-warning-soft text-warning"
+                }`}
+              >
+                {readiness.ready
+                  ? "Ready"
+                  : `${readiness.missingBankDetailsCount} missing bank details`}
+              </span>
+            ) : null}
+          </div>
+          {readiness?.issues.length ? (
+            <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+              {readiness.issues.slice(0, 5).map((issue) => (
+                <li key={`${issue.workerId}-${issue.issue}`} className="flex justify-between gap-3">
+                  <span>
+                    {issue.employeeNo ? `${issue.employeeNo} · ` : ""}
+                    {issue.workerName || "Worker"}
+                  </span>
+                  <span className="text-warning">{issue.issue}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* M41: accounting reports for the accounts team. The run must be
           released first — the backend enforces the same rule server-side. */}
       <div className="mt-4 border-t pt-4">
         <p className="text-sm font-medium">Accounting reports</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          JV = debits and credits by transaction; department reports = net pay per
-          department with bank details. Reports are only available once the run is
-          released or closed. GL accounts marked * need mapping before booking.
+          JV = debits and credits by transaction; department reports = net pay per department with
+          bank details. Reports are only available once the run is released or closed. GL accounts
+          marked * need mapping before booking.
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+          <div>
+            <Label htmlFor="report-kind" className="text-xs">Report</Label>
+            <Select value={reportKind} onValueChange={setReportKind}>
+              <SelectTrigger id="report-kind" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jv-summary">JV summary</SelectItem>
+                <SelectItem value="jv-detailed">JV detailed</SelectItem>
+                <SelectItem value="dept-summary">Department summary</SelectItem>
+                <SelectItem value="dept-detailed">Department detailed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="report-format" className="text-xs">File type</Label>
+            <Select value={reportFormat} onValueChange={(value) => setReportFormat(value as "csv" | "pdf")}>
+              <SelectTrigger id="report-format" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="csv">CSV</SelectItem>
+                <SelectItem value="pdf">PDF</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("jv-summary", "csv")}
+            className="self-end"
+            disabled={run.backendStatus !== "released" && run.backendStatus !== "closed"}
+            onClick={() => void downloadReport(reportKind, reportFormat)}
           >
-            JV summary CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("jv-summary", "pdf")}
-          >
-            JV summary PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("jv-detailed", "csv")}
-          >
-            JV detailed CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("jv-detailed", "pdf")}
-          >
-            JV detailed PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("dept-summary", "csv")}
-          >
-            By department CSV
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={run.status !== "Released" && run.status !== "Closed"}
-            onClick={() => void downloadReport("dept-detailed", "pdf")}
-          >
-            By department PDF
+            <Download className="size-4" aria-hidden /> Download
           </Button>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {status === "not-created" ? (
           <Button
-            disabled={busy || run.status !== "Paid"}
+            disabled={busy || !canGenerate}
+            title={
+              run.backendStatus !== "released"
+                ? "Payslips must be released before a bank file can be generated."
+                : readiness?.ready === false
+                  ? "Fix missing primary bank details before generating the bank file."
+                  : undefined
+            }
             onClick={() =>
               void invoke("Payment file generated", () => realApi.payrollPaymentGenerate(run.id))
             }
@@ -552,13 +949,31 @@ function PaymentWorkflow({
           </Button>
         ) : null}
         {status !== "not-created" ? (
-          <Button variant="outline" disabled={busy} onClick={() => void download("payment")}>
-            Download bank CSV
-          </Button>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <Label htmlFor="bank-format" className="text-xs">Bank file type</Label>
+              <Select value={bankFormat} onValueChange={(value) => setBankFormat(value as "csv")}>
+                <SelectTrigger id="bank-format" className="mt-1 w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="csv">CSV</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" disabled={busy} onClick={() => void download("payment")}>
+              <Download className="size-4" aria-hidden /> Download bank file
+            </Button>
+          </div>
         ) : null}
         {status === "generated" ? (
           <Button
-            disabled={busy}
+            disabled={busy || !canApprove}
+            title={
+              generatedByMe && !isTopAdmin
+                ? "The person who generated the payment file cannot approve it."
+                : undefined
+            }
             onClick={() =>
               void invoke("Payment file approved", () =>
                 realApi.payrollPaymentApprove(run.id, "Reviewed against payroll control totals"),
@@ -570,7 +985,14 @@ function PaymentWorkflow({
         ) : null}
         {status === "approved" ? (
           <Button
-            disabled={busy}
+            disabled={busy || !canRelease}
+            title={
+              approvedByMe && !isTopAdmin
+                ? "The payment approver cannot also release the bank instruction."
+                : generatedByMe && !isTopAdmin
+                  ? "The person who generated the payment file cannot release it to the bank."
+                  : undefined
+            }
             onClick={() =>
               void invoke("Payment instruction released", () =>
                 realApi.payrollPaymentRelease(run.id),
@@ -581,6 +1003,21 @@ function PaymentWorkflow({
           </Button>
         ) : null}
       </div>
+      {status === "generated" && generatedByMe && !isTopAdmin ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You generated this payment file. A different payroll or HR approver must approve it.
+        </p>
+      ) : null}
+      {status === "approved" && approvedByMe && !isTopAdmin ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You approved this payment file. A different payroll officer must release it to the bank.
+        </p>
+      ) : null}
+      {status === "approved" && generatedByMe && !isTopAdmin ? (
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+          You generated this payment file. A different payroll officer must release it to the bank.
+        </p>
+      ) : null}
       {status === "released" ? (
         <div className="mt-4 flex flex-wrap items-end gap-2">
           <label className="min-w-64 flex-1 text-xs font-medium">
@@ -770,12 +1207,304 @@ function PayLines({
   );
 }
 
+function CalculationReview({
+  run,
+  rows,
+  readiness,
+}: {
+  run: PayRun;
+  rows: RunLine[];
+  readiness: CalculationReadiness | null;
+}) {
+  if (!rows.length) {
+    return (
+      <p className="rounded-md border bg-surface-muted p-3 text-sm text-muted-foreground">
+        Calculation review opens after the run has pay lines. Lock and calculate the run first.
+      </p>
+    );
+  }
+
+  const blockingLines = rows.filter((line) => line.flags.length > 0);
+  const materialVariances = rows
+    .map((line) => ({
+      line,
+      variance:
+        line.priorNet && line.priorNet > 0
+          ? ((line.net - line.priorNet) / line.priorNet) * 100
+          : null,
+    }))
+    .filter((item) => item.variance !== null && Math.abs(item.variance) >= 2);
+  const allComponents = rows.flatMap((line) => line.components);
+  const statutoryTotal = allComponents
+    .filter((component) => component.source === "Statutory")
+    .reduce((sum, component) => sum + component.amount, 0);
+  const overtimeTotal = allComponents
+    .filter(
+      (component) =>
+        component.source === "Attendance" ||
+        component.code.toLowerCase().includes("overtime") ||
+        component.label.toLowerCase().includes("overtime"),
+    )
+    .reduce((sum, component) => sum + component.amount, 0);
+  const employerTotal = allComponents
+    .filter((component) => component.kind === "Employer")
+    .reduce((sum, component) => sum + component.amount, 0);
+  const prorationWarnings = readiness?.checks.find((check) => check.id === "proration")?.count ?? 0;
+  const reviewReady =
+    readiness?.ready !== false && blockingLines.length === 0 && run.status !== "Draft";
+
+  const reviewCards = [
+    {
+      label: "Calculated workers",
+      value: String(rows.length),
+      detail: `${run.totals.headcount || rows.length} included in run totals`,
+      tone: "text-foreground",
+    },
+    {
+      label: "Gross to net",
+      value: money(run.totals.net, run.currency),
+      detail: `${money(run.totals.gross, run.currency)} gross less ${money(run.totals.deductions, run.currency)} deductions`,
+      tone: "text-foreground",
+    },
+    {
+      label: "Statutory deductions",
+      value: money(statutoryTotal, run.currency),
+      detail: "PAYE, NAPSA, NHIMA and configured statutory components from the engine",
+      tone: "text-foreground",
+    },
+    {
+      label: "Needs attention",
+      value: String(blockingLines.length + materialVariances.length),
+      detail: `${blockingLines.length} line exception${blockingLines.length === 1 ? "" : "s"}, ${materialVariances.length} material variance${materialVariances.length === 1 ? "" : "s"}`,
+      tone: blockingLines.length || materialVariances.length ? "text-warning" : "text-success",
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div
+        className={`rounded-lg border p-4 ${
+          reviewReady ? "border-success/30 bg-success-soft" : "border-warning/40 bg-warning-soft"
+        }`}
+      >
+        <p
+          className={`flex items-start gap-2 text-sm font-semibold ${reviewReady ? "text-success" : "text-warning"}`}
+        >
+          {reviewReady ? (
+            <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+          ) : (
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          )}
+          {reviewReady
+            ? "Calculation review ready for approval"
+            : "Review required before approval"}
+        </p>
+        <p className="mt-2 text-xs text-foreground">
+          Review the engine output below before approval. This page summarizes results only; salary
+          components, tax slabs and statutory rates remain managed in payroll configuration.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        {reviewCards.map((card) => (
+          <div key={card.label} className="rounded-lg border bg-background p-3">
+            <p className="text-xs font-medium text-muted-foreground">{card.label}</p>
+            <p className={`mt-1 text-xl font-semibold tabular ${card.tone}`}>{card.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{card.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Overtime and attendance</p>
+          <p className="mt-1 text-lg font-semibold tabular">{money(overtimeTotal, run.currency)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Approved attendance/overtime included in this calculation.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Proration inputs</p>
+          <p className="mt-1 text-lg font-semibold tabular">{prorationWarnings}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Approved unpaid leave records overlapping the period.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-sm font-medium">Employer cost additions</p>
+          <p className="mt-1 text-lg font-semibold tabular">{money(employerTotal, run.currency)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Employer-side configured contributions not deducted from worker net.
+          </p>
+        </div>
+      </div>
+
+      {blockingLines.length || materialVariances.length ? (
+        <div className="rounded-lg border bg-background">
+          <div className="border-b bg-surface-muted px-3 py-2">
+            <p className="text-sm font-medium">Review exceptions</p>
+          </div>
+          <ul className="divide-y text-sm">
+            {blockingLines.slice(0, 6).map((line) => (
+              <li key={`flag-${line.id}`} className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2">
+                <span className="font-medium">{line.employee}</span>
+                <span className="text-warning">{line.flags.join(", ")}</span>
+              </li>
+            ))}
+            {materialVariances.slice(0, 6).map(({ line, variance }) => (
+              <li key={`variance-${line.id}`} className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2">
+                <span className="font-medium">{line.employee}</span>
+                <span className="text-warning">
+                  Net changed {variance! > 0 ? "+" : "-"}
+                  {Math.abs(variance!).toFixed(1)}% from prior period.
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RunPayslipsSection({
+  run,
+  onChanged,
+}: {
+  run: OperationalPayRun;
+  onChanged: () => Promise<unknown>;
+}) {
+  const slipsState = useApi(async () => {
+    const raw = await realApi.payrollRunPayslips(run.id);
+    return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
+  }, [run.id]);
+
+  return (
+    <DetailSection
+      title="Payslips"
+      description="One payslip per released pay line. Generate PDFs for the whole run, or preview/download an individual one."
+    >
+      <Async state={slipsState} rows={4}>
+        {(slips) => {
+          if (!slips.length) {
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Run is released but no payslips were found — generate them.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={async () => {
+                    try {
+                      await realApi.payrollGenerateAllPayslips(run.id);
+                      feedback.submitted(
+                        "Payslip PDFs generated",
+                        `All ${slips.length} payslip documents are ready. Re-open to see the download links.`,
+                      );
+                      await slipsState.reload();
+                      await onChanged();
+                    } catch (e) {
+                      feedback.blocked(
+                        "Payslip PDF generation failed",
+                        e instanceof Error ? e.message : "Unknown error.",
+                      );
+                    }
+                  }}
+                >
+                  <Download className="size-4" aria-hidden />
+                  Generate PDFs for all payslips
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Idempotent — already-generated slips are returned as-is.
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b bg-surface-muted text-muted-foreground">
+                      <th className="px-2 py-1.5">Payslip</th>
+                      <th className="px-2 py-1.5">Employee</th>
+                      <th className="px-2 py-1.5 text-right">Net</th>
+                      <th className="px-2 py-1.5">Status</th>
+                      <th className="px-2 py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slips.map((s) => (
+                      <tr key={String(s.id ?? "")} className="border-b last:border-0">
+                        <td className="px-2 py-1.5 font-mono text-primary">
+                          {String(s.payslipNo ?? s.id ?? "")}
+                        </td>
+                        <td className="px-2 py-1.5">{String(s.employee ?? s.workerName ?? "")}</td>
+                        <td className="px-2 py-1.5 text-right tabular">
+                          {money(Number(s.netPay ?? 0), run.currency)}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span
+                            className={
+                              String(s.status ?? "") === "released" ||
+                              String(s.status ?? "") === "final"
+                                ? "text-success"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {String(s.status ?? "draft")}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <Link
+                            to="/hrm/payslips/$id"
+                            params={{ id: String(s.id ?? "") }}
+                            className="mr-2 text-primary underline underline-offset-2"
+                          >
+                            Open
+                          </Link>
+                          <button
+                            type="button"
+                            className="text-primary underline underline-offset-2"
+                            onClick={async () => {
+                              const blob = await realApi.payslipDownloadBlob(String(s.id ?? ""));
+                              const url = URL.createObjectURL(blob);
+                              const anchor = document.createElement("a");
+                              anchor.href = url;
+                              anchor.download = `${String(s.payslipNo ?? s.id ?? "payslip")}.pdf`;
+                              anchor.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                          >
+                            PDF
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }}
+      </Async>
+    </DetailSection>
+  );
+}
+
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
 type OperationalPayRun = PayRun & {
   backendStatus: string;
   paymentStatus: string;
   paymentFileReference?: string;
+  paymentFileGeneratedBySubjectId?: string;
+  paymentApprovedBySubjectId?: string;
+  paymentReleasedBySubjectId?: string;
   reconciliationReference?: string;
 };
 
@@ -797,7 +1526,7 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
     id: String(r.id ?? ""),
     period: String(r.periodLabel ?? r.period ?? ""),
     entityId: "",
-    entityName: String(r.entityName ?? "Mighty Finance Solutions Industrial Zambia Ltd"),
+    entityName: String(r.entityName ?? "New World Cargo Zambia Ltd"),
     payGroup: String(r.payGroup ?? "Monthly ZMW"),
     currency: String(r.currency ?? "ZMW"),
     status: status as PayRun["status"],
@@ -808,12 +1537,12 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
         : status === "In review"
           ? "Awaiting top-HR approval"
           : status === "Approved"
-          ? "Release payslips"
-          : status === "Paid"
-            ? "Complete payment workflow"
-            : status === "Closed"
-              ? "Cycle complete"
-              : "Calculate run",
+            ? "Release payslips"
+            : status === "Paid"
+              ? "Complete payment workflow"
+              : status === "Closed"
+                ? "Cycle complete"
+                : "Calculate run",
     dueDate: String(r.cutoffDate ?? ""),
     branchId: r.locationId ? String(r.locationId) : undefined,
     preparedBy: String(r.preparedBySubjectId ?? r.preparedBy ?? "Payroll officer"),
@@ -843,6 +1572,15 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
     paymentStatus: String(r.paymentStatus ?? "not-created"),
     backendStatus: String(r.status ?? "draft"),
     paymentFileReference: r.paymentFileReference ? String(r.paymentFileReference) : undefined,
+    paymentFileGeneratedBySubjectId: r.paymentFileGeneratedBySubjectId
+      ? String(r.paymentFileGeneratedBySubjectId)
+      : undefined,
+    paymentApprovedBySubjectId: r.paymentApprovedBySubjectId
+      ? String(r.paymentApprovedBySubjectId)
+      : undefined,
+    paymentReleasedBySubjectId: r.paymentReleasedBySubjectId
+      ? String(r.paymentReleasedBySubjectId)
+      : undefined,
     reconciliationReference: r.reconciliationReference
       ? String(r.reconciliationReference)
       : undefined,
@@ -891,8 +1629,157 @@ function adaptLines(raw: unknown, runId: string): RunLine[] {
   });
 }
 
+function TopAdminRunControls({
+  run,
+  isTopAdmin,
+  onChanged,
+}: {
+  run: OperationalPayRun;
+  isTopAdmin: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"cancel" | "reverse" | null>(null);
+  const [reason, setReason] = useState("");
+  const [working, setWorking] = useState(false);
+  if (!USE_REAL || !isTopAdmin) return null;
+
+  const canCancel = ["draft", "locked", "calculated", "in-review", "approved"].includes(
+    run.backendStatus,
+  );
+  const canReverse = ["released", "closed"].includes(run.backendStatus);
+  const terminal = run.backendStatus === "reversed";
+  const reasonReady = reason.trim().length >= 5;
+  const activeTitle = mode === "cancel" ? "Cancel this payroll run" : "Reverse this payroll run";
+  const activeDescription =
+    mode === "cancel"
+      ? "Use this before payslips are released. The run will stay visible, but it will be marked as cancelled so you can create the correct run."
+      : "Use this after payslips are released. The system will create a reversal run instead of deleting payroll history.";
+
+  const submit = async () => {
+    if (!mode || !reasonReady) return;
+    setWorking(true);
+    try {
+      if (mode === "cancel") {
+        await realApi.payrollRunCancel(run.id, reason.trim());
+        feedback.submitted(
+          "Payroll run voided.",
+          "The original run remains in audit history and a replacement run can now be created.",
+        );
+      } else {
+        await realApi.payrollRunReverse(run.id, reason.trim());
+        feedback.submitted(
+          "Reversal run created.",
+          "Review and release the reversal run to complete the payroll correction.",
+        );
+      }
+      setMode(null);
+      setReason("");
+      await onChanged();
+    } catch (e) {
+      feedback.blocked(
+        mode === "cancel" ? "Void failed" : "Reversal failed",
+        e instanceof Error ? e.message : "Unknown error.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <DetailSection
+      title="Payroll correction controls"
+      description="Fix payroll mistakes safely. The system keeps a record of what changed and who changed it."
+    >
+      {terminal ? (
+        <div className="rounded-lg border bg-surface-muted p-4 text-sm text-muted-foreground">
+          Current payroll status: {run.backendStatus.replaceAll("-", " ")}. This run is already
+          finished, so no correction button is available here. Check the audit trail to see what
+          happened.
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-surface-muted p-4">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canCancel}
+            onClick={() => setMode("cancel")}
+          >
+            <X className="size-4" aria-hidden />
+            Cancel before payslips are released
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!canReverse}
+            onClick={() => setMode("reverse")}
+          >
+            <RotateCcw className="size-4" aria-hidden />
+            Reverse after payslips are released
+          </Button>
+          <p className="min-w-[16rem] flex-1 text-sm text-muted-foreground">
+            Current payroll status: {run.backendStatus.replaceAll("-", " ")}.
+            {canCancel
+              ? " You can cancel this run because payslips have not been released yet."
+              : canReverse
+                ? " Payslips have already been released, so use a reversal instead of deleting the run."
+                : " No correction action is available for this payroll status."}
+          </p>
+        </div>
+      )}
+      <Dialog
+        open={mode !== null}
+        onOpenChange={(open) => {
+          if (!open && !working) {
+            setMode(null);
+            setReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{activeTitle}</DialogTitle>
+            <DialogDescription>{activeDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="payroll-correction-reason">Why are you doing this?</Label>
+            <Textarea
+              id="payroll-correction-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Example: wrong pay period was selected, so I need to create the correct run."
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              This is required. It will show in the payroll history.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={working}
+              onClick={() => setMode(null)}
+            >
+              Do not change it
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "reverse" ? "destructive" : "default"}
+              disabled={!reasonReady || working}
+              onClick={submit}
+            >
+              {working ? "Working..." : mode === "cancel" ? "Cancel run" : "Create reversal"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </DetailSection>
+  );
+}
+
 function RunDetail() {
   const { id } = Route.useParams();
+  const { user } = useAuth();
   const state = useApi(async (): Promise<OperationalPayRun | null> => {
     if (!USE_REAL) {
       const mock = await payrollRunApi.run(id);
@@ -931,7 +1818,7 @@ function RunDetail() {
       live = false;
     };
   }, []);
-  const exceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
+  const mockExceptions = useMock(() => payrollRunApi.exceptionsFor(id), [id]);
   const lines = useApi(async (): Promise<RunLine[]> => {
     if (!USE_REAL) return payrollRunApi.linesFor(id);
     try {
@@ -945,6 +1832,36 @@ function RunDetail() {
     if (!USE_REAL) return null;
     try {
       return await realApi.payrollRunStatutoryReadiness(id);
+    } catch {
+      return null;
+    }
+  }, [id]);
+  const calculationReadiness = useApi(async (): Promise<CalculationReadiness | null> => {
+    if (!USE_REAL) return null;
+    try {
+      const raw = (await realApi.payrollCalculationReadiness(id)) as Record<string, unknown>;
+      const checks = Array.isArray(raw.checks) ? (raw.checks as Record<string, unknown>[]) : [];
+      const issues = Array.isArray(raw.issues) ? (raw.issues as Record<string, unknown>[]) : [];
+      return {
+        ready: Boolean(raw.ready),
+        includedWorkerCount: Number(raw.includedWorkerCount ?? 0),
+        blockingCount: Number(raw.blockingCount ?? 0),
+        warningCount: Number(raw.warningCount ?? 0),
+        checks: checks.map((check) => ({
+          id: String(check.id ?? ""),
+          label: String(check.label ?? "Check"),
+          state: String(check.state ?? "warn"),
+          detail: String(check.detail ?? ""),
+          count: Number(check.count ?? 0),
+        })),
+        issues: issues.map((issue) => ({
+          workerId: issue.workerId ? String(issue.workerId) : undefined,
+          employeeNo: String(issue.employeeNo ?? ""),
+          workerName: String(issue.workerName ?? ""),
+          issue: String(issue.issue ?? "Calculation readiness issue"),
+          severity: String(issue.severity ?? "warn"),
+        })),
+      };
     } catch {
       return null;
     }
@@ -964,13 +1881,116 @@ function RunDetail() {
           {(run) => {
             if (!run) return <RestrictedState />;
 
-            const selfApproval = run.preparedBy === CURRENT_USER;
+            const currentSubjectId = user?.id ? String(user.id) : "";
+            const selfApproval = USE_REAL
+              ? Boolean(currentSubjectId && run.preparedBy === currentSubjectId)
+              : false;
             // An exception that has been resolved, waived or excluded no longer
             // holds the run up — that is the point of dealing with it.
-            const blocking = (exceptions.data ?? []).filter(
-              (e) => e.severity === "Blocking" && isOutstanding(e),
+            const liveBlocking = (lines.data ?? []).flatMap((line) =>
+              line.flags.map((flag) => ({
+                id: `${line.id}-${flag}`,
+                severity: "Blocking" as const,
+                kind: "Payroll exception",
+                affects: line.employee,
+                what: flag,
+                impact: "This line must be corrected, waived or excluded before approval.",
+                recommended:
+                  "Open Payroll exceptions or recalculate after fixing the worker input.",
+                escalation: "Payroll owner",
+                resolvable: true,
+              })),
             );
-            const canApprove = !selfApproval && blocking.length === 0;
+            const blocking = USE_REAL
+              ? liveBlocking
+              : (mockExceptions.data ?? []).filter(
+                  (e) => e.severity === "Blocking" && isOutstanding(e),
+                );
+            const approvalReady = USE_REAL
+              ? run.backendStatus === "calculated" || run.backendStatus === "in-review"
+              : run.status === "Calculated" || run.status === "In review";
+            const isTopAdmin = (user?.roles ?? []).some(
+              (role) => role.toLowerCase() === "hr_admin",
+            );
+            const canApprove = (!selfApproval || isTopAdmin) && blocking.length === 0;
+            const firstLiveExample = lines.data?.find((line) => line.components.length)
+              ?.components[0];
+            const firstLiveLine = lines.data?.find((line) => line.components.length);
+            const canCalculate =
+              USE_REAL &&
+              !calculating &&
+              calculationReadiness.data?.ready !== false &&
+              ["draft", "locked", "calculated"].includes(run.backendStatus);
+            const calculateLabel =
+              run.backendStatus === "calculated"
+                ? "Recalculate"
+                : run.backendStatus === "draft"
+                  ? "Lock and calculate"
+                  : "Calculate";
+            const canSubmitForReview =
+              USE_REAL &&
+              !submitting &&
+              run.backendStatus === "calculated" &&
+              Boolean(run.branchId);
+            const canLockInputs =
+              USE_REAL &&
+              !locking &&
+              calculationReadiness.data?.ready !== false &&
+              run.backendStatus === "draft";
+            const runCalculate = async () => {
+              setCalculating(true);
+              try {
+                if (run.backendStatus === "draft") {
+                  await realApi.lockPayrollRun(run.id);
+                }
+                await realApi.calculatePayrollRun(run.id);
+                feedback.submitted(
+                  "Calculation complete.",
+                  "Review pay lines and variances before sending for review.",
+                );
+                await state.reload();
+                await lines.reload();
+                await calculationReadiness.reload();
+              } catch (e) {
+                feedback.blocked(
+                  "Calculation failed",
+                  e instanceof Error ? e.message : "Unknown error.",
+                );
+              } finally {
+                setCalculating(false);
+              }
+            };
+            const submitForReview = async () => {
+              setSubmitting(true);
+              try {
+                await realApi.submitPayrollRun(run.id);
+                feedback.submitted(
+                  "Branch run sent for review.",
+                  "Organisation-wide HR can now review and approve this draft.",
+                );
+                await state.reload();
+              } catch (e) {
+                feedback.blocked(
+                  "Submit failed",
+                  e instanceof Error ? e.message : "Unknown error.",
+                );
+              } finally {
+                setSubmitting(false);
+              }
+            };
+            const lockInputs = async () => {
+              setLocking(true);
+              try {
+                await realApi.lockPayrollRun(run.id);
+                feedback.submitted("Payroll inputs locked.", "The run is ready to calculate.");
+                await state.reload();
+                await calculationReadiness.reload();
+              } catch (e) {
+                feedback.blocked("Lock failed", e instanceof Error ? e.message : "Unknown error.");
+              } finally {
+                setLocking(false);
+              }
+            };
 
             return (
               <RecordDetail
@@ -995,479 +2015,470 @@ function RunDetail() {
                   run.branchId
                     ? {
                         label: "Branch",
-                        value: scopeLocations?.find((l) => l.id === run.branchId)?.name ?? run.branchId,
+                        value:
+                          scopeLocations?.find((l) => l.id === run.branchId)?.name ?? run.branchId,
                       }
                     : { label: "Scope", value: "Organisation-wide" },
                 ]}
                 timeline={<StatusTimeline title="Audit trail" events={run.timeline} />}
               >
-                {run.stages.length ? (
-                  <DetailSection
-                    title="Stages"
-                    description="Payslip release, payment and accounting are separate stages on purpose — releasing a payslip does not move money."
-                  >
-                    <Stages stages={run.stages} />
-                  </DetailSection>
-                ) : null}
+                <Tabs defaultValue="overview" className="space-y-4">
+                  <div className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+                    <TabsList className="h-auto min-w-max justify-start gap-1">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="calculate">Calculate</TabsTrigger>
+                      <TabsTrigger value="review">Review</TabsTrigger>
+                      <TabsTrigger value="approval">Approval</TabsTrigger>
+                      <TabsTrigger value="release">Release & payment</TabsTrigger>
+                    </TabsList>
+                  </div>
 
-                <DetailSection
-                  title="Calculate"
-                  description="Gross to net for every included employee. The payroll engine does the work; this shows what it did, employee by employee."
-                  action={
-                    USE_REAL ? (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={
-                            calculating ||
-                            (run.backendStatus !== "locked" && run.backendStatus !== "calculated")
-                          }
-                          onClick={async () => {
-                            setCalculating(true);
-                            try {
-                              await realApi.calculatePayrollRun(run.id);
-                              feedback.submitted(
-                                "Calculation complete.",
-                                "Review pay lines and variances before sending for review.",
-                              );
-                              await state.reload();
-                              await lines.reload();
-                            } catch (e) {
-                              feedback.blocked(
-                                "Calculation failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                            } finally {
-                              setCalculating(false);
-                            }
-                          }}
-                        >
-                          {calculating ? "Calculating…" : "Calculate run"}
-                        </Button>
-                        {/* M46: branch payroll drafts flow up for organisation-wide
-                            HR approval. Organisation-wide runs skip review and
-                            go straight to approval. */}
-                        <Button
-                          variant="default"
-                          size="sm"
-                          disabled={
-                            submitting || run.backendStatus !== "calculated" || !run.branchId
-                          }
-                          onClick={async () => {
-                            setSubmitting(true);
-                            try {
-                              await realApi.submitPayrollRun(run.id);
-                              feedback.submitted(
-                                "Branch run sent for review.",
-                                "Organisation-wide HR can now review and approve this draft.",
-                              );
-                              await state.reload();
-                            } catch (e) {
-                              feedback.blocked(
-                                "Submit failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                            } finally {
-                              setSubmitting(false);
-                            }
-                          }}
-                        >
-                          {submitting ? "Sending…" : "Send for review"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={locking || run.backendStatus !== "draft"}
-                          onClick={async () => {
-                            setLocking(true);
-                            try {
-                              await realApi.lockPayrollRun(run.id);
-                              feedback.submitted(
-                                "Payroll inputs locked.",
-                                "The run is ready to calculate.",
-                              );
-                              await state.reload();
-                            } catch (e) {
-                              feedback.blocked(
-                                "Lock failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                            } finally {
-                              setLocking(false);
-                            }
-                          }}
-                        >
-                          {locking ? "Locking…" : "Lock inputs"}
-                        </Button>
-                      </div>
-                    ) : undefined
-                  }
-                >
-                  <CalculationPanel
-                    runId={run.id}
-                    locked={run.status === "Paid" || run.status === "Closed"}
-                    lockedReason={
-                      run.status === "Closed"
-                        ? "This period is closed and locked. A change now needs a correction run."
-                        : "Payments have been released, so recalculating would change figures people have already been paid on."
-                    }
-                  />
-                </DetailSection>
-
-                <DetailSection
-                  title="Pay lines"
-                  description="Every employee in this run. Open a name to see how each figure was derived — no line is a black box."
-                  action={
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to="/hrm/payroll/runs/$id/edit" params={{ id: run.id }}>
-                        Edit this run
-                      </Link>
-                    </Button>
-                  }
-                >
-                  <Async state={lines} rows={4}>
-                    {(rows) =>
-                      rows.length ? (
-                        <PayLines
-                          rows={rows}
-                          currency={run.currency}
-                          payslipsReleased={
-                            run.status === "Paid" ||
-                            run.status === "Closed" ||
-                            run.stages.some((st) => st.id === "s7" && st.state === "done")
-                          }
-                        />
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          Nothing has been calculated yet, so this run has no pay lines. They appear
-                          once the calculate stage completes.
-                        </p>
-                      )
-                    }
-                  </Async>
-                </DetailSection>
-
-                {/* M34: admin payslip surface — list of payslips for this run with bulk PDF generate */}
-                {USE_REAL && (run.status === "Paid" || run.status === "Closed" || run.backendStatus === "released") ? (
-                  <DetailSection
-                    title="Payslips"
-                    description="One payslip per released pay line. Generate PDFs for the whole run, or preview/download an individual one."
-                  >
-                    <Async
-                      state={
-                        useApi(async () => {
-                          const raw = await realApi.payrollRunPayslips(run.id);
-                          return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
-                        })
-                      }
-                      rows={4}
-                    >
-                      {(slips) => {
-                        if (!slips.length) {
-                          return (
-                            <div className="flex flex-wrap items-center gap-3">
-                              <p className="text-sm text-muted-foreground">
-                                Run is released but no payslips were found — generate them.
-                              </p>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                onClick={async () => {
-                                  try {
-                                    await realApi.payrollGenerateAllPayslips(run.id);
-                                    feedback.submitted(
-                                      "Payslip PDFs generated",
-                                      `All ${slips.length} payslip documents are ready. Re-open to see the download links.`,
-                                    );
-                                    await state.reload();
-                                  } catch (e) {
-                                    feedback.blocked(
-                                      "Payslip PDF generation failed",
-                                      e instanceof Error ? e.message : "Unknown error.",
-                                    );
-                                  }
-                                }}
-                              >
-                                <Download className="size-4" aria-hidden />
-                                Generate PDFs for all payslips
-                              </Button>
-                              <span className="text-xs text-muted-foreground">
-                                Idempotent — already-generated slips are returned as-is.
-                              </span>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-xs">
-                                <thead>
-                                  <tr className="border-b bg-surface-muted text-muted-foreground">
-                                    <th className="px-2 py-1.5">Payslip</th>
-                                    <th className="px-2 py-1.5">Employee</th>
-                                    <th className="px-2 py-1.5 text-right">Net</th>
-                                    <th className="px-2 py-1.5">Status</th>
-                                    <th className="px-2 py-1.5" />
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {slips.map((s) => (
-                                    <tr key={String(s.id ?? "")} className="border-b last:border-0">
-                                      <td className="px-2 py-1.5 font-mono text-primary">
-                                        {String(s.payslipNo ?? s.id ?? "")}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        {String(s.employee ?? s.workerName ?? "")}
-                                      </td>
-                                      <td className="px-2 py-1.5 text-right tabular">
-                                        {money(Number(s.netPay ?? 0), run.currency)}
-                                      </td>
-                                      <td className="px-2 py-1.5">
-                                        <span
-                                          className={
-                                            String(s.status ?? "") === "released" || String(s.status ?? "") === "final"
-                                              ? "text-success"
-                                              : "text-muted-foreground"
-                                          }
-                                        >
-                                          {String(s.status ?? "draft")}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 text-right">
-                                        <Link
-                                          to="/hrm/payslips/$id"
-                                          params={{ id: String(s.id ?? "") }}
-                                          className="mr-2 text-primary underline underline-offset-2"
-                                        >
-                                          Open
-                                        </Link>
-                                        <Link
-                                          to="/hrm/payslips/$id"
-                                          params={{ id: String(s.id ?? "") }}
-                                          className="text-primary underline underline-offset-2"
-                                        >
-                                          PDF
-                                        </Link>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    </Async>
-                  </DetailSection>
-                ) : null}
-
-                <DetailSection
-                  title="Control totals"
-                  description="Compared with the previous period. Anything moving 2% or more is flagged as material and needs an explanation before approval."
-                >
-                  <Totals run={run} />
-                </DetailSection>
-
-                {run.excluded.length ? (
-                  <DetailSection
-                    title="Excluded from this run"
-                    description="Exclusion is deliberate and recorded — an employee is never silently left out."
-                  >
-                    <ul className="space-y-2 text-sm">
-                      {run.excluded.map((x) => (
-                        <li key={x.employee} className="flex gap-2">
-                          <Ban
-                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                            aria-hidden
-                          />
-                          <span>
-                            <span className="font-medium">{x.employee}</span>
-                            <span className="block text-xs text-muted-foreground">{x.reason}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </DetailSection>
-                ) : null}
-
-                <DetailSection
-                  title="Worked example — how one figure was derived"
-                  description="Every calculated line can be explained. This is the same component used on an employee payslip."
-                >
-                  <CalculationExplainer
-                    currency={run.currency}
-                    caption="Shift allowance for Chanda Mwansa-Chileshe, August 2026."
-                    lines={[
-                      {
-                        code: "SHIFT",
-                        label: "Shift allowance",
-                        amount: 2_100,
-                        inputs: [
-                          { label: "Qualifying shifts", value: "14" },
-                          { label: "Rate per shift", value: money(150, run.currency) },
-                          { label: "Source", value: "Approved attendance, cutoff 24 Aug" },
-                        ],
-                        ruleVersion: "ALLOW-SHIFT v2.1",
-                        effectiveFrom: "2026-04-01",
-                        explanation:
-                          "Qualifying night and weekend shifts multiplied by the rate in force for the period.",
-                        priorAmount: 1_650,
-                      },
-                    ]}
-                  />
-                </DetailSection>
-
-                {run.status !== "Closed" && run.status !== "Paid" ? (
-                  <DetailSection
-                    title="Approval"
-                    description={
-                      run.branchId
-                        ? "Branch payroll drafts flow up for organisation-wide HR approval. Top HR approves; branch HR cannot approve their own draft."
-                        : "Segregation of duties is enforced here, not assumed."
-                    }
-                  >
-                    {selfApproval ? (
-                      <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
-                        <p className="flex items-start gap-2 text-sm font-medium text-danger">
-                          <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-                          You prepared this run, so you cannot approve it
-                        </p>
-                        <p className="mt-2 text-sm text-foreground">
-                          {run.preparedBy} prepared this run. Approval must come from a different
-                          authorised person — this is what stops one individual creating and
-                          releasing a payment on their own.
-                        </p>
-                        <Button variant="outline" className="mt-3" disabled>
-                          Approve run — not available to you
-                        </Button>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Send it to an approver instead. The attempt and the reason it was blocked
-                          are both recorded.
-                        </p>
-                      </div>
-                    ) : blocking.length ? (
-                      <div className="rounded-lg border border-warning/40 bg-warning-soft p-4">
-                        <p className="flex items-start gap-2 text-sm font-medium text-warning">
-                          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                          {blocking.length} blocking exception{blocking.length === 1 ? "" : "s"}{" "}
-                          must be resolved first
-                        </p>
-                        <Button variant="outline" className="mt-3" asChild>
-                          <Link to="/hrm/payroll/exceptions">Review exceptions</Link>
-                        </Button>
-                      </div>
-                    ) : (
-                      <ApprovalPanel
-                        decisionSummary={`Approve ${run.period} for ${run.included} employees at ${run.entityName}. Net pay ${money(run.totals.net, run.currency)}.`}
-                        policy={[
-                          {
-                            id: "p1",
-                            label: "Segregation of duties",
-                            outcome: "pass",
-                            detail: `Prepared by ${run.preparedBy}; you are a different person.`,
-                          },
-                          {
-                            id: "p2",
-                            label: "Blocking exceptions",
-                            outcome: "pass",
-                            detail: "None outstanding.",
-                          },
-                          {
-                            id: "p3",
-                            label: "Material variance explained",
-                            outcome: "warn",
-                            detail: "One variance above 2% has a recorded explanation.",
-                          },
-                        ]}
-                        conflicts={[]}
-                        onDecision={async (decision, reason) => {
-                          if (USE_REAL && decision === "approve") {
-                            try {
-                              await realApi.payrollRunApprove(run.id);
-                              feedback.submitted(
-                                `${run.period} approved for ${run.included} employees.`,
-                                run.branchId
-                                  ? "Branch draft merged into the mainstream payroll. Payslips can now be released."
-                                  : "Payslips can now be released. Releasing them does not pay anyone.",
-                              );
-                              await state.reload();
-                              return;
-                            } catch (e) {
-                              feedback.blocked(
-                                "Approval failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                              return;
-                            }
-                          }
-                          if (decision === "approve") {
-                            feedback.submitted(
-                              `${run.period} approved for ${run.included} employees.`,
-                              "Payslips can now be released. Releasing them does not pay anyone.",
-                            );
-                          } else if (USE_REAL && decision === "reject") {
-                            try {
-                              await realApi.payrollRunReverse(run.id);
-                              feedback.submitted(
-                                `${run.period} rejected and reversed.`,
-                                "The preparer will see your reason in the audit trail and can recalculate.",
-                              );
-                              await state.reload();
-                              return;
-                            } catch (e) {
-                              feedback.blocked(
-                                "Rejection failed",
-                                e instanceof Error ? e.message : "Unknown error.",
-                              );
-                              return;
-                            }
-                          } else if (decision === "return" || decision === "reject") {
-                            feedback.submitted(
-                              `${run.period} sent back to ${run.preparedBy}.`,
-                              reason || "The preparer will see your reason and can recalculate.",
-                            );
-                          } else {
-                            feedback.note(
-                              "Decision delegated.",
-                              reason ||
-                                "The delegate must still be someone other than the preparer.",
-                            );
-                          }
-                        }}
-                      />
-                    )}
-                    {canApprove ? null : null}
-                  </DetailSection>
-                ) : null}
-
-                <DetailSection
-                  title="Release"
-                  description="Three separate actions. They are never combined into one button."
-                >
-                  <StatutoryReadinessCard readiness={readiness.data} />
-                  <div className={readiness.data ? "mt-3" : ""}>
-                    <ReleaseActions
+                  <TabsContent value="overview" className="space-y-4">
+                    <TopAdminRunControls
                       run={run}
-                      readiness={readiness.data}
-                      onReleased={async () => {
-                        await readiness.reload();
+                      isTopAdmin={isTopAdmin}
+                      onChanged={async () => {
                         await state.reload();
                       }}
                     />
-                    {USE_REAL ? <PaymentWorkflow run={run} onChanged={async () => { await state.reload(); }} /> : null}
-                  </div>
-                  <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
-                    <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                    {USE_REAL
-                      ? "Payslip release is recorded against the run; payment and ledger posting are handled downstream."
-                      : "Nothing in this build pays anyone, files anything or posts to a ledger."}
-                  </p>
-                </DetailSection>
+
+                    {run.stages.length ? (
+                      <DetailSection
+                        title="Stages"
+                        description="Payslip release, payment and accounting are separate stages on purpose — releasing a payslip does not move money."
+                      >
+                        <Stages stages={run.stages} />
+                      </DetailSection>
+                    ) : null}
+                  </TabsContent>
+
+                  <TabsContent value="calculate" className="space-y-4">
+                    {USE_REAL ? (
+                      <div className="rounded-lg border bg-surface p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold">Calculation actions</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Current status:{" "}
+                              <span className="font-medium text-foreground">
+                                {run.backendStatus.replaceAll("-", " ")}
+                              </span>
+                              . Use this first, then review the calculated lines.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              disabled={!canCalculate}
+                              onClick={() => {
+                                void runCalculate();
+                              }}
+                            >
+                              {calculating ? "Calculating..." : calculateLabel}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              disabled={!canSubmitForReview}
+                              onClick={() => {
+                                void submitForReview();
+                              }}
+                            >
+                              {submitting ? "Sending..." : "Send for review"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="gap-1.5"
+                              disabled={!canLockInputs}
+                              onClick={() => {
+                                void lockInputs();
+                              }}
+                            >
+                              {locking ? "Locking..." : "Lock inputs"}
+                            </Button>
+                          </div>
+                        </div>
+                        {calculationReadiness.data?.ready === false ? (
+                          <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm text-warning">
+                            Calculation is blocked until the readiness issues below are fixed.
+                          </p>
+                        ) : run.backendStatus === "calculated" ? (
+                          <p className="mt-3 rounded-md border bg-surface-muted p-3 text-sm text-muted-foreground">
+                            This run is already calculated. Use <strong>Recalculate</strong> only
+                            after changing inputs or configuration.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <DetailSection
+                      title="Calculate"
+                      description="Gross to net for every included employee. The payroll engine does the work; this shows what it did, employee by employee."
+                    >
+                      <CalculationReadinessCard readiness={calculationReadiness.data} />
+                      <CalculationPanel
+                        runId={run.id}
+                        locked={run.status === "Paid" || run.status === "Closed"}
+                        liveCalculatedCount={USE_REAL ? (lines.data?.length ?? 0) : undefined}
+                        liveTotalCount={USE_REAL ? run.included : undefined}
+                        liveStatus={USE_REAL ? run.backendStatus : undefined}
+                        lockedReason={
+                          run.status === "Closed"
+                            ? "This period is closed and locked. A change now needs a correction run."
+                            : "Payments have been released, so recalculating would change figures people have already been paid on."
+                        }
+                      />
+                    </DetailSection>
+                  </TabsContent>
+
+                  <TabsContent value="review" className="space-y-4">
+                    <DetailSection
+                      title="Calculation review"
+                      description="One checkpoint before approval: control totals, statutory deductions, overtime, proration inputs and employee-level exceptions."
+                    >
+                      <Async state={lines} rows={3}>
+                        {(rows) => (
+                          <CalculationReview
+                            run={run}
+                            rows={rows}
+                            readiness={calculationReadiness.data}
+                          />
+                        )}
+                      </Async>
+                    </DetailSection>
+
+                    <DetailSection
+                      title="Pay lines"
+                      description="Every employee in this run. Open a name to see how each figure was derived — no line is a black box."
+                      action={
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/hrm/payroll/runs/$id/edit" params={{ id: run.id }}>
+                            Edit this run
+                          </Link>
+                        </Button>
+                      }
+                    >
+                      <Async state={lines} rows={4}>
+                        {(rows) =>
+                          rows.length ? (
+                            <PayLines
+                              rows={rows}
+                              currency={run.currency}
+                              payslipsReleased={
+                                run.status === "Paid" ||
+                                run.status === "Closed" ||
+                                run.stages.some((st) => st.id === "s7" && st.state === "done")
+                              }
+                            />
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Nothing has been calculated yet, so this run has no pay lines. They
+                              appear once the calculate stage completes.
+                            </p>
+                          )
+                        }
+                      </Async>
+                    </DetailSection>
+
+                    {/* M34: admin payslip surface — list of payslips for this run with bulk PDF generate */}
+                    {USE_REAL &&
+                    (run.status === "Paid" ||
+                      run.status === "Closed" ||
+                      run.backendStatus === "released") ? (
+                      <RunPayslipsSection
+                        run={run}
+                        onChanged={async () => {
+                          await state.reload();
+                        }}
+                      />
+                    ) : null}
+
+                    <DetailSection
+                      title="Control totals"
+                      description="Compared with the previous period. Anything moving 2% or more is flagged as material and needs an explanation before approval."
+                    >
+                      <Totals run={run} />
+                    </DetailSection>
+
+                    {run.excluded.length ? (
+                      <DetailSection
+                        title="Excluded from this run"
+                        description="Exclusion is deliberate and recorded — an employee is never silently left out."
+                      >
+                        <ul className="space-y-2 text-sm">
+                          {run.excluded.map((x) => (
+                            <li key={x.employee} className="flex gap-2">
+                              <Ban
+                                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                aria-hidden
+                              />
+                              <span>
+                                <span className="font-medium">{x.employee}</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {x.reason}
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </DetailSection>
+                    ) : null}
+
+                    {firstLiveExample && firstLiveLine ? (
+                      <DetailSection
+                        title="Worked example — how one figure was derived"
+                        description="Every calculated line can be explained. This is the same component used on an employee payslip."
+                      >
+                        <CalculationExplainer
+                          currency={run.currency}
+                          caption={`${firstLiveExample.label} for ${firstLiveLine.employee}, ${run.period}.`}
+                          lines={[
+                            {
+                              code: firstLiveExample.code,
+                              label: firstLiveExample.label,
+                              amount: firstLiveExample.amount,
+                              inputs: firstLiveExample.inputs,
+                              ruleVersion: firstLiveExample.ruleVersion,
+                              effectiveFrom: firstLiveExample.effectiveFrom,
+                              explanation: firstLiveExample.explanation || firstLiveExample.basis,
+                            },
+                          ]}
+                        />
+                      </DetailSection>
+                    ) : null}
+                  </TabsContent>
+
+                  <TabsContent value="approval" className="space-y-4">
+                    {run.status !== "Closed" && run.status !== "Paid" ? (
+                      <DetailSection
+                        title="Approval"
+                        description={
+                          run.branchId
+                            ? "Branch payroll drafts flow up for organisation-wide HR approval. Top HR approves; branch HR cannot approve their own draft."
+                            : "Segregation of duties is enforced here, not assumed."
+                        }
+                      >
+                        {!approvalReady ? (
+                          <div className="rounded-lg border bg-surface-muted p-4">
+                            <p className="flex items-start gap-2 text-sm font-medium">
+                              <Lock
+                                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                aria-hidden
+                              />
+                              Approval opens after calculation
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Current backend status is {run.backendStatus.replaceAll("-", " ")}.
+                              Lock and calculate the run before sending it for approval.
+                            </p>
+                          </div>
+                        ) : selfApproval && !isTopAdmin ? (
+                          <div className="rounded-lg border border-danger/40 bg-danger-soft p-4">
+                            <p className="flex items-start gap-2 text-sm font-medium text-danger">
+                              <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                              You prepared this run, so you cannot approve it
+                            </p>
+                            <p className="mt-2 text-sm text-foreground">
+                              {run.preparedBy} prepared this run. Approval must come from a
+                              different authorised person — this is what stops one individual
+                              creating and releasing a payment on their own.
+                            </p>
+                            <Button variant="outline" className="mt-3" disabled>
+                              Approve run — not available to you
+                            </Button>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Send it to an approver instead. The attempt and the reason it was
+                              blocked are both recorded.
+                            </p>
+                          </div>
+                        ) : selfApproval && isTopAdmin ? (
+                          <ApprovalPanel
+                            decisionSummary={`Emergency top-admin approval for ${run.period}: you prepared this run, but your HR administrator role is allowed to override maker-checker during setup or correction. Net pay ${money(run.totals.net, run.currency)}.`}
+                            policy={[
+                              {
+                                id: "p1",
+                                label: "Top-admin override",
+                                outcome: "warn",
+                                detail:
+                                  "You prepared this run. Approval is allowed because your account has the HR administrator role and the action is written to the audit trail.",
+                              },
+                              {
+                                id: "p2",
+                                label: "Blocking exceptions",
+                                outcome: "pass",
+                                detail: "None outstanding.",
+                              },
+                            ]}
+                            conflicts={[]}
+                            onDecision={async (decision, reason) => {
+                              if (decision === "approve") {
+                                try {
+                                  await realApi.payrollRunApprove(
+                                    run.id,
+                                    reason ||
+                                      "Top-admin self-approval override during controlled setup",
+                                  );
+                                  feedback.submitted(
+                                    `${run.period} approved by top admin.`,
+                                    "The override reason was recorded in the payroll audit trail.",
+                                  );
+                                  await state.reload();
+                                  return;
+                                } catch (error) {
+                                  feedback.blocked(
+                                    "Approval failed",
+                                    error instanceof Error ? error.message : "Unknown error.",
+                                  );
+                                  return;
+                                }
+                              }
+                              feedback.note(
+                                "Decision not applied.",
+                                reason ||
+                                  "Approve the run only when the top-admin override is intended.",
+                              );
+                            }}
+                          />
+                        ) : blocking.length ? (
+                          <div className="rounded-lg border border-warning/40 bg-warning-soft p-4">
+                            <p className="flex items-start gap-2 text-sm font-medium text-warning">
+                              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                              {blocking.length} blocking exception{blocking.length === 1 ? "" : "s"}{" "}
+                              must be resolved first
+                            </p>
+                            <Button variant="outline" className="mt-3" asChild>
+                              <Link to="/hrm/payroll/exceptions">Review exceptions</Link>
+                            </Button>
+                          </div>
+                        ) : (
+                          <ApprovalPanel
+                            decisionSummary={`Approve ${run.period} for ${run.included} employees at ${run.entityName}. Net pay ${money(run.totals.net, run.currency)}.`}
+                            policy={[
+                              {
+                                id: "p1",
+                                label: "Segregation of duties",
+                                outcome: "pass",
+                                detail: `Prepared by ${run.preparedBy}; you are a different person.`,
+                              },
+                              {
+                                id: "p2",
+                                label: "Blocking exceptions",
+                                outcome: "pass",
+                                detail: "None outstanding.",
+                              },
+                              {
+                                id: "p3",
+                                label: "Material variance explained",
+                                outcome: "warn",
+                                detail: "One variance above 2% has a recorded explanation.",
+                              },
+                            ]}
+                            conflicts={[]}
+                            onDecision={async (decision, reason) => {
+                              if (USE_REAL && decision === "approve") {
+                                try {
+                                  await realApi.payrollRunApprove(run.id);
+                                  feedback.submitted(
+                                    `${run.period} approved for ${run.included} employees.`,
+                                    run.branchId
+                                      ? "Branch draft merged into the mainstream payroll. Payslips can now be released."
+                                      : "Payslips can now be released. Releasing them does not pay anyone.",
+                                  );
+                                  await state.reload();
+                                  return;
+                                } catch (e) {
+                                  feedback.blocked(
+                                    "Approval failed",
+                                    e instanceof Error ? e.message : "Unknown error.",
+                                  );
+                                  return;
+                                }
+                              }
+                              if (decision === "approve") {
+                                feedback.submitted(
+                                  `${run.period} approved for ${run.included} employees.`,
+                                  "Payslips can now be released. Releasing them does not pay anyone.",
+                                );
+                              } else if (USE_REAL && decision === "reject") {
+                                try {
+                                  await realApi.payrollRunCancel(
+                                    run.id,
+                                    reason || "Rejected during payroll approval",
+                                  );
+                                  feedback.submitted(
+                                    `${run.period} rejected and voided.`,
+                                    "The preparer will see your reason in the audit trail and can recalculate.",
+                                  );
+                                  await state.reload();
+                                  return;
+                                } catch (e) {
+                                  feedback.blocked(
+                                    "Rejection failed",
+                                    e instanceof Error ? e.message : "Unknown error.",
+                                  );
+                                  return;
+                                }
+                              } else if (decision === "return" || decision === "reject") {
+                                feedback.submitted(
+                                  `${run.period} sent back to ${run.preparedBy}.`,
+                                  reason ||
+                                    "The preparer will see your reason and can recalculate.",
+                                );
+                              } else {
+                                feedback.note(
+                                  "Decision delegated.",
+                                  reason ||
+                                    "The delegate must still be someone other than the preparer.",
+                                );
+                              }
+                            }}
+                          />
+                        )}
+                        {canApprove ? null : null}
+                      </DetailSection>
+                    ) : (
+                      <DetailSection
+                        title="Approval"
+                        description="This payroll run has already passed approval."
+                      >
+                        <p className="rounded-md border bg-surface-muted p-4 text-sm text-muted-foreground">
+                          Approval is no longer available because the run status is {run.status}.
+                        </p>
+                      </DetailSection>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="release" className="space-y-4">
+                    <DetailSection
+                      title="Release"
+                      description="Payslip release, payment file, bank approval and reconciliation are separate controls."
+                    >
+                      <StatutoryReadinessCard readiness={readiness.data} />
+                      <div className={readiness.data ? "mt-3" : ""}>
+                        <ReleaseActions
+                          run={run}
+                          readiness={readiness.data}
+                          onReleased={async () => {
+                            await readiness.reload();
+                            await state.reload();
+                          }}
+                        />
+                        {USE_REAL ? (
+                          <PaymentWorkflow
+                            run={run}
+                            onChanged={async () => {
+                              await state.reload();
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                      <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
+                        <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                        {USE_REAL
+                          ? "Payslip release is recorded against the run; payment and ledger posting are handled downstream."
+                          : "Nothing in this build pays anyone, files anything or posts to a ledger."}
+                      </p>
+                    </DetailSection>
+                  </TabsContent>
+                </Tabs>
               </RecordDetail>
             );
           }}

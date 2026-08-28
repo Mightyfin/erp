@@ -24,9 +24,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/experience/knowledge")({
   head: () => ({
     meta: [
-      { title: "HR knowledge — Mightyfin ERP HRM" },
+      { title: "HR knowledge — New World Cargo HRM" },
       { name: "description", content: "Approved HR articles, and an assistant that answers only from them and cites what it used." },
-      { property: "og:title", content: "HR knowledge — Mightyfin ERP HRM" },
+      { property: "og:title", content: "HR knowledge — New World Cargo HRM" },
       { property: "og:description", content: "Approved HR articles, and an assistant that answers only from them and cites what it used." },
     ],
   }),

@@ -60,8 +60,8 @@ const ENABLED_PREFIXES = [
   "/hrm/recruitment", // M29 vacancy, candidate, offer and preboarding operations
   "/hrm/relations", // M30 employee-relations and investigator workspaces
   "/hrm/configuration",
+  "/hrm/data", // shared Import/Export hub
   "/hrm/setup",
-  "/hrm/import", // M53 spreadsheet round-trip import/export tool
   "/hrm/help",
   "/sign-in",
 ];
@@ -71,7 +71,6 @@ const ALWAYS = ["/hrm", "/hrm/help", "/sign-in", "/speak-up"];
 
 const PRODUCTION = import.meta.env.VITE_USE_REAL_API === "true";
 const DEMO_ONLY_PREFIXES = [
-  "/hrm/configuration/business",
   "/hrm/configuration/branch-access", // M45 branch confinement admin
   "/hrm/configuration/process",
   "/hrm/reports/builder",
@@ -87,8 +86,6 @@ const DEMO_ONLY_PREFIXES = [
   "/hrm/relations/safety",
   "/hrm/relations/ethics",
   "/hrm/relations/labour",
-  "/hrm/time/timesheets",
-  "/hrm/time/toil",
   "/hrm/time/utilisation",
   "/hrm/time/travel",
   "/hrm/time/expenses",

@@ -66,21 +66,37 @@ export const DegradedState = ({ service, onRetry }: { service: string; onRetry?:
   />
 );
 
-export const ErrorState = ({ message, onRetry }: { message: string; onRetry?: () => void }) => (
-  <Frame
-    tone="danger"
-    icon={<AlertTriangle className="size-8" aria-hidden />}
-    title="This didn't load"
-    body={message}
-    action={
-      onRetry ? (
-        <Button variant="outline" onClick={onRetry}>
-          Try again
-        </Button>
-      ) : undefined
-    }
-  />
-);
+export const ErrorState = ({ message, onRetry }: { message: string; onRetry?: () => void }) => {
+  const isForbidden =
+    message.toLowerCase().includes("permission") ||
+    message.toLowerCase().includes("requires one of roles") ||
+    message.toLowerCase().includes("forbidden");
+  if (isForbidden) {
+    return (
+      <Frame
+        tone="warning"
+        icon={<Lock className="size-8" aria-hidden />}
+        title="You do not have permission"
+        body="Your account is signed in, but this page needs another HRMS role. Ask an HR administrator to update your access if you should be able to use it."
+      />
+    );
+  }
+  return (
+    <Frame
+      tone="danger"
+      icon={<AlertTriangle className="size-8" aria-hidden />}
+      title="This didn't load"
+      body={message}
+      action={
+        onRetry ? (
+          <Button variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+};
 
 export const LoadingState = ({ rows = 4, label = "Loading" }: { rows?: number; label?: string }) => (
   <div className="space-y-3" role="status" aria-live="polite" aria-busy="true">

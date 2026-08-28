@@ -60,7 +60,7 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
     // identity and lists only their own requests. Not-linked → empty list.
     public async Task<Paged<HrRequestDto>> GetMyRequestsAsync(string subjectId, string? status, CancellationToken ct)
     {
-        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "payroll");
         // A caller with a subject claim who is not linked to a worker must
         // never see anyone else's requests — unknown identity → empty inbox.
         if (!string.IsNullOrEmpty(subjectId))
@@ -105,7 +105,7 @@ public sealed class ExperienceServiceImpl(IExperienceRepository repo, IAuthzServ
 
     public async Task<HrRequestDto> CreateRequestAsync(Guid? workerId, HrRequestCreate request, CancellationToken ct)
     {
-        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "payroll");
         var req = new HrRequest
         {
             WorkerId = workerId,

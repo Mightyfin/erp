@@ -42,11 +42,18 @@ export function CalculationPanel({
   runId,
   locked,
   lockedReason,
+  liveCalculatedCount,
+  liveTotalCount,
+  liveStatus,
 }: {
   runId: string;
   /** A released or closed run must not be recalculated. */
   locked?: boolean;
   lockedReason?: string;
+  /** Production payroll runs are calculated by the real API, not the mock job store. */
+  liveCalculatedCount?: number;
+  liveTotalCount?: number;
+  liveStatus?: string;
 }) {
   const [job, setJob] = useState<CalculationJob | null>(null);
   const [starting, setStarting] = useState(false);
@@ -109,6 +116,64 @@ export function CalculationPanel({
         {lockedReason ??
           "This run has been released, so it cannot be recalculated. A change now needs a correction run."}
       </p>
+    );
+  }
+
+  if (liveCalculatedCount !== undefined || liveTotalCount !== undefined) {
+    const calculated = Math.max(0, liveCalculatedCount ?? 0);
+    const total = Math.max(calculated, liveTotalCount ?? calculated);
+    const complete = total > 0 && calculated >= total;
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border bg-surface p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-medium">
+              {complete ? "Finished" : total === 0 ? "Waiting for calculation" : "Calculation in progress"}
+            </p>
+            <p className="tabular text-xs text-muted-foreground">
+              {calculated} of {total} calculated
+            </p>
+          </div>
+
+          <div
+            className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuenow={calculated}
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-label="Calculation progress"
+          >
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-300"
+              style={{ width: `${(calculated / Math.max(total, 1)) * 100}%` }}
+            />
+          </div>
+
+          <p
+            className={`mt-3 flex gap-2 rounded-md border p-3 text-xs ${
+              complete
+                ? "border-success/30 bg-success-soft text-success"
+                : "border-warning/40 bg-warning-soft text-warning"
+            }`}
+          >
+            {complete ? (
+              <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            ) : (
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            )}
+            {complete
+              ? `${calculated} of ${total} calculated. No employee was left out.`
+              : total === 0
+                ? `No payroll lines exist yet. Current backend status is ${liveStatus ?? "unknown"}.`
+                : `${calculated} of ${total} calculated. Review the pay lines below for any missing employees.`}
+          </p>
+
+          <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            These counts come from the live payroll run and pay-line records returned by the backend.
+          </p>
+        </div>
+      </div>
     );
   }
 

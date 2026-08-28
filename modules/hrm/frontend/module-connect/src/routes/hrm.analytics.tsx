@@ -9,7 +9,7 @@ import {
   GraduationCap,
   Users,
 } from "lucide-react";
-import { getSession } from "@/platform/oidc";
+import { hrmApi } from "@/platform/api-client";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
@@ -18,7 +18,7 @@ import { PageHeader } from "@/platform/components/PageHeader";
 export const Route = createFileRoute("/hrm/analytics")({
   head: () => ({
     meta: [
-      { title: "HR analytics — Mightyfin ERP HRM" },
+      { title: "HR analytics — New World Cargo HRM" },
       {
         name: "description",
         content:
@@ -216,9 +216,6 @@ class ChartsErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 /* ------------------------------------------------------------------ */
 
 function AnalyticsPage() {
-  // Self-contained fetcher: avoids coupling to shared API-helper chunks
-  // whose export layout has been known to shift between client builds.
-  const apiBase = (import.meta.env.VITE_HRM_API_BASE as string | undefined) ?? "/api";
   const [state, setState] = useState<{
     data: Dashboard | null;
     error: Error | null;
@@ -229,12 +226,7 @@ function AnalyticsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const token = getSession()?.accessToken;
-        const res = await fetch(`${apiBase}/hrm/analytics/dashboard`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as Dashboard;
+        const data = await hrmApi.get<Dashboard>("/hrm/analytics/dashboard");
         if (!cancelled) setState({ data, error: null, loading: false });
       } catch (e) {
         if (!cancelled) setState({ data: null, error: e as Error, loading: false });
@@ -243,7 +235,7 @@ function AnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiBase]);
+  }, []);
 
   return (
     <AppShell>

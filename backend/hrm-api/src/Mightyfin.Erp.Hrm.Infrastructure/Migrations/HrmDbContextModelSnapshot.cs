@@ -1181,6 +1181,11 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("role_name");
 
+                    b.Property<string>("PermissionsCsv")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("permissions_csv");
+
                     b.Property<string>("TenantId")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1714,13 +1719,47 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("location_id");
 
+                    b.Property<DateTimeOffset?>("OvertimeDecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("overtime_decided_at");
+
+                    b.Property<string>("OvertimeDecidedBySubjectId")
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_decided_by_subject_id");
+
+                    b.Property<string>("OvertimeDecisionReason")
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_decision_reason");
+
                     b.Property<decimal>("OvertimeHours")
                         .HasColumnType("numeric")
                         .HasColumnName("overtime_hours");
 
+                    b.Property<decimal>("OvertimeHourlyDivisor")
+                        .HasColumnType("numeric")
+                        .HasColumnName("overtime_hourly_divisor");
+
                     b.Property<decimal>("OvertimeMultiplier")
                         .HasColumnType("numeric")
                         .HasColumnName("overtime_multiplier");
+
+                    b.Property<Guid?>("OvertimePayrollLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overtime_payroll_line_id");
+
+                    b.Property<Guid?>("OvertimePayrollRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("overtime_payroll_run_id");
+
+                    b.Property<string>("OvertimeRuleCode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_rule_code");
+
+                    b.Property<string>("OvertimeStatus")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_status");
 
                     b.Property<decimal>("RegularHours")
                         .HasColumnType("numeric")
@@ -1767,6 +1806,8 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("WorkerId");
+
+                    b.HasIndex("TenantId", "OvertimeStatus", "WorkDate");
 
                     b.HasIndex("TenantId", "WorkerId", "WorkDate");
 
@@ -1989,6 +2030,10 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean")
                         .HasColumnName("is_archived");
+
+                    b.Property<bool>("IncludeInPayroll")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_in_payroll");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -3621,6 +3666,171 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasFilter("status = 'active'");
 
                     b.ToTable("legal_holds", "hrm");
+                });
+
+            modelBuilder.Entity("Mightyfin.Erp.Hrm.Domain.Entities.LocalSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<Guid>("LocalUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("local_user_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "LocalUserId", "ExpiresAt");
+
+                    b.ToTable("local_sessions", "hrm");
+                });
+
+            modelBuilder.Entity("Mightyfin.Erp.Hrm.Domain.Entities.LocalUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<int>("FailedLoginCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_login_count");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
+
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_login_at");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_until");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean")
+                        .HasColumnName("must_change_password");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<DateTimeOffset?>("PasswordChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("password_changed_at");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<string>("RolesCsv")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("roles_csv");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid?>("WorkerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("worker_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "NormalizedEmail")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "WorkerId")
+                        .HasFilter("worker_id IS NOT NULL");
+
+                    b.ToTable("local_users", "hrm");
                 });
 
             modelBuilder.Entity("Mightyfin.Erp.Hrm.Domain.Entities.MasterDataBatch", b =>
@@ -6822,6 +7032,15 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_archived");
 
+                    b.Property<decimal>("MonthlyOvertimeDivisor")
+                        .HasColumnType("numeric")
+                        .HasColumnName("monthly_overtime_divisor");
+
+                    b.Property<string>("OvertimeCategory")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("overtime_category");
+
                     b.Property<string>("PayBasis")
                         .IsRequired()
                         .HasColumnType("text")
@@ -6851,6 +7070,10 @@ namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations
                     b.Property<Guid>("WorkerId")
                         .HasColumnType("uuid")
                         .HasColumnName("worker_id");
+
+                    b.Property<decimal>("WeeklyOvertimeThresholdHours")
+                        .HasColumnType("numeric")
+                        .HasColumnName("weekly_overtime_threshold_hours");
 
                     b.HasKey("Id");
 

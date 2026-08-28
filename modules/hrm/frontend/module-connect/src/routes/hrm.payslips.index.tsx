@@ -10,6 +10,8 @@ import { PageHeader } from "@/platform/components/PageHeader";
 import { useApi, realApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 
+const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+
 /**
  * M25: the employee sees only their own payslips, keyed on the OIDC subject.
  * Backend: GET /hrm/me/payslips. The admin list (`/hrm/payslips/{workerId}`)
@@ -17,36 +19,38 @@ import { useMock } from "@/platform/use-mock";
  */
 function adaptPayslip(raw: unknown): DerivedPayslip | null {
   const p = raw as Record<string, unknown>;
-  const id = typeof p.id === "string" ? p.id : null;
+  const text = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+  const id = text(p.id);
   if (!id) return null;
   const num = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
+  const status = text(p.status).toLowerCase();
   // The backend DTO is the authoritative record — the detail page
   // (`/hrm/payslips/$id`) re-fetches the same slip, so this row only needs the
   // fields the list columns and the click-through URL consume.
   return {
     id,
-    runId: typeof p.runId === "string" ? p.runId : "",
-    employeeId: "",
-    employee: typeof p.payslipNo === "string" ? p.payslipNo : id,
-    period: typeof p.payslipNo === "string" ? p.payslipNo : "",
-    entityName: "",
-    currency: "ZMW",
-    payDate: typeof p.releasedAt === "string" ? String(p.releasedAt).slice(0, 10) : "",
+    runId: text(p.runId),
+    employeeId: text(p.employeeNo),
+    employee: text(p.workerName || p.employeeNo || p.payslipNo || id),
+    period: text(p.periodLabel || p.payslipNo || "Released payslip"),
+    entityName: text(p.payslipNo || id),
+    currency: text(p.currency || "ZMW"),
+    payDate: text(p.payDate || (text(p.releasedAt) ? text(p.releasedAt).slice(0, 10) : "")),
     gross: num(p.grossPay),
     deductions: num(p.totalDeductions),
     net: num(p.netPay),
     employerCost: 0,
     components: [],
-    paid: String(p.status ?? "") === "released",
+    paid: status === "paid" || status === "closed" || status === "final",
   } satisfies DerivedPayslip;
 }
 
 export const Route = createFileRoute("/hrm/payslips/")({
   head: () => ({
     meta: [
-      { title: "Payslips — Mightyfin ERP HRM" },
+      { title: "Payslips — New World Cargo HRM" },
       { name: "description", content: "Your pay history, each with a full explanation of how it was calculated." },
-      { property: "og:title", content: "Payslips — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payslips — New World Cargo HRM" },
       { property: "og:description", content: "Your pay history, each with a full explanation of how it was calculated." },
     ],
   }),
@@ -68,7 +72,7 @@ function PayslipsList() {
   const mockState = useMock<DerivedPayslip[]>(() => Promise.resolve(derivePayslips()));
   // M25: Async expects the mock-shaped envelope; both states share
   // `{ data: T | null, loading, degraded, error, reload }` so the cast is safe.
-  const state = realState.data !== null
+  const state = USE_REAL
     ? (realState as unknown as MockState<DerivedPayslip[]>)
     : (mockState as unknown as MockState<DerivedPayslip[]>);
 
@@ -125,7 +129,7 @@ function PayslipsList() {
           />
         )}
       </Async>
-    </AppShell>
-      </AuthGate>
+      </AppShell>
+    </AuthGate>
   );
 }

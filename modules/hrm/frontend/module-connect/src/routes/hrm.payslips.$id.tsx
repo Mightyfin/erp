@@ -22,13 +22,13 @@ const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "
 export const Route = createFileRoute("/hrm/payslips/$id")({
   head: () => ({
     meta: [
-      { title: "Payslip — Mightyfin ERP HRM" },
+      { title: "Payslip — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Every line explained: the calculation, the rule version and the difference from last period.",
       },
-      { property: "og:title", content: "Payslip — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payslip — New World Cargo HRM" },
       {
         property: "og:description",
         content:
@@ -114,11 +114,15 @@ function PayslipDetail() {
       : [];
     return {
       ...raw,
-      employee: raw.workerName,
-      period: raw.periodLabel,
+      employee: raw.workerName ?? raw.employeeNo ?? raw.payslipNo,
+      employeeId: raw.employeeNo,
+      period: raw.periodLabel ?? raw.payslipNo,
+      entityName: raw.payslipNo,
+      payDate: raw.payDate ?? (typeof raw.releasedAt === "string" ? raw.releasedAt.slice(0, 10) : ""),
       gross: raw.grossPay,
       deductions: raw.totalDeductions,
       net: raw.netPay,
+      paid: ["paid", "closed", "final"].includes(String(raw.status ?? "").toLowerCase()),
       components,
     };
   }, [id]);
@@ -149,9 +153,12 @@ function PayslipDetail() {
                 <PageHeader
                   eyebrow="Pay"
                   title={`Payslip — ${String(slip.period ?? "")}`}
-                  description={`${String(slip.employee ?? "")} · ${String(slip.entityName ?? "")}`}
-                  primaryAction=                    {
-                      <Button
+                  description={[
+                    String(slip.employee ?? ""),
+                    String(slip.entityName ?? ""),
+                  ].filter(Boolean).join(" · ")}
+                  primaryAction={
+                    <Button
                       variant="outline"
                       className="gap-2"
                       disabled={generating}
@@ -159,14 +166,10 @@ function PayslipDetail() {
                         if (USE_REAL) {
                           setGenerating(true);
                           try {
-                            // Fetch the PDF through the authenticated API client (window.open
-                            // cannot carry the bearer token, which is why the plain preview
-                            // URL fails with 401), then open the blob in a new tab.
-                            const blob = await realApi.payslipDownloadBlob(id);
+                            const blob = await realApi.myPayslipDownloadBlob(id);
                             const blobUrl = URL.createObjectURL(blob);
                             const tab = window.open(blobUrl, "_blank", "noopener,noreferrer");
                             if (!tab) URL.revokeObjectURL(blobUrl);
-                            // Release the blob after the new tab has loaded it (2 min safety net).
                             setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
                             feedback.submitted(
                               "Payslip download ready.",

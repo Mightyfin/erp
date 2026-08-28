@@ -16,9 +16,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/lifecycle/movements")({
   head: () => ({
     meta: [
-      { title: "Movements — Mightyfin ERP HRM" },
+      { title: "Movements — New World Cargo HRM" },
       { name: "description", content: "Effective-dated promotions, transfers, secondments and manager changes: current assignment against the proposed one." },
-      { property: "og:title", content: "Movements — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Movements — New World Cargo HRM" },
       { property: "og:description", content: "Effective-dated promotions, transfers, secondments and manager changes: current assignment against the proposed one." },
     ],
   }),

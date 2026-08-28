@@ -15,13 +15,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/people/positions/$id")({
   head: () => ({
     meta: [
-      { title: "Position — Mightyfin ERP HRM" },
+      { title: "Position — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Position record: requirements, pay band, incumbency history, mandatory licences and establishment funding.",
       },
-      { property: "og:title", content: "Position — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Position — New World Cargo HRM" },
       {
         property: "og:description",
         content:

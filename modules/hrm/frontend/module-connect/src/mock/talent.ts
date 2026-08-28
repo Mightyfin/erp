@@ -829,7 +829,7 @@ const courses: Course[] = [
   {
     id: "cr-101",
     title: "Working at Height — refresher",
-    provider: "Mighty Finance Solutions Safety Academy",
+    provider: "New World Cargo Safety Academy",
     mode: "Classroom",
     durationHours: 4,
     mandatory: true,
@@ -893,7 +893,7 @@ const courses: Course[] = [
   {
     id: "cr-106",
     title: "CMMS advanced planning and scheduling",
-    provider: "Mighty Finance Solutions Digital Skills",
+    provider: "New World Cargo Digital Skills",
     mode: "E-learning",
     durationHours: 5,
     mandatory: false,
@@ -917,7 +917,7 @@ const courses: Course[] = [
   {
     id: "cr-108",
     title: "Data protection and the GDPR for people managers",
-    provider: "Mighty Finance Solutions Compliance",
+    provider: "New World Cargo Compliance",
     mode: "E-learning",
     durationHours: 2,
     mandatory: true,
@@ -930,7 +930,7 @@ const courses: Course[] = [
   {
     id: "cr-109",
     title: "Inclusive recruitment and fair assessment",
-    provider: "Mighty Finance Solutions People Academy",
+    provider: "New World Cargo People Academy",
     mode: "Virtual classroom",
     durationHours: 4,
     mandatory: false,

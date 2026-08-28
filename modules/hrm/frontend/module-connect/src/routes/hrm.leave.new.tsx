@@ -19,9 +19,9 @@ import { hrmApi, type MyLeave } from "@/platform/api-client";
 export const Route = createFileRoute("/hrm/leave/new")({
   head: () => ({
     meta: [
-      { title: "Request leave — Mightyfin ERP HRM" },
+      { title: "Request leave — New World Cargo HRM" },
       { name: "description", content: "Guided leave request: purpose, dates, policy checks, evidence, review and submit." },
-      { property: "og:title", content: "Request leave — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Request leave — New World Cargo HRM" },
       { property: "og:description", content: "Guided leave request with policy checks before you submit." },
     ],
   }),

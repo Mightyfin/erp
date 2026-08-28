@@ -463,6 +463,35 @@ public class TimeServiceTests
     }
 
     [Fact]
+    public async Task AttendanceImport_RecalculatesWeeklyOvertimeAfterFortyEightHours()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        var calendar = await ctx.WorkCalendars.SingleAsync();
+        calendar.WeekendDays = "";
+        await ctx.SaveChangesAsync();
+        var shift = await service.CreateShiftAsync(new ShiftCreateRequest(
+            "WK", "Weekly test shift", "08:00", "16:00", 0, 8, 8, 1.5m, 2, 2), CancellationToken.None);
+        await service.AssignShiftAsync(worker.Id,
+            new ShiftAssignmentRequest(shift.Id, calendar.Id, "2026-08-01"), CancellationToken.None);
+
+        await service.ImportAttendanceAsync(new AttendanceImportRequest("week.csv",
+            Enumerable.Range(17, 7)
+                .Select(day => new AttendanceImportRow(worker.EmployeeNo, $"2026-08-{day}", "08:00", "16:00"))
+                .ToList()),
+            "hr-admin", CancellationToken.None);
+
+        var records = await ctx.AttendanceRecords.OrderBy(r => r.WorkDate).ToListAsync();
+        Assert.Equal(7, records.Count);
+        Assert.Equal(48m, records.Take(6).Sum(r => r.RegularHours));
+        Assert.All(records.Take(6), r => Assert.Equal(0m, r.OvertimeHours));
+        Assert.Equal(0m, records[6].RegularHours);
+        Assert.Equal(8m, records[6].OvertimeHours);
+        Assert.Equal(1.5m, records[6].OvertimeMultiplier);
+        Assert.Equal(208m, records[6].OvertimeHourlyDivisor);
+        Assert.Equal("ordinary", records[6].OvertimeRuleCode);
+    }
+
+    [Fact]
     public async Task AttendanceImport_ReconcilesDuplicateAndUnknownEmployees()
     {
         var (service, ctx, worker, _, _) = Build();
@@ -479,6 +508,60 @@ public class TimeServiceTests
         Assert.Contains(result.Errors, error => error.Contains("duplicate row"));
         Assert.Contains(result.Errors, error => error.Contains("employee not found"));
         Assert.NotNull((await ctx.AttendanceImportBatches.SingleAsync()).ErrorsJson);
+    }
+
+    [Fact]
+    public async Task OvertimeImport_CreatesPendingAuditedOvertimeRecord()
+    {
+        var (service, ctx, worker, _, _) = Build();
+
+        var result = await service.ImportOvertimeAsync(new OvertimeImportRequest("overtime.csv",
+            [new OvertimeImportRow(worker.EmployeeNo, "2026-08-20", 2.5m, null, "Supervisor sheet")]),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed", result.Status);
+        Assert.Equal(1, result.ImportedCount);
+        var record = await ctx.AttendanceRecords.SingleAsync();
+        Assert.Equal("overtime-import", record.Source);
+        Assert.Equal(2.5m, record.OvertimeHours);
+        Assert.Equal(1.5m, record.OvertimeMultiplier);
+        Assert.Equal(208m, record.OvertimeHourlyDivisor);
+        Assert.Equal("ordinary", record.OvertimeRuleCode);
+        Assert.Equal("pending", record.OvertimeStatus);
+
+        var audit = await ctx.AuditEntries.SingleAsync(a => a.EntityType == "time.overtime");
+        Assert.Equal("overtime-import-create", audit.Action);
+        Assert.Equal("hr-admin", audit.ActorSubjectId);
+        Assert.Contains("Supervisor sheet", audit.AfterJson);
+    }
+
+    [Fact]
+    public async Task OvertimeImport_CannotChangePayrollLinkedOvertime()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        ctx.AttendanceRecords.Add(new AttendanceRecord
+        {
+            WorkerId = worker.Id,
+            WorkDate = new DateOnly(2026, 8, 20),
+            Source = "overtime-import",
+            DerivedStatus = "present",
+            OvertimeHours = 2m,
+            OvertimeMultiplier = 1.5m,
+            OvertimeStatus = "paid",
+            OvertimePayrollRunId = Guid.CreateVersion7(),
+            TenantId = "test-tenant",
+        });
+        await ctx.SaveChangesAsync();
+
+        var result = await service.ImportOvertimeAsync(new OvertimeImportRequest("overtime.csv",
+            [new OvertimeImportRow(worker.EmployeeNo, "2026-08-20", 3m)]),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal("completed-with-errors", result.Status);
+        Assert.Equal(0, result.UpdatedCount);
+        Assert.Contains(result.Errors, error => error.Contains("already linked to payroll"));
+        var record = await ctx.AttendanceRecords.SingleAsync();
+        Assert.Equal(2m, record.OvertimeHours);
     }
 
     [Fact]

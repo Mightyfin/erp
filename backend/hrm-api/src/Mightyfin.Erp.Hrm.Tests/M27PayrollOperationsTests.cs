@@ -9,9 +9,94 @@ namespace Mightyfin.Erp.Hrm.Tests;
 public class M27PayrollOperationsTests
 {
     [Fact]
+    public async Task RunPreflight_ReturnsWarningsForPaymentAndStatutoryReadiness()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-run-preflight");
+        var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var worker = await ctx.Workers.SingleAsync(w => w.Id == profile.WorkerId);
+        worker.Tpin = null;
+        await ctx.SaveChangesAsync();
+
+        var preflight = await service.GetRunPreflightAsync(new PayrollRunCreate(period.Id, group.Id), default);
+
+        Assert.True(preflight.Ready);
+        Assert.Equal(1, preflight.IncludedWorkerCount);
+        Assert.Contains(preflight.Checks, c => c.Id == "bank" && c.State == "warn");
+        Assert.Contains(preflight.Checks, c => c.Id == "statutory" && c.State == "warn");
+    }
+
+    [Fact]
+    public async Task RunPreflight_BlocksRunCreationWhenPayGroupHasNoPopulation()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-run-preflight-empty");
+        await PayrollEngineTests.SeedStackAsync(ctx);
+        var emptyGroup = new PayGroup { Code = "EMPTY", Name = "Empty Group", Frequency = "monthly", Currency = "ZMW", CalendarDayOfMonth = 25 };
+        ctx.PayGroups.Add(emptyGroup);
+        var emptyPeriod = new PayPeriod
+        {
+            PayGroupId = emptyGroup.Id,
+            PeriodLabel = "Aug 2026",
+            StartDate = DateOnly.FromDateTime(new DateTime(2026, 8, 1)),
+            EndDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)),
+            CutoffDate = DateOnly.FromDateTime(new DateTime(2026, 8, 20)),
+            PayDate = DateOnly.FromDateTime(new DateTime(2026, 8, 31)),
+            Status = "open",
+            IsCurrent = true,
+        };
+        ctx.PayPeriods.Add(emptyPeriod);
+        await ctx.SaveChangesAsync();
+
+        var preflight = await service.GetRunPreflightAsync(new PayrollRunCreate(emptyPeriod.Id, emptyGroup.Id), default);
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CreateRunAsync(new PayrollRunCreate(emptyPeriod.Id, emptyGroup.Id), default, "preparer"));
+
+        Assert.False(preflight.Ready);
+        Assert.Contains(preflight.Checks, c => c.Id == "population" && c.State == "fail");
+        Assert.Equal("payroll-run-preflight-failed", ex.Code);
+    }
+
+    [Fact]
+    public async Task CalculationReadiness_ReturnsConfiguredInputsForSeededRun()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-calc-readiness-ready");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, default);
+
+        Assert.True(readiness.Ready);
+        Assert.Equal(1, readiness.IncludedWorkerCount);
+        Assert.Equal(0, readiness.BlockingCount);
+        Assert.Contains(readiness.Checks, c => c.Id == "earning-components" && c.State == "pass");
+        Assert.Contains(readiness.Checks, c => c.Id == "tax-slabs" && c.State == "pass");
+        Assert.Contains(readiness.Checks, c => c.Id == "contribution-rules" && c.State == "pass");
+        Assert.DoesNotContain(readiness.Issues, i => i.Severity == "fail");
+    }
+
+    [Fact]
+    public async Task CalculationReadiness_BlocksLockWhenBasicSalaryIsMissing()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-calc-readiness-basic");
+        var (group, _, period, profile, basic, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var basicValue = await ctx.WorkerComponentValues.SingleAsync(v => v.ProfileId == profile.Id && v.ComponentId == basic.Id);
+        basicValue.Amount = 0m;
+        await ctx.SaveChangesAsync();
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, default);
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.LockRunAsync(run.Id, default, "preparer"));
+
+        Assert.False(readiness.Ready);
+        Assert.Contains(readiness.Checks, c => c.Id == "basic-salary" && c.State == "fail");
+        Assert.Contains(readiness.Issues, i => i.Severity == "fail" && i.Issue.Contains("Basic salary"));
+        Assert.Equal("payroll-calculation-readiness-failed", ex.Code);
+    }
+
+    [Fact]
     public async Task RunApproval_EnforcesSegregation_AndOutstandingExceptionDecision()
     {
-        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls");
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-controls", roles: ["payroll"]);
         var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
         var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer-1");
         await service.LockRunAsync(run.Id, default, "preparer-1");
@@ -36,6 +121,25 @@ public class M27PayrollOperationsTests
     }
 
     [Fact]
+    public async Task RunApproval_AllowsHrAdminEmergencySelfApprovalAfterExceptionsAreCleared()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-top-admin-self-approval", roles: ["hr_admin"]);
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "top-admin");
+        await service.LockRunAsync(run.Id, default, "top-admin");
+        await service.CalculateRunAsync(run.Id, default, "top-admin");
+
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        await service.DecideExceptionAsync(run.Id, line.Id,
+            new PayrollExceptionDecisionRequest("waived", "Top-admin setup override"), default, "separate-reviewer");
+        var approved = await service.ApproveRunAsync(run.Id, "Emergency top-admin approval during setup", default, "top-admin");
+
+        Assert.Equal("approved", approved.Status);
+        Assert.Equal("top-admin", approved.ApprovedBySubjectId);
+        Assert.Equal(0, approved.ExceptionCount);
+    }
+
+    [Fact]
     public async Task Correction_UpdatesControlTotals_AndCreatesAuditEvent()
     {
         var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-correction");
@@ -53,9 +157,80 @@ public class M27PayrollOperationsTests
     }
 
     [Fact]
+    public async Task CancelRun_VoidsUnreleasedRun_WithAudit_AndAllowsReplacement()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-cancel-run");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+
+        var cancelled = await service.CancelRunAsync(
+            run.Id,
+            new PayrollRunReverseCreate("Wrong period selected"),
+            default,
+            "top-admin");
+        var replacement = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer-2");
+        var events = await service.GetRunAuditAsync(run.Id, default);
+
+        Assert.Equal("reversed", cancelled.Status);
+        Assert.NotEqual(run.Id, replacement.Id);
+        Assert.Contains(events, e =>
+            e.Action == "cancelled" &&
+            e.ActorSubjectId == "top-admin" &&
+            e.Reason == "Wrong period selected");
+        Assert.DoesNotContain(await ctx.PayrollRuns.ToListAsync(), r => r.IsReversal && r.ReversesRunId == run.Id);
+    }
+
+    [Fact]
+    public async Task CancelRun_RejectsReleasedRun_WhichRequiresReversal()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-cancel-released");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        var stored = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        stored.Status = "released";
+        await ctx.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.CancelRunAsync(run.Id, new PayrollRunReverseCreate("Already released"), default, "top-admin"));
+
+        Assert.Equal("run-cancel-requires-reversal", ex.Code);
+    }
+
+    [Fact]
+    public async Task ReverseRun_AllowsClosedRun_AndPreventsDuplicateReversal()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-reverse-closed");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        var stored = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        stored.Status = "closed";
+        await ctx.SaveChangesAsync();
+
+        var reversal = await service.ReverseRunAsync(
+            run.Id,
+            new PayrollRunReverseCreate("Bank settlement was wrong"),
+            default,
+            "top-admin");
+        var duplicate = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReverseRunAsync(run.Id, new PayrollRunReverseCreate("Try again"), default, "top-admin"));
+        var events = await service.GetRunAuditAsync(run.Id, default);
+
+        Assert.Equal("draft", reversal.Status);
+        Assert.True(reversal.IsReversal);
+        Assert.Equal("run-reversal-exists", duplicate.Code);
+        Assert.Contains(events, e =>
+            e.Action == "reversal-created" &&
+            e.FromStatus == "closed" &&
+            e.ToStatus == "reversed" &&
+            e.Reason == "Bank settlement was wrong");
+    }
+
+    [Fact]
     public async Task PaymentWorkflow_GeneratesApprovesReleasesReconciles_AndExportsAudit()
     {
-        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment");
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment", roles: ["payroll"]);
         var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
         ctx.WorkerBankDetails.Add(new WorkerBankDetail
         {
@@ -67,8 +242,17 @@ public class M27PayrollOperationsTests
         var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
         await service.LockRunAsync(run.Id, default, "preparer");
         await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test readiness after exception review"), default, "hr-approver");
         await service.ApproveRunAsync(run.Id, "reviewed", default, "hr-approver");
         run = await service.ReleaseRunAsync(run.Id, default, "payroll-releaser");
+
+        var readiness = await service.GetPaymentReadinessAsync(run.Id, default);
+        Assert.True(readiness.Ready);
+        Assert.Equal(run.TotalNet, readiness.TotalNet);
+        Assert.Empty(readiness.Issues);
 
         run = await service.GeneratePaymentFileAsync(run.Id, default, "payroll-releaser");
         var csv = await service.DownloadPaymentFileAsync(run.Id, default);
@@ -80,6 +264,10 @@ public class M27PayrollOperationsTests
         Assert.Equal("payment-self-approval", selfApproval.Code);
 
         await service.ApprovePaymentFileAsync(run.Id, new("finance reviewed"), default, "finance-approver");
+        var generatorRelease = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReleasePaymentFileAsync(run.Id, default, "payroll-releaser"));
+        Assert.Equal("payment-generator-release", generatorRelease.Code);
+
         await service.ReleasePaymentFileAsync(run.Id, default, "treasury-releaser");
         run = await service.ReconcileRunAsync(run.Id,
             new PayrollReconciliationRequest("BANK-ACK-009", run.TotalNet, "bank accepted all rows"), default, "reconciler");
@@ -90,5 +278,61 @@ public class M27PayrollOperationsTests
         var auditCsv = await service.ExportRunAuditAsync(run.Id, default);
         Assert.Contains("payment-file-generated", auditCsv);
         Assert.Contains("reconciled-and-closed", auditCsv);
+    }
+
+    [Fact]
+    public async Task PaymentWorkflow_AllowsHrAdminToGenerateApproveAndReleaseBankFile()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment-admin", roles: ["hr_admin"]);
+        var (group, _, period, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+        ctx.WorkerBankDetails.Add(new WorkerBankDetail
+        {
+            WorkerId = profile.WorkerId, BankName = "Zanaco", BranchCode = "010001",
+            AccountName = "Test Worker", AccountNumber = "001234567890", IsPrimary = true
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Top admin reviewed exception"), default, "admin-user");
+        await service.ApproveRunAsync(run.Id, "top admin reviewed", default, "admin-user");
+        run = await service.ReleaseRunAsync(run.Id, default, "admin-user");
+        run = await service.GeneratePaymentFileAsync(run.Id, default, "admin-user");
+        run = await service.ApprovePaymentFileAsync(run.Id, new("top admin approved"), default, "admin-user");
+        run = await service.ReleasePaymentFileAsync(run.Id, default, "admin-user");
+
+        Assert.Equal("released", run.PaymentStatus);
+        Assert.Equal("admin-user", run.PaymentFileGeneratedBySubjectId);
+        Assert.Equal("admin-user", run.PaymentApprovedBySubjectId);
+        Assert.Equal("admin-user", run.PaymentReleasedBySubjectId);
+    }
+
+    [Fact]
+    public async Task PaymentReadiness_ListsWorkersMissingPrimaryBankDetails()
+    {
+        var (service, ctx) = PayrollEngineTests.Build(tenant: "m27-payment-readiness");
+        var (group, _, period, _, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), default, "preparer");
+        await service.LockRunAsync(run.Id, default, "preparer");
+        await service.CalculateRunAsync(run.Id, default, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test readiness after exception review"), default, "hr-approver");
+        await service.ApproveRunAsync(run.Id, "reviewed", default, "hr-approver");
+        run = await service.ReleaseRunAsync(run.Id, default, "payroll-releaser");
+
+        var readiness = await service.GetPaymentReadinessAsync(run.Id, default);
+
+        Assert.False(readiness.Ready);
+        Assert.Equal(1, readiness.PayableCount);
+        Assert.Equal(run.TotalNet, readiness.TotalNet);
+        Assert.Single(readiness.Issues);
+        Assert.Equal("Primary bank details are missing.", readiness.Issues[0].Issue);
     }
 }

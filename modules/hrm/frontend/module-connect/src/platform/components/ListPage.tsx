@@ -66,7 +66,7 @@ export function ListPage<T extends { id: string }>({
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [visible, setVisible] = useState<string[]>(
-    columns.filter((c, i) => c.defaultVisible !== false && i < 7).map((c) => c.id),
+    columns.filter((c, i) => c.defaultVisible === true || (c.defaultVisible !== false && i < 7)).map((c) => c.id),
   );
 
   const filtered = useMemo(() => {

@@ -66,10 +66,12 @@ type StepDto = {
 const LEAVE_DEFAULTS = [
   { name: "Annual Leave", category: "paid", days: 24, evidence: false, carry: 0 },
   { name: "Sick Leave", category: "paid", days: 30, evidence: true, carry: 0 },
-  { name: "Maternity Leave", category: "unpaid", days: 98, evidence: true, carry: 0 },
+  { name: "Maternity Leave", category: "paid", days: 98, evidence: true, carry: 0 },
   { name: "Paternity Leave", category: "paid", days: 5, evidence: false, carry: 0 },
-  { name: "Marriage Leave", category: "paid", days: 5, evidence: false, carry: 0 },
-  { name: "Compassionate Leave", category: "paid", days: 5, evidence: false, carry: 0 },
+  { name: "Family Responsibility Leave", category: "paid", days: 10, evidence: true, carry: 0 },
+  { name: "Compassionate Leave", category: "paid", days: 12, evidence: false, carry: 0 },
+  { name: "Mother's Day", category: "paid", days: 12, evidence: false, carry: 0 },
+  { name: "Forced Leave", category: "paid", days: 0, evidence: false, carry: 0 },
 ];
 
 const CONTRACT_DEFAULTS = [
@@ -80,9 +82,9 @@ const CONTRACT_DEFAULTS = [
 
 const PAYE_BANDS = [
   { band: "ZMW 0 – 5,100", rate: "0%" },
-  { band: "ZMW 5,100.01 – 6,700", rate: "20%" },
-  { band: "ZMW 6,700.01 – 8,400", rate: "30%" },
-  { band: "Above ZMW 8,400", rate: "37.5%" },
+  { band: "ZMW 5,100.01 – 7,100", rate: "20%" },
+  { band: "ZMW 7,100.01 – 9,200", rate: "30%" },
+  { band: "Above ZMW 9,200", rate: "37%" },
 ];
 
 // ---------- Employees step: user-driven column mapping ----------

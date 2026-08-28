@@ -82,8 +82,15 @@ public sealed class JobsAdminTests
         var roles = await svc.ListRolesAsync(CancellationToken.None);
         Assert.Equal(7, roles.Count);
 
-        var toggled = await svc.UpdateRoleAsync("hr_admin", new RoleUpdateRequest(false), CancellationToken.None);
+        var created = await svc.CreateRoleAsync(new RoleCreateRequest("hr_supervisor", "HR Supervisor", "hrm", ["hr_ops", "manager"]), CancellationToken.None);
+        Assert.Equal(["hr_ops", "manager"], created.Permissions);
+
+        var toggled = await svc.UpdateRoleAsync("manager", new RoleUpdateRequest(false), CancellationToken.None);
         Assert.False(toggled.Active);
+
+        var lockout = await Assert.ThrowsAsync<DomainException>(() =>
+            svc.UpdateRoleAsync("hr_admin", new RoleUpdateRequest(false), CancellationToken.None));
+        Assert.Equal("last-admin-role", lockout.Code);
 
         await Assert.ThrowsAsync<DomainException>(() =>
             svc.UpdateRoleAsync("nonexistent", new RoleUpdateRequest(true), CancellationToken.None));

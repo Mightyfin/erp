@@ -219,6 +219,15 @@ export function adaptOrgUnits(raw: unknown): import("@/mock/structure").OrgUnit[
 }
 
 /** Maps only fields the live WorkerDto actually owns; unavailable profile fields remain blank. */
+function paymentMethodLabel(value: string) {
+  const normalized = value.toLowerCase().replace(/_/g, "-").trim();
+  if (normalized === "bank") return "Bank transfer";
+  if (normalized === "mobile-money") return "Mobile money";
+  if (normalized === "cash") return "Cash";
+  if (normalized === "accounts-payable") return "Paid through accounts payable, not payroll";
+  return value;
+}
+
 export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeeprofile").EmployeeProfile {
   const raw = (rawValue ?? {}) as Record<string, unknown>;
   const emergency = Array.isArray(raw.emergencyContacts) ? raw.emergencyContacts as Record<string, unknown>[] : [];
@@ -234,8 +243,10 @@ export function adaptWorkerProfile(rawValue: unknown): import("@/mock/employeepr
     })),
     noticePeriodDays: 0, reportsTo: text(raw.managerName), costCentre: "", payGroup: "",
     shiftPattern: "", holidayCalendar: "", leavePolicy: "", attendanceDeviceId: "",
-    paymentMethod: text(bank?.paymentMethod), bankName: text(bank?.bankName),
+    paymentMethod: paymentMethodLabel(text(bank?.paymentMethod)), bankDetailId: text(bank?.id),
+    bankName: text(bank?.bankName),
     bankBranch: text(bank?.branchCode), bankAccount: text(bank?.accountNumber),
+    accountName: text(bank?.accountName), mobileMoneyNumber: text(bank?.mobileMoneyNumber),
     tpin: text(raw.tpin), napsaNumber: text(raw.napsaNumber), nhimaNumber: text(raw.nhimaNumber),
     education: (Array.isArray(raw.education)
       ? (raw.education as Record<string, unknown>[]).map((item) => ({
@@ -273,9 +284,24 @@ export const realApi = {
   reports: (params: Record<string, unknown>) => hrmApi.get<unknown>("/hrm/reports", params),
   managementReports: (params: Record<string, unknown>) =>
     hrmApi.get<unknown>("/hrm/reports/management", params),
-  downloadManagementReport: async (reportType: string, params: Record<string, unknown>) => {
-    const blob = await hrmApi.getBlob(`/hrm/reports/management/export/${reportType}`, params);
-    downloadUrl(URL.createObjectURL(blob), `${reportType}.csv`);
+  downloadManagementReport: async (
+    reportType: string,
+    params: Record<string, unknown>,
+    format: "csv" | "xlsx" | "pdf" = "csv",
+  ) => {
+    const blob = await hrmApi.getBlob(
+      `/hrm/reports/management/export/${reportType}`,
+      { ...params, format },
+      {
+        Accept:
+          format === "pdf"
+            ? "application/pdf"
+            : format === "xlsx"
+              ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              : "text/csv",
+      },
+    );
+    downloadUrl(URL.createObjectURL(blob), `${reportType}.${format}`);
   },
   /** Create a worker and return the created WorkerDto. */
   createWorker: (body: Record<string, unknown>) =>
@@ -371,10 +397,12 @@ export const realApi = {
   decideLeaveRequest: (id: string, action: string, reason?: string) =>
     hrmApi.post<unknown>(`/hrm/time/leave/${id}/decide`, { action, reason }),
   leaveTypes: (params?: Record<string, unknown>) =>
-    hrmApi.get<unknown[]>("/hrm/admin/leave-types", {
+    hrmApi.get<unknown>("/hrm/admin/leave-types/full", {
       includeInactive: false,
       ...(params ?? {}),
     }),
+  createLeaveType: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/leave-types", body),
+  updateLeaveType: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/leave-types/${id}`, body),
   timeCorrections: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/time/corrections", params ?? {}),
   createCorrection: (body: Record<string, unknown>) =>
@@ -391,14 +419,62 @@ export const realApi = {
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}/today`),
   attendanceHistory: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/attendance/${workerId}`, params ?? {}),
+  /** Organization attendance summary, scoped by the selected branch/org unit on the request. */
+  attendanceSummary: (params?: Record<string, unknown>) =>
+    hrmApi.get<Array<{
+      id: string;
+      workerId: string;
+      workerName: string;
+      workDate: string;
+      clockIn?: string | null;
+      clockOut?: string | null;
+      source: string;
+      derivedStatus: string;
+      totalHours: number;
+      scheduledHours: number;
+      regularHours: number;
+      overtimeHours: number;
+      overtimeMultiplier: number;
+      shiftId?: string | null;
+      importBatchId?: string | null;
+      overtimeStatus: string;
+      overtimeDecisionReason?: string | null;
+      overtimeDecidedBySubjectId?: string | null;
+      overtimeDecidedAt?: string | null;
+      overtimePayrollRunId?: string | null;
+      overtimePayrollLineId?: string | null;
+    }>>(`/hrm/time/attendance`, params ?? {}),
+  overtime: (params?: Record<string, unknown>) =>
+    hrmApi.get<Array<{
+      id: string;
+      workerId: string;
+      workerName: string;
+      workDate: string;
+      totalHours: number;
+      regularHours: number;
+      overtimeHours: number;
+      overtimeMultiplier: number;
+      overtimeStatus: string;
+      overtimeDecisionReason?: string | null;
+      overtimeDecidedBySubjectId?: string | null;
+      overtimeDecidedAt?: string | null;
+      overtimePayrollRunId?: string | null;
+      overtimePayrollLineId?: string | null;
+    }>>(`/hrm/time/overtime`, params ?? {}),
+  decideOvertime: (id: string, action: "approve" | "reject", reason?: string) =>
+    hrmApi.post<unknown>(`/hrm/time/overtime/${id}/decide`, { action, reason }),
   roster: (workerId: string, params?: Record<string, unknown>) =>
     hrmApi.get<unknown>(`/hrm/time/roster/${workerId}`, params ?? {}),
   shifts: () => hrmApi.get<unknown[]>("/hrm/time/shifts"),
   createShift: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/time/shifts", body),
+  updateShift: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/time/shifts/${id}`, body),
+  closeShift: (id: string) => hrmApi.post<unknown>(`/hrm/time/shifts/${id}/close`, null),
   assignShift: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/time/shifts/assign/${workerId}`, body),
   importAttendance: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/time/attendance/import", body),
+  importOvertime: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/time/overtime/import", body),
   runLeaveAccrual: (period: string) =>
     hrmApi.post<Record<string, unknown>>("/hrm/time/leave/accruals/run", { period }),
   adjustLeaveBalance: (body: Record<string, unknown>) =>
@@ -426,6 +502,7 @@ export const realApi = {
   timeOperationsHistory: () =>
     hrmApi.get<{
       imports: Record<string, unknown>[];
+      timeAudits?: Record<string, unknown>[];
       accruals: Record<string, unknown>[];
       adjustments: Record<string, unknown>[];
     }>("/hrm/time/operations/history"),
@@ -441,10 +518,14 @@ export const realApi = {
     hrmApi.post<unknown>("/hrm/benefits/types", body),
   updateBenefitType: (id: string, body: Record<string, unknown>) =>
     hrmApi.put<unknown>(`/hrm/benefits/types/${id}`, body),
+  deleteBenefitType: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/benefits/types/${id}`),
   benefitAllowances: (params?: Record<string, unknown>) =>
     hrmApi.get<unknown[]>("/hrm/benefits/allowances", params ?? {}),
   setBenefitAllowance: (body: Record<string, unknown>) =>
     hrmApi.post<unknown>("/hrm/benefits/allowances", body),
+  deleteBenefitAllowance: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/benefits/allowances/${id}`),
   benefitClaims: (params?: Record<string, unknown>) =>
     hrmApi.get<{ items: Record<string, unknown>[]; totalCount: number }>(
       "/hrm/benefits/claims",
@@ -515,6 +596,8 @@ export const realApi = {
     const fileName = `${exportType}-${periodId}.csv`;
     return { url, fileName };
   },
+  statutoryPreview: (exportType: string, periodId: string) =>
+    hrmApi.statutoryExportPreview(exportType, periodId),
   /** Aggregate statutory liability summary for one period (no download). */
   statutorySummary: (periodId: string) =>
     hrmApi.get<Record<string, unknown>>(`/hrm/statutory-exports/summary?periodId=${periodId}`),
@@ -525,10 +608,23 @@ export const realApi = {
     hrmApi.get<unknown[]>("/hrm/payroll/profiles", params ?? {}),
   createPayrollProfile: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/payroll/profiles/${workerId}`, body),
+  salaryAdvances: (params?: Record<string, unknown>) =>
+    hrmApi.get<unknown[]>("/hrm/payroll/salary-advances", params ?? {}),
+  createSalaryAdvance: (body: Record<string, unknown>) =>
+    hrmApi.post<unknown>("/hrm/payroll/salary-advances", body),
+  updateSalaryAdvance: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<unknown>(`/hrm/payroll/salary-advances/${id}`, body),
+  cancelSalaryAdvance: (id: string, reason: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/salary-advances/${id}/cancel`, { reason }),
   /** M41 Gap 3: pay-basis control — salary (default) vs timesheet (planning
    *  flag; timesheet-driven pay is not implemented yet). */
   setPayBasis: (workerId: string, payBasis: "salary" | "timesheet") =>
     hrmApi.put<unknown>(`/hrm/payroll/profiles/${workerId}/pay-basis`, { payBasis }),
+  setOvertimePolicy: (workerId: string, body: {
+    overtimeCategory: "ordinary" | "watchperson-guard";
+    weeklyOvertimeThresholdHours?: number;
+    monthlyOvertimeDivisor?: number;
+  }) => hrmApi.put<unknown>(`/hrm/payroll/profiles/${workerId}/overtime-policy`, body),
   /** M27 operational run list with live totals and workflow state. */
   payrollRuns: () => hrmApi.get<{ items: unknown[]; totalCount: number }>("/hrm/payroll/runs"),
   /** M48: the top-HR approval queue — branch runs awaiting review with
@@ -566,15 +662,6 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/setup/steps/${key}`, { dataJson: dataJson ?? null }),
   /** M49: finish the wizard — refuses while the mandatory prefix is open. */
   finishSetup: () => hrmApi.post<unknown>("/hrm/setup/finish", null),
-  /** M53: export URL helper — builds the same /import/{type}/export URL the
-   *  blob helper fetches, for direct anchor downloads outside the dialog. */
-  importExportUrl: (typeKey: string, filter?: string) => {
-    const envBase =
-      typeof import.meta !== "undefined"
-        ? ((import.meta.env.VITE_HRM_API_BASE as string | undefined)?.trim() ?? "")
-        : "";
-    return `${envBase}/hrm/import/${typeKey}/export${filter ? `?${filter}` : ""}`;
-  },
   /** M51: provision invited wizard emails with hr_admin + employee roles in
    *  the identity system. Returns per-email outcomes so the roles step can
    *  show which invitations actually took. */
@@ -592,6 +679,8 @@ export const realApi = {
   payrollRun: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}`),
   createPayrollRun: (body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>("/hrm/payroll/runs", body),
+  updatePayrollRun: (id: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/runs/${id}`, body),
   calculatePayrollRun: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/calculate`, null),
   lockPayrollRun: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lock`, null),
@@ -601,8 +690,17 @@ export const realApi = {
   payrollRunApprove: (id: string, note?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/approve`, { note }),
   payrollRunRelease: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/release`, null),
-  payrollRunReverse: (id: string) => hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, null),
+  payrollRunCancel: (id: string, reason: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/cancel`, { reason }),
+  payrollRunReverse: (id: string, reason?: string) =>
+    hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, { reason }),
+  payrollRunPreflight: (payPeriodId: string, payGroupId: string) =>
+    hrmApi.post<unknown>("/hrm/payroll/runs/preflight", { payPeriodId, payGroupId }),
+  payrollCalculationReadiness: (id: string) =>
+    hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/calculation-readiness`),
   payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
+  workerPayslipPreview: (workerId: string) =>
+    hrmApi.get<unknown>(`/hrm/payroll/workers/${workerId}/payslip-preview`),
   payrollExceptionDecision: (id: string, lineId: string, decision: string, reason: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/lines/${lineId}/exception`, { decision, reason }),
   payrollCorrection: (
@@ -619,6 +717,8 @@ export const realApi = {
     }),
   payrollPaymentGenerate: (id: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/generate`, {}),
+  payrollPaymentReadiness: (id: string) =>
+    hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/payments/readiness`),
   payrollPaymentApprove: (id: string, note?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/payments/approve`, { note }),
   payrollPaymentRelease: (id: string) =>
@@ -648,6 +748,8 @@ export const realApi = {
     }>(`/hrm/payroll/runs/${id}/statutory-readiness`),
   /** M24: payslip by id — the snapshot includes statutory references. */
   payslipById: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/payslips/id/${id}`),
+  /** Payslips for one worker, newest first as returned by the API. */
+  workerPayslips: (workerId: string) => hrmApi.get<{ items: unknown[]; totalCount: number }>(`/hrm/payroll/payslips/${workerId}`),
 
   /* ------------------------------------------------------------------ */
   /* M34: admin payslip surface per run.                                  */
@@ -663,7 +765,7 @@ export const realApi = {
     `${import.meta.env.VITE_HRM_API_BASE ?? "/api"}/hrm/payroll/payslips/${payslipId}/preview`,
   /** Direct PDF download trigger via blob fetch. */
   payslipDownloadBlob: (payslipId: string) =>
-    hrmApi.getBlob(`/hrm/payroll/payslips/${payslipId}/preview`),
+    hrmApi.getBlob(`/hrm/payroll/payslips/${payslipId}/preview`, undefined, { Accept: "application/pdf" }),
 
   /* ------------------------------------------------------------------ */
   /* M25: employee self-service — own payslips and requests inbox,        */
@@ -696,6 +798,8 @@ export const realApi = {
   myPayslipById: (id: string) => hrmApi.get<unknown>(`/hrm/me/payslips/${id}`),
   myPayslipDownloadUrl: (id: string) =>
     hrmApi.get<{ url: string }>(`/hrm/me/payslips/${id}/download`),
+  myPayslipDownloadBlob: (id: string) =>
+    hrmApi.getBlob(`/hrm/me/payslips/${id}/preview`),
   /** Own HR-request inbox, optionally filtered by status. */
   myRequests: (status?: string) =>
     hrmApi.get<{ items: unknown[] }>("/hrm/me/requests", status ? { status } : {}),
@@ -871,9 +975,7 @@ export const realApi = {
     ),
 
   /** M44: echo of the resolved work scope (entity/branch) for the current request. */
-  // M54.3: the switcher's branches are org units, so the server echo now
-  // carries orgUnitId alongside locationId (one header, two scope meanings).
-  shell: () => hrmApi.get<{ locationId?: string | null; orgUnitId?: string | null; entityId?: string | null; scopedToBranch: boolean;
+  shell: () => hrmApi.get<{ locationId?: string | null; entityId?: string | null; scopedToBranch: boolean;
     assignedLocationIds?: string[]; confined?: boolean }>("/hrm/shell"),
 
   /** M45: branch access (confinement) — which platform users are confined to which branches. */
@@ -887,6 +989,10 @@ export const realApi = {
   orgTree: () => hrmApi.get<unknown>("/hrm/admin/org-units/tree"),
   legalEntities: () => hrmApi.get<unknown[]>("/hrm/admin/legal-entities"),
   calendars: () => hrmApi.get<unknown[]>("/hrm/admin/calendars"),
+  calendar: (id: string) => hrmApi.get<unknown>(`/hrm/admin/calendars/${id}`),
+  createHoliday: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/holidays", body),
+  updateHoliday: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/holidays/${id}`, body),
+  deleteHoliday: (id: string) => hrmApi.delete<unknown>(`/hrm/admin/holidays/${id}`),
   capabilities: () => hrmApi.get<unknown[]>("/hrm/admin/capabilities"),
   // ---------- M28 CRUD audit: jobs catalogue, roles, retention rules ----------
   jobs: (params?: { includeInactive?: boolean }) =>
@@ -895,6 +1001,7 @@ export const realApi = {
   updateJob: (id: string, body: Record<string, unknown>) => hrmApi.patch<unknown>(`/hrm/admin/jobs/${id}`, body),
   closeJob: (id: string) => hrmApi.post<unknown>(`/hrm/admin/jobs/${id}/close`, null),
   roles: () => hrmApi.get<unknown[]>("/hrm/admin/roles"),
+  createRole: (body: Record<string, unknown>) => hrmApi.post<unknown>("/hrm/admin/roles", body),
   updateRole: (roleKey: string, body: Record<string, unknown>) =>
     hrmApi.patch<unknown>(`/hrm/admin/roles/${roleKey}`, body),
   retentionRules: () => hrmApi.get<unknown[]>("/hrm/admin/retention-rules"),
@@ -1168,6 +1275,8 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/workers/${workerId}/offboard`, body),
   addBankDetails: (workerId: string, body: Record<string, unknown>) =>
     hrmApi.post<Record<string, unknown>>(`/hrm/workers/${workerId}/bank-details`, body),
+  updateBankDetails: (workerId: string, bankId: string, body: Record<string, unknown>) =>
+    hrmApi.patch<Record<string, unknown>>(`/hrm/workers/${workerId}/bank-details/${bankId}`, body),
   removeBankDetails: (workerId: string, bankId: string) =>
     hrmApi.delete<unknown>(`/hrm/workers/${workerId}/bank-details/${bankId}`),
   /** M33 worker history: education, external and internal work history. */

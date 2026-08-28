@@ -19,6 +19,11 @@ public interface ITimeRepository
     Task<AttendanceRecord> CreateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
     Task<AttendanceRecord> UpdateAttendanceAsync(AttendanceRecord record, CancellationToken ct);
     Task<List<AttendanceRecord>> ListAttendanceAsync(Guid workerId, DateOnly? from, DateOnly? to, CancellationToken ct);
+    Task<List<AttendanceRecord>> ListAttendanceForWorkerRangeAsync(Guid workerId, DateOnly from, DateOnly to, CancellationToken ct);
+    Task<List<AttendanceRecord>> ListAttendanceForScopeAsync(DateOnly? from, DateOnly? to, Guid? locationId, Guid? orgUnitId, CancellationToken ct);
+    Task<List<AttendanceRecord>> ListOvertimeAsync(Guid? workerId, DateOnly? from, DateOnly? to, string? status, CancellationToken ct);
+    Task<List<AuditEntry>> ListTimeAuditEntriesAsync(CancellationToken ct);
+    Task AddTimeAuditEntryAsync(AuditEntry entry, CancellationToken ct);
     Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct);
     Task<AttendanceCorrection> UpdateCorrectionAsync(AttendanceCorrection correction, CancellationToken ct);
     Task<LeaveRequest?> GetLeaveRequestAsync(Guid id, CancellationToken ct);
@@ -28,6 +33,8 @@ public interface ITimeRepository
     Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct);
     Task<List<ShiftDefinition>> ListShiftsAsync(CancellationToken ct);
     Task<ShiftDefinition> CreateShiftAsync(ShiftDefinition shift, CancellationToken ct);
+    Task<ShiftDefinition?> GetShiftAsync(Guid id, CancellationToken ct);
+    Task<ShiftDefinition> UpdateShiftAsync(ShiftDefinition shift, CancellationToken ct);
     Task<WorkerShiftAssignment?> GetShiftAssignmentAsync(Guid workerId, DateOnly date, CancellationToken ct);
     Task<WorkerShiftAssignment> CreateShiftAssignmentAsync(WorkerShiftAssignment assignment, CancellationToken ct);
     Task CloseOpenShiftAssignmentsAsync(Guid workerId, DateOnly effectiveTo, CancellationToken ct);

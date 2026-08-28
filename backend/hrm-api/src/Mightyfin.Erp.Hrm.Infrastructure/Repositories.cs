@@ -37,6 +37,10 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
                 || (w.Email != null && w.Email.ToLower().Contains(s)));
         }
         if (!string.IsNullOrWhiteSpace(filters.Status)) q = q.Where(w => w.Status == filters.Status);
+        if (filters.LegalEntityId.HasValue)
+            q = q.Where(w =>
+                (w.OrgUnit != null && w.OrgUnit.LegalEntityId == filters.LegalEntityId.Value) ||
+                (w.Location != null && w.Location.LegalEntityId == filters.LegalEntityId.Value));
         if (filters.OrgUnitId.HasValue) q = q.Where(w => w.OrgUnitId == filters.OrgUnitId.Value);
         if (filters.LocationId.HasValue) q = q.Where(w => w.LocationId == filters.LocationId.Value);
         if (!string.IsNullOrWhiteSpace(filters.WorkerType)) q = q.Where(w => w.WorkerType == filters.WorkerType);
@@ -66,6 +70,11 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
         => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
             .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.SubjectId == subjectId, ct);
+
+    public async Task<Worker?> FindByEmailAsync(string email, CancellationToken ct)
+        => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
+            .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
+            .FirstOrDefaultAsync(w => w.Email == email, ct);
 
     public async Task<Worker> CreateAsync(Worker worker, CancellationToken ct)
     {
@@ -129,11 +138,6 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
             match = await db.Workers.FirstOrDefaultAsync(w => w.NapsaNumber != null && w.NapsaNumber == napsaNumber && !w.IsArchived, ct);
         return match;
     }
-    // M54 import re-locate: rows without any natural keys fall back to their
-    // (required) work email to find the just-created record.
-    public async Task<Worker?> FindByEmailAsync(string email, CancellationToken ct) =>
-        await db.Workers.FirstOrDefaultAsync(w => w.Email != null &&
-            w.Email == email && !w.IsArchived, ct);
 
     public async Task<(List<Assignment> Items, int Total)> ListAssignmentsAsync(Guid workerId, CancellationToken ct)
     {
@@ -448,6 +452,53 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         return await q.Include(a => a.Worker).Take(200).ToListAsync(ct); // already bounded by from/to window; keep insert order
     }
 
+    public async Task<List<AttendanceRecord>> ListAttendanceForWorkerRangeAsync(Guid workerId, DateOnly from, DateOnly to, CancellationToken ct)
+        => await db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.WorkerId == workerId && a.WorkDate >= from && a.WorkDate <= to)
+            .OrderBy(a => a.WorkDate)
+            .ToListAsync(ct);
+
+    public async Task<List<AttendanceRecord>> ListAttendanceForScopeAsync(DateOnly? from, DateOnly? to, Guid? locationId, Guid? orgUnitId, CancellationToken ct)
+    {
+        var q = db.AttendanceRecords.Include(a => a.Worker).AsQueryable();
+        if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
+        if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
+        // Imported attendance may predate branch tagging. Fall back to the
+        // worker assignment in that case, but never expose all branchless
+        // records to a branch-scoped operator.
+        if (locationId.HasValue)
+            q = q.Where(a => a.LocationId == locationId.Value || (!a.LocationId.HasValue && a.Worker!.LocationId == locationId.Value));
+        if (orgUnitId.HasValue)
+            q = q.Where(a => a.Worker!.OrgUnitId == orgUnitId.Value);
+        return await q.OrderByDescending(a => a.WorkDate).ThenBy(a => a.Worker!.EmployeeNo).Take(2000).ToListAsync(ct);
+    }
+    public async Task<List<AttendanceRecord>> ListOvertimeAsync(Guid? workerId, DateOnly? from, DateOnly? to, string? status, CancellationToken ct)
+    {
+        var q = db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.OvertimeHours > 0);
+        if (workerId.HasValue) q = q.Where(a => a.WorkerId == workerId.Value);
+        if (from.HasValue) q = q.Where(a => a.WorkDate >= from.Value);
+        if (to.HasValue) q = q.Where(a => a.WorkDate <= to.Value);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(a => a.OvertimeStatus == status);
+        return await q.OrderByDescending(a => a.WorkDate).ThenBy(a => a.Worker!.EmployeeNo).Take(1000).ToListAsync(ct);
+    }
+
+    public async Task<List<AuditEntry>> ListTimeAuditEntriesAsync(CancellationToken ct)
+        => (await db.AuditEntries
+            .Where(a => a.EntityType.StartsWith("time."))
+            .Take(100)
+            .ToListAsync(ct))
+            .OrderByDescending(a => a.CreatedAt)
+            .ToList();
+
+    public async Task AddTimeAuditEntryAsync(AuditEntry entry, CancellationToken ct)
+    {
+        db.AuditEntries.Add(entry);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<AttendanceCorrection?> GetCorrectionAsync(Guid id, CancellationToken ct)
         => await db.AttendanceCorrections.Include(c => c.Worker).FirstOrDefaultAsync(c => c.Id == id, ct);
 
@@ -505,6 +556,16 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
     public async Task<ShiftDefinition> CreateShiftAsync(ShiftDefinition shift, CancellationToken ct)
     {
         db.ShiftDefinitions.Add(shift);
+        await db.SaveChangesAsync(ct);
+        return shift;
+    }
+
+    public Task<ShiftDefinition?> GetShiftAsync(Guid id, CancellationToken ct) =>
+        db.ShiftDefinitions.FirstOrDefaultAsync(s => s.Id == id, ct);
+
+    public async Task<ShiftDefinition> UpdateShiftAsync(ShiftDefinition shift, CancellationToken ct)
+    {
+        db.ShiftDefinitions.Update(shift);
         await db.SaveChangesAsync(ct);
         return shift;
     }
@@ -1120,7 +1181,11 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         var profiles = (await db.WorkerPayrollProfiles
             .Include(p => p.Worker).ThenInclude(w => w!.BankDetails)
             .Include(p => p.ComponentValues).ThenInclude(v => v.Component)
-            .Where(p => p.PayGroupId == period.PayGroupId)
+            // Payroll is an operational process. A retained payroll profile
+            // must never make an archived worker payable again.
+            .Where(p => p.PayGroupId == period.PayGroupId
+                && p.Worker != null
+                && !p.Worker.IsArchived)
             .ToListAsync(ct))
             .Where(p => !p.EffectiveTo.HasValue || p.EffectiveTo >= DateOnly.FromDateTime(DateTime.UtcNow))
             // M46: a run scoped to a branch only pays the workers attached to
@@ -1133,6 +1198,120 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         var year = period.StartDate.Year.ToString();
         var slabs = await db.TaxSlabs.Where(s => s.TaxYear == year && s.IsActive).OrderBy(s => s.Sequence).ToListAsync(ct);
         return (profiles, components, rules, slabs, period.CutoffDate);
+    }
+
+    public async Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var query = db.WorkerBenefitAllowances
+            .Include(a => a.Worker)
+            .Include(a => a.BenefitType)
+            .Where(a => a.Year == period.StartDate.Year
+                && a.AnnualAmount > 0
+                && a.Worker != null
+                && !a.Worker.IsArchived
+                && a.BenefitType != null
+                && a.BenefitType.IsActive
+                && a.BenefitType.IncludeInPayroll);
+        if (locationId.HasValue)
+            query = query.Where(a => a.Worker != null && a.Worker.LocationId == locationId);
+        return await query.ToListAsync(ct);
+    }
+
+    public async Task<List<SalaryAdvance>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        var query = db.SalaryAdvances
+            .Include(a => a.Worker)
+            .AsQueryable();
+        if (workerId.HasValue) query = query.Where(a => a.WorkerId == workerId.Value);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(a => a.Status == status);
+        var rows = await query.ToListAsync(ct);
+        return rows.OrderByDescending(a => a.CreatedAt).ToList();
+    }
+
+    public Task<SalaryAdvance?> GetSalaryAdvanceAsync(Guid id, CancellationToken ct) =>
+        db.SalaryAdvances
+            .Include(a => a.Worker)
+            .FirstOrDefaultAsync(a => a.Id == id, ct);
+
+    public async Task<SalaryAdvance> CreateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct)
+    {
+        db.SalaryAdvances.Add(advance);
+        await db.SaveChangesAsync(ct);
+        return advance;
+    }
+
+    public async Task UpdateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct)
+    {
+        if (db.Entry(advance).State == EntityState.Detached)
+            db.SalaryAdvances.Update(advance);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<SalaryAdvance>> LoadDeductibleSalaryAdvancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var query = db.SalaryAdvances
+            .Include(a => a.Worker)
+            .Where(a => a.Status == "active"
+                && a.DeductFromPayslip
+                && a.DeductionStartDate <= period.EndDate
+                && a.Amount > 0
+                && a.InstallmentAmount > 0
+                && a.Worker != null
+                && !a.Worker.IsArchived);
+        if (locationId.HasValue)
+            query = query.Where(a => a.Worker != null && a.Worker.LocationId == locationId);
+        return await query.ToListAsync(ct);
+    }
+
+    public async Task<Dictionary<Guid, decimal>> GetSalaryAdvanceRecoveredAmountsAsync(List<Guid> advanceIds, CancellationToken ct)
+    {
+        if (advanceIds.Count == 0) return new Dictionary<Guid, decimal>();
+        var codeById = advanceIds.Distinct().ToDictionary(id => $"salary-advance-{id:N}", id => id);
+        var codes = codeById.Keys.ToList();
+        var rows = await db.PayrollLineComponents
+            .Include(c => c.RunLine).ThenInclude(l => l!.Run)
+            .Where(c => codes.Contains(c.ComponentCode)
+                && c.RunLine != null
+                && c.RunLine.Run != null
+                && (c.RunLine.Run.Status == "released" || c.RunLine.Run.Status == "closed"))
+            .GroupBy(c => c.ComponentCode)
+            .Select(g => new { Code = g.Key, Amount = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        return rows
+            .Where(row => codeById.ContainsKey(row.Code))
+            .ToDictionary(row => codeById[row.Code], row => row.Amount);
+    }
+
+    public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
+    {
+        var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
+        var q = db.AttendanceRecords
+            .Include(a => a.Worker)
+            .Where(a => a.WorkDate >= period.StartDate && a.WorkDate <= period.EndDate
+                && a.OvertimeHours > 0 && a.OvertimeStatus == "approved"
+                && a.OvertimePayrollRunId == null
+                && a.Worker != null
+                && !a.Worker.IsArchived);
+        if (locationId.HasValue)
+            q = q.Where(a => a.LocationId == locationId || a.Worker!.LocationId == locationId);
+        return await q.OrderBy(a => a.Worker!.EmployeeNo).ThenBy(a => a.WorkDate).ToListAsync(ct);
+    }
+
+    public async Task LinkOvertimeToPayrollAsync(Guid attendanceId, Guid runId, Guid runLineId, CancellationToken ct)
+    {
+        var record = await db.AttendanceRecords.FirstOrDefaultAsync(a => a.Id == attendanceId, ct)
+            ?? throw new DomainException("overtime-not-found", "Overtime attendance record not found.");
+        if (record.OvertimeStatus != "approved" || record.OvertimePayrollRunId.HasValue)
+            throw new DomainException("overtime-not-linkable", "Overtime is no longer approved or has already been linked to payroll.");
+        record.OvertimeStatus = "paid";
+        record.OvertimePayrollRunId = runId;
+        record.OvertimePayrollLineId = runLineId;
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct)
@@ -1484,6 +1663,8 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
     public async Task<Job> UpdateJobAsync(Job job, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return job; }
     public async Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct) => await db.TenantRoleAssignments.ToListAsync(ct);
+    public async Task<TenantRoleAssignment?> GetRoleAssignmentAsync(string roleKey, CancellationToken ct)
+        => await db.TenantRoleAssignments.FirstOrDefaultAsync(r => r.RoleKey == roleKey, ct);
     public async Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return row; }
     public async Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct) => await db.RetentionRules.ToListAsync(ct);

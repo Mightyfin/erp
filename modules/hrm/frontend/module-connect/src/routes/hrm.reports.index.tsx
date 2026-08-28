@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   BarChart3,
   BadgeCheck,
@@ -11,6 +12,16 @@ import {
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ChartContainer,
   ChartTooltip,
@@ -34,7 +45,7 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/reports/")({
   head: () => ({
     meta: [
-      { title: "Management reports — Mightyfin ERP HRM" },
+      { title: "Management reports — New World Cargo HRM" },
       {
         name: "description",
         content:
@@ -124,6 +135,18 @@ interface Catalogue {
   payrollRestricted: boolean;
   source: string;
 }
+type ExportFormat = "csv" | "xlsx" | "pdf";
+type AuthorityFormat = "spreadsheet" | "pdf";
+type FilingCode = (typeof statutoryFilings)[number]["code"];
+type LayoutColumn = { id: string; header: string; field: string; include: boolean };
+type StatutoryPreview = {
+  exportType: string;
+  periodLabel: string;
+  currency: string;
+  templateColumns: string[];
+  rows: Array<Record<string, string>>;
+};
+
 interface Dashboard {
   generatedAt: string;
   dataThrough: string;
@@ -156,6 +179,91 @@ const statutoryFilings = [
   { code: "nhima", label: "NHIMA remittance", icon: FileText },
 ] as const;
 
+const authorityFields = [
+  ["blank", "Blank column"],
+  ["companyAccount", "Company account"],
+  ["year", "Year"],
+  ["period", "Period"],
+  ["month", "Month"],
+  ["employeeNo", "Employee number"],
+  ["ssn", "NAPSA SSN"],
+  ["napsaNumber", "NAPSA number"],
+  ["nhimaNumber", "NHIMA number"],
+  ["nrc", "NRC"],
+  ["tpin", "TPIN"],
+  ["tpinNrc", "TPIN or NRC"],
+  ["identityType", "Identity type"],
+  ["surname", "Surname"],
+  ["firstName", "First name"],
+  ["fullName", "Full name"],
+  ["employmentNature", "Employment nature"],
+  ["dateOfBirth", "Date of birth"],
+  ["gross", "Gross"],
+  ["grossEmoluments", "Gross emoluments"],
+  ["chargeableEmoluments", "Chargeable emoluments"],
+  ["netPay", "Net pay"],
+  ["paye", "PAYE"],
+  ["taxDeducted", "Tax deducted"],
+  ["totalTaxCredit", "Total tax credit"],
+  ["taxAdjusted", "Tax adjusted"],
+  ["napsaEmployee", "NAPSA employee"],
+  ["napsaEmployer", "NAPSA employer"],
+  ["napsaTotal", "NAPSA total"],
+  ["nhimaEmployee", "NHIMA employee"],
+  ["nhimaEmployer", "NHIMA employer"],
+  ["nhimaTotal", "NHIMA total"],
+  ["status", "Status"],
+] as const;
+
+const defaultAuthorityLayout: Record<FilingCode, Array<[string, string]>> = {
+  "paye-return": [
+    ["identityType", "identityType"],
+    ["tpinNrc", "tpinNrc"],
+    ["fullName", "fullName"],
+    ["employmentNature", "employmentNature"],
+    ["grossEmoluments", "grossEmoluments"],
+    ["chargeableEmoluments", "chargeableEmoluments"],
+    ["totalTaxCredit", "totalTaxCredit"],
+    ["taxDeducted", "taxDeducted"],
+    ["taxAdjusted", "taxAdjusted"],
+  ],
+  zra: [
+    ["Employee No", "employeeNo"],
+    ["Employee Name", "fullName"],
+    ["TPIN", "tpin"],
+    ["Gross Pay", "gross"],
+    ["PAYE", "paye"],
+    ["Net Pay", "netPay"],
+  ],
+  napsa: [
+    ["Company Account", "companyAccount"],
+    ["Year", "year"],
+    ["Period", "period"],
+    ["SSN", "napsaNumber"],
+    ["NRC", "nrc"],
+    ["Surname", "surname"],
+    ["First Name", "firstName"],
+    ["", "blank"],
+    ["Date of Birth", "dateOfBirth"],
+    ["Gross", "gross"],
+    ["Employee Contribution", "napsaEmployee"],
+    ["Employer Contribution", "napsaEmployer"],
+    ["Status", "status"],
+  ],
+  nhima: [
+    ["Year", "year"],
+    ["Month", "month"],
+    ["NHIMA", "nhimaNumber"],
+    ["NRC", "nrc"],
+    ["Surname", "surname"],
+    ["First Name", "firstName"],
+    ["Date of Birth", "dateOfBirth"],
+    ["Gross", "gross"],
+    ["Employee Contribution", "nhimaEmployee"],
+    ["Employer Contribution", "nhimaEmployer"],
+  ],
+};
+
 function isoDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
@@ -172,6 +280,69 @@ function currency(value: number) {
 }
 function number(value: number, digits = 1) {
   return value.toLocaleString("en-ZM", { maximumFractionDigits: digits });
+}
+function makeLayout(code: FilingCode, preview?: StatutoryPreview): LayoutColumn[] {
+  const base = preview?.templateColumns?.length
+    ? preview.templateColumns.map((header, index) => {
+        const fallback = defaultAuthorityLayout[code][index]?.[1] ?? "blank";
+        return [header, fallback] as [string, string];
+      })
+    : defaultAuthorityLayout[code];
+  return base.map(([header, field], index) => ({
+    id: `${code}-${index}`,
+    header,
+    field,
+    include: true,
+  }));
+}
+function exportRows(layout: LayoutColumn[], rows: Array<Record<string, string>>) {
+  const active = layout.filter((column) => column.include);
+  return {
+    headers: active.map((column) => column.header),
+    rows: rows.map((row) => active.map((column) => row[column.field] ?? "")),
+  };
+}
+function csvCell(value: string) {
+  return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+function downloadAuthoritySpreadsheet(code: FilingCode, label: string, period: string, layout: LayoutColumn[], sourceRows: Array<Record<string, string>>) {
+  const { headers, rows } = exportRows(layout, sourceRows);
+  const safePeriod = period.replaceAll(/\s+/g, "-").toLowerCase();
+  if (code === "paye-return") {
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "PayeEmployeeDetails");
+    XLSX.writeFile(book, `${label}-${safePeriod}.xlsx`);
+    return;
+  }
+  const csv = [headers, ...rows].map((row) => row.map((cell) => csvCell(String(cell))).join(",")).join("\r\n");
+  downloadBlob(new Blob([`${csv}\r\n`], { type: "text/csv;charset=utf-8" }), `${label}-${safePeriod}.csv`);
+}
+function openAuthorityPdf(label: string, period: string, layout: LayoutColumn[], sourceRows: Array<Record<string, string>>) {
+  const { headers, rows } = exportRows(layout, sourceRows);
+  const table = [
+    `<thead><tr>${headers.map((h) => `<th>${h || "&nbsp;"}</th>`).join("")}</tr></thead>`,
+    `<tbody>${rows
+      .map((row) => `<tr>${row.map((cell) => `<td>${String(cell).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</td>`).join("")}</tr>`)
+      .join("")}</tbody>`,
+  ].join("");
+  const doc = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
+  if (!doc) return;
+  doc.document.write(`<!doctype html><html><head><title>${label} ${period}</title><style>
+    body{font-family:Arial,sans-serif;margin:24px;color:#111827} h1{font-size:18px;margin:0 0 4px}
+    p{margin:0 0 16px;color:#4b5563;font-size:12px} table{border-collapse:collapse;width:100%;font-size:11px}
+    th,td{border:1px solid #d1d5db;padding:6px;text-align:left;white-space:nowrap} th{background:#f3f4f6}
+    @media print{@page{size:landscape;margin:12mm} button{display:none}}
+  </style></head><body><button onclick="window.print()">Print or save PDF</button><h1>${label}</h1><p>${period}</p><table>${table}</table></body></html>`);
+  doc.document.close();
 }
 function kpiValue(kpi: Kpi) {
   if (kpi.unit === "ZMW") return currency(kpi.value);
@@ -191,6 +362,7 @@ function ReportsPage() {
   });
   const [filters, setFilters] = useState(draft);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("pdf");
   const canPayroll = useRoleGate()(["payroll", "hr_admin"]);
   const params = useMemo(
     () => ({
@@ -211,7 +383,7 @@ function ReportsPage() {
   async function download(item: Catalogue) {
     setDownloading(item.code);
     try {
-      await realApi.downloadManagementReport(item.code, params);
+      await realApi.downloadManagementReport(item.code, params, exportFormat);
     } finally {
       setDownloading(null);
     }
@@ -499,11 +671,27 @@ function ReportsPage() {
             <StatutoryFilings canPayroll={canPayroll} />
 
             <section aria-label="Report catalogue" className="space-y-3">
-              <div>
-                <h2 className="text-lg font-semibold">Certified exports</h2>
-                <p className="text-sm text-muted-foreground">
-                  Download reproducible CSV controls for the selected reporting window.
-                </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Certified exports</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Choose a delivery format for the selected reporting window. PDFs are print-ready;
+                    Excel remains editable; CSV is suited to system import.
+                  </p>
+                </div>
+                <div className="w-full sm:w-44">
+                  <Label htmlFor="report-export-format">Export format</Label>
+                  <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as ExportFormat)}>
+                    <SelectTrigger id="report-export-format" className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pdf">PDF · print-ready</SelectItem>
+                      <SelectItem value="xlsx">Excel · editable</SelectItem>
+                      <SelectItem value="csv">CSV · data</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 {data.catalogue.map((item) => {
@@ -541,7 +729,7 @@ function ReportsPage() {
                         onClick={() => download(item)}
                       >
                         <Download className="mr-1.5 size-3.5" />
-                        {downloading === item.code ? "Preparing…" : "CSV"}
+                        {downloading === item.code ? "Preparing…" : exportFormat.toUpperCase()}
                       </Button>
                     </article>
                   );
@@ -570,40 +758,50 @@ function ReportsPage() {
 function StatutoryFilings({ canPayroll }: { canPayroll: boolean }) {
   const [periodId, setPeriodId] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [selectedFiling, setSelectedFiling] = useState<(typeof statutoryFilings)[number] | null>(null);
+  const runs = useApi(() => realApi.payrollRuns(), []);
   const groups = useApi(() => realApi.payrollPayGroups(), []);
-  const defaultGroupId = useMemo(() => {
-    const rows = Array.isArray(groups.data) ? (groups.data as Array<Record<string, unknown>>) : [];
-    return String(rows.find((x) => x.code === "MONTHLY-ZMW")?.id ?? rows[0]?.id ?? "");
-  }, [groups.data]);
+  const groupRows = useMemo(() => (groups.data ?? []) as Array<Record<string, unknown>>, [groups.data]);
+  const groupId = String(groupRows[0]?.id ?? "");
   const periods = useApi(
-    () => (defaultGroupId ? realApi.payrollPayGroupPeriods(defaultGroupId) : Promise.resolve([])),
-    [defaultGroupId],
+    () => (groupId ? realApi.payrollPayGroupPeriods(groupId) : Promise.resolve([])),
+    [groupId],
   );
-  const released = useMemo(
-    () =>
-      (Array.isArray(periods.data) ? (periods.data as Array<Record<string, unknown>>) : []).filter(
-        (x) => x.status === "released" || x.status === "closed",
-      ),
+  const periodRows = useMemo(
+    () => (periods.data ?? []) as Array<Record<string, unknown>>,
     [periods.data],
   );
+  const released = useMemo(() => {
+    const payload = runs.data as { items?: unknown[] } | unknown[] | null;
+    const rows = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === "object" && Array.isArray(payload.items)
+        ? payload.items
+        : [];
+    const releasedLabels = new Set(
+      rows
+        .map((row) => row as Record<string, unknown>)
+        .filter((row) => row.status === "released" || row.status === "closed")
+        .map((row) => String(row.periodLabel ?? ""))
+        .filter(Boolean),
+    );
+    const seen = new Set<string>();
+    return periodRows
+      .map((row) => ({
+        id: String(row.id ?? ""),
+        periodLabel: String(row.periodLabel ?? row.id ?? ""),
+      }))
+      .filter(
+        (row) =>
+          row.id &&
+          releasedLabels.has(row.periodLabel) &&
+          !seen.has(row.id) &&
+          Boolean(seen.add(row.id)),
+      );
+  }, [periodRows, runs.data]);
   useEffect(() => {
     if (!periodId && released.length) setPeriodId(String(released[0].id));
   }, [periodId, released]);
-
-  async function download(code: string) {
-    if (!periodId || !canPayroll) return;
-    setDownloading(code);
-    try {
-      const file = await realApi.statutoryGenerate(code, periodId);
-      const anchor = document.createElement("a");
-      anchor.href = file.url;
-      anchor.download = file.fileName;
-      anchor.click();
-      URL.revokeObjectURL(file.url);
-    } finally {
-      setDownloading(null);
-    }
-  }
 
   return (
     <section aria-label="Authority filing files" className="rounded-xl border bg-surface p-5">
@@ -632,7 +830,7 @@ function StatutoryFilings({ canPayroll }: { canPayroll: boolean }) {
               size="sm"
               variant="outline"
               disabled={!periodId || !canPayroll || downloading === filing.code}
-              onClick={() => download(filing.code)}
+              onClick={() => setSelectedFiling(filing)}
             >
               <Icon className="mr-1.5 size-3.5" />
               {downloading === filing.code ? "Preparing…" : filing.label}
@@ -640,6 +838,17 @@ function StatutoryFilings({ canPayroll }: { canPayroll: boolean }) {
           );
         })}
       </div>
+      {selectedFiling ? (
+        <AuthorityFilingDialog
+          filing={selectedFiling}
+          periodId={periodId}
+          open={Boolean(selectedFiling)}
+          onOpenChange={(open) => {
+            if (!open) setSelectedFiling(null);
+          }}
+          onBusyChange={setDownloading}
+        />
+      ) : null}
       {!canPayroll ? (
         <p className="mt-2 text-xs text-warning">
           Payroll or HR Admin access is required for authority files.
@@ -651,6 +860,195 @@ function StatutoryFilings({ canPayroll }: { canPayroll: boolean }) {
         </p>
       ) : null}
     </section>
+  );
+}
+
+function AuthorityFilingDialog({
+  filing,
+  periodId,
+  open,
+  onOpenChange,
+  onBusyChange,
+}: {
+  filing: (typeof statutoryFilings)[number];
+  periodId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onBusyChange: (code: string | null) => void;
+}) {
+  const [format, setFormat] = useState<AuthorityFormat>("spreadsheet");
+  const [layout, setLayout] = useState<LayoutColumn[]>(() => makeLayout(filing.code));
+  const preview = useApi(
+    () =>
+      open && periodId
+        ? (realApi.statutoryPreview(filing.code, periodId) as Promise<StatutoryPreview>)
+        : Promise.resolve({
+            exportType: filing.code,
+            periodLabel: "",
+            currency: "ZMW",
+            templateColumns: [],
+            rows: [],
+          }),
+    [open, periodId, filing.code],
+  );
+  useEffect(() => {
+    if (preview.data) setLayout(makeLayout(filing.code, preview.data));
+  }, [filing.code, preview.data]);
+
+  const table = useMemo(
+    () => exportRows(layout, preview.data?.rows ?? []),
+    [layout, preview.data?.rows],
+  );
+  const labelSlug = filing.label.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  function updateColumn(id: string, patch: Partial<LayoutColumn>) {
+    setLayout((current) => current.map((column) => (column.id === id ? { ...column, ...patch } : column)));
+  }
+
+  async function exportConfirmed() {
+    if (!preview.data) return;
+    onBusyChange(filing.code);
+    try {
+      if (format === "pdf") openAuthorityPdf(filing.label, preview.data.periodLabel, layout, preview.data.rows);
+      else downloadAuthoritySpreadsheet(filing.code, labelSlug, preview.data.periodLabel, layout, preview.data.rows);
+      onOpenChange(false);
+    } finally {
+      onBusyChange(null);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{filing.label}</DialogTitle>
+          <DialogDescription>
+            Confirm the authority layout before export. The defaults follow the latest template file
+            we have, but you can change headers or mapped fields if the portal changes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+            <Label>Export format</Label>
+            <Select value={format} onValueChange={(value) => setFormat(value as AuthorityFormat)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="spreadsheet">
+                  {filing.code === "paye-return" ? "Excel template" : "CSV spreadsheet"}
+                </SelectItem>
+                <SelectItem value="pdf">PDF preview</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
+              <div className="font-medium text-foreground">Rows ready</div>
+              <div className="mt-1">{preview.data?.rows.length ?? 0} payroll lines</div>
+              <div className="mt-3 font-medium text-foreground">Period</div>
+              <div className="mt-1">{preview.data?.periodLabel || "Loading..."}</div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {preview.loading ? (
+              <div className="rounded-lg border bg-surface p-6 text-sm text-muted-foreground">
+                Loading released payroll data...
+              </div>
+            ) : preview.error ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                {preview.error}
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="min-w-[980px] text-left text-xs">
+                    <thead className="bg-muted/60">
+                      <tr>
+                        <th className="px-3 py-2">Use</th>
+                        <th className="px-3 py-2">Export column</th>
+                        <th className="px-3 py-2">Payroll field</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {layout.map((column) => (
+                        <tr key={column.id} className="border-t">
+                          <td className="px-3 py-2">
+                            <Checkbox
+                              checked={column.include}
+                              onCheckedChange={(checked) => updateColumn(column.id, { include: Boolean(checked) })}
+                              aria-label={`Include ${column.header || "blank column"}`}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              value={column.header}
+                              onChange={(event) => updateColumn(column.id, { header: event.target.value })}
+                              aria-label="Export column name"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Select value={column.field} onValueChange={(field) => updateColumn(column.id, { field })}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {authorityFields.map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div>
+                  <div className="mb-2 text-sm font-medium">Data preview</div>
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="min-w-[1100px] text-left text-xs">
+                      <thead className="bg-muted/60">
+                        <tr>{table.headers.map((header, index) => <th key={`${header}-${index}`} className="px-3 py-2">{header || "Blank"}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {table.rows.slice(0, 10).map((row, rowIndex) => (
+                          <tr key={rowIndex} className="border-t">
+                            {row.map((cell, cellIndex) => (
+                              <td key={`${rowIndex}-${cellIndex}`} className="px-3 py-2 whitespace-nowrap">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(preview.data?.rows.length ?? 0) > 10 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Showing the first 10 rows. The export includes all rows.
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={preview.loading || Boolean(preview.error) || !preview.data?.rows.length} onClick={exportConfirmed}>
+            <Download className="mr-2 size-4" />
+            Export {format === "pdf" ? "PDF" : "spreadsheet"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

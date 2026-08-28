@@ -19,16 +19,17 @@ import { ReasonDialog } from "@/platform/components/ReasonDialog";
 import { feedback } from "@/platform/feedback";
 import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
+import { useAuth } from "@/platform/auth";
 
 export const Route = createFileRoute("/hrm/payroll/exceptions")({
   head: () => ({
     meta: [
-      { title: "Payroll exceptions — Mightyfin ERP HRM" },
+      { title: "Payroll exceptions — New World Cargo HRM" },
       {
         name: "description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",
       },
-      { property: "og:title", content: "Payroll exceptions — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payroll exceptions — New World Cargo HRM" },
       {
         property: "og:description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",
@@ -51,6 +52,13 @@ const outcomeMeta: Record<OutcomeKind, { icon: typeof Check; cls: string; verb: 
   Excluded: { icon: Ban, cls: "text-muted-foreground", verb: "excluded from the run" },
 };
 
+type OperationalException = PayrollException & {
+  runStatus?: string;
+  preparedBySubjectId?: string;
+  existingOutcome?: ExceptionOutcome;
+  decisionDisabledReason?: string;
+};
+
 /* -------------------------------------------------------------------------- */
 
 function ExceptionCard({
@@ -59,12 +67,13 @@ function ExceptionCard({
   onAction,
   onReopen,
 }: {
-  e: PayrollException;
+  e: OperationalException;
   outcome?: ExceptionOutcome;
   onAction: (kind: OutcomeKind) => void;
   onReopen: () => void;
 }) {
   const { icon: Icon, cls, frame } = severityMeta[e.severity];
+  const actionDisabled = Boolean(e.decisionDisabledReason);
 
   return (
     <li className={`rounded-lg border p-5 ${outcome ? "border-border bg-surface" : frame}`}>
@@ -135,15 +144,19 @@ function ExceptionCard({
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">{outcome.at}</span>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 gap-1.5 text-xs"
-                  onClick={onReopen}
-                >
-                  <Undo2 className="size-3.5" aria-hidden />
-                  Reopen
-                </Button>
+                {e.existingOutcome ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">Recorded on run</span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 gap-1.5 text-xs"
+                    onClick={onReopen}
+                  >
+                    <Undo2 className="size-3.5" aria-hidden />
+                    Reopen
+                  </Button>
+                )}
               </>
             );
           })()}
@@ -152,18 +165,36 @@ function ExceptionCard({
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             size="sm"
-            disabled={!e.resolvable}
+            disabled={!e.resolvable || actionDisabled}
             onClick={() => onAction("Resolved")}
-            title={e.resolvable ? undefined : "This one cannot be fixed inside payroll."}
+            title={
+              e.decisionDisabledReason ??
+              (e.resolvable ? undefined : "This one cannot be fixed inside payroll.")
+            }
           >
             Mark resolved
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onAction("Waived")}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={actionDisabled}
+            title={e.decisionDisabledReason}
+            onClick={() => onAction("Waived")}
+          >
             Waive
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onAction("Excluded")}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={actionDisabled}
+            title={e.decisionDisabledReason}
+            onClick={() => onAction("Excluded")}
+          >
             Exclude from the run
           </Button>
+          {e.decisionDisabledReason ? (
+            <p className="basis-full text-xs text-muted-foreground">{e.decisionDisabledReason}</p>
+          ) : null}
           {!e.resolvable ? (
             <p className="basis-full text-xs text-muted-foreground">
               This cannot be resolved inside payroll — it needs information from outside the run.
@@ -180,28 +211,38 @@ function ExceptionCard({
 
 function ExceptionsPage() {
   const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
+  const { user } = useAuth();
   const mockState = useMock(() => payrollRunApi.exceptions());
-  const realState = useApi(async (): Promise<PayrollException[]> => {
+  const realState = useApi(async (): Promise<OperationalException[]> => {
     if (!USE_REAL) return [];
     const runs = await realApi.payrollRuns();
-    const calculated = (runs.items ?? []).filter(
-      (raw) => String((raw as Record<string, unknown>).status ?? "") === "calculated",
+    const reviewable = (runs.items ?? []).filter(
+      (raw) =>
+        String((raw as Record<string, unknown>).status ?? "") === "calculated" ||
+        String((raw as Record<string, unknown>).status ?? "") === "in-review",
     );
     const results = await Promise.all(
-      calculated.map(async (rawRun) => {
+      reviewable.map(async (rawRun) => {
         const run = rawRun as Record<string, unknown>;
+        const runStatus = String(run.status ?? "");
         const lines = (await realApi.payrollRunLines(String(run.id ?? ""))) as {
           items?: unknown[];
         };
         return (lines.items ?? [])
-          .filter((raw) => {
-            const l = raw as Record<string, unknown>;
-            return Boolean(l.hasException) && String(l.exceptionStatus ?? "open") === "open";
-          })
+          .filter((raw) => Boolean((raw as Record<string, unknown>).hasException))
           .map((raw) => {
             const l = raw as Record<string, unknown>;
             const reason = String(l.exceptionReason ?? "payroll-check");
             const name = String(l.workerName ?? l.employeeNo ?? "Worker");
+            const exceptionStatus = String(l.exceptionStatus ?? "open");
+            const kind =
+              exceptionStatus === "resolved"
+                ? "Resolved"
+                : exceptionStatus === "waived"
+                  ? "Waived"
+                  : exceptionStatus === "excluded"
+                    ? "Excluded"
+                    : null;
             return {
               id: String(l.id ?? ""),
               runId: String(run.id ?? ""),
@@ -224,7 +265,23 @@ function ExceptionsPage() {
                   : "Correct the payroll input and recalculate.",
               escalation: "Waive with an independent approver or exclude the worker with a reason.",
               resolvable: reason !== "missing-bank",
-            } satisfies PayrollException;
+              runStatus,
+              preparedBySubjectId: run.preparedBySubjectId ? String(run.preparedBySubjectId) : undefined,
+              existingOutcome: kind
+                ? {
+                    kind,
+                    reason: String(l.exceptionDecisionReason ?? "Recorded on the pay run line."),
+                    by: String(l.exceptionDecidedBySubjectId ?? "Payroll"),
+                    at: l.exceptionDecidedAt
+                      ? new Date(String(l.exceptionDecidedAt)).toLocaleString()
+                      : "Recorded",
+                  }
+                : undefined,
+              decisionDisabledReason:
+                runStatus === "calculated"
+                  ? undefined
+                  : "This run is already in review. Return to the run workflow if the exception must be changed before approval.",
+            } satisfies OperationalException;
           });
       }),
     );
@@ -234,9 +291,9 @@ function ExceptionsPage() {
   const [only, setOnly] = useState<Severity | "All">("All");
   // Mirrors the shared store, so a re-render picks the store's state up.
   const [outcomes, setOutcomes] = useState<Record<string, ExceptionOutcome>>({});
-  const [pending, setPending] = useState<{ e: PayrollException; kind: OutcomeKind } | null>(null);
+  const [pending, setPending] = useState<{ e: OperationalException; kind: OutcomeKind } | null>(null);
 
-  async function record(e: PayrollException, kind: OutcomeKind, reason: string) {
+  async function record(e: OperationalException, kind: OutcomeKind, reason: string) {
     if (USE_REAL) {
       try {
         await realApi.payrollExceptionDecision(e.runId, e.id, kind.toLowerCase(), reason);
@@ -282,9 +339,11 @@ function ExceptionsPage() {
   }
 
   /** Copy and rules for the dialog, which differ sharply by action. */
-  function dialogFor(e: PayrollException, kind: OutcomeKind) {
+  function dialogFor(e: OperationalException, kind: OutcomeKind) {
     const run = payRuns.find((r) => r.id === e.runId);
-    const preparedByMe = run?.preparedBy === CURRENT_USER;
+    const preparedByMe = USE_REAL
+      ? Boolean(user?.id && e.preparedBySubjectId === String(user.id))
+      : run?.preparedBy === CURRENT_USER;
 
     if (kind === "Resolved") {
       return {
@@ -339,8 +398,9 @@ function ExceptionsPage() {
         />
         <Async state={state} rows={3}>
           {(rows) => {
-            const outcomeFor = (id: string) => outcomes[id] ?? getExceptionOutcome(id);
-            const outstanding = rows.filter((r) => !outcomeFor(r.id));
+            const outcomeFor = (e: OperationalException) =>
+              outcomes[e.id] ?? e.existingOutcome ?? getExceptionOutcome(e.id);
+            const outstanding = rows.filter((r) => !outcomeFor(r));
             const counts = {
               Blocking: outstanding.filter((r) => r.severity === "Blocking").length,
               Warning: outstanding.filter((r) => r.severity === "Warning").length,
@@ -402,7 +462,7 @@ function ExceptionsPage() {
                     <ExceptionCard
                       key={e.id}
                       e={e}
-                      outcome={outcomeFor(e.id)}
+                      outcome={outcomeFor(e)}
                       onAction={(kind) => setPending({ e, kind })}
                       onReopen={() => {
                         clearExceptionOutcome(e.id);

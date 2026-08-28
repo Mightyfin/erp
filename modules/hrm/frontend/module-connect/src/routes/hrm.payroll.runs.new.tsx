@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Check, Info } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Ban, Check, Info, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { money } from "@/mock/payrollrun";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { Async } from "@/platform/components/Async";
-import { realApi, useApi } from "@/platform/use-api";
+import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import {
   demoEntityTree,
   flattenEntityTree,
@@ -25,9 +25,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/payroll/runs/new")({
   head: () => ({
     meta: [
-      { title: "Start a pay run — Mightyfin ERP HRM" },
+      { title: "Start a pay run — New World Cargo HRM" },
       { name: "description", content: "Open a pay period: choose the entity and pay group, confirm who is in and who is deliberately out, and check readiness before calculating." },
-      { property: "og:title", content: "Start a pay run — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Start a pay run — New World Cargo HRM" },
       { property: "og:description", content: "Open a pay period, confirm the population, and check readiness before calculating." },
     ],
   }),
@@ -35,20 +35,27 @@ export const Route = createFileRoute("/hrm/payroll/runs/new")({
 });
 
 const ENTITIES = [
-  { id: "ent-zm1", name: "Mighty Finance Solutions Industrial Zambia Ltd", currency: "ZMW" },
-  { id: "ent-zm2", name: "Mighty Finance Solutions Services Zambia Ltd", currency: "ZMW" },
-  { id: "ent-zm3", name: "Mighty Finance Solutions Agri Holdings Ltd", currency: "ZMW" },
+  { id: "ent-zm1", name: "New World Cargo Zambia Ltd", currency: "ZMW" },
+  { id: "ent-zm2", name: "New World Cargo Services Zambia Ltd", currency: "ZMW" },
+  { id: "ent-zm3", name: "New World Cargo Holdings Zambia Ltd", currency: "ZMW" },
 ];
 
 const PAY_GROUPS = ["Monthly salaried", "Monthly — management", "Weekly — site crew"];
 
-/** Everything that must be true before a calculation can be trusted. */
-const READINESS = [
-  { id: "r1", label: "Country pack active for the period", detail: "Zambia 2026.1 — PAYE bands, NAPSA ceiling and NHIMA rate.", state: "pass" as const },
-  { id: "r2", label: "Attendance approved to cutoff", detail: "24 of 26 timesheets approved. 2 still with the line manager.", state: "warn" as const },
-  { id: "r3", label: "Bank details present and verified", detail: "Every included employee has a verified account.", state: "pass" as const },
-  { id: "r4", label: "No employee on two pay groups", detail: "Nobody would be paid twice.", state: "pass" as const },
-  { id: "r5", label: "Previous period closed", detail: "July 2026 reconciled and locked.", state: "pass" as const },
+type ReadinessItem = {
+  id: string;
+  label: string;
+  detail: string;
+  state: "pass" | "warn" | "fail";
+};
+
+/** Demo checklist used only when the live backend is disabled. */
+const READINESS: ReadinessItem[] = [
+  { id: "r1", label: "Country pack active for the period", detail: "Zambia 2026.1 - PAYE bands, NAPSA ceiling and NHIMA rate.", state: "pass" },
+  { id: "r2", label: "Attendance approved to cutoff", detail: "24 of 26 timesheets approved. 2 still with the line manager.", state: "warn" },
+  { id: "r3", label: "Bank details present and verified", detail: "Every included employee has a verified account.", state: "pass" },
+  { id: "r4", label: "No employee on two pay groups", detail: "Nobody would be paid twice.", state: "pass" },
+  { id: "r5", label: "Previous period closed", detail: "July 2026 reconciled and locked.", state: "pass" },
 ];
 
 const POPULATION = [
@@ -60,20 +67,23 @@ const POPULATION = [
   { name: "Lubinda Sitali", in: false, note: "On unpaid study leave for the whole period." },
 ];
 
-function ReadinessRow({ item }: { item: (typeof READINESS)[number] }) {
+function ReadinessRow({ item }: { item: ReadinessItem }) {
   const pass = item.state === "pass";
+  const fail = item.state === "fail";
   return (
     <li className="flex items-start gap-2 rounded-md border p-3">
       {pass ? (
         <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+      ) : fail ? (
+        <X className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
       ) : (
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
       )}
       <span className="min-w-0">
         <span className="block text-sm font-medium">
           {item.label}
-          <span className={`ml-2 text-xs font-normal ${pass ? "text-success" : "text-warning"}`}>
-            {pass ? "Ready" : "Needs attention"}
+          <span className={`ml-2 text-xs font-normal ${pass ? "text-success" : fail ? "text-danger" : "text-warning"}`}>
+            {pass ? "Ready" : fail ? "Blocking" : "Needs attention"}
           </span>
         </span>
         <span className="block text-xs text-muted-foreground">{item.detail}</span>
@@ -84,11 +94,68 @@ function ReadinessRow({ item }: { item: (typeof READINESS)[number] }) {
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
+type PayGroupRow = {
+  id: string;
+  code?: string;
+  name: string;
+  currency: string;
+  isDefault?: boolean;
+};
+
+type PayPeriodRow = {
+  id: string;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  cutoffDate: string;
+  payDate: string;
+  status: string;
+};
+
+type ProfileRow = {
+  id: string;
+  workerId: string;
+  workerName?: string | null;
+  payGroupId: string;
+  payGroupName?: string | null;
+  effectiveFrom: string;
+  values?: Array<{ amount?: number | string | null }>;
+};
+
+type PayrollWorkerRow = ReturnType<typeof adaptWorkers>[number] & {
+  tpin?: string;
+  napsaNumber?: string;
+  nhimaNumber?: string;
+};
+
+type PayrollSetup = {
+  groups: PayGroupRow[];
+  periods: PayPeriodRow[];
+  profiles: ProfileRow[];
+  workers: PayrollWorkerRow[];
+  tree: OrgTreeNode[];
+};
+
+const asArray = (raw: unknown): unknown[] =>
+  Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && "items" in raw
+      ? ((raw as { items?: unknown[] }).items ?? [])
+      : [];
+
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+const moneyAmount = (value: unknown) => {
+  const n = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
 function NewRun() {
   const navigate = useNavigate();
   const [ref, setRef] = useState<string | null>(null);
   const [entityId, setEntityId] = useState(ENTITIES[0].id);
-  const [payGroup, setPayGroup] = useState(PAY_GROUPS[0]);
+  const [payGroup, setPayGroup] = useState("");
+  const [periodId, setPeriodId] = useState("");
   const [period, setPeriod] = useState("2026-08");
   const [payDate, setPayDate] = useState("2026-08-28");
   const [cutoff, setCutoff] = useState("2026-08-24");
@@ -98,42 +165,219 @@ function NewRun() {
   const [note, setNote] = useState("");
 
   const setup = useApi(
-    async () => {
-      const groups = (await realApi.payrollPayGroups()) as unknown as { id?: string }[];
-      const groupId = groups[0]?.id ?? "";
-      const periods = groupId
-        ? ((await realApi.payrollPayGroupPeriods(groupId)) as unknown as {
-            id: string;
-            periodLabel: string;
-            cutoffDate: string;
-            payDate: string;
-            status: string;
-          }[])
+    async (): Promise<PayrollSetup> => {
+      if (!USE_REAL) {
+        return { groups: [], periods: [], profiles: [], workers: [], tree: demoEntityTree };
+      }
+      const [groupsRaw, profilesRaw, workersRaw, treeRaw] = await Promise.all([
+        realApi.payrollPayGroups(),
+        realApi.payrollProfiles(),
+        realApi.employees({ status: "active" }),
+        realApi.entityTree(),
+      ]);
+      const groups = asArray(groupsRaw).map((g) => {
+        const row = g as Record<string, unknown>;
+        return {
+          id: text(row.id),
+          code: row.code ? text(row.code) : undefined,
+          name: text(row.name || row.code || "Pay group"),
+          currency: text(row.currency || "ZMW"),
+          isDefault: Boolean(row.isDefault),
+        };
+      });
+      const selectedGroupId = payGroup || groups.find((g) => g.isDefault)?.id || groups[0]?.id || "";
+      const periods = selectedGroupId
+        ? asArray(await realApi.payrollPayGroupPeriods(selectedGroupId)).map((p) => {
+            const row = p as Record<string, unknown>;
+            return {
+              id: text(row.id),
+              periodLabel: text(row.periodLabel),
+              startDate: text(row.startDate),
+              endDate: text(row.endDate),
+              cutoffDate: text(row.cutoffDate),
+              payDate: text(row.payDate),
+              status: text(row.status),
+            };
+          })
         : [];
-      const tree = USE_REAL
-        ? ((await realApi.entityTree()) as unknown as OrgTreeNode[])
-        : demoEntityTree;
-      return { periods, groupId, tree };
+      const profiles = asArray(profilesRaw).map((p) => {
+        const row = p as Record<string, unknown>;
+        return {
+          id: text(row.id),
+          workerId: text(row.workerId),
+          workerName: row.workerName ? text(row.workerName) : null,
+          payGroupId: text(row.payGroupId),
+          payGroupName: row.payGroupName ? text(row.payGroupName) : null,
+          effectiveFrom: text(row.effectiveFrom),
+          values: Array.isArray(row.values)
+            ? (row.values as Array<{ amount?: number | string | null }>)
+            : [],
+        };
+      });
+      const adaptedWorkers = adaptWorkers(workersRaw);
+      const rawWorkers = asArray(workersRaw).map((w) => w as Record<string, unknown>);
+      const workerExtras = new Map(rawWorkers.map((w) => [text(w.id), w]));
+      return {
+        groups,
+        periods,
+        profiles,
+        workers: adaptedWorkers.map((worker) => {
+          const raw = workerExtras.get(worker.id);
+          return {
+            ...worker,
+            tpin: text(raw?.tpin),
+            napsaNumber: text(raw?.napsaNumber),
+            nhimaNumber: text(raw?.nhimaNumber),
+          };
+        }),
+        tree: Array.isArray(treeRaw) ? (treeRaw as OrgTreeNode[]) : demoEntityTree,
+      };
     },
-    [],
+    [payGroup],
   );
+
+  const defaultGroupId =
+    setup.data?.groups.find((g) => g.isDefault)?.id || setup.data?.groups[0]?.id || "";
+  const selectedGroupId = USE_REAL ? payGroup || defaultGroupId : payGroup || PAY_GROUPS[0];
+  const selectedGroup = setup.data?.groups.find((g) => g.id === selectedGroupId);
+
+  useEffect(() => {
+    if (!USE_REAL || !setup.data) return;
+    if (!payGroup && defaultGroupId) setPayGroup(defaultGroupId);
+  }, [defaultGroupId, payGroup, setup.data]);
+
+  useEffect(() => {
+    if (!USE_REAL || !setup.data?.periods.length) return;
+    const current = setup.data.periods.find((p) => p.id === periodId);
+    if (current) return;
+    const open = setup.data.periods.find((p) => p.status === "open") ?? setup.data.periods[0];
+    setPeriodId(open.id);
+    setPeriod(open.periodLabel);
+    setCutoff(open.cutoffDate);
+    setPayDate(open.payDate);
+  }, [periodId, setup.data]);
+
   const placementUnits = flattenEntityTree(setup.data?.tree ?? demoEntityTree);
   const placementOptions = treeToSelectOptions(setup.data?.tree ?? demoEntityTree).map((o) => ({
     ...o,
     entity: o.value.startsWith("entity:"),
   }));
-  const chosenPeriod =
-    setup.data?.periods.find((p) => p.periodLabel === period) ??
-    (setup.data?.periods ?? [])[0];
+  const chosenPeriod = USE_REAL
+    ? setup.data?.periods.find((p) => p.id === periodId)
+    : undefined;
+  const preflight = useApi(async () => {
+    if (!USE_REAL || !chosenPeriod?.id || !selectedGroupId) return null;
+    const raw = (await realApi.payrollRunPreflight(chosenPeriod.id, selectedGroupId)) as Record<string, unknown>;
+    const checks = Array.isArray(raw.checks)
+      ? (raw.checks as Record<string, unknown>[]).map((check) => ({
+          id: text(check.id),
+          label: text(check.label),
+          state: (["pass", "warn", "fail"].includes(text(check.state))
+            ? text(check.state)
+            : "warn") as ReadinessItem["state"],
+          detail: text(check.detail),
+        }))
+      : [];
+    return {
+      ready: Boolean(raw.ready),
+      includedWorkerCount: Number(raw.includedWorkerCount ?? 0),
+      warningCount: Number(raw.warningCount ?? 0),
+      checks,
+    };
+  }, [chosenPeriod?.id, selectedGroupId]);
 
   const entity = ENTITIES.find((e) => e.id === entityId) ?? ENTITIES[0];
   const entityEntityId = placementUnits.find((p) => p.unitType === "entity")?.entityId ?? entityId;
-  const included = POPULATION.filter((p) => !excluded.includes(p.name));
-  const estimate = included.length * 20_878.88;
+  const liveProfiles = (setup.data?.profiles ?? []).filter((p) => p.payGroupId === selectedGroupId);
+  const liveWorkerById = new Map((setup.data?.workers ?? []).map((w) => [w.id, w]));
+  const liveActiveWorkers = setup.data?.workers ?? [];
+  const livePopulation = liveProfiles.map((profile) => {
+    const worker = liveWorkerById.get(profile.workerId);
+    return {
+      id: profile.workerId,
+      name: profile.workerName || worker?.fullName || "Unnamed worker",
+      note: `${worker?.employeeNo ?? "No employee number"} · ${worker?.jobTitle || "No job title"} · profile effective ${profile.effectiveFrom || "unknown"}`,
+      amount: (profile.values ?? []).reduce((sum, value) => sum + moneyAmount(value.amount), 0),
+    };
+  });
+  const liveProfileWorkerIds = new Set(liveProfiles.map((profile) => profile.workerId));
+  const missingProfiles = liveActiveWorkers.filter((worker) => !liveProfileWorkerIds.has(worker.id));
+  const duplicateProfileWorkers = Array.from(
+    liveProfiles.reduce((counts, profile) => {
+      counts.set(profile.workerId, (counts.get(profile.workerId) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>()),
+  ).filter(([, count]) => count > 1);
+  const missingBankWorkers = liveProfiles
+    .map((profile) => liveWorkerById.get(profile.workerId))
+    .filter((worker): worker is PayrollWorkerRow => Boolean(worker && !worker.bankAccount));
+  const missingStatutoryWorkers = liveProfiles
+    .map((profile) => liveWorkerById.get(profile.workerId))
+    .filter((worker): worker is PayrollWorkerRow =>
+      Boolean(worker && (!worker.nationalId || !worker.tpin || !worker.napsaNumber || !worker.nhimaNumber)),
+    );
   const dateProblem = useMemo(
     () => (cutoff > payDate ? "The cutoff is after the pay date, so approved time would miss this run." : null),
     [cutoff, payDate],
   );
+  const liveReadiness: ReadinessItem[] = USE_REAL
+    ? preflight.data?.checks.length
+      ? preflight.data.checks
+      : [
+        {
+          id: "period-open",
+          label: "Selected pay period is open",
+          detail: chosenPeriod
+            ? `${chosenPeriod.periodLabel} is ${chosenPeriod.status || "not marked open"}.`
+            : "Choose a pay group with an available pay period.",
+          state: chosenPeriod?.status === "open" ? "pass" : "fail",
+        },
+        {
+          id: "population",
+          label: "Workers have payroll profiles",
+          detail: livePopulation.length
+            ? `${livePopulation.length} worker${livePopulation.length === 1 ? "" : "s"} will be included. ${missingProfiles.length} active worker${missingProfiles.length === 1 ? "" : "s"} sit outside this selected pay group.`
+            : "No active payroll profiles were found for this pay group.",
+          state: livePopulation.length ? "pass" : "fail",
+        },
+        {
+          id: "duplicates",
+          label: "No duplicate pay profiles in this group",
+          detail: duplicateProfileWorkers.length
+            ? `${duplicateProfileWorkers.length} worker${duplicateProfileWorkers.length === 1 ? "" : "s"} have more than one profile in this pay group.`
+            : "No worker appears more than once in this pay group.",
+          state: duplicateProfileWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "bank",
+          label: "Bank details present",
+          detail: missingBankWorkers.length
+            ? `${missingBankWorkers.length} included worker${missingBankWorkers.length === 1 ? "" : "s"} are missing a primary bank account.`
+            : "Every included worker has a primary bank account.",
+          state: missingBankWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "statutory",
+          label: "Statutory identity pack present",
+          detail: missingStatutoryWorkers.length
+            ? `${missingStatutoryWorkers.length} included worker${missingStatutoryWorkers.length === 1 ? "" : "s"} are missing NRC, TPIN, NAPSA or NHIMA values.`
+            : "Every included worker has NRC, TPIN, NAPSA and NHIMA values.",
+          state: missingStatutoryWorkers.length ? "warn" : "pass",
+        },
+        {
+          id: "dates",
+          label: "Cutoff is before pay date",
+          detail: dateProblem ?? `Time cutoff ${cutoff || "not set"} is before pay date ${payDate || "not set"}.`,
+          state: dateProblem ? "fail" : "pass",
+        },
+      ]
+    : READINESS;
+  const readinessFailures = liveReadiness.filter((item) => item.state === "fail");
+  const readinessWarnings = liveReadiness.filter((item) => item.state === "warn");
+  const included = USE_REAL ? livePopulation : POPULATION.filter((p) => !excluded.includes(p.name));
+  const estimate = USE_REAL
+    ? livePopulation.reduce((sum, p) => sum + p.amount, 0)
+    : included.length * 20_878.88;
 
   const steps: FlowStep[] = [
     {
@@ -173,13 +417,13 @@ function NewRun() {
 
           <div>
             <Label htmlFor="group">Pay group</Label>
-            <Select value={USE_REAL && setup.data?.periods.length ? setup.data.groupId : payGroup} onValueChange={setPayGroup}>
+            <Select value={selectedGroupId} onValueChange={setPayGroup}>
               <SelectTrigger id="group" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(USE_REAL && setup.data?.periods.length
-                  ? [{ id: setup.data.groupId, name: "Monthly ZMW" }]
+                {(USE_REAL
+                  ? setup.data?.groups ?? []
                   : PAY_GROUPS.map((g) => ({ id: g, name: g }))
                 ).map((g) => (
                   <SelectItem key={g.id} value={g.id}>
@@ -194,11 +438,22 @@ function NewRun() {
             <div>
               <Label htmlFor="period">Period</Label>
               {USE_REAL && setup.data?.periods.length ? (
-                <Select value={period} onValueChange={setPeriod}>
+                <Select
+                  value={periodId}
+                  onValueChange={(value) => {
+                    const next = setup.data?.periods.find((p) => p.id === value);
+                    setPeriodId(value);
+                    if (next) {
+                      setPeriod(next.periodLabel);
+                      setCutoff(next.cutoffDate);
+                      setPayDate(next.payDate);
+                    }
+                  }}
+                >
                   <SelectTrigger id="period" className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {setup.data.periods.map((p) => (
-                      <SelectItem key={p.id} value={p.periodLabel}>
+                      <SelectItem key={p.id} value={p.id}>
                         {p.periodLabel} ({p.status})
                       </SelectItem>
                     ))}
@@ -210,11 +465,11 @@ function NewRun() {
             </div>
             <div>
               <Label htmlFor="cutoff">Time cutoff</Label>
-              <Input id="cutoff" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.cutoffDate ? chosenPeriod.cutoffDate : cutoff} readOnly={USE_REAL && !!chosenPeriod?.cutoffDate} onChange={(e) => setCutoff(e.target.value)} />
+              <Input id="cutoff" type="date" className="mt-1" value={cutoff} readOnly={USE_REAL && !!chosenPeriod?.cutoffDate} onChange={(e) => setCutoff(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="paydate">Pay date</Label>
-              <Input id="paydate" type="date" className="mt-1" value={USE_REAL && chosenPeriod?.payDate ? chosenPeriod.payDate : payDate} readOnly={USE_REAL && !!chosenPeriod?.payDate} onChange={(e) => setPayDate(e.target.value)} />
+              <Input id="paydate" type="date" className="mt-1" value={payDate} readOnly={USE_REAL && !!chosenPeriod?.payDate} onChange={(e) => setPayDate(e.target.value)} />
             </div>
           </div>
 
@@ -235,15 +490,26 @@ function NewRun() {
     {
       id: "population",
       title: "Confirm who is in the run",
-      purpose: "Nobody is silently left out — every exclusion carries a reason.",
+      purpose: USE_REAL
+        ? "Production runs include workers with an active payroll profile in the selected pay group."
+        : "Nobody is silently left out — every exclusion carries a reason.",
       render: () => (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            {included.length} in, {excluded.length} out of {POPULATION.length} in this pay group.
+            {USE_REAL
+              ? `${livePopulation.length} worker${livePopulation.length === 1 ? "" : "s"} will be picked up by the calculation engine for this pay group.`
+              : `${included.length} in, ${excluded.length} out of ${POPULATION.length} in this pay group.`}
           </p>
+          {USE_REAL && livePopulation.length === 0 ? (
+            <p role="alert" className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              No active payroll profiles were found for this pay group. Assign pay profiles on
+              Compensation and benefits before opening the run.
+            </p>
+          ) : null}
           <ul className="space-y-2">
-            {POPULATION.map((p) => {
-              const isOut = excluded.includes(p.name);
+            {(USE_REAL ? livePopulation : POPULATION).map((p) => {
+              const isOut = !USE_REAL && excluded.includes(p.name);
               return (
                 <li key={p.name} className="flex flex-wrap items-start justify-between gap-3 rounded-md border p-3">
                   <span className="min-w-0 flex-1">
@@ -259,17 +525,19 @@ function NewRun() {
                     ) : (
                       <span className="text-xs text-success">Included</span>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setExcluded((x) =>
-                          isOut ? x.filter((n) => n !== p.name) : [...x, p.name],
-                        )
-                      }
-                    >
-                      {isOut ? "Include" : "Exclude"}
-                    </Button>
+                    {!USE_REAL ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setExcluded((x) =>
+                            isOut ? x.filter((n) => n !== p.name) : [...x, p.name],
+                          )
+                        }
+                      >
+                        {isOut ? "Include" : "Exclude"}
+                      </Button>
+                    ) : null}
                   </span>
                 </li>
               );
@@ -285,15 +553,26 @@ function NewRun() {
       render: () => (
         <div className="space-y-3">
           <ul className="space-y-2">
-            {READINESS.map((r) => (
+            {liveReadiness.map((r) => (
               <ReadinessRow key={r.id} item={r} />
             ))}
           </ul>
-          <p className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            You can calculate with an outstanding warning, but it is recorded against the run and the
-            approver will see it.
-          </p>
+          {readinessFailures.length ? (
+            <p className="flex gap-2 rounded-md border border-danger/40 bg-danger-soft p-3 text-xs text-danger">
+              <X className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              Fix {readinessFailures.length} blocking readiness issue{readinessFailures.length === 1 ? "" : "s"} before opening this run.
+            </p>
+          ) : readinessWarnings.length ? (
+            <p className="flex gap-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              You can open the run with {readinessWarnings.length} warning{readinessWarnings.length === 1 ? "" : "s"}, but payroll release or bank-file generation may be blocked later.
+            </p>
+          ) : (
+            <p className="flex gap-2 rounded-md border border-success/40 bg-success-soft p-3 text-xs text-success">
+              <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              The selected pay group and period are ready to open.
+            </p>
+          )}
         </div>
       ),
     },
@@ -305,12 +584,14 @@ function NewRun() {
         <div className="max-w-xl space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2">
             {[
-              ["Entity", entity.name],
-              ["Pay group", payGroup],
+              ["Entity", USE_REAL ? "Current organisation scope" : entity.name],
+              ["Pay group", selectedGroup?.name ?? payGroup],
               ["Period", period],
               ["Pay date", payDate],
               ["Employees included", String(included.length)],
-              ["Deliberately excluded", String(excluded.length)],
+              ["Manual exclusions", USE_REAL ? "Not supported at run creation" : String(excluded.length)],
+              ["Readiness blockers", String(readinessFailures.length)],
+              ["Readiness warnings", String(readinessWarnings.length)],
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -322,13 +603,25 @@ function NewRun() {
           <div className="rounded-md border bg-surface-muted p-3">
             <p className="text-sm">
               Indicative gross, based on the last period:{" "}
-              <span className="tabular font-medium">{money(estimate, entity.currency)}</span>
+              <span className="tabular font-medium">{money(estimate, selectedGroup?.currency ?? entity.currency)}</span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              An estimate to sense-check the population, not a calculation. The real figures come out
-              of the calculate stage.
+              {USE_REAL
+                ? "This adds the current configured payroll profile values. Statutory deductions, overtime, proration and exceptions are calculated only after the run is locked and calculated."
+                : "An estimate to sense-check the population, not a calculation. The real figures come out of the calculate stage."}
             </p>
           </div>
+
+          {readinessFailures.length ? (
+            <div className="rounded-md border border-danger/40 bg-danger-soft p-3">
+              <p className="text-sm font-medium text-danger">This run cannot be opened yet</p>
+              <ul className="mt-2 space-y-1 text-xs text-danger">
+                {readinessFailures.map((item) => (
+                  <li key={item.id}>{item.label}: {item.detail}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div>
             <Label htmlFor="note">
@@ -378,6 +671,13 @@ function NewRun() {
             feedback.blocked("Cannot open this run", dateProblem);
             return;
           }
+          if (USE_REAL && readinessFailures.length) {
+            feedback.blocked(
+              "Readiness blockers remain",
+              readinessFailures.map((item) => item.label).join(", "),
+            );
+            return;
+          }
           if (USE_REAL) {
             if (!setup.data?.periods.length || !chosenPeriod) {
               feedback.blocked(
@@ -386,9 +686,31 @@ function NewRun() {
               );
               return;
             }
+            if (chosenPeriod.status !== "open") {
+              feedback.blocked(
+                "Period is not open",
+                `${chosenPeriod.periodLabel} is ${chosenPeriod.status}. Choose an open period before creating a run.`,
+              );
+              return;
+            }
+            if (!selectedGroupId) {
+              feedback.blocked("No pay group selected", "Choose a pay group before opening the run.");
+              return;
+            }
+            if (livePopulation.length === 0) {
+              feedback.blocked(
+                "No workers in this pay group",
+                "Assign payroll profiles before opening a run for this pay group.",
+              );
+              return;
+            }
             try {
-              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: setup.data.groupId });
-              setRef(String((r as { id?: string }).id ?? chosenPeriod.id));
+              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: selectedGroupId });
+              const runId = String((r as { id?: string }).id ?? "");
+              if (!runId) {
+                throw new Error("The pay run was created, but the server did not return its reference. Refresh the pay-run list before continuing.");
+              }
+              setRef(runId);
               feedback.submitted(
                 "Run opened against the selected period.",
                 "Next: calculate gross to net. Nothing has been paid.",
@@ -417,7 +739,16 @@ function NewRun() {
               ]}
               actions={
                 <>
-                  <Button onClick={() => navigate({ to: "/hrm/payroll/runs" })}>View pay runs</Button>
+                  <Button
+                    onClick={() =>
+                      navigate({ to: "/hrm/payroll/runs/$id", params: { id: ref } })
+                    }
+                  >
+                    View pay run
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate({ to: "/hrm/payroll/runs" })}>
+                    View all pay runs
+                  </Button>
                   <Button variant="outline" asChild>
                     <Link to="/hrm/payroll">Back to Payroll</Link>
                   </Button>

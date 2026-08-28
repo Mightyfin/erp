@@ -5,9 +5,9 @@ import { AreaOverview } from "@/platform/components/AreaOverview";
 export const Route = createFileRoute("/hrm/recruitment/")({
   head: () => ({
     meta: [
-      { title: "Recruitment — Mightyfin ERP HRM" },
+      { title: "Recruitment — New World Cargo HRM" },
       { name: "description", content: "Requisitions, vacancies, candidates, interviews and offers." },
-      { property: "og:title", content: "Recruitment — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Recruitment — New World Cargo HRM" },
       { property: "og:description", content: "Requisitions, vacancies, candidates, interviews and offers." },
     ],
   }),

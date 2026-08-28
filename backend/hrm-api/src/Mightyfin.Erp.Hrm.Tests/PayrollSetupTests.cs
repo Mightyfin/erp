@@ -77,13 +77,29 @@ public class PayrollSetupTests
     public async Task UpdateContributionRule_Tightens_Napsa_Ceiling()
     {
         var (service, ctx) = Build();
-        var rule = new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
+        var rule = new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
         ctx.ContributionRules.Add(rule);
         ctx.SaveChanges();
 
         var updated = await service.UpdateContributionRuleAsync(rule.Id, new ContributionRuleUpdateRequest { Ceiling = 1900m }, CancellationToken.None);
         Assert.Equal(1900m, updated.Ceiling);
         Assert.Equal(5m, updated.Rate);
+    }
+
+    [Fact]
+    public async Task UpdateContributionRule_Can_Clear_Nullable_Ceiling()
+    {
+        var (service, ctx) = Build();
+        var rule = new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee", Payer = "employee", Rate = 1m, Ceiling = 50m, Floor = 50m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1, TenantId = TestTenantId, CreatedAt = DateTime.UtcNow, CreatedBy = "test", IsArchived = false };
+        ctx.ContributionRules.Add(rule);
+        ctx.SaveChanges();
+
+        var updated = await service.UpdateContributionRuleAsync(rule.Id,
+            new ContributionRuleUpdateRequest(Ceiling: null, Floor: 50m, CeilingSpecified: true, FloorSpecified: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.Ceiling);
+        Assert.Equal(50m, updated.Floor);
     }
 
     [Fact]
@@ -115,7 +131,7 @@ public class PayrollSetupTests
     }
 
     [Fact]
-    public async Task UpdateSalaryComponent_Archives_Standard_Component_And_Protects_Statutory()
+    public async Task UpdateSalaryComponent_Archives_Standard_Component_And_Allows_Statutory_Metadata()
     {
         var (service, ctx) = Build();
         var housing = SeedComponent(ctx, "housing-allowance", "earning");
@@ -125,8 +141,36 @@ public class PayrollSetupTests
         Assert.False(archived.IsActive);
         Assert.False((await ctx.SalaryComponents.FirstAsync(c => c.Id == housing.Id)).IsActive); // archive request applied
 
-        await Assert.ThrowsAsync<DomainException>(() =>
-            service.UpdateSalaryComponentAsync(paye.Id, new SalaryComponentUpdateRequest { Rate = 10m }, CancellationToken.None));
+        var updatedStatutory = await service.UpdateSalaryComponentAsync(paye.Id,
+            new SalaryComponentUpdateRequest { Name = "PAYE (ZRA)", IsTaxable = false },
+            CancellationToken.None);
+        Assert.Equal("PAYE (ZRA)", updatedStatutory.Name);
+        Assert.False(updatedStatutory.IsTaxable);
+    }
+
+    [Fact]
+    public async Task UpdateSalaryComponent_Can_Clear_Nullable_Amounts()
+    {
+        var (service, ctx) = Build();
+        var component = SeedComponent(ctx, "lunch", "earning");
+        component.Rate = 10m;
+        component.FixedAmount = 800m;
+        component.Ceiling = 1000m;
+        ctx.SaveChanges();
+
+        var updated = await service.UpdateSalaryComponentAsync(component.Id,
+            new SalaryComponentUpdateRequest(
+                Rate: null,
+                FixedAmount: null,
+                Ceiling: null,
+                RateSpecified: true,
+                FixedAmountSpecified: true,
+                CeilingSpecified: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.Rate);
+        Assert.Null(updated.FixedAmount);
+        Assert.Null(updated.Ceiling);
     }
 
     [Fact]

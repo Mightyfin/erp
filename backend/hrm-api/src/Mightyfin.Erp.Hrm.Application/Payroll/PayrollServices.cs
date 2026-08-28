@@ -37,16 +37,27 @@ public interface IPayrollService
     Task<WorkerPayrollProfileDto> UpsertProfileAsync(Guid workerId, WorkerPayrollProfileCreate request, CancellationToken ct);
     // M41 Gap 3: pay-basis control (salary | timesheet) per worker profile
     Task<WorkerPayrollProfileDto> SetPayBasisAsync(Guid workerId, PayBasisUpdateRequest request, CancellationToken ct);
+    Task<WorkerPayrollProfileDto> SetOvertimePolicyAsync(Guid workerId, OvertimePolicyUpdateRequest request, CancellationToken ct);
+
+    // Salary advances: issued by HR/payroll and optionally recovered through payslip deductions.
+    Task<List<SalaryAdvanceDto>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<SalaryAdvanceDto> CreateSalaryAdvanceAsync(SalaryAdvanceCreateRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<SalaryAdvanceDto> UpdateSalaryAdvanceAsync(Guid id, SalaryAdvanceUpdateRequest request, CancellationToken ct);
+    Task<SalaryAdvanceDto> CancelSalaryAdvanceAsync(Guid id, SalaryAdvanceCancelRequest request, CancellationToken ct, string actorSubjectId = "system");
 
     // Run lifecycle
     Task<Paged<PayrollRunDto>> ListRunsAsync(CancellationToken ct);
     // M48: the top-HR approval queue — in-review branch runs with their
     // control totals, branch name, and the moment each run was submitted.
     Task<List<PayrollQueueItemDto>> ListPayrollQueueAsync(CancellationToken ct);
+    Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct);
     Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> UpdateRunAsync(Guid id, PayrollRunUpdate request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> GetRunAsync(Guid id, CancellationToken ct);
+    Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> LockRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<WorkerPayslipPreviewDto> PreviewWorkerPayslipAsync(Guid workerId, CancellationToken ct);
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
@@ -57,11 +68,15 @@ public interface IPayrollService
     Task<PayrollRunDto> SubmitRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
 
-    // M6: reversal of a released run (audit-preserving — never deletes history)
+    // Top-admin mistake control before release: void the run without deleting its audit/data.
+    Task<PayrollRunDto> CancelRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system");
+
+    // M6: reversal of a released/closed run (audit-preserving — never deletes history)
     Task<PayrollRunDto> ReverseRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system");
 
     // M27: bank-file workflow, reconciliation, and run-scoped audit history.
     Task<PayrollRunDto> GeneratePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollPaymentReadinessDto> GetPaymentReadinessAsync(Guid id, CancellationToken ct);
     Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> ApprovePaymentFileAsync(Guid id, PayrollPaymentApprovalRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system");
@@ -85,6 +100,7 @@ public interface IPayrollService
     Task<Paged<PayslipDto>> GetMyPayslipsAsync(string subjectId, CancellationToken ct);
     Task<PayslipDto?> GetMyPayslipByIdAsync(Guid id, string subjectId, CancellationToken ct);
     Task<string> GetMyPayslipDownloadUrlAsync(Guid id, string subjectId, CancellationToken ct);
+    Task<byte[]> GetMyPayslipPreviewAsync(Guid id, string subjectId, CancellationToken ct);
 
     // M24: statutory identity readiness per run — hard gate on release.
     Task<StatutoryReadinessDto> GetRunStatutoryReadinessAsync(Guid id, CancellationToken ct);
@@ -100,16 +116,42 @@ public sealed record SalaryComponentDto(Guid Id, string Code, string Name, strin
 public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status);
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
+public sealed record WorkerPayslipPreviewDto(string Status, string PeriodLabel, string Currency,
+    List<string> Guardrails, PayrollRunLineDto? Line);
+public sealed record SalaryAdvanceDto(Guid Id, Guid WorkerId, string WorkerName, string? EmployeeNo,
+    decimal Amount, decimal InstallmentAmount, decimal RecoveredAmount, decimal RemainingAmount,
+    string Currency, string IssueDate, string DeductionStartDate, bool DeductFromPayslip,
+    string Status, string? Reason, string? Reference, DateTimeOffset CreatedAt);
+public sealed record SalaryAdvanceCreateRequest(Guid WorkerId, decimal Amount, decimal InstallmentAmount,
+    string? Currency, string IssueDate, string DeductionStartDate, bool DeductFromPayslip,
+    string? Reason, string? Reference);
+public sealed record SalaryAdvanceUpdateRequest(decimal? InstallmentAmount = null, bool? DeductFromPayslip = null,
+    string? DeductionStartDate = null, string? Reason = null, string? Reference = null);
+public sealed record SalaryAdvanceCancelRequest(string Reason);
 
 // ---------- M20: payroll setup admin (write surface) ----------
 public sealed record PayGroupUpdateRequest(string? Code = null, string? Name = null,
     string? Frequency = null, string? Currency = null, int? CalendarDayOfMonth = null,
     int? InputCutoffDaysBeforePayday = null, bool? IsDefault = null);
 public sealed record TaxSlabUpdateRequest(decimal? Rate = null, decimal? MaxAmount = null);
-public sealed record ContributionRuleUpdateRequest(decimal? Rate = null, decimal? Ceiling = null, decimal? Floor = null);
-public sealed record SalaryComponentUpdateRequest(string? Name = null, string? CalculationBasis = null,
-    string? BasisComponentCode = null, decimal? Rate = null, decimal? FixedAmount = null,
-    decimal? Ceiling = null, bool? IsTaxable = null, bool? IsArchived = null);
+public sealed record ContributionRuleUpdateRequest(
+    decimal? Rate = null,
+    decimal? Ceiling = null,
+    decimal? Floor = null,
+    bool CeilingSpecified = false,
+    bool FloorSpecified = false);
+public sealed record SalaryComponentUpdateRequest(
+    string? Name = null,
+    string? CalculationBasis = null,
+    string? BasisComponentCode = null,
+    decimal? Rate = null,
+    decimal? FixedAmount = null,
+    decimal? Ceiling = null,
+    bool? IsTaxable = null,
+    bool? IsArchived = null,
+    bool RateSpecified = false,
+    bool FixedAmountSpecified = false,
+    bool CeilingSpecified = false);
 // ---------- M20 DTO extras ----------
 public sealed record PayGroupFullDto(Guid Id, string Code, string Name, string Frequency, string Currency,
     int CalendarDayOfMonth, int InputCutoffDaysBeforePayday, bool IsDefault, string Status);
@@ -242,8 +284,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 throw new DomainException("contribution-rate-out-of-range", "Contribution rate must be between 0 and 100 percent.");
             rule.Rate = request.Rate.Value;
         }
-        if (request.Ceiling is not null) rule.Ceiling = request.Ceiling;
-        if (request.Floor is not null) rule.Floor = request.Floor;
+        if (request.CeilingSpecified) rule.Ceiling = request.Ceiling;
+        else if (request.Ceiling is not null) rule.Ceiling = request.Ceiling;
+        if (request.FloorSpecified) rule.Floor = request.Floor;
+        else if (request.Floor is not null) rule.Floor = request.Floor;
         await repo.UpdateContributionRuleAsync(rule, ct);
         return new ContributionRuleDto(rule.Id, rule.Code, rule.Name, rule.Payer, rule.Rate, rule.Ceiling, rule.Floor);
     }
@@ -253,9 +297,6 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         authz.RequireAnyRole("hr_ops", "hr_admin");
         var comp = await repo.GetComponentByIdAsync(id, ct)
             ?? throw new DomainException("salary-component-not-found", $"Salary component {id} does not exist.");
-        if (comp.IsStatutory)
-            throw new DomainException("statutory-component-protected",
-                "Statutory components (PAYE/NAPSA/NHIMA) are managed through tax slabs and contribution rules — update those instead.");
         if (request.IsArchived == true)
         {
             comp.IsArchived = true;
@@ -267,10 +308,18 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             if (request.Name is not null) comp.Name = request.Name.Trim();
             if (request.CalculationBasis is not null) comp.CalculationBasis = request.CalculationBasis;
             if (request.BasisComponentCode is not null) comp.BasisComponentCode = request.BasisComponentCode;
-            if (request.Rate is not null) comp.Rate = request.Rate;
-            if (request.FixedAmount is not null) comp.FixedAmount = request.FixedAmount;
-            if (request.Ceiling is not null) comp.Ceiling = request.Ceiling;
+            if (request.RateSpecified) comp.Rate = request.Rate;
+            else if (request.Rate is not null) comp.Rate = request.Rate;
+            if (request.FixedAmountSpecified) comp.FixedAmount = request.FixedAmount;
+            else if (request.FixedAmount is not null) comp.FixedAmount = request.FixedAmount;
+            if (request.CeilingSpecified) comp.Ceiling = request.Ceiling;
+            else if (request.Ceiling is not null) comp.Ceiling = request.Ceiling;
             if (request.IsTaxable is not null) comp.IsTaxable = request.IsTaxable.Value;
+            if (request.IsArchived == false)
+            {
+                comp.IsArchived = false;
+                comp.IsActive = true;
+            }
             await repo.UpdateComponentAsync(comp, ct);
         }
         return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
@@ -410,9 +459,20 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             row.Run.CreatedAt)).ToList();
     }
 
+    public async Task<PayrollRunPreflightDto> GetRunPreflightAsync(PayrollRunCreate request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        return await BuildRunPreflightAsync(request, ct);
+    }
+
     public async Task<PayrollRunDto> CreateRunAsync(PayrollRunCreate request, CancellationToken ct, string actorSubjectId = "system")
     {
         authz.RequireAnyRole("payroll", "hr_admin");
+        var preflight = await BuildRunPreflightAsync(request, ct);
+        var failures = preflight.Checks.Where(c => c.State == "fail").ToList();
+        if (failures.Count > 0)
+            throw new DomainException("payroll-run-preflight-failed",
+                "Payroll run preflight failed: " + string.Join("; ", failures.Select(f => f.Label)));
         var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
         if (period.Status != "open")
@@ -448,6 +508,160 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapRun(created);
     }
 
+    public async Task<PayrollRunDto> UpdateRunAsync(Guid id, PayrollRunUpdate request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct)
+            ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "draft")
+            throw new DomainException("payroll-run-not-draft",
+                $"Run is in status {run.Status}; only draft payroll runs can change pay group or period.");
+
+        if ((scope?.IsScopedToBranch ?? false) && run.LocationId != scope?.LocationId)
+            throw new DomainException("payroll-run-scope-denied",
+                "This payroll run is outside your current branch scope.");
+
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct)
+            ?? throw new DomainException("pay-group-not-found", $"Pay group {request.PayGroupId} does not exist.");
+        var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
+        if (period.PayGroupId != group.Id)
+            throw new DomainException("pay-period-group-mismatch",
+                $"Pay period {period.PeriodLabel} does not belong to pay group {group.Name}.");
+        if (period.Status != "open")
+            throw new DomainException("pay-period-not-open",
+                $"Pay period {period.PeriodLabel} is {period.Status} and cannot be used by a draft run.");
+
+        var targetLocation = run.LocationId;
+        if (targetLocation.HasValue)
+        {
+            var sameBranch = await repo.FindOpenRunByPeriodAndLocationAsync(request.PayPeriodId, targetLocation, ct);
+            if (sameBranch is not null && sameBranch.Id != run.Id)
+                throw new DomainException("run-already-exists",
+                    $"Another payroll run already exists for this period at branch {targetLocation}.");
+        }
+        else
+        {
+            var orgOpen = await repo.FindRunByPeriodAsync(request.PayPeriodId, ct);
+            if (orgOpen is not null && orgOpen.Id != run.Id)
+                throw new DomainException("run-already-exists", "Another payroll run already exists for this period.");
+            var branchOpen = await repo.FindOpenBranchRunForPeriodAsync(request.PayPeriodId, ct);
+            if (branchOpen is not null && branchOpen.Id != run.Id)
+                throw new DomainException("branch-run-open",
+                    "A branch payroll draft is open for this period. Resolve it first before moving this organisation-wide run there.");
+        }
+
+        var oldPeriodId = run.PayPeriodId;
+        var oldPayGroupId = run.PayGroupId;
+        run.PayPeriodId = request.PayPeriodId;
+        run.PayGroupId = request.PayGroupId;
+        run.PayPeriod = period;
+        run.ApprovalNote = string.IsNullOrWhiteSpace(request.ApprovalNote) ? null : request.ApprovalNote.Trim();
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "draft-updated", actorSubjectId, "draft", "draft", run.ApprovalNote,
+            new { oldPeriodId, oldPayGroupId, run.PayPeriodId, run.PayGroupId }, ct);
+        return MapRun(run);
+    }
+
+    private async Task<PayrollRunPreflightDto> BuildRunPreflightAsync(PayrollRunCreate request, CancellationToken ct)
+    {
+        var checks = new List<PayrollRunPreflightCheckDto>();
+        var period = await repo.GetPeriodAsync(request.PayPeriodId, ct);
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct);
+        var targetLocation = (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : null;
+
+        if (period is null)
+        {
+            checks.Add(new("period-exists", "Selected pay period exists", "fail",
+                $"Pay period {request.PayPeriodId} does not exist.", 0));
+            return new PayrollRunPreflightDto(request.PayPeriodId, request.PayGroupId, targetLocation,
+                false, 0, 0, checks);
+        }
+        if (group is null)
+        {
+            checks.Add(new("pay-group-exists", "Selected pay group exists", "fail",
+                $"Pay group {request.PayGroupId} does not exist.", 0));
+        }
+        checks.Add(new("period-open", "Selected pay period is open",
+            period.Status == "open" ? "pass" : "fail",
+            $"{period.PeriodLabel} is {period.Status}.", 0));
+        checks.Add(new("period-pay-group", "Pay period belongs to selected pay group",
+            period.PayGroupId == request.PayGroupId ? "pass" : "fail",
+            period.PayGroupId == request.PayGroupId
+                ? "The selected period and pay group match."
+                : "Choose a period generated for this pay group.",
+            0));
+
+        var existingIssue = await FindRunBlockingIssueAsync(request.PayPeriodId, targetLocation, ct);
+        checks.Add(new("no-open-run", "No conflicting open payroll run",
+            existingIssue is null ? "pass" : "fail",
+            existingIssue ?? "No open run conflicts with this scope and period.", 0));
+
+        var inputs = await repo.LoadCalculationInputsAsync(request.PayPeriodId, ct, targetLocation);
+        var profiles = inputs.Profiles.Where(p => p.PayGroupId == request.PayGroupId).ToList();
+        var duplicateWorkers = profiles.GroupBy(p => p.WorkerId).Where(g => g.Count() > 1).ToList();
+        var missingBank = profiles.Count(p =>
+            p.Worker?.BankDetails is null ||
+            !p.Worker.BankDetails.Any(b => b.IsPrimary && !string.IsNullOrWhiteSpace(b.AccountNumber)));
+        var missingStatutory = profiles.Count(p =>
+            p.Worker is null ||
+            string.IsNullOrWhiteSpace(p.Worker.Nrc) ||
+            string.IsNullOrWhiteSpace(p.Worker.Tpin) ||
+            string.IsNullOrWhiteSpace(p.Worker.NapsaNumber) ||
+            string.IsNullOrWhiteSpace(p.Worker.NhimaNumber));
+
+        checks.Add(new("population", "Workers have payroll profiles",
+            profiles.Count > 0 ? "pass" : targetLocation.HasValue ? "warn" : "fail",
+            profiles.Count > 0
+                ? $"{profiles.Count} worker{(profiles.Count == 1 ? "" : "s")} will be included."
+                : targetLocation.HasValue
+                    ? "No active payroll profiles were found for this branch scope yet."
+                    : "No active payroll profiles were found for this pay group and organisation scope.",
+            profiles.Count));
+        checks.Add(new("duplicates", "No duplicate pay profiles in this group",
+            duplicateWorkers.Count == 0 ? "pass" : "warn",
+            duplicateWorkers.Count == 0
+                ? "No worker appears more than once in this pay group."
+                : $"{duplicateWorkers.Count} worker{(duplicateWorkers.Count == 1 ? "" : "s")} have more than one active profile.",
+            duplicateWorkers.Count));
+        checks.Add(new("bank", "Bank details present",
+            missingBank == 0 ? "pass" : "warn",
+            missingBank == 0
+                ? "Every included worker has a primary bank account."
+                : $"{missingBank} included worker{(missingBank == 1 ? "" : "s")} are missing primary bank details.",
+            missingBank));
+        checks.Add(new("statutory", "Statutory identity pack present",
+            missingStatutory == 0 ? "pass" : "warn",
+            missingStatutory == 0
+                ? "Every included worker has NRC, TPIN, NAPSA and NHIMA values."
+                : $"{missingStatutory} included worker{(missingStatutory == 1 ? "" : "s")} are missing NRC, TPIN, NAPSA or NHIMA values.",
+            missingStatutory));
+        checks.Add(new("dates", "Cutoff is before pay date",
+            period.CutoffDate <= period.PayDate ? "pass" : "fail",
+            period.CutoffDate <= period.PayDate
+                ? $"Time cutoff {period.CutoffDate:yyyy-MM-dd} is before pay date {period.PayDate:yyyy-MM-dd}."
+                : $"Time cutoff {period.CutoffDate:yyyy-MM-dd} is after pay date {period.PayDate:yyyy-MM-dd}.",
+            0));
+
+        return new PayrollRunPreflightDto(request.PayPeriodId, request.PayGroupId, targetLocation,
+            checks.All(c => c.State != "fail"), profiles.Count, checks.Count(c => c.State == "warn"), checks);
+    }
+
+    private async Task<string?> FindRunBlockingIssueAsync(Guid payPeriodId, Guid? targetLocation, CancellationToken ct)
+    {
+        if (targetLocation.HasValue)
+        {
+            var sameBranch = await repo.FindOpenRunByPeriodAndLocationAsync(payPeriodId, targetLocation, ct);
+            return sameBranch is null ? null : $"A payroll run already exists for this period at branch {targetLocation}.";
+        }
+        var orgOpen = await repo.FindRunByPeriodAsync(payPeriodId, ct);
+        if (orgOpen is not null) return "A payroll run already exists for this period.";
+        var branchOpen = await repo.FindOpenBranchRunForPeriodAsync(payPeriodId, ct);
+        return branchOpen is null
+            ? null
+            : "A branch payroll draft is open for this period. Resolve it before opening an organisation-wide run.";
+    }
+
     /// <summary>Gross-to-net engine: applies active components in priority order
     /// per enrolled worker profile, taxes via progressive slab lookup, caps
     /// statutory contributions at ceilings, and records explainable line
@@ -479,6 +693,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             normalizedValues.Add(new WorkerComponentValueCreate(comp.Id, comp.Code, v.Amount));
         }
         request = request with { Values = normalizedValues };
+        var hasOvertimePayload = request.OvertimeCategory is not null
+            || request.WeeklyOvertimeThresholdHours.HasValue
+            || request.MonthlyOvertimeDivisor.HasValue;
+        var overtime = NormalizeOvertimePolicy(request.OvertimeCategory, request.WeeklyOvertimeThresholdHours, request.MonthlyOvertimeDivisor);
 
         var defaultStructure = await repo.FindStructureAsync("ZMW-STANDARD", ct);
 
@@ -491,6 +709,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 WorkerId = workerId, PayGroupId = request.PayGroupId, EffectiveFrom = effective,
                 StructureId = defaultStructure?.Id ?? Guid.Empty,
                 PayBasis = request.PayBasis ?? "salary",
+                OvertimeCategory = overtime.Category,
+                WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold,
+                MonthlyOvertimeDivisor = overtime.MonthlyDivisor,
             };
             await repo.CreateProfileAsync(profile, ct);
         }
@@ -498,6 +719,12 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         {
             existing.PayGroupId = request.PayGroupId;
             existing.PayBasis = request.PayBasis ?? existing.PayBasis;
+            if (hasOvertimePayload)
+            {
+                existing.OvertimeCategory = overtime.Category;
+                existing.WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold;
+                existing.MonthlyOvertimeDivisor = overtime.MonthlyDivisor;
+            }
             profile = existing;
         }
         await repo.DeleteProfileValuesAsync(profile.Id, ct);
@@ -525,6 +752,133 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapProfile(profile);
     }
 
+    public async Task<WorkerPayrollProfileDto> SetOvertimePolicyAsync(Guid workerId, OvertimePolicyUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var profile = await repo.FindOpenProfileAsync(workerId, ct);
+        if (profile is null)
+            throw new DomainException("payroll-profile-not-found", "This worker has no open payroll profile. Set up the profile first.");
+        var overtime = NormalizeOvertimePolicy(request.OvertimeCategory, request.WeeklyOvertimeThresholdHours, request.MonthlyOvertimeDivisor);
+        profile.OvertimeCategory = overtime.Category;
+        profile.WeeklyOvertimeThresholdHours = overtime.WeeklyThreshold;
+        profile.MonthlyOvertimeDivisor = overtime.MonthlyDivisor;
+        await repo.UpdateProfileAsync(profile, ct);
+        return MapProfile(profile);
+    }
+
+    public async Task<List<SalaryAdvanceDto>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var requestedStatus = status?.Trim().ToLowerInvariant();
+        var advances = await repo.ListSalaryAdvancesAsync(workerId, requestedStatus == "settled" ? null : requestedStatus, ct);
+        var recovered = await repo.GetSalaryAdvanceRecoveredAmountsAsync(advances.Select(a => a.Id).ToList(), ct);
+        var mapped = advances.Select(a => MapAdvance(a, recovered.TryGetValue(a.Id, out var paid) ? paid : 0m)).ToList();
+        return string.IsNullOrWhiteSpace(requestedStatus) || requestedStatus == "all"
+            ? mapped
+            : mapped.Where(a => string.Equals(a.Status, requestedStatus, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    public async Task<SalaryAdvanceDto> CreateSalaryAdvanceAsync(SalaryAdvanceCreateRequest request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var worker = await repo.GetWorkerAsync(request.WorkerId, ct)
+            ?? throw new DomainException("worker-not-found", "Employee not found.");
+        if (request.Amount <= 0)
+            throw new DomainException("salary-advance-invalid", "Advance amount must be greater than zero.");
+        if (request.InstallmentAmount <= 0)
+            throw new DomainException("salary-advance-invalid", "Deduction amount must be greater than zero.");
+        if (request.InstallmentAmount > request.Amount)
+            throw new DomainException("salary-advance-invalid", "Deduction amount cannot be more than the advance amount.");
+        if (!DateOnly.TryParse(request.IssueDate, out var issueDate))
+            throw new DomainException("bad-date", "Issue date must be a valid date.");
+        if (!DateOnly.TryParse(request.DeductionStartDate, out var startDate))
+            throw new DomainException("bad-date", "Deduction start date must be a valid date.");
+        var advance = new SalaryAdvance
+        {
+            WorkerId = worker.Id,
+            Amount = Math.Round(request.Amount, 2),
+            InstallmentAmount = Math.Round(request.InstallmentAmount, 2),
+            Currency = string.IsNullOrWhiteSpace(request.Currency) ? "ZMW" : request.Currency.Trim().ToUpperInvariant(),
+            IssueDate = issueDate,
+            DeductionStartDate = startDate,
+            DeductFromPayslip = request.DeductFromPayslip,
+            Status = "active",
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
+            Reference = string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim(),
+            CreatedBySubjectId = actorSubjectId,
+        };
+        await repo.CreateSalaryAdvanceAsync(advance, ct);
+        advance.Worker = worker;
+        return MapAdvance(advance, 0m);
+    }
+
+    public async Task<SalaryAdvanceDto> UpdateSalaryAdvanceAsync(Guid id, SalaryAdvanceUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        var advance = await repo.GetSalaryAdvanceAsync(id, ct)
+            ?? throw new DomainException("salary-advance-not-found", "Salary advance not found.");
+        if (advance.Status != "active")
+            throw new DomainException("salary-advance-closed", "Only active salary advances can be changed.");
+        var recovered = (await repo.GetSalaryAdvanceRecoveredAmountsAsync([advance.Id], ct))
+            .GetValueOrDefault(advance.Id);
+        if (request.InstallmentAmount.HasValue)
+        {
+            if (request.InstallmentAmount.Value <= 0)
+                throw new DomainException("salary-advance-invalid", "Deduction amount must be greater than zero.");
+            if (request.InstallmentAmount.Value > advance.Amount - recovered + 0.0001m)
+                throw new DomainException("salary-advance-invalid", "Deduction amount cannot be more than the remaining advance balance.");
+            advance.InstallmentAmount = Math.Round(request.InstallmentAmount.Value, 2);
+        }
+        if (request.DeductFromPayslip.HasValue) advance.DeductFromPayslip = request.DeductFromPayslip.Value;
+        if (request.DeductionStartDate is not null)
+        {
+            if (!DateOnly.TryParse(request.DeductionStartDate, out var startDate))
+                throw new DomainException("bad-date", "Deduction start date must be a valid date.");
+            advance.DeductionStartDate = startDate;
+        }
+        if (request.Reason is not null) advance.Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+        if (request.Reference is not null) advance.Reference = string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim();
+        await repo.UpdateSalaryAdvanceAsync(advance, ct);
+        return MapAdvance(advance, recovered);
+    }
+
+    public async Task<SalaryAdvanceDto> CancelSalaryAdvanceAsync(Guid id, SalaryAdvanceCancelRequest request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin", "payroll");
+        var advance = await repo.GetSalaryAdvanceAsync(id, ct)
+            ?? throw new DomainException("salary-advance-not-found", "Salary advance not found.");
+        if (advance.Status != "active")
+            throw new DomainException("salary-advance-closed", "Only active salary advances can be cancelled.");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("salary-advance-cancel-reason", "Cancellation reason is required.");
+        var recovered = (await repo.GetSalaryAdvanceRecoveredAmountsAsync([advance.Id], ct))
+            .GetValueOrDefault(advance.Id);
+        advance.Status = "cancelled";
+        advance.DeductFromPayslip = false;
+        advance.CancelledBySubjectId = actorSubjectId;
+        advance.CancelledAt = DateTimeOffset.UtcNow;
+        advance.CancellationReason = request.Reason.Trim();
+        await repo.UpdateSalaryAdvanceAsync(advance, ct);
+        return MapAdvance(advance, recovered);
+    }
+
+    private static (string Category, decimal WeeklyThreshold, decimal MonthlyDivisor) NormalizeOvertimePolicy(
+        string? category, decimal? weeklyThreshold, decimal? monthlyDivisor)
+    {
+        var normalized = (category ?? "ordinary").Trim().ToLowerInvariant();
+        if (normalized is "watchperson" or "guard" or "watchperson_guard" or "watchperson-guard")
+            normalized = "watchperson-guard";
+        if (normalized != "ordinary" && normalized != "watchperson-guard")
+            throw new DomainException("bad-overtime-category", "Overtime category must be ordinary or watchperson-guard.");
+        var defaultWeekly = normalized == "watchperson-guard" ? 60m : 48m;
+        var defaultDivisor = normalized == "watchperson-guard" ? 240m : 208m;
+        var weekly = weeklyThreshold ?? defaultWeekly;
+        var divisor = monthlyDivisor ?? defaultDivisor;
+        if (weekly <= 0 || divisor <= 0)
+            throw new DomainException("bad-overtime-policy", "Weekly overtime threshold and monthly divisor must be greater than zero.");
+        return (normalized, weekly, divisor);
+    }
+
     /// <summary>Locks the run for editing (freeze inputs before calculation).
     /// Segregation of duties: only draft runs can be locked; calculate then
     /// proceeds from locked.</summary>
@@ -534,11 +888,124 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status != "draft")
             throw new DomainException("run-not-lockable", $"Run is in status {run.Status}; only draft runs can be locked.");
+        var readiness = await BuildCalculationReadinessAsync(run, ct);
+        if (!readiness.Ready)
+            throw new DomainException("payroll-calculation-readiness-failed",
+                "Payroll calculation readiness failed: " + string.Join("; ", readiness.Checks.Where(c => c.State == "fail").Select(c => c.Label)));
         run.Status = "locked";
         run.LockedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
         await RecordEventAsync(run, "inputs-locked", actorSubjectId, "draft", "locked", null, null, ct);
         return MapRun(run);
+    }
+
+    public async Task<PayrollCalculationReadinessDto> GetCalculationReadinessAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        var run = await repo.GetRunAsync(id, ct)
+            ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        return await BuildCalculationReadinessAsync(run, ct);
+    }
+
+    private async Task<PayrollCalculationReadinessDto> BuildCalculationReadinessAsync(PayrollRun run, CancellationToken ct)
+    {
+        var period = run.PayPeriod ?? await repo.GetPeriodAsync(run.PayPeriodId, ct)
+            ?? throw new DomainException("pay-period-not-found", $"Pay period {run.PayPeriodId} does not exist.");
+        var (profilesRaw, components, rules, slabs, _) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        var profiles = profilesRaw.Where(p => p.PayGroupId == run.PayGroupId).ToList();
+        var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
+        var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
+        var issues = new List<PayrollCalculationReadinessIssueDto>();
+        var checks = new List<PayrollCalculationReadinessCheckDto>();
+
+        var activeComponents = components.Where(c => c.IsActive).ToList();
+        var earningComponents = activeComponents.Where(c => c.ComponentType == "earning").ToList();
+        var basicComponent = activeComponents.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase));
+        var missingBankProfiles = profiles.Where(p =>
+            p.Worker?.BankDetails is null ||
+            !p.Worker.BankDetails.Any(b => b.IsPrimary && !string.IsNullOrWhiteSpace(b.AccountNumber))).ToList();
+        foreach (var profile in profiles)
+        {
+            var worker = profile.Worker;
+            if (worker is null)
+            {
+                issues.Add(new(profile.WorkerId, "", "Unknown worker", "Payroll profile is not linked to a worker record.", "fail"));
+                continue;
+            }
+            if (basicComponent is null || !profile.ComponentValues.Any(v => v.ComponentId == basicComponent.Id && v.Amount > 0))
+                issues.Add(new(worker.Id, worker.EmployeeNo, worker.FullName, "Basic salary is missing or zero on the payroll profile.", "fail"));
+            if (profile.PayBasis.Equals("timesheet", StringComparison.OrdinalIgnoreCase))
+                issues.Add(new(worker.Id, worker.EmployeeNo, worker.FullName, "Timesheet pay basis is marked on this profile, but timesheet payroll is not implemented yet.", "warn"));
+        }
+
+        checks.Add(new("run-status", "Run can still be calculated",
+            run.Status is "draft" or "locked" or "calculated" ? "pass" : "fail",
+            run.Status is "draft" or "locked" or "calculated"
+                ? $"Run status is {run.Status}."
+                : $"Run status is {run.Status}; only draft, locked or calculated runs can pass this input check.",
+            0));
+        checks.Add(new("population", "Payroll profiles selected",
+            profiles.Count > 0 ? "pass" : "fail",
+            profiles.Count > 0
+                ? $"{profiles.Count} worker{(profiles.Count == 1 ? "" : "s")} match this run's pay group and branch scope."
+                : "No worker payroll profiles match this run's pay group and branch scope.",
+            profiles.Count));
+        checks.Add(new("earning-components", "Active earning components configured",
+            earningComponents.Count > 0 ? "pass" : "fail",
+            earningComponents.Count > 0
+                ? $"{earningComponents.Count} active earning component{(earningComponents.Count == 1 ? "" : "s")} will be evaluated."
+                : "No active earning components are configured.",
+            earningComponents.Count));
+        checks.Add(new("basic-salary", "Basic salary values present",
+            issues.Any(i => i.Issue.Contains("Basic salary", StringComparison.OrdinalIgnoreCase) && i.Severity == "fail") ? "fail" : "pass",
+            basicComponent is null
+                ? "The configured component code 'basic' is missing."
+                : "Every included worker has a positive basic salary value.",
+            issues.Count(i => i.Issue.Contains("Basic salary", StringComparison.OrdinalIgnoreCase))));
+        checks.Add(new("bank-details", "Payment details recorded",
+            missingBankProfiles.Count == 0 ? "pass" : "warn",
+            missingBankProfiles.Count == 0
+                ? "Every included worker has primary payment details."
+                : $"{missingBankProfiles.Count} included worker{(missingBankProfiles.Count == 1 ? "" : "s")} are missing primary payment details. Payroll can be reviewed and released, but a bank payment file cannot be generated for them until this is fixed.",
+            missingBankProfiles.Count));
+        checks.Add(new("tax-slabs", "Tax slabs configured for period year",
+            slabs.Count > 0 ? "pass" : "fail",
+            slabs.Count > 0
+                ? $"{slabs.Count} tax slab{(slabs.Count == 1 ? "" : "s")} configured for {period.StartDate.Year}."
+                : $"No active tax slabs are configured for {period.StartDate.Year}. Configure PAYE tax slabs before calculation.",
+            slabs.Count));
+
+        var statutoryComponents = activeComponents.Where(c => c.IsStatutory && c.CalculationBasis == "percent-of").ToList();
+        var missingRules = statutoryComponents
+            .Where(c => !rules.Any(r => r.Code.Equals(c.Code, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        checks.Add(new("contribution-rules", "Statutory contribution rules configured",
+            missingRules.Count == 0 ? "pass" : "warn",
+            missingRules.Count == 0
+                ? $"{rules.Count} active contribution rule{(rules.Count == 1 ? "" : "s")} are available."
+                : $"Missing active contribution rule configuration for: {string.Join(", ", missingRules.Select(r => r.Code))}.",
+            missingRules.Count));
+        checks.Add(new("overtime", "Approved overtime input loaded", "pass",
+            approvedOvertime.Count > 0
+                ? $"{approvedOvertime.Count} approved overtime record{(approvedOvertime.Count == 1 ? "" : "s")} will be included."
+                : "No approved overtime records are waiting for this run.",
+            approvedOvertime.Count));
+        checks.Add(new("proration", "Leave proration input loaded", "pass",
+            prorationInputs.UnpaidLeaves.Count > 0
+                ? $"{prorationInputs.UnpaidLeaves.Count} approved unpaid leave record{(prorationInputs.UnpaidLeaves.Count == 1 ? "" : "s")} may prorate payment days."
+                : "No approved unpaid leave records overlap this period.",
+            prorationInputs.UnpaidLeaves.Count));
+        checks.Add(new("period-dates", "Period dates are valid",
+            period.StartDate <= period.EndDate && period.CutoffDate <= period.PayDate ? "pass" : "fail",
+            period.StartDate <= period.EndDate && period.CutoffDate <= period.PayDate
+                ? $"{period.PeriodLabel} runs from {period.StartDate:yyyy-MM-dd} to {period.EndDate:yyyy-MM-dd}; cutoff is {period.CutoffDate:yyyy-MM-dd}."
+                : "The pay period date range or cutoff/pay-date order is invalid.",
+            0));
+
+        var failures = checks.Count(c => c.State == "fail");
+        var warnings = checks.Count(c => c.State == "warn") + issues.Count(i => i.Severity == "warn");
+        return new PayrollCalculationReadinessDto(run.Id, failures == 0, profiles.Count,
+            failures, warnings, checks, issues.OrderBy(i => i.Severity).ThenBy(i => i.EmployeeNo).ToList());
     }
 
     public async Task<PayrollRunDto> CalculateRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
@@ -547,15 +1014,30 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status is not "locked" and not "calculated")
             throw new DomainException("run-not-calculation-ready", $"Run is in status {run.Status} and cannot be calculated.");
+        var readiness = await BuildCalculationReadinessAsync(run, ct);
+        if (!readiness.Ready)
+            throw new DomainException("payroll-calculation-readiness-failed",
+                "Payroll calculation readiness failed: " + string.Join("; ", readiness.Checks.Where(c => c.State == "fail").Select(c => c.Label)));
         run.Status = "calculating";
         await repo.UpdateRunAsync(run, ct);
 
         // M46: a branch run pays only the workers attached to its branch;
         // an organisation-wide run pays everyone.
         var (profiles, components, rules, slabs, cutoff) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        var payrollBenefits = (await repo.LoadPayrollBenefitAllowancesAsync(run.PayPeriodId, run.LocationId, ct))
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(x => x.Key, x => x.ToList());
+        var salaryAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(run.PayPeriodId, run.LocationId, ct))
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(x => x.Key, x => x.ToList());
+        var advanceRecovered = await repo.GetSalaryAdvanceRecoveredAmountsAsync(
+            salaryAdvances.Values.SelectMany(x => x).Select(x => x.Id).Distinct().ToList(), ct);
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
+        var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
+        run.EmployeeCount = 0;
+        run.ExceptionCount = 0;
         await repo.ClearRunLinesAsync(run.Id, ct);
 
         foreach (var profile in profiles)
@@ -568,11 +1050,21 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             var (workingDays, paymentDays, note) = PaymentDaysCalculator.For(
                 prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
             ctx.SetProration(workingDays, paymentDays, note);
+            // Milestone 1: approved attendance overtime is a first-class earning.
+            // It is intentionally added before statutory components so PAYE and
+            // percentage-based deductions see the same explainable gross basis.
+            ctx.AddOvertime(approvedOvertime.Where(a => a.WorkerId == worker.Id).ToList());
+            ctx.AddPayrollBenefits(payrollBenefits.TryGetValue(worker.Id, out var benefits) ? benefits : []);
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
+            ctx.AddSalaryAdvances(
+                salaryAdvances.TryGetValue(worker.Id, out var advances) ? advances : [],
+                advanceRecovered);
             var net = ctx.Gross - ctx.Deductions;
             if (net < 0) { exceptions++; ctx.ExceptionReason = "negative-net"; }
-            if (!worker.BankDetails.Any(b => b.IsPrimary)) { exceptions++; ctx.ExceptionReason ??= "missing-bank"; }
+            // Missing payment details do not affect gross-to-net calculation or
+            // payslip release. They remain a payment-readiness warning and block
+            // the bank-file step until HR records a primary payment method.
             run.EmployeeCount++;
             run.TotalGross += ctx.Gross;
             run.TotalDeductions += ctx.Deductions;
@@ -620,6 +1112,77 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             l.Components.Select(c => new PayrollLineComponentDto(c.ComponentCode, c.ComponentName, c.ComponentType, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
             l.ExceptionStatus, l.ExceptionDecisionReason, l.ExceptionDecidedBySubjectId, l.ExceptionDecidedAt, l.IsExcluded,
             l.WorkingDays, l.PaymentDays, l.ProrationNote)).ToList(), total, 1, 100);
+    }
+
+    public async Task<WorkerPayslipPreviewDto> PreviewWorkerPayslipAsync(Guid workerId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "payroll", "hr_admin");
+        var guardrails = new List<string>();
+        var openProfile = await repo.FindOpenProfileAsync(workerId, ct);
+        if (openProfile is null)
+            return new WorkerPayslipPreviewDto("blocked", "", "ZMW",
+                ["No active payroll profile is linked to this employee. Add a payroll profile before previewing a payslip."], null);
+
+        var payGroup = await repo.GetPayGroupAsync(openProfile.PayGroupId, ct);
+        var periods = await repo.ListPeriodsAsync(openProfile.PayGroupId, ct);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var period = periods.FirstOrDefault(p => p.IsCurrent)
+            ?? periods.FirstOrDefault(p => p.StartDate <= today && p.EndDate >= today)
+            ?? periods.FirstOrDefault();
+        if (period is null)
+            return new WorkerPayslipPreviewDto("blocked", "", payGroup?.Currency ?? "ZMW",
+                ["No pay period exists for this employee's pay group. Create a pay period before previewing a payslip."], null);
+
+        var locationId = openProfile.Worker?.LocationId;
+        var (profiles, components, rules, slabs, _) = await repo.LoadCalculationInputsAsync(period.Id, ct, locationId);
+        var profile = profiles.FirstOrDefault(p => p.WorkerId == workerId) ?? openProfile;
+        var worker = profile.Worker ?? await repo.GetWorkerAsync(workerId, ct);
+        if (worker is null)
+            return new WorkerPayslipPreviewDto("blocked", period.PeriodLabel, payGroup?.Currency ?? "ZMW",
+                ["The payroll profile is not linked to an employee record."], null);
+
+        var activeComponents = components.Where(c => c.IsActive).OrderBy(c => c.Priority).ToList();
+        var basicComponent = activeComponents.FirstOrDefault(c => c.Code.Equals("basic", StringComparison.OrdinalIgnoreCase));
+        if (basicComponent is null)
+            guardrails.Add("Basic salary component is not active in payroll configuration.");
+        else if (!profile.ComponentValues.Any(v => v.ComponentId == basicComponent.Id && v.Amount > 0))
+            guardrails.Add("Basic salary is missing or zero on the employee payroll profile.");
+        if (!activeComponents.Any(c => c.ComponentType == "earning"))
+            guardrails.Add("No active earning components are configured.");
+        if (!worker.BankDetails.Any(b => b.IsPrimary))
+            guardrails.Add("Primary bank or mobile money payment details are missing.");
+
+        var ctx = new CalcContext(worker, profile, activeComponents, rules, slabs);
+        var prorationInputs = await repo.LoadProrationInputsAsync(period.Id, ct);
+        var (workingDays, paymentDays, note) = PaymentDaysCalculator.For(
+            prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
+        ctx.SetProration(workingDays, paymentDays, note);
+        ctx.AddOvertime((await repo.LoadApprovedOvertimeAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList());
+        ctx.AddPayrollBenefits((await repo.LoadPayrollBenefitAllowancesAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList());
+        foreach (var comp in activeComponents)
+            ctx.Evaluate(comp);
+        var previewAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(period.Id, locationId, ct))
+            .Where(a => a.WorkerId == worker.Id).ToList();
+        ctx.AddSalaryAdvances(previewAdvances,
+            await repo.GetSalaryAdvanceRecoveredAmountsAsync(previewAdvances.Select(a => a.Id).ToList(), ct));
+        var net = ctx.Gross - ctx.Deductions;
+        if (ctx.Gross <= 0)
+            guardrails.Add("Gross pay is zero. Check basic salary, earning components and salary profile setup.");
+        if (net <= 0)
+            guardrails.Add("Net pay is zero or negative. Review deductions before releasing a payslip.");
+        if (ctx.ExceptionReason is not null)
+            guardrails.Add(ctx.ExceptionReason);
+
+        var line = new PayrollRunLineDto(Guid.Empty, worker.Id, worker.FullName, worker.EmployeeNo,
+            Math.Round(ctx.Gross, 2), Math.Round(ctx.Deductions, 2), Math.Round(net, 2),
+            Math.Round(ctx.EmployerCost, 2), guardrails.Count > 0, guardrails.FirstOrDefault(),
+            ctx.Components.Select(c => new PayrollLineComponentDto(c.Code, c.Name, c.Type, c.Amount, c.Explanation, c.IsStatutory)).ToList(),
+            WorkingDays: ctx.WorkingDays, PaymentDays: ctx.PaymentDays, ProrationNote: ctx.ProrationNote);
+
+        return new WorkerPayslipPreviewDto(guardrails.Count == 0 ? "ready" : "blocked",
+            period.PeriodLabel, payGroup?.Currency ?? "ZMW", guardrails, line);
     }
 
     public async Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request,
@@ -698,7 +1261,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
         if (run.Status is not "calculated" and not "in-review")
             throw new DomainException("run-not-review-ready", $"Run is in status {run.Status}; it must be calculated (and submitted) before approval.");
-        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (actorSubjectId != "system" && string.Equals(run.PreparedBySubjectId, actorSubjectId, StringComparison.Ordinal)
+            && !authz.IsRole("hr_admin"))
             throw new DomainException("run-self-approval", "The person who prepared this run cannot approve it. Send it to a separate payroll or HR approver.");
         // M46: a branch payroll draft flows UP for approval — the approver of a
         // branch run must be org-wide HR (no branch assignments). Confined
@@ -746,12 +1310,13 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     }
 
     /// <summary>Release finalizes payslips and generates the payment file
-    /// payload. Segregation of duties: releaser cannot be the sole approver —
-    /// enforced here by requiring status = approved (approval was a separate actor).</summary>
+    /// payload. Segregation of duties applies to payroll officers; HR admin can
+    /// override it when they intentionally carry final payroll authority.</summary>
     public async Task<PayrollRunDto> ReleaseRunAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
-        authz.RequireAnyRole("payroll");
+        authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         // M24: every worker in the run must carry the statutory identity pack
         // (NRC, TPIN, NAPSA number, NHIMA number) before payslips can be released.
         var readiness = await GetRunStatutoryReadinessAsync(id, ct);
@@ -769,13 +1334,23 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         }
         if (run.Status != "approved")
             throw new DomainException("run-not-releasable", $"Run is in status {run.Status}; it must be approved by a separate reviewer before release.");
-        if (actorSubjectId != "system" && string.Equals(run.ApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && actorSubjectId != "system" && string.Equals(run.ApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("run-self-release", "The approver cannot also release the run. A separate payroll officer must release it.");
         async Task ReleaseAndEnqueue(CancellationToken transactionCt)
         {
             run.Status = "released";
             run.ReleasedBySubjectId = actorSubjectId;
             await repo.UpdateRunAsync(run, transactionCt);
+            // Only a released run consumes approved overtime. Calculation remains
+            // idempotent because approved rows stay approved until this boundary.
+            var overtimeToLink = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, transactionCt);
+            var (releasedLines, _) = await repo.ListRunLinesAsync(run.Id, transactionCt);
+            foreach (var overtime in overtimeToLink)
+            {
+                var line = releasedLines.FirstOrDefault(l => l.WorkerId == overtime.WorkerId);
+                if (line is not null)
+                    await repo.LinkOvertimeToPayrollAsync(overtime.Id, run.Id, line.Id, transactionCt);
+            }
             // Reversal runs negate the original: supersede its payslips FIRST so the
             // replacement payslips generated below can chain to them via SupersedesId.
             if (run.IsReversal && run.ReversesRunId.HasValue)
@@ -819,7 +1394,32 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapRun(run);
     }
 
-    /// <summary>Reverses a released run audit-preservingly: creates a new draft
+    /// <summary>Voids an unreleased payroll run audit-preservingly. This is the
+    /// top-admin exit path for setup/calculation mistakes before payslips have
+    /// been released. Lines remain inspectable; status becomes terminal so a
+    /// clean replacement run may be created for the same period/scope.</summary>
+    public async Task<PayrollRunDto> CancelRunAsync(Guid id, PayrollRunReverseCreate request, CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin");
+        var reason = (request.Reason ?? "").Trim();
+        if (reason.Length < 5)
+            throw new DomainException("run-cancel-reason-required", "A cancellation reason of at least 5 characters is required.");
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.IsReversal)
+            throw new DomainException("run-reversal-cancel-blocked", "A reversal run cannot be cancelled. Release it to complete the reversal or leave it as audit evidence.");
+        if (run.Status is "released" or "closed")
+            throw new DomainException("run-cancel-requires-reversal", $"Run is in status {run.Status}; released payroll must be reversed instead of cancelled.");
+        if (run.Status == "reversed")
+            throw new DomainException("run-already-terminal", "This run has already been reversed or voided.");
+        var fromStatus = run.Status;
+        run.Status = "reversed";
+        await repo.UpdateRunAsync(run, ct);
+        await RecordEventAsync(run, "cancelled", actorSubjectId, fromStatus, "reversed", reason,
+            new { control = "top-admin-void", run.PaymentStatus, run.TotalNet }, ct);
+        return MapRun(run);
+    }
+
+    /// <summary>Reverses a released or closed run audit-preservingly: creates a new draft
     /// reversal run in the same period whose release negates the original. The
     /// original run's payslips are superseded once the reversal is released; the
     /// original's status moves to reversed and it can never be re-released.</summary>
@@ -827,8 +1427,6 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
-        if (run.Status != "released")
-            throw new DomainException("run-not-reversible", $"Run is in status {run.Status}; only released runs can be reversed.");
         if (run.IsReversal)
             throw new DomainException("run-already-reversal", "A reversal run cannot itself be reversed; create a new regular run instead.");
 
@@ -836,6 +1434,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var existingReversal = await repo.FindRunByReversesIdAsync(run.Id, ct);
         if (existingReversal is not null)
             throw new DomainException("run-reversal-exists", $"Run {id} already has a reversal run {existingReversal.Id} (status {existingReversal.Status}).");
+        if (run.Status is not ("released" or "closed"))
+            throw new DomainException("run-not-reversible", $"Run is in status {run.Status}; only released or closed runs can be reversed.");
+
+        var fromStatus = run.Status;
 
         // Mark original as reversed so it is excluded from control totals.
         run.Status = "reversed";
@@ -854,7 +1456,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         await repo.CreateRunAsync(reversal, ct);
         reversal.PreparedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(reversal, ct);
-        await RecordEventAsync(run, "reversal-created", actorSubjectId, "released", "reversed", request.Reason,
+        await RecordEventAsync(run, "reversal-created", actorSubjectId, fromStatus, "reversed", request.Reason,
             new { reversalRunId = reversal.Id }, ct);
         await RecordEventAsync(reversal, "created-as-reversal", actorSubjectId, null, "draft", request.Reason,
             new { originalRunId = run.Id }, ct);
@@ -883,6 +1485,21 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapRun(run);
     }
 
+    public async Task<PayrollPaymentReadinessDto> GetPaymentReadinessAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("payroll", "hr_admin");
+        _ = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var rows = await repo.ListPaymentRowsAsync(id, ct);
+        var issues = rows
+            .Where(x => string.IsNullOrWhiteSpace(x.AccountNumber))
+            .Select(x => new PayrollPaymentReadinessIssueDto(
+                x.WorkerId, x.EmployeeNo, x.WorkerName, x.Amount, "Primary bank details are missing."))
+            .ToList();
+        return new PayrollPaymentReadinessDto(
+            id, rows.Count > 0 && issues.Count == 0, rows.Count, rows.Sum(x => x.Amount),
+            issues.Count, issues);
+    }
+
     public async Task<string> DownloadPaymentFileAsync(Guid id, CancellationToken ct)
     {
         authz.RequireAnyRole("payroll", "hr_admin");
@@ -900,8 +1517,9 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         if (run.PaymentStatus != "generated") throw new DomainException("payment-not-approvable", $"Payment is in status {run.PaymentStatus}.");
-        if (string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-self-approval", "The person who generated the payment file cannot approve it.");
         run.PaymentStatus = "approved";
         run.PaymentApprovedBySubjectId = actorSubjectId;
@@ -912,11 +1530,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
 
     public async Task<PayrollRunDto> ReleasePaymentFileAsync(Guid id, CancellationToken ct, string actorSubjectId = "system")
     {
-        authz.RequireAnyRole("payroll");
+        authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        var isHrAdmin = authz.IsRole("hr_admin");
         if (run.PaymentStatus != "approved") throw new DomainException("payment-not-releasable", $"Payment is in status {run.PaymentStatus}.");
-        if (string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+        if (!isHrAdmin && string.Equals(run.PaymentApprovedBySubjectId, actorSubjectId, StringComparison.Ordinal))
             throw new DomainException("payment-self-release", "The payment approver cannot also release the bank instruction.");
+        if (!isHrAdmin && string.Equals(run.PaymentFileGeneratedBySubjectId, actorSubjectId, StringComparison.Ordinal))
+            throw new DomainException("payment-generator-release", "The person who generated the payment file cannot release the bank instruction.");
         run.PaymentStatus = "released";
         run.PaymentReleasedBySubjectId = actorSubjectId;
         await repo.UpdateRunAsync(run, ct);
@@ -1083,6 +1704,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         authz.RequireAnyRole("payroll", "hr_admin");
         var slip = await repo.GetPayslipAsync(payslipId, ct)
             ?? throw new DomainException("payslip-not-found", $"Payslip {payslipId} does not exist.");
+        return await EnsurePayslipPdfBytesAsync(slip, payslipId, ct);
+    }
+
+    private async Task<byte[]> EnsurePayslipPdfBytesAsync(Payslip slip, Guid payslipId, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(slip.DocumentUrl))
         {
             var line = await repo.GetRunLineForPayslipAsync(slip.Id, ct)
@@ -1181,6 +1807,19 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return slip.DocumentUrl;
     }
 
+    public async Task<byte[]> GetMyPayslipPreviewAsync(Guid id, string subjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "payroll", "hr_admin", "manager", "hr_ops");
+        if (string.IsNullOrWhiteSpace(subjectId))
+            throw new DomainException("no-subject-claim", "The request carries no identity claim.");
+        var worker = await repo.GetWorkerBySubjectAsync(subjectId, ct);
+        var slip = await repo.GetPayslipAsync(id, ct)
+            ?? throw new DomainException("payslip-not-found", $"Payslip {id} does not exist.");
+        if (worker is null || slip.WorkerId != worker.Id)
+            throw new DomainException("payslip-not-owned", "The payslip does not belong to the signed-in worker.");
+        return await EnsurePayslipPdfBytesAsync(slip, id, ct);
+    }
+
     // M25: for an employee-only caller, resolve their own worker from the
     // token subject (supplied by the route layer) and confirm the worker id
     // matches their own record.
@@ -1229,14 +1868,28 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.Id, r.Status, r.PayPeriod?.PeriodLabel ?? "", r.EmployeeCount, r.TotalGross, r.TotalDeductions, r.TotalNet,
         r.TotalEmployerCost, r.ExceptionCount, r.CalcVersion, r.CreatedAt, r.IsReversal, r.ReversesRunId,
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
-        r.PaymentFileReference, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
-        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId);
+        r.PaymentFileReference, r.PaymentFileGeneratedBySubjectId, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
+        r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId,
+        r.PayPeriodId, r.PayGroupId, r.ApprovalNote);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
         p.ComponentValues.Select(v => new WorkerComponentValueDto(v.ComponentId,
             v.Component?.Code ?? "", v.Component?.Name ?? "", v.Amount)).ToList(),
-        p.PayBasis ?? "salary");
+        p.PayBasis ?? "salary", p.OvertimeCategory ?? "ordinary",
+        p.WeeklyOvertimeThresholdHours <= 0 ? 48 : p.WeeklyOvertimeThresholdHours,
+        p.MonthlyOvertimeDivisor <= 0 ? 208 : p.MonthlyOvertimeDivisor);
+
+    private static SalaryAdvanceDto MapAdvance(SalaryAdvance a, decimal recovered)
+    {
+        recovered = Math.Round(Math.Max(0, recovered), 2);
+        var remaining = Math.Round(Math.Max(0, a.Amount - recovered), 2);
+        return new SalaryAdvanceDto(a.Id, a.WorkerId, a.Worker?.FullName ?? $"Employee {a.WorkerId}",
+            a.Worker?.EmployeeNo, a.Amount, a.InstallmentAmount, recovered, remaining,
+            a.Currency, a.IssueDate.ToString("yyyy-MM-dd"), a.DeductionStartDate.ToString("yyyy-MM-dd"),
+            a.DeductFromPayslip, remaining <= 0 && a.Status == "active" ? "settled" : a.Status,
+            a.Reason, a.Reference, a.CreatedAt);
+    }
 
     private async Task<string> GetComponentCode(Guid componentId, CancellationToken ct)
     {
@@ -1273,7 +1926,7 @@ internal sealed class CalcContext
         decimal amount = comp.CalculationBasis switch
         {
             // fixed basis: structure default first, then worker profile override
-            "fixed" => comp.FixedAmount ?? ProfileAmount(comp.Id),
+            "fixed" => ProfileAmountOrDefault(comp),
             "percent-of" => Resolve(comp.BasisComponentCode ?? "") * (comp.Rate ?? 0) / 100m,
             "slab" => ApplySlabs(Resolve(comp.BasisComponentCode ?? "basic")),
             _ => 0,
@@ -1332,6 +1985,14 @@ internal sealed class CalcContext
     private decimal ProfileAmount(Guid componentId) =>
         _profile.ComponentValues.FirstOrDefault(v => v.ComponentId == componentId)?.Amount ?? 0;
 
+    // A worker profile is an explicit override. Use the component default only
+    // when this profile has no value for the component; this also preserves an
+    // intentional zero override.
+    private decimal ProfileAmountOrDefault(SalaryComponent comp) =>
+        _profile.ComponentValues.Any(v => v.ComponentId == comp.Id)
+            ? ProfileAmount(comp.Id)
+            : comp.FixedAmount ?? 0;
+
     private decimal _lastTaxable;
 
     private decimal ApplySlabs(decimal taxable)
@@ -1365,6 +2026,67 @@ internal sealed class CalcContext
         if (WorkingDays <= 0 || PaymentDays >= WorkingDays) return amount;
         var factor = (decimal)PaymentDays / WorkingDays;
         return Math.Round(amount * factor, 2);
+    }
+
+    public void AddOvertime(List<AttendanceRecord> records)
+    {
+        if (records.Count == 0) return;
+        var hours = records.Sum(r => r.OvertimeHours);
+        if (hours <= 0) return;
+        var basic = Resolve("basic");
+        var amount = records.Sum(r =>
+        {
+            var divisor = r.OvertimeHourlyDivisor > 0 ? r.OvertimeHourlyDivisor :
+                (_profile.MonthlyOvertimeDivisor > 0 ? _profile.MonthlyOvertimeDivisor : 208m);
+            return basic / divisor * r.OvertimeHours * r.OvertimeMultiplier;
+        });
+        amount = Math.Round(amount, 2);
+        if (amount <= 0) return;
+        _values["overtime"] = amount;
+        var sourceIds = string.Join(", ", records.Select(r => r.Id.ToString("D")));
+        Components.Add(("overtime", "Overtime", "earning", amount,
+            $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier and configured hourly divisor; source attendance {sourceIds}", false));
+        Gross += amount;
+    }
+
+    public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances)
+    {
+        foreach (var allowance in allowances
+            .Where(a => a.AnnualAmount > 0 && a.BenefitType?.IncludeInPayroll == true && a.BenefitType.IsActive)
+            .OrderBy(a => a.BenefitType!.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var type = allowance.BenefitType!;
+            var monthlyAmount = Math.Round(allowance.AnnualAmount / 12m, 2);
+            if (WorkingDays > 0 && PaymentDays < WorkingDays)
+                monthlyAmount = Math.Round(monthlyAmount * PaymentDays / WorkingDays, 2);
+            if (monthlyAmount <= 0) continue;
+            var code = $"benefit-{type.Code.Trim().ToLowerInvariant()}";
+            _values[code] = monthlyAmount;
+            Components.Add((code, type.Name, "earning", monthlyAmount,
+                WorkingDays > 0 && PaymentDays < WorkingDays
+                    ? $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months, prorated for {PaymentDays:N0}/{WorkingDays:N0} paid days."
+                    : $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months.", false));
+            Gross += monthlyAmount;
+        }
+    }
+
+    public void AddSalaryAdvances(List<SalaryAdvance> advances, Dictionary<Guid, decimal> recoveredByAdvance)
+    {
+        foreach (var advance in advances
+            .Where(a => a.Status == "active" && a.DeductFromPayslip && a.Amount > 0 && a.InstallmentAmount > 0)
+            .OrderBy(a => a.DeductionStartDate)
+            .ThenBy(a => a.CreatedAt))
+        {
+            var recovered = recoveredByAdvance.TryGetValue(advance.Id, out var paid) ? paid : 0m;
+            var remaining = Math.Round(Math.Max(0, advance.Amount - recovered), 2);
+            if (remaining <= 0) continue;
+            var deduction = Math.Round(Math.Min(advance.InstallmentAmount, remaining), 2);
+            if (deduction <= 0) continue;
+            var code = $"salary-advance-{advance.Id:N}";
+            Components.Add((code, "Salary advance recovery", "deduction", deduction,
+                $"Salary advance deduction: K{deduction:N2} of K{advance.Amount:N2}; K{Math.Max(0, remaining - deduction):N2} remains after this payroll. Reference {advance.Reference ?? advance.Id.ToString("D")}.", false));
+            Deductions += deduction;
+        }
     }
 
     public void SetProration(int workingDays, int paymentDays, string? note)
@@ -1401,6 +2123,13 @@ public interface IPayrollRepository
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
     Task<PayPeriod?> GetPeriodAsync(Guid id, CancellationToken ct);
+    Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task<List<SalaryAdvance>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct);
+    Task<SalaryAdvance?> GetSalaryAdvanceAsync(Guid id, CancellationToken ct);
+    Task<SalaryAdvance> CreateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct);
+    Task UpdateSalaryAdvanceAsync(SalaryAdvance advance, CancellationToken ct);
+    Task<List<SalaryAdvance>> LoadDeductibleSalaryAdvancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task<Dictionary<Guid, decimal>> GetSalaryAdvanceRecoveredAmountsAsync(List<Guid> advanceIds, CancellationToken ct);
     Task<List<TaxSlab>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<TaxSlab?> GetTaxSlabAsync(Guid id, CancellationToken ct);
     Task UpdateTaxSlabAsync(TaxSlab slab, CancellationToken ct);
@@ -1436,6 +2165,8 @@ public interface IPayrollRepository
     Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct);
     Task<PayrollRun> SubmitRunAsync(PayrollRun run, CancellationToken ct);
     Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)> LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct, Guid? locationId = null);
+    Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
+    Task LinkOvertimeToPayrollAsync(Guid attendanceId, Guid runId, Guid runLineId, CancellationToken ct);
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
     Task AddRunLineAsync(PayrollRunLine line, CancellationToken ct);
     Task<(List<PayrollRunLine> Items, int Total)> ListRunLinesAsync(Guid runId, CancellationToken ct);

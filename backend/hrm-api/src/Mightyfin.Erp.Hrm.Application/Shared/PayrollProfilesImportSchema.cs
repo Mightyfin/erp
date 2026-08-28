@@ -6,6 +6,7 @@
 // basic salary and allowances for many workers in one batch. Insert mode
 // creates new profiles; Update mode patches only the components the file
 // supplies, so a partially filled export-style file is round-trip safe.
+using System.Globalization;
 using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
@@ -51,7 +52,7 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
             new ImportFieldDef("nrc", "NRC", false, NaturalKey: true, FormatNote: "e.g. 123456/78/1"),
             new ImportFieldDef("napsaNumber", "NAPSA number", false, NaturalKey: true, FormatNote: "e.g. NAPSA-001"),
             new ImportFieldDef("payGroup", "Pay group", false, Example: "Monthly ZMW"),
-            new ImportFieldDef("effectiveFrom", "Effective from", false, FormatNote: "YYYY-MM-DD; defaults to today"),
+            new ImportFieldDef("effectiveFrom", "Effective from", false, FormatNote: "DD-MM-YYYY; defaults to today"),
             .. Components.Select(c => new ImportFieldDef(c.Code, c.Name, false, Example: c.FixedAmount?.ToString("F2") ?? "0")),
         ];
     }
@@ -133,8 +134,8 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
         var effectiveFrom = row.Get("effectiveFrom").Trim();
         if (!string.IsNullOrWhiteSpace(effectiveFrom))
         {
-            if (!DateOnly.TryParseExact(effectiveFrom, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _))
-                return new ImportRowOutcome("error", $"Effective date '{effectiveFrom}' is not valid — use YYYY-MM-DD, e.g. 2026-08-01.");
+            if (!TryParseImportDate(effectiveFrom, out _))
+                return new ImportRowOutcome("error", $"Effective date '{effectiveFrom}' is not valid — use DD-MM-YYYY, e.g. 01-08-2026.");
         }
 
         // Update mode on an existing profile: the service preserves existing
@@ -147,7 +148,7 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
             .ToList();
         var effective = string.IsNullOrWhiteSpace(effectiveFrom)
             ? DateOnly.FromDateTime(DateTime.UtcNow)
-            : DateOnly.ParseExact(effectiveFrom, "yyyy-MM-dd");
+            : ParseImportDate(effectiveFrom);
 
         var resolved = new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase)
         {
@@ -160,7 +161,7 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
             existing is not null ? $"Existing profile: {worker.FullName}" : $"New profile for {worker.FullName}", resolved);
     }
 
-    public async Task ApplyRowAsync(IDictionary<string, string> row, CancellationToken ct)
+    public async Task ApplyRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
         // Apply runs on a fresh schema instance (per-request DI) — the component
@@ -186,4 +187,30 @@ public sealed class PayrollProfilesImportSchema : IImportSchema
 
     // ---- Batch-level tracking (cleared per schema instance). ----
     private readonly HashSet<string> SeenWorkers = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
+
+    private static DateOnly ParseImportDate(string value) =>
+        TryParseImportDate(value, out var date)
+            ? date
+            : throw new DomainException("import-date-invalid", $"Date '{value}' is not valid.");
 }

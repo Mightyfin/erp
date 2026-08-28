@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -304,6 +305,7 @@ public sealed class NatsHrmEventPublisher : IHrmEventPublisher
 public interface ISmtpNotificationFallback
 {
     bool Enabled { get; }
+    bool CanDeliver(OutboxMessage row);
     Task DeliverAsync(OutboxMessage row, CancellationToken ct);
 }
 
@@ -320,42 +322,131 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
         Enabled = string.Equals(configuration["HRM:NotificationFallback"], "smtp", StringComparison.OrdinalIgnoreCase);
     }
 
+    public bool CanDeliver(OutboxMessage row)
+    {
+        if (row.EventType is not (
+            HrmEventTypes.PayslipReleased or
+            HrmEventTypes.RequestDecided or
+            HrmEventTypes.LeaveRequested or
+            HrmEventTypes.LeaveDecided or
+            HrmEventTypes.LeaveCancelled or
+            HrmEventTypes.AccountAccessLink))
+            return false;
+        try
+        {
+            using var payload = JsonDocument.Parse(row.PayloadJson);
+            return payload.RootElement.TryGetProperty("email", out var value) &&
+                !string.IsNullOrWhiteSpace(value.GetString());
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public async Task DeliverAsync(OutboxMessage row, CancellationToken ct)
     {
         if (!Enabled)
             throw new InvalidOperationException("SMTP fallback is not enabled.");
+        if (!CanDeliver(row))
+            throw new InvalidOperationException($"No SMTP fallback template exists for {row.EventType}.");
         using var payload = JsonDocument.Parse(row.PayloadJson);
         var root = payload.RootElement;
         var email = Required(root, "email");
         var firstName = Optional(root, "first_name");
         var portalUrl = configuration["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://hrm.mightyfinance.co.zm";
-        var (subject, body) = row.EventType switch
+        var (subject, plainBody, htmlBody) = row.EventType switch
         {
             HrmEventTypes.PayslipReleased => (
                 "Your payslip is available",
-                $"Hello {firstName},\n\nYour payslip for {Optional(root, "period_label")} is now available. Sign in to view it: {portalUrl}/hrm/payslips/{Optional(root, "payslip_id")}\n"),
+                $"Hello {firstName},\n\nYour payslip for {Optional(root, "period_label")} is now available.\nSign in to view it: {portalUrl}/hrm/payslips/{Optional(root, "payslip_id")}\n",
+                BuildHtmlEmail(
+                    $"Your payslip for {Optional(root, "period_label")} is now available.",
+                    firstName,
+                    $"View payslip",
+                    $"{portalUrl}/hrm/payslips/{Optional(root, "payslip_id")}",
+                    "If you did not expect this message, contact HR.")
+            ),
             HrmEventTypes.RequestDecided => (
                 "Your HR request was updated",
-                $"Hello {firstName},\n\nThe status of your HR request is now {Optional(root, "status")}. Sign in to view it: {portalUrl}/hrm/requests/{Optional(root, "request_id")}\n"),
+                $"Hello {firstName},\n\nThe status of your HR request is now {Optional(root, "status")}.\nSign in to view it: {portalUrl}/hrm/requests/{Optional(root, "request_id")}\n",
+                BuildHtmlEmail(
+                    $"The status of your HR request is now {Optional(root, "status")}.",
+                    firstName,
+                    $"View request",
+                    $"{portalUrl}/hrm/requests/{Optional(root, "request_id")}",
+                    "If you did not expect this message, contact HR.")
+            ),
             HrmEventTypes.LeaveRequested => (
                 "Your leave request was submitted",
-                $"Hello {firstName},\n\nYour {Optional(root, "leave_type_code")} leave request has been submitted. Sign in to view it: {portalUrl}/hrm/leave\n"),
+                $"Hello {firstName},\n\nYour {Optional(root, "leave_type_code")} leave request has been submitted.\nSign in to view it: {portalUrl}/hrm/leave\n",
+                BuildHtmlEmail(
+                    $"Your {Optional(root, "leave_type_code")} leave request has been submitted.",
+                    firstName,
+                    $"View leave request",
+                    $"{portalUrl}/hrm/leave",
+                    "If you did not expect this message, contact HR.")
+            ),
             HrmEventTypes.LeaveDecided => (
                 "Your leave request was updated",
-                $"Hello {firstName},\n\nYour leave request is now {Optional(root, "status")}. Sign in to view it: {portalUrl}/hrm/leave\n"),
+                $"Hello {firstName},\n\nYour leave request is now {Optional(root, "status")}.\nSign in to view it: {portalUrl}/hrm/leave\n",
+                BuildHtmlEmail(
+                    $"Your leave request is now {Optional(root, "status")}.",
+                    firstName,
+                    $"View leave request",
+                    $"{portalUrl}/hrm/leave",
+                    "If you did not expect this message, contact HR.")
+            ),
             HrmEventTypes.LeaveCancelled => (
                 "Your leave request was cancelled",
-                $"Hello {firstName},\n\nYour leave request has been cancelled. Sign in to view it: {portalUrl}/hrm/leave\n"),
+                $"Hello {firstName},\n\nYour leave request has been cancelled.\nSign in to view it: {portalUrl}/hrm/leave\n",
+                BuildHtmlEmail(
+                    $"Your leave request has been cancelled.",
+                    firstName,
+                    $"View leave request",
+                    $"{portalUrl}/hrm/leave",
+                    "If you did not expect this message, contact HR.")
+            ),
+            HrmEventTypes.AccountAccessLink => (
+                "Set up your NewWorldCargo HRM account",
+                $"Hello {firstName},\n\nAn HR administrator created or reset your account. Set your password using this one-time link: {Optional(root, "account_link")}\n\nThis link expires on {Optional(root, "expires_at")}.\n",
+                BuildHtmlEmail(
+                    "An HR administrator created or reset your account. Use the secure link below to choose your password.",
+                    firstName,
+                    "Set password",
+                    Required(root, "account_link"),
+                    $"This one-time link expires on {Optional(root, "expires_at")}. If you did not expect this message, contact HR.")
+            ),
             _ => throw new InvalidOperationException($"No SMTP fallback template exists for {row.EventType}."),
         };
 
         var host = RequiredConfig("HRM:Smtp:Host");
         var from = RequiredConfig("HRM:Smtp:From");
-        var port = int.TryParse(configuration["HRM:Smtp:Port"], out var parsedPort) ? parsedPort : 587;
-        using var message = new MailMessage(from, email, subject, body);
+        var fromName = configuration["HRM:Smtp:FromName"] ?? "NewWorldCargo HRM";
+        var port = int.TryParse(configuration["HRM:Smtp:Port"], out var parsedPort) ? parsedPort : 465;
+        var timeoutMs = int.TryParse(configuration["HRM:Smtp:TimeoutMs"], out var parsedTimeout)
+            ? Math.Clamp(parsedTimeout, 5000, 120000)
+            : 20000;
+        using var message = new MailMessage
+        {
+            From = new MailAddress(from, fromName),
+            Subject = subject,
+            Body = plainBody,
+            BodyEncoding = Encoding.UTF8,
+            SubjectEncoding = Encoding.UTF8,
+            HeadersEncoding = Encoding.UTF8,
+            IsBodyHtml = false,
+        };
+        message.To.Add(email);
+        message.ReplyToList.Add(new MailAddress(configuration["HRM:Smtp:ReplyTo"] ?? from, fromName));
+        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(plainBody, Encoding.UTF8, MediaTypeNames.Text.Plain));
+        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, Encoding.UTF8, MediaTypeNames.Text.Html));
+        message.Headers["X-Mailer"] = "NewWorldCargo HRM";
+        message.Headers["X-Entity-Ref-ID"] = row.PublicId;
         using var smtp = new SmtpClient(host, port)
         {
             EnableSsl = !string.Equals(configuration["HRM:Smtp:UseTls"], "false", StringComparison.OrdinalIgnoreCase),
+            Timeout = timeoutMs,
         };
         var username = configuration["HRM:Smtp:Username"];
         if (!string.IsNullOrWhiteSpace(username))
@@ -371,4 +462,30 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
             : throw new InvalidOperationException($"Outbox payload is missing {key}.");
     private static string Optional(JsonElement root, string key) =>
         root.TryGetProperty(key, out var value) ? value.GetString() ?? "" : "";
+
+    private static string BuildHtmlEmail(string intro, string firstName, string actionText, string actionUrl, string footer)
+    {
+        var safeIntro = WebUtility.HtmlEncode(intro);
+        var safeName = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(firstName) ? "there" : firstName);
+        var safeAction = WebUtility.HtmlEncode(actionText);
+        var safeUrl = WebUtility.HtmlEncode(actionUrl);
+        var safeFooter = WebUtility.HtmlEncode(footer);
+        return $"""
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f8fb;color:#102033;font-family:Arial,Helvetica,sans-serif;">
+    <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
+      <div style="background:#ffffff;border:1px solid #e3e8ef;border-radius:12px;padding:28px;">
+        <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">Hello {safeName},</p>
+        <p style="margin:0 0 20px;font-size:16px;line-height:1.6;">{safeIntro}</p>
+        <p style="margin:0 0 24px;">
+          <a href="{safeUrl}" style="display:inline-block;background:#012642;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:15px;">{safeAction}</a>
+        </p>
+        <p style="margin:0;font-size:13px;line-height:1.6;color:#516173;">{safeFooter}</p>
+      </div>
+    </div>
+  </body>
+  </html>
+""";
+    }
 }

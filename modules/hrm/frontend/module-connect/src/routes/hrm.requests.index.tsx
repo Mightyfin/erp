@@ -12,9 +12,9 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/requests/")({
   head: () => ({
     meta: [
-      { title: "HR requests — Mightyfin ERP HRM" },
+      { title: "HR requests — New World Cargo HRM" },
       { name: "description", content: "Raise and track HR cases: letters, data changes and queries." },
-      { property: "og:title", content: "HR requests — Mightyfin ERP HRM" },
+      { property: "og:title", content: "HR requests — New World Cargo HRM" },
       { property: "og:description", content: "Raise and track HR cases: letters, data changes and queries." },
     ],
   }),

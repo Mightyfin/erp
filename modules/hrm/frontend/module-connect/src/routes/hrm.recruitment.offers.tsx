@@ -23,9 +23,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/recruitment/offers")({
   head: () => ({
     meta: [
-      { title: "Offers and referrals — Mightyfin ERP HRM" },
+      { title: "Offers and referrals — New World Cargo HRM" },
       { name: "description", content: "Offers with their position against band, and referral rewards." },
-      { property: "og:title", content: "Offers and referrals — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Offers and referrals — New World Cargo HRM" },
       { property: "og:description", content: "Offers with their position against band, and referral rewards." },
     ],
   }),
@@ -63,7 +63,7 @@ function OffersPage() {
       status: String(o.status ?? "Draft"),
       expires: o.expiresOn ? String(o.expiresOn) : "—",
       approver: "HR Director",
-      entity: "Mighty Finance Solutions",
+      entity: "New World Cargo",
     })) as Offer[];
   }, []);
   const [letter, setLetter] = useState<{ id: string; name: string } | null>(null);

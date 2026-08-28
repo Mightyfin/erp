@@ -10,9 +10,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/payroll/")({
   head: () => ({
     meta: [
-      { title: "Payroll — Mightyfin ERP HRM" },
+      { title: "Payroll — New World Cargo HRM" },
       { name: "description", content: "Payroll administration: readiness, runs, exceptions, payments and statutory output." },
-      { property: "og:title", content: "Payroll — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Payroll — New World Cargo HRM" },
       { property: "og:description", content: "Payroll administration: readiness, runs, exceptions, payments and statutory output." },
     ],
   }),
@@ -22,6 +22,7 @@ export const Route = createFileRoute("/hrm/payroll/")({
 const areas: { label: string; status: "available" | "next"; detail: string; to?: string }[] = [
   { label: "Setup", status: "available", detail: "Pay groups, salary components, tax and contribution rules — shared with Configuration." },
   { label: "Inputs", status: "next", detail: "Time, attendance, leave and one-time earnings/deductions feeding this period's run." },
+  { label: "Salary advances", status: "available", to: "/hrm/payroll/salary-advances", detail: "Record advances and recover them through payslip deductions." },
   { label: "Runs", status: "available", to: "/hrm/payroll/runs", detail: "Create, calculate, validate and approve a payroll run with maker-checker sign-off." },
   { label: "Exceptions", status: "available", to: "/hrm/payroll/exceptions", detail: "Missing data, negative net pay, variances and duplicate detection before release." },
   { label: "Payments", status: "next", detail: "Bank files, mobile money and third-party remittances, released as a controlled stage." },

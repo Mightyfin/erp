@@ -13,6 +13,7 @@ public interface IJobsAdminService
     Task<JobDto> CloseJobAsync(Guid id, CancellationToken ct);
 
     Task<List<TenantRoleDto>> ListRolesAsync(CancellationToken ct);
+    Task<TenantRoleDto> CreateRoleAsync(RoleCreateRequest request, CancellationToken ct);
     Task<TenantRoleDto> UpdateRoleAsync(string roleKey, RoleUpdateRequest request, CancellationToken ct);
 
     Task<List<DataRetentionDto>> ListRetentionRulesAsync(CancellationToken ct);
@@ -97,7 +98,25 @@ public sealed class JobsAdminServiceImpl(IConfigRepository repo, IAuthzService a
     {
         authz.RequireAnyRole("hr_admin");
         var rows = await repo.ListRoleAssignmentsAsync(ct);
-        return rows.Select(r => new TenantRoleDto(r.Id, r.RoleKey, r.RoleName, r.Category, r.Active)).ToList();
+        return rows.OrderBy(r => r.Category).ThenBy(r => r.RoleName).Select(ToRoleDto).ToList();
+    }
+
+    public async Task<TenantRoleDto> CreateRoleAsync(RoleCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin");
+        var key = NormalizeRoleKey(request.RoleKey);
+        RequireNonEmpty(request.RoleName, "roleName");
+        if ((await repo.ListRoleAssignmentsAsync(ct)).Any(r => r.RoleKey.Equals(key, StringComparison.OrdinalIgnoreCase)))
+            throw new DomainException("role-key-taken", $"Role '{key}' already exists.");
+        var row = new TenantRoleAssignment
+        {
+            RoleKey = key,
+            RoleName = request.RoleName.Trim(),
+            Category = NormalizeCategory(request.Category),
+            PermissionsCsv = string.Join(',', NormalizePermissions(request.Permissions ?? [])),
+            Active = request.Active,
+        };
+        return ToRoleDto(await repo.CreateRoleAssignmentAsync(row, ct));
     }
 
     public async Task<TenantRoleDto> UpdateRoleAsync(string roleKey, RoleUpdateRequest request, CancellationToken ct)
@@ -107,10 +126,59 @@ public sealed class JobsAdminServiceImpl(IConfigRepository repo, IAuthzService a
         var row = rows.FirstOrDefault(r => r.RoleKey.Equals(roleKey, StringComparison.OrdinalIgnoreCase));
         if (row is null)
             throw new DomainException("role-not-found", $"Role '{roleKey}' is not managed for this tenant.");
-        row.Active = request.Active;
+        if (request.Active is not null) row.Active = request.Active.Value;
+        if (request.RoleName is not null)
+        {
+            RequireNonEmpty(request.RoleName, "roleName");
+            row.RoleName = request.RoleName.Trim();
+        }
+        if (request.Category is not null) row.Category = NormalizeCategory(request.Category);
+        if (request.Permissions is not null) row.PermissionsCsv = string.Join(',', NormalizePermissions(request.Permissions));
+        EnsureAdminAccessRemains(rows);
         row = await repo.UpdateRoleAssignmentAsync(row, ct);
-        return new TenantRoleDto(row.Id, row.RoleKey, row.RoleName, row.Category, row.Active);
+        return ToRoleDto(row);
     }
+
+    public static string[] PermissionKeys = HrmStaffAccess.Roles;
+
+    private static TenantRoleDto ToRoleDto(TenantRoleAssignment row) =>
+        new(row.Id, row.RoleKey, row.RoleName, row.Category, row.Active, ParseCsv(row.PermissionsCsv).DefaultIfEmpty(row.RoleKey).ToArray());
+
+    private static string NormalizeRoleKey(string? roleKey)
+    {
+        var key = (roleKey ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+        if (key.Length < 2 || key.Any(c => !(char.IsAsciiLetterOrDigit(c) || c == '_')))
+            throw new DomainException("invalid-role-key", "Role key must use letters, numbers and underscores only.");
+        return key;
+    }
+
+    private static string NormalizeCategory(string? category)
+    {
+        var value = (category ?? "hrm").Trim().ToLowerInvariant();
+        return value is "hrm" or "payroll" or "system" ? value : "hrm";
+    }
+
+    private static string[] NormalizePermissions(IEnumerable<string> permissions)
+    {
+        var allowed = new HashSet<string>(PermissionKeys, StringComparer.OrdinalIgnoreCase);
+        var values = permissions.SelectMany(p => ParseCsv(p))
+            .Select(p => p.Trim().ToLowerInvariant())
+            .Where(p => allowed.Contains(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (values.Length == 0)
+            throw new DomainException("invalid-permissions", "Select at least one HRMS permission for this role.");
+        return values;
+    }
+
+    private static void EnsureAdminAccessRemains(IEnumerable<TenantRoleAssignment> rows)
+    {
+        if (!rows.Any(r => r.Active && ParseCsv(r.PermissionsCsv).DefaultIfEmpty(r.RoleKey).Any(p => p.Equals("hr_admin", StringComparison.OrdinalIgnoreCase))))
+            throw new DomainException("last-admin-role", "At least one active role must grant HRMS administration.");
+    }
+
+    private static string[] ParseCsv(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     // ================= Retention rules =================
 

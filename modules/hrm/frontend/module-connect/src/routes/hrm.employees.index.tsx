@@ -16,7 +16,7 @@
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Archive, UserPlus } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, Pencil, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AppShell } from "@/platform/components/AppShell";
@@ -25,7 +25,6 @@ import { Async } from "@/platform/components/Async";
 import { ListPage } from "@/platform/components/ListPage";
 import type { ColumnDef } from "@/platform/components/ListPage";
 import { PageHeader } from "@/platform/components/PageHeader";
-import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { StatusBadge } from "@/platform/components/StatusBadge";
 import { feedback } from "@/platform/feedback";
 import { useAuth } from "@/platform/auth";
@@ -41,19 +40,14 @@ import { api } from "@/mock/service";
 import type { Employee } from "@/mock/types";
 import { useMock } from "@/platform/use-mock";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
-import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ExportButton } from "@/platform/components/ImportExport/ExportButton";
 
 export const Route = createFileRoute("/hrm/employees/")({
   head: () => ({
     meta: [
-      { title: "Employees — Mightyfin ERP HRM" },
+      { title: "Employees — New World Cargo HRM" },
       { name: "description", content: "Filterable employee directory across entities, branches and employment types." },
-      { property: "og:title", content: "Employees — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Employees — New World Cargo HRM" },
       { property: "og:description", content: "Filterable employee directory across entities, branches and employment types." },
     ],
   }),
@@ -66,6 +60,7 @@ const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 const ARCHIVE_ROLES = new Set(["hr_admin", "hr_ops"]);
 
 const MOCK_TYPE_OPTIONS = ["Permanent", "Fixed term", "Contractor", "Intern", "Part time"];
+const EMPLOYEE_PAGE_SIZE = 25;
 
 /** Extended row kept in sync with the backend's WorkerDto fields we need. */
 type EmployeeRow = Employee & { rawId?: string; isArchived?: boolean; rawStatus?: string };
@@ -77,23 +72,13 @@ function EmployeesPage() {
   const [archived, setArchived] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<EmployeeRow | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Mock-mode view chip (demo behaviour only — real mode uses the backend).
   const [view, setView] = useState("all");
 
   // Real backend: filters ride on the query params the ASP.NET list endpoint
   // already honours (search, status, workerType, includeArchived).
-  // M54.3: the operator's persisted shell scope (set by the switcher) is an
-  // org-unit id — send it explicitly so the list narrows when a branch is
-  // active; without it the page would always render the org-wide roster.
-  const shellScope = (() => {
-    try {
-      const raw = typeof localStorage !== "undefined" ? localStorage.getItem("erp.shell.state.v1") : null;
-      return raw ? (JSON.parse(raw) as { entityId?: string; branch?: string } | null) : null;
-    } catch {
-      return null;
-    }
-  })();
   const state = useApi(
     () =>
       USE_REAL
@@ -103,12 +88,12 @@ function EmployeesPage() {
               ...(statusFilter ? { status: statusFilter } : {}),
               ...(typeFilter ? { workerType: typeFilter } : {}),
               ...(archived ? { includeArchived: "true" } : {}),
-              ...(shellScope?.branch ? { orgUnitId: shellScope.branch } : {}),
-              pageSize: 100,
+              page,
+              pageSize: EMPLOYEE_PAGE_SIZE,
             })
             .then(
-              (page) =>
-                (Array.from(page.items ?? []) as Array<Record<string, unknown>>).map(
+              (result) => ({
+                items: (Array.from(result.items ?? []) as Array<Record<string, unknown>>).map(
                   (raw) =>
                     ({
                       ...(adaptWorkers([raw])[0] ?? ({} as Employee)),
@@ -117,13 +102,21 @@ function EmployeesPage() {
                       isArchived: Boolean(raw.isArchived),
                     }) as EmployeeRow,
                 ) as EmployeeRow[],
+                totalCount: Number(result.totalCount ?? 0),
+                page: Number((result as { page?: number }).page ?? page),
+                pageSize: Number((result as { pageSize?: number }).pageSize ?? EMPLOYEE_PAGE_SIZE),
+              }),
             )
-        : Promise.resolve([] as EmployeeRow[]),
-    [search, statusFilter, typeFilter, archived, shellScope?.branch ?? ""],
+        : Promise.resolve({ items: [] as EmployeeRow[], totalCount: 0, page: 1, pageSize: EMPLOYEE_PAGE_SIZE }),
+    [search, statusFilter, typeFilter, archived, page],
   );
 
   const mockState = useMock(() => api.employees());
-  const rows: EmployeeRow[] = USE_REAL ? (state.data ?? []) : mockState.data ?? [];
+  const rows: EmployeeRow[] = USE_REAL ? (state.data?.items ?? []) : mockState.data ?? [];
+  const totalCount = USE_REAL ? (state.data?.totalCount ?? 0) : rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / EMPLOYEE_PAGE_SIZE));
+  const pageStart = totalCount === 0 ? 0 : (page - 1) * EMPLOYEE_PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * EMPLOYEE_PAGE_SIZE, totalCount);
 
   const treeState = useApi<OrgTreeNode[]>(async () => {
     if (USE_REAL) return (await realApi.entityTree()) as OrgTreeNode[];
@@ -226,10 +219,18 @@ function EmployeesPage() {
             header: "Actions",
             defaultVisible: USE_REAL,
             cell: (e) => (
-              <Button size="sm" variant="outline" disabled={e.isArchived} onClick={() => setArchiveTarget(e)}>
-                <Archive className="mr-1 size-3.5" aria-hidden />
-                {e.isArchived ? "Archived" : "Archive"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/hrm/employees/$id/edit" params={{ id: e.rawId ?? e.id }}>
+                    <Pencil className="mr-1 size-3.5" aria-hidden />
+                    Edit
+                  </Link>
+                </Button>
+                <Button size="sm" variant="outline" disabled={e.isArchived} onClick={() => setArchiveTarget(e)}>
+                  <Archive className="mr-1 size-3.5" aria-hidden />
+                  {e.isArchived ? "Archived" : "Archive"}
+                </Button>
+              </div>
             ),
           },
         ] as ColumnDef<EmployeeRow>[])
@@ -239,7 +240,10 @@ function EmployeesPage() {
   // Real-mode view chips flip the archived filter at the API.
   const handleView = (next: string) => {
     setView(next);
-    if (USE_REAL) setArchived(next === "archived");
+    if (USE_REAL) {
+      setArchived(next === "archived");
+      setPage(1);
+    }
   };
 
   const clientFilters = USE_REAL
@@ -309,7 +313,6 @@ function EmployeesPage() {
         <PageHeader
           eyebrow="People"
           title="Employees"
-          meta={<ScopeBadge />}
           description={
             USE_REAL
               ? archived
@@ -319,11 +322,20 @@ function EmployeesPage() {
           }
           primaryAction={
             <div className="flex items-center gap-2">
-              <ImportTool onDone={() => state.reload()} />
-              <ExportButton 
-                status={statusFilter} 
-                type={typeFilter} 
-                archived={archived} 
+              <Button asChild variant="outline">
+                <Link to="/hrm/employees/import">
+                  <FileSpreadsheet className="mr-1 size-4" aria-hidden />
+                  Import
+                </Link>
+              </Button>
+              <ExportButton
+                typeKey="workers"
+                fileName="employees"
+                filter={[
+                  statusFilter ? `status=${statusFilter}` : "",
+                  typeFilter ? `workerType=${typeFilter}` : "",
+                  archived ? "includeArchived=true" : "",
+                ].filter(Boolean).join("&") || undefined}
               />
               <Button asChild>
                 <Link to="/hrm/employees/new">
@@ -349,32 +361,69 @@ function EmployeesPage() {
         </div>
 
         <Async state={USE_REAL ? state : mockState} rows={6}>
-          {(rendered) => (
-            <ListPage
-              rows={rendered as EmployeeRow[]}
-              columns={columns}
-              savedViews={views}
-              activeView={view}
-              onViewChange={handleView}
-              searchPlaceholder={USE_REAL ? "Search name, employee number, NRC or email" : "Search name, number or job title"}
-              searchFields={(e) => `${e.fullName} ${e.employeeNo} ${e.jobTitle} ${e.email ?? ""} ${e.nationalId ?? ""}`}
-              filters={clientFilters}
-              emptyBody={
-                archived
-                  ? "No archived employees — leavers will surface here when HR archives them."
-                  : "No employees found for the current filters."
-              }
-              rowHref={(e) => (
-                <Link
-                  to="/hrm/employees/$id"
-                  params={{ id: e.rawId ?? e.id }}
-                  className="text-xs font-medium text-primary underline underline-offset-2"
-                >
-                  Open
-                </Link>
-              )}
-            />
-          )}
+          {(rendered) => {
+            const renderedRows = USE_REAL ? ((rendered as { items: EmployeeRow[] }).items ?? []) : (rendered as EmployeeRow[]);
+            return (
+              <div className="space-y-4">
+                <ListPage
+                  rows={renderedRows}
+                  columns={columns}
+                  savedViews={views}
+                  activeView={view}
+                  onViewChange={handleView}
+                  searchPlaceholder={USE_REAL ? "Search name, employee number, NRC or email" : "Search name, number or job title"}
+                  searchFields={(e) => `${e.fullName} ${e.employeeNo} ${e.jobTitle} ${e.email ?? ""} ${e.nationalId ?? ""}`}
+                  filters={clientFilters}
+                  emptyBody={
+                    archived
+                      ? "No archived employees — leavers will surface here when HR archives them."
+                      : "No employees found for the current filters."
+                  }
+                  rowHref={(e) => (
+                    <Link
+                      to="/hrm/employees/$id"
+                      params={{ id: e.rawId ?? e.id }}
+                      className="text-xs font-medium text-primary underline underline-offset-2"
+                    >
+                      Open
+                    </Link>
+                  )}
+                />
+                {USE_REAL ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">
+                      Showing {pageStart}-{pageEnd} of {totalCount} employees
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      >
+                        <ChevronLeft className="mr-1 size-4" aria-hidden />
+                        Previous
+                      </Button>
+                      <span className="min-w-24 text-center text-xs text-muted-foreground">
+                        Page {page} of {totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      >
+                        Next
+                        <ChevronRight className="ml-1 size-4" aria-hidden />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          }}
         </Async>
 
         {archiveTarget && (
@@ -416,61 +465,6 @@ function labelize(status: string | undefined) {
     archived: "Archived",
   };
   return status ? (map[status] ?? status) : "Active";
-}
-
-/** M31 — shared import tool wired to /hrm/import/workers. */
-function ImportTool({ onDone }: { onDone?: () => void }) {
-  return <ImportDialog typeKey="workers" onDone={onDone} />;
-}
-
-/** M31 — export the roster as a server-generated CSV or XLSX (round-trips into the importer). */
-function ExportButton({ status, type, archived }: { status?: string; type?: string; archived?: boolean }) {
-  const [busy, setBusy] = useState(false);
-
-  async function handleExport(format: "csv" | "xlsx") {
-    setBusy(true);
-    try {
-      // M31b: Carry over active filters to the export URL.
-      const parts: string[] = [];
-      if (status) parts.push(`status=${status}`);
-      if (type) parts.push(`workerType=${type}`);
-      if (archived) parts.push(`includeArchived=true`);
-      if (format === "xlsx") parts.push(`format=xlsx`);
-      
-      const filter = parts.length > 0 ? parts.join("&") : undefined;
-      const blob = await realApi.importExportBlob("workers", filter);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `employees-${new Date().toISOString().slice(0, 10)}.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`Employee ${format.toUpperCase()} export downloaded.`);
-    } catch {
-      toast.error("Export is not available yet — the server refused the request.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2" disabled={busy}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          Export
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => handleExport("csv")}>
-          Export as CSV
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport("xlsx")}>
-          Export as XLSX
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 function ArchiveDialog({

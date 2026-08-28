@@ -63,6 +63,9 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<PublicHoliday> PublicHolidays => Set<PublicHoliday>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<TenantRoleAssignment> TenantRoleAssignments => Set<TenantRoleAssignment>();
+    public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
+    public DbSet<LocalCredentialLink> LocalCredentialLinks => Set<LocalCredentialLink>();
+    public DbSet<LocalSession> LocalSessions => Set<LocalSession>();
     public DbSet<HrUserBranchAssignment> UserBranchAssignments => Set<HrUserBranchAssignment>();
     public DbSet<RetentionRule> RetentionRules => Set<RetentionRule>();
 
@@ -110,6 +113,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<BenefitType> BenefitTypes => Set<BenefitType>();
     public DbSet<WorkerBenefitAllowance> WorkerBenefitAllowances => Set<WorkerBenefitAllowance>();
     public DbSet<BenefitClaim> BenefitClaims => Set<BenefitClaim>();
+    public DbSet<SalaryAdvance> SalaryAdvances => Set<SalaryAdvance>();
     public DbSet<PayGroup> PayGroups => Set<PayGroup>();
     public DbSet<PayPeriod> PayPeriods => Set<PayPeriod>();
     public DbSet<TaxSlab> TaxSlabs => Set<TaxSlab>();
@@ -180,6 +184,21 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<PublicHoliday>(modelBuilder, "public_holidays");
         ConfigureEntity<Job>(modelBuilder, "jobs", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<TenantRoleAssignment>(modelBuilder, "tenant_role_assignments", e => e.HasIndex(x => new { x.TenantId, x.RoleKey }).IsUnique());
+        ConfigureEntity<LocalUser>(modelBuilder, "local_users", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.NormalizedEmail }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.WorkerId }).HasFilter("worker_id IS NOT NULL");
+        });
+        ConfigureEntity<LocalSession>(modelBuilder, "local_sessions", e =>
+        {
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.LocalUserId, x.ExpiresAt });
+        });
+        ConfigureEntity<LocalCredentialLink>(modelBuilder, "local_credential_links", e =>
+        {
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.LocalUserId, x.ExpiresAt });
+        });
         ConfigureEntity<HrUserBranchAssignment>(modelBuilder, "hr_user_branch_assignments",
             e => e.HasIndex(x => new { x.TenantId, x.UserId, x.LocationId }).IsUnique());
         ConfigureEntity<RetentionRule>(modelBuilder, "retention_rules", e => e.HasIndex(x => new { x.TenantId, x.RecordType }).IsUnique());
@@ -212,7 +231,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<LeaveType>(modelBuilder, "leave_types", e => e.HasIndex(x => new { x.TenantId, x.Code }));
         ConfigureEntity<LeaveBalanceLedger>(modelBuilder, "leave_balance_ledger");
         ConfigureEntity<LeaveRequest>(modelBuilder, "leave_requests");
-        ConfigureEntity<AttendanceRecord>(modelBuilder, "attendance_records", e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate }));
+        ConfigureEntity<AttendanceRecord>(modelBuilder, "attendance_records", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate });
+            e.HasIndex(x => new { x.TenantId, x.OvertimeStatus, x.WorkDate });
+        });
         ConfigureEntity<AttendanceCorrection>(modelBuilder, "attendance_corrections");
         ConfigureEntity<ShiftDefinition>(modelBuilder, "shift_definitions", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<WorkerShiftAssignment>(modelBuilder, "worker_shift_assignments");
@@ -237,6 +260,11 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
             e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.BenefitTypeId, x.Year }).IsUnique());
         ConfigureEntity<BenefitClaim>(modelBuilder, "benefit_claims",
             e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status }));
+        ConfigureEntity<SalaryAdvance>(modelBuilder, "salary_advances", e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status });
+            e.HasIndex(x => new { x.TenantId, x.DeductFromPayslip, x.DeductionStartDate });
+        });
         ConfigureEntity<PayGroup>(modelBuilder, "pay_groups");
         ConfigureEntity<PayPeriod>(modelBuilder, "pay_periods", e => e.HasIndex(x => new { x.TenantId, x.PayGroupId, x.PeriodLabel }).IsUnique());
         ConfigureEntity<TaxSlab>(modelBuilder, "tax_slabs");

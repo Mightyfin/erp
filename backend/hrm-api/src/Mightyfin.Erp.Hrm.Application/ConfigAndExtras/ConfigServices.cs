@@ -140,9 +140,12 @@ public sealed record DqResult(string Rule, string Severity, Guid WorkerId, strin
 public interface IStatutoryExportService
 {
     Task<string> GenerateAsync(string exportType, Guid payPeriodId, CancellationToken ct);
+    Task<StatutoryExportPreviewDto> PreviewAsync(string exportType, Guid payPeriodId, CancellationToken ct);
     /// <summary>M23: aggregate statutory liability totals for one period.</summary>
     Task<StatutorySummaryDto> SummaryAsync(Guid payPeriodId, CancellationToken ct);
 }
+public sealed record StatutoryExportPreviewDto(string ExportType, string PeriodLabel, string Currency,
+    List<string> TemplateColumns, List<Dictionary<string, string>> Rows);
 
 /// <summary>Persistence contracts implemented by EF Core in Infrastructure.</summary>
 public interface IConfigRepository
@@ -185,6 +188,7 @@ public interface IConfigRepository
     Task<Job> CreateJobAsync(Job job, CancellationToken ct);
     Task<Job> UpdateJobAsync(Job job, CancellationToken ct);
     Task<List<TenantRoleAssignment>> ListRoleAssignmentsAsync(CancellationToken ct);
+    Task<TenantRoleAssignment?> GetRoleAssignmentAsync(string roleKey, CancellationToken ct);
     Task<TenantRoleAssignment> UpdateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct);
     Task<List<RetentionRule>> ListRetentionRulesAsync(CancellationToken ct);
     Task<RetentionRule> CreateRetentionRuleAsync(RetentionRule rule, CancellationToken ct);

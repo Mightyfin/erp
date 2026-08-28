@@ -56,6 +56,13 @@ public class WorkerPayrollProfile : Entity, IEffectiveDated
     /// letting HR mark which workers would be timesheet-paid when that mode
     /// arrives. Until then, every worker is paid on the salary basis.</summary>
     public string PayBasis { get; set; } = "salary"; // salary | timesheet
+    /// <summary>Payroll overtime category. ordinary uses the Employment Code
+    /// 48-hour weekly threshold and 208 monthly divisor; watchperson-guard uses
+    /// 60 hours and 240. Values stay on the profile so this remains payroll
+    /// configuration, not a hardcoded employee master assumption.</summary>
+    public string OvertimeCategory { get; set; } = "ordinary"; // ordinary | watchperson-guard
+    public decimal WeeklyOvertimeThresholdHours { get; set; } = 48;
+    public decimal MonthlyOvertimeDivisor { get; set; } = 208;
     public Guid StructureId { get; set; }
     public SalaryStructure? Structure { get; set; }
     public Guid PayGroupId { get; set; }
@@ -88,6 +95,9 @@ public class BenefitType : Entity
     /// worker-specific allowance exists. 0 = no cap configured.</summary>
     public decimal AnnualCap { get; set; }
     public bool RequiresEvidence { get; set; }
+    /// <summary>When enabled, the worker's annual allowance is paid through
+    /// payroll as a monthly earning. When disabled, it remains claim-only.</summary>
+    public bool IncludeInPayroll { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
@@ -122,6 +132,28 @@ public class BenefitClaim : Entity
     public DateTimeOffset? DecidedAt { get; set; }
     public string? PaidBySubjectId { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
+}
+
+/// <summary>Salary advance issued to an employee. When DeductFromPayslip is
+/// enabled, payroll recovers the configured instalment from future payslips
+/// until the advance amount has been fully recovered.</summary>
+public class SalaryAdvance : Entity
+{
+    public Guid WorkerId { get; set; }
+    public Worker? Worker { get; set; }
+    public decimal Amount { get; set; }
+    public decimal InstallmentAmount { get; set; }
+    public string Currency { get; set; } = "ZMW";
+    public DateOnly IssueDate { get; set; }
+    public DateOnly DeductionStartDate { get; set; }
+    public bool DeductFromPayslip { get; set; }
+    public string Status { get; set; } = "active"; // active | settled | cancelled
+    public string? Reason { get; set; }
+    public string? Reference { get; set; }
+    public string? CreatedBySubjectId { get; set; }
+    public string? CancelledBySubjectId { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
+    public string? CancellationReason { get; set; }
 }
 
 /// <summary>J-groups 03-04: Pay group defining frequency, calendar and currency.</summary>

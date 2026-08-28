@@ -28,24 +28,28 @@ public sealed class BenefitServiceImpl(
 
     public async Task<List<BenefitTypeDto>> ListBenefitTypesAsync(CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_admin", "hr_ops", "employee");
+        authz.RequireAnyRole("hr_admin", "hr_ops", "employee", "payroll");
         var types = await repo.ListBenefitTypesAsync(ct);
         return types.Select(t => new BenefitTypeDto(t.Id, t.Code, t.Name, t.Description,
-            t.AnnualCap, t.RequiresEvidence, t.IsActive)).ToList();
+            t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive)).ToList();
     }
 
     public async Task<BenefitTypeDto> CreateBenefitTypeAsync(BenefitTypeCreateRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_admin");
-        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name))
+        var code = NormalizeCode(request.Code);
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(request.Name))
             throw new DomainException("benefit-type-invalid", "Code and name are required.");
-        var existing = await repo.GetBenefitTypeByCodeAsync(request.Code, ct);
-        if (existing is not null)
-            throw new DomainException("benefit-type-duplicate", $"A benefit type with code {request.Code} already exists.");
+        if (request.AnnualCap < 0)
+            throw new DomainException("benefit-type-invalid", "Annual cap cannot be negative.");
+        var types = await repo.ListBenefitTypesAsync(ct);
+        if (types.Any(x => NormalizeCode(x.Code) == code || SameName(x.Name, request.Name)))
+            throw new DomainException("benefit-type-duplicate", "A benefit type with this code or name already exists.");
         var type = new BenefitType
         {
-            Code = request.Code, Name = request.Name, Description = request.Description,
+            Code = code, Name = request.Name.Trim(), Description = request.Description?.Trim(),
             AnnualCap = request.AnnualCap, RequiresEvidence = request.RequiresEvidence,
+            IncludeInPayroll = request.IncludeInPayroll,
             IsActive = true,
         };
         await repo.CreateBenefitTypeAsync(type, ct);
@@ -58,11 +62,21 @@ public sealed class BenefitServiceImpl(
         var types = await repo.ListBenefitTypesAsync(ct);
         var type = types.FirstOrDefault(x => x.Id == id)
             ?? throw new DomainException("benefit-type-not-found", "Benefit type not found.");
-        type.Code = request.Code;
-        type.Name = request.Name;
-        type.Description = request.Description;
+        var code = NormalizeCode(request.Code);
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(request.Name))
+            throw new DomainException("benefit-type-invalid", "Code and name are required.");
+        if (request.AnnualCap < 0)
+            throw new DomainException("benefit-type-invalid", "Annual cap cannot be negative.");
+        var duplicate = types.FirstOrDefault(x => x.Id != id &&
+            (NormalizeCode(x.Code) == code || SameName(x.Name, request.Name)));
+        if (duplicate is not null)
+            throw new DomainException("benefit-type-duplicate", "A benefit type with this code or name already exists.");
+        type.Code = code;
+        type.Name = request.Name.Trim();
+        type.Description = request.Description?.Trim();
         type.AnnualCap = request.AnnualCap;
         type.RequiresEvidence = request.RequiresEvidence;
+        type.IncludeInPayroll = request.IncludeInPayroll;
         type.IsActive = request.IsActive;
         await repo.UpdateBenefitTypeAsync(type, ct);
         return MapType(type);
@@ -71,16 +85,28 @@ public sealed class BenefitServiceImpl(
     public async Task DeleteBenefitTypeAsync(Guid id, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_admin");
+        if (await repo.BenefitTypeHasUsageAsync(id, ct))
+            throw new DomainException("benefit-type-in-use", "This benefit type has employee allowances or claims and cannot be deleted. Set it inactive instead.");
         await repo.DeleteBenefitTypeAsync(id, ct);
     }
 
+    private static bool SameName(string existing, string incoming) =>
+        string.Equals(existing.Trim(), incoming.Trim(), StringComparison.OrdinalIgnoreCase);
+
     public async Task<List<BenefitAllowanceDto>> ListAllowancesAsync(Guid? workerId, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_admin", "hr_ops", "manager");
+        authz.RequireAnyRole("hr_admin", "hr_ops", "manager", "payroll");
         if (IsEmployeeOnly)
             throw new DomainException("worker-access-denied", "Allowances are managed by HR only.");
         var allowances = await repo.ListAllowancesAsync(workerId, ct);
-        return allowances.Select(a => new BenefitAllowanceDto(a.Id, a.WorkerId,
+        return allowances
+            .GroupBy(a => new { a.WorkerId, a.BenefitTypeId, a.Year })
+            .Select(g => g.OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt).First())
+            .OrderBy(a => a.Worker?.LastName)
+            .ThenBy(a => a.Worker?.FirstName)
+            .ThenBy(a => a.BenefitType?.Name)
+            .ThenByDescending(a => a.Year)
+            .Select(a => new BenefitAllowanceDto(a.Id, a.WorkerId,
             a.Worker?.FullName ?? $"Worker {a.WorkerId}", a.Worker?.EmployeeNo,
             a.BenefitType?.Code ?? "?", a.BenefitType?.Name ?? "?",
             a.AnnualAmount, a.Year)).ToList();
@@ -91,12 +117,16 @@ public sealed class BenefitServiceImpl(
         authz.RequireAnyRole("hr_admin", "hr_ops");
         var worker = await workers.GetByIdAsync(request.WorkerId, ct)
             ?? throw new DomainException("worker-not-found", "Employee not found.");
-        var type = await repo.GetBenefitTypeByCodeAsync(request.BenefitTypeCode, ct)
-            ?? throw new DomainException("benefit-type-not-found", $"Unknown benefit type {request.BenefitTypeCode}.");
+        var code = NormalizeCode(request.BenefitTypeCode);
+        var type = await repo.GetBenefitTypeByCodeAsync(code, ct)
+            ?? throw new DomainException("benefit-type-not-found", $"Unknown benefit type {code}.");
         if (!type.IsActive)
             throw new DomainException("benefit-type-inactive", "Inactive benefit types cannot receive allowances.");
         if (request.AnnualAmount < 0)
             throw new DomainException("benefit-allowance-invalid", "The annual amount cannot be negative.");
+        if (request.AnnualAmount > type.AnnualCap)
+            throw new DomainException("benefit-allowance-over-cap",
+                $"{type.Name} allowance cannot exceed the configured annual cap of {type.AnnualCap:N2}.");
         var allowance = new WorkerBenefitAllowance
         {
             WorkerId = request.WorkerId,
@@ -105,6 +135,17 @@ public sealed class BenefitServiceImpl(
             Year = request.Year,
         };
         await repo.SetAllowanceAsync(allowance, ct);
+    }
+
+    public async Task DeleteAllowanceAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "hr_ops");
+        var allowance = await repo.GetAllowanceByIdAsync(id, ct)
+            ?? throw new DomainException("benefit-allowance-not-found", "Benefit assignment not found.");
+        if (await repo.AllowanceHasClaimsAsync(allowance.WorkerId, allowance.BenefitTypeId, allowance.Year, ct))
+            throw new DomainException("benefit-allowance-has-claims",
+                "This assignment has benefit claims for the same employee and year, so it cannot be deleted. Edit the amount instead.");
+        await repo.DeleteAllowanceAsync(allowance, ct);
     }
 
     public async Task<(List<BenefitClaimDto> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct)
@@ -127,10 +168,14 @@ public sealed class BenefitServiceImpl(
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
         await RequireWorkerScopeAsync(request.WorkerId, ct);
 
-        var type = await repo.GetBenefitTypeByCodeAsync(request.BenefitTypeCode, ct)
-            ?? throw new DomainException("benefit-type-not-found", $"Unknown benefit type {request.BenefitTypeCode}.");
+        var code = NormalizeCode(request.BenefitTypeCode);
+        var type = await repo.GetBenefitTypeByCodeAsync(code, ct)
+            ?? throw new DomainException("benefit-type-not-found", $"Unknown benefit type {code}.");
         if (!type.IsActive)
             throw new DomainException("benefit-type-inactive", "Inactive benefit types cannot be claimed.");
+        if (type.IncludeInPayroll)
+            throw new DomainException("benefit-claim-payroll-benefit",
+                $"{type.Name} is paid through payroll and cannot be submitted as a separate claim.");
         if (type.RequiresEvidence && !request.EvidenceAttached)
             throw new DomainException("benefit-claim-evidence",
                 $"Evidence is required for {type.Name} claims.");
@@ -180,6 +225,13 @@ public sealed class BenefitServiceImpl(
             var amount = request.ApprovedAmount is null or <= 0 ? claim.AmountClaimed : request.ApprovedAmount;
             if (amount > claim.AmountClaimed + 0.0001m)
                 throw new DomainException("benefit-claim-invalid", "The approved amount cannot exceed the claimed amount.");
+            var year = claim.CreatedAt.Year == 1 ? DateTime.UtcNow.Year : claim.CreatedAt.Year;
+            var allowance = await repo.GetAllowanceAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+            var annualLimit = allowance?.AnnualAmount ?? claim.BenefitType?.AnnualCap ?? 0m;
+            var spent = await repo.SumApprovedAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+            if (annualLimit <= 0 || spent + (amount ?? 0m) > annualLimit + 0.0001m)
+                throw new DomainException("benefit-claim-over-limit",
+                    $"Approving {amount:N2} would exceed the remaining {claim.BenefitType?.Name ?? "benefit"} allowance ({annualLimit - spent:N2} available for {year}).");
             claim.Status = "approved";
             claim.ApprovedAmount = Math.Round(amount ?? 0m, 2);
         }
@@ -218,7 +270,10 @@ public sealed class BenefitServiceImpl(
     }
 
     private static BenefitTypeDto MapType(BenefitType t) =>
-        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IsActive);
+        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive);
+
+    private static string NormalizeCode(string code) =>
+        (code ?? "").Trim().ToLowerInvariant();
 
     private static BenefitClaimDto Map(BenefitClaim c) =>
         new(c.Id, c.WorkerId, c.Worker?.FullName ?? $"Employee {c.WorkerId}",

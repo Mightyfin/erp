@@ -5,7 +5,8 @@ public sealed record ManagementReportQuery(
     string? ToDate = null,
     Guid? LegalEntityId = null,
     Guid? OrgUnitId = null,
-    Guid? LocationId = null);
+    Guid? LocationId = null,
+    string? Format = null);
 
 public sealed record ReportDimensionDto(Guid Id, string Code, string Name);
 public sealed record ManagementReportFiltersDto(

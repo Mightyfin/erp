@@ -1641,7 +1641,7 @@ export const orgUnits: OrgUnit[] = [
   {
     id: "ou-zm1",
     kind: "Entity",
-    name: "Mighty Finance Solutions Industrial Services Zambia Ltd",
+    name: "New World Cargo Logistics Zambia Ltd",
     code: "ENT-ZM1",
     entityId: "ent-zm1",
     location: "Zambia",
@@ -1896,7 +1896,7 @@ export const orgUnits: OrgUnit[] = [
   {
     id: "ou-zm2",
     kind: "Entity",
-    name: "Mighty Finance Solutions Copperbelt Services Ltd",
+    name: "New World Cargo Copperbelt Services Ltd",
     code: "ENT-ZM2",
     entityId: "ent-zm2",
     location: "Zambia",
@@ -2044,7 +2044,7 @@ export const orgUnits: OrgUnit[] = [
   {
     id: "ou-zm3",
     kind: "Entity",
-    name: "Mighty Finance Solutions Engineering Zambia Ltd",
+    name: "New World Cargo Engineering Zambia Ltd",
     code: "ENT-ZM3",
     entityId: "ent-zm3",
     location: "Zambia",

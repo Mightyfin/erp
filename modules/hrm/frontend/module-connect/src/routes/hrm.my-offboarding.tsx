@@ -17,7 +17,7 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/my-offboarding")({
   head: () => ({
     meta: [
-      { title: "My resignation — Mightyfin ERP HRM" },
+      { title: "My resignation — New World Cargo HRM" },
       { name: "description", content: "Submit a resignation request and track its status." },
     ],
   }),

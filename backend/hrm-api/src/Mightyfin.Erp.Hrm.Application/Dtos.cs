@@ -7,7 +7,7 @@ namespace Mightyfin.Erp.Hrm.Application;
 // ===================== Workers =====================
 
 public sealed record WorkerListFilters(
-    string? Search, string? Status, Guid? OrgUnitId, Guid? LocationId,
+    string? Search, string? Status, Guid? LegalEntityId, Guid? OrgUnitId, Guid? LocationId,
     string? WorkerType, string? Grade, bool IncludeArchived = false,
     int Page = 1, int PageSize = 25);
 
@@ -141,17 +141,32 @@ public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsA
     List<SalaryStructureItemUpsert>? Items = null);
 
 public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
+public sealed record PayrollRunUpdate(Guid PayPeriodId, Guid PayGroupId, string? ApprovalNote = null);
+public sealed record PayrollRunPreflightDto(Guid PayPeriodId, Guid PayGroupId, Guid? LocationId,
+    bool Ready, int IncludedWorkerCount, int WarningCount, List<PayrollRunPreflightCheckDto> Checks);
+public sealed record PayrollRunPreflightCheckDto(string Id, string Label, string State, string Detail, int Count);
+public sealed record PayrollCalculationReadinessDto(Guid RunId, bool Ready, int IncludedWorkerCount,
+    int BlockingCount, int WarningCount, List<PayrollCalculationReadinessCheckDto> Checks,
+    List<PayrollCalculationReadinessIssueDto> Issues);
+public sealed record PayrollCalculationReadinessCheckDto(string Id, string Label, string State, string Detail, int Count);
+public sealed record PayrollCalculationReadinessIssueDto(Guid? WorkerId, string EmployeeNo, string WorkerName,
+    string Issue, string Severity);
 // M41 Gap 3: PayBasis appended as an optional field so existing callers stay binary-compatible.
 public sealed record WorkerPayrollProfileCreate(Guid WorkerId, Guid PayGroupId, string EffectiveFrom,
-    List<WorkerComponentValueCreate> Values, string? PayBasis = null);
+    List<WorkerComponentValueCreate> Values, string? PayBasis = null,
+    string? OvertimeCategory = null, decimal? WeeklyOvertimeThresholdHours = null,
+    decimal? MonthlyOvertimeDivisor = null);
 public sealed record WorkerComponentValueCreate(Guid ComponentId, string? ComponentCode = null, decimal Amount = 0);
 
 // M41 Gap 3: pay-basis control update (salary | timesheet). Timesheet pay is
 // not implemented yet — the flag is a planning control for HR.
 public sealed record PayBasisUpdateRequest(string PayBasis);
+public sealed record OvertimePolicyUpdateRequest(string OvertimeCategory,
+    decimal? WeeklyOvertimeThresholdHours = null, decimal? MonthlyOvertimeDivisor = null);
 public sealed record WorkerPayrollProfileDto(Guid Id, Guid WorkerId, string? WorkerName, Guid PayGroupId, string? PayGroupName, string EffectiveFrom, List<WorkerComponentValueDto> Values,
     // M41 Gap 3: pay-basis control — "salary" | "timesheet" (timesheet pay not yet implemented; planning flag)
-    string PayBasis = "salary");
+    string PayBasis = "salary", string OvertimeCategory = "ordinary",
+    decimal WeeklyOvertimeThresholdHours = 48, decimal MonthlyOvertimeDivisor = 208);
 public sealed record WorkerComponentValueDto(Guid ComponentId, string ComponentCode, string ComponentName, decimal Amount);
 public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, int EmployeeCount,
     decimal TotalGross, decimal TotalDeductions, decimal TotalNet, decimal TotalEmployerCost,
@@ -159,9 +174,11 @@ public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, i
     bool IsReversal = false, Guid? ReversesRunId = null,
     string? PreparedBySubjectId = null, string? ApprovedBySubjectId = null,
     string? ReleasedBySubjectId = null, string PaymentStatus = "not-created",
-    string? PaymentFileReference = null, string? PaymentApprovedBySubjectId = null,
-    string? PaymentReleasedBySubjectId = null, string? ReconciliationReference = null,
-    decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null);
+    string? PaymentFileReference = null, string? PaymentFileGeneratedBySubjectId = null,
+    string? PaymentApprovedBySubjectId = null, string? PaymentReleasedBySubjectId = null,
+    string? ReconciliationReference = null,
+    decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null,
+    Guid? PayPeriodId = null, Guid? PayGroupId = null, string? ApprovalNote = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,
@@ -186,6 +203,11 @@ public sealed record PayrollExceptionDecisionRequest(string Decision, string Rea
 public sealed record PayrollCorrectionRequest(string ComponentCode, decimal Amount, string Reason);
 public sealed record PayrollPaymentApprovalRequest(string? Note = null);
 public sealed record PayrollReconciliationRequest(string Reference, decimal ActualAmount, string? Note = null);
+public sealed record PayrollPaymentReadinessDto(
+    Guid RunId, bool Ready, int PayableCount, decimal TotalNet, int MissingBankDetailsCount,
+    List<PayrollPaymentReadinessIssueDto> Issues);
+public sealed record PayrollPaymentReadinessIssueDto(
+    Guid WorkerId, string EmployeeNo, string WorkerName, decimal NetPay, string Issue);
 public sealed record PayrollRunEventDto(Guid Id, string Action, string ActorSubjectId,
     string? FromStatus, string? ToStatus, string? Reason, string? DetailsJson, DateTimeOffset CreatedAt);
 
@@ -411,9 +433,16 @@ public sealed record PunchResultDto(Guid Id, Guid WorkerId, string WorkDate, str
 public sealed record AttendanceRecordDto(Guid Id, Guid WorkerId, string WorkerName, string WorkDate,
     string? ClockIn, string? ClockOut, string Source, string DerivedStatus, decimal TotalHours,
     decimal ScheduledHours = 0, decimal RegularHours = 0, decimal OvertimeHours = 0,
-    decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null);
+    decimal OvertimeMultiplier = 0, Guid? ShiftId = null, Guid? ImportBatchId = null,
+    string OvertimeStatus = "none", string? OvertimeDecisionReason = null,
+    string? OvertimeDecidedBySubjectId = null, DateTimeOffset? OvertimeDecidedAt = null,
+    Guid? OvertimePayrollRunId = null, Guid? OvertimePayrollLineId = null, string WorkerEmployeeNo = "");
 
 public sealed record ShiftCreateRequest(string Code, string Name, string StartTime, string EndTime,
+    int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
+    decimal WeekdayOvertimeMultiplier = 1.5m, decimal RestDayOvertimeMultiplier = 2,
+    decimal HolidayOvertimeMultiplier = 2);
+public sealed record ShiftUpdateRequest(string Name, string StartTime, string EndTime,
     int UnpaidBreakMinutes = 0, decimal StandardHours = 8, decimal DailyOvertimeThresholdHours = 8,
     decimal WeekdayOvertimeMultiplier = 1.5m, decimal RestDayOvertimeMultiplier = 2,
     decimal HolidayOvertimeMultiplier = 2);
@@ -428,9 +457,15 @@ public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, str
 public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
 public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount, List<string> Errors);
+public sealed record OvertimeImportRow(string EmployeeNo, string WorkDate, decimal OvertimeHours,
+    decimal? OvertimeMultiplier = null, string? Reason = null, string? Status = null);
+public sealed record OvertimeImportRequest(string FileName, List<OvertimeImportRow> Rows, bool MarkApproved = false);
+public sealed record OvertimeDecisionRequest(string Action, string? Reason = null);
 public sealed record AttendanceImportHistoryDto(Guid BatchId, string FileName, string Status,
     int RowCount, int ImportedCount, int UpdatedCount, int RejectedCount,
     string ImportedBySubjectId, DateTimeOffset CreatedAt);
+public sealed record TimeAuditEntryDto(Guid Id, string EntityType, string EntityId, string Action,
+    string ActorSubjectId, string? BeforeJson, string? AfterJson, DateTimeOffset CreatedAt);
 public sealed record LeaveAccrualRunRequest(string Period);
 public sealed record LeaveAccrualRunDto(Guid Id, string Period, string Status, int WorkerCount,
     int LedgerEntryCount, decimal TotalDaysAccrued, string RunBySubjectId, DateTimeOffset CreatedAt);
@@ -450,7 +485,7 @@ public sealed record LeaveEncashmentHistoryDto(Guid Id, Guid WorkerId, string Wo
     decimal Days, decimal GrossAmount, string Status, string CreatedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record TimeOperationsHistoryDto(List<AttendanceImportHistoryDto> Imports,
     List<LeaveAccrualRunDto> Accruals, List<LeaveBalanceAdjustmentDto> Adjustments,
-    List<LeaveEncashmentHistoryDto> Encashments);
+    List<LeaveEncashmentHistoryDto> Encashments, List<TimeAuditEntryDto>? TimeAudits = null);
 
 /// <summary>Roster day for the worker: expected shift, attendance, exceptions, cutoff.</summary>
 public sealed record RosterDayDto(string Date, string DayLabel, bool IsWorkingDay, string? ClockIn, string? ClockOut,
@@ -466,8 +501,9 @@ public sealed record JobCreateRequest(string Code, string Title, Guid? OrgUnitId
 public sealed record JobUpdateRequest(string? Title = null, Guid? OrgUnitId = null, string? Grade = null);
 public sealed record JobDto(Guid Id, string Code, string Title, Guid? OrgUnitId, string? OrgUnitName, string? Grade, string Status);
 
-public sealed record TenantRoleDto(Guid Id, string RoleKey, string RoleName, string Category, bool Active);
-public sealed record RoleUpdateRequest(bool Active);
+public sealed record TenantRoleDto(Guid Id, string RoleKey, string RoleName, string Category, bool Active, string[] Permissions);
+public sealed record RoleCreateRequest(string RoleKey, string RoleName, string Category, string[]? Permissions = null, bool Active = true);
+public sealed record RoleUpdateRequest(bool? Active = null, string? RoleName = null, string? Category = null, string[]? Permissions = null);
 
 public sealed record DataRetentionCreateRequest(string RecordType, int RetentionMonths, string? Description = null);
 public sealed record DataRetentionUpdateRequest(int? RetentionMonths = null, string? Description = null, bool? Active = null);

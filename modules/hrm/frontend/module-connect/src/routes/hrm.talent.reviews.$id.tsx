@@ -18,13 +18,13 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/talent/reviews/$id")({
   head: () => ({
     meta: [
-      { title: "Performance review — Mightyfin ERP HRM" },
+      { title: "Performance review — New World Cargo HRM" },
       {
         name: "description",
         content:
           "Self-assessment and manager rating side by side, the written summary, the evidence behind it, and how to acknowledge or challenge the outcome.",
       },
-      { property: "og:title", content: "Performance review — Mightyfin ERP HRM" },
+      { property: "og:title", content: "Performance review — New World Cargo HRM" },
       {
         property: "og:description",
         content:

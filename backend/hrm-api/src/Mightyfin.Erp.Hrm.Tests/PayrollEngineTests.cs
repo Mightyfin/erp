@@ -22,11 +22,17 @@ public class PayrollEngineTests
             => Task.FromResult(url);
     }
 
-    internal static (PayrollServiceImpl service, HrmDbContext ctx) Build(string url = "https://storage.example/payslip.pdf", string tenant = "test-tenant")
+    internal static (PayrollServiceImpl service, HrmDbContext ctx) Build(
+        string url = "https://storage.example/payslip.pdf",
+        string tenant = "test-tenant",
+        string[]? roles = null)
     {
         var ctx = TestDbContextFactory.Create(tenant);
         var repo = new PayrollRepository(ctx);
-        var service = new PayrollServiceImpl(repo, new PermissiveAuthz(), new FakeDocumentService(url));
+        var service = new PayrollServiceImpl(
+            repo,
+            new PermissiveAuthz { Roles = roles ?? ["hr_ops", "hr_admin", "payroll", "employee"] },
+            new FakeDocumentService(url));
         return (service, ctx);
     }
 
@@ -51,9 +57,9 @@ public class PayrollEngineTests
         var basic = Comp("basic", "earning", "fixed", statutory: false, priority: 10);
         var housing = Comp("housing", "earning", "fixed", statutory: false, priority: 11);
         var paye = Comp("paye", "tax", "slab", tied: "gross", statutory: true, priority: 90);
-        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true, priority: 91);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true, priority: 91);
         var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 92);
-        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "basic", rate: 5m, statutory: true, priority: 93);
+        var napsaEr = Comp("napsa-er", "employer-contribution", "percent-of", tied: "gross", rate: 5m, statutory: true, priority: 93);
         var nhimaEr = Comp("nhima-er", "employer-contribution", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 94);
         foreach (var c in new[] { basic, housing, paye, napsaEe, nhimaEe, napsaEr, nhimaEr }) ctx.SalaryComponents.Add(c);
 
@@ -68,8 +74,8 @@ public class PayrollEngineTests
 
         var rules = new[]
         {
-            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
-            new ContributionRule { Code = "napsa-er", Name = "NAPSA ER", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "napsa-er", Name = "NAPSA ER", Payer = "employer", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
             new ContributionRule { Code = "nhima-ee", Name = "NHIMA EE", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
             new ContributionRule { Code = "nhima-er", Name = "NHIMA ER", Payer = "employer", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         };
@@ -108,6 +114,186 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task CalculateRun_IncludesPayrollBenefitAllowancesAsEarnings()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, profile, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var lunch = new BenefitType
+        {
+            Code = "lunch",
+            Name = "Lunch",
+            AnnualCap = 12000m,
+            RequiresEvidence = false,
+            IncludeInPayroll = true,
+            IsActive = true,
+        };
+        ctx.BenefitTypes.Add(lunch);
+        ctx.WorkerBenefitAllowances.Add(new WorkerBenefitAllowance
+        {
+            WorkerId = profile.WorkerId,
+            BenefitTypeId = lunch.Id,
+            BenefitType = lunch,
+            AnnualAmount = 12000m,
+            Year = 2026,
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+
+        var line = await ctx.PayrollRunLines
+            .Include(l => l.Components)
+            .SingleAsync(l => l.RunId == run.Id);
+        Assert.Equal(31000m, line.GrossPay);
+        var benefit = line.Components.Single(c => c.ComponentCode == "benefit-lunch");
+        Assert.Equal("earning", benefit.ComponentType);
+        Assert.Equal(1000m, benefit.Amount);
+        Assert.Contains("annual allowance K12,000.00 / 12 months", benefit.Explanation);
+    }
+
+    [Fact]
+    public async Task CalculateRun_ExcludesArchivedWorkersEvenWhenTheirPayrollProfileRemains()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, activeProfile, basic, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+        var archivedWorker = TestWorker("ARCHIVED-001");
+        archivedWorker.Status = "archived";
+        archivedWorker.IsArchived = true;
+        ctx.Workers.Add(archivedWorker);
+
+        var archivedProfile = new WorkerPayrollProfile
+        {
+            WorkerId = archivedWorker.Id,
+            PayGroupId = group.Id,
+            EffectiveFrom = activeProfile.EffectiveFrom,
+            StructureId = activeProfile.StructureId,
+        };
+        archivedProfile.ComponentValues.Add(new WorkerComponentValue
+        {
+            ComponentId = basic.Id,
+            Component = basic,
+            Amount = 99999m,
+        });
+        ctx.WorkerPayrollProfiles.Add(archivedProfile);
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        var calculated = await service.CalculateRunAsync(run.Id, CancellationToken.None);
+        var lines = await ctx.PayrollRunLines.Where(line => line.RunId == run.Id).ToListAsync();
+
+        Assert.Equal(1, calculated.EmployeeCount);
+        Assert.Single(lines);
+        Assert.Equal(activeProfile.WorkerId, lines[0].WorkerId);
+        Assert.DoesNotContain(lines, line => line.WorkerId == archivedWorker.Id);
+    }
+
+    [Fact]
+    public async Task MissingBankDetails_WarnsButDoesNotBlockPayrollCalculationOrApproval()
+    {
+        var (service, ctx) = Build();
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+
+        var readiness = await service.GetCalculationReadinessAsync(run.Id, CancellationToken.None);
+        var bankCheck = Assert.Single(readiness.Checks.Where(check => check.Id == "bank-details"));
+        Assert.Equal("warn", bankCheck.State);
+        Assert.True(readiness.Ready);
+
+        var calculated = await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(item => item.RunId == run.Id);
+        Assert.False(line.HasException);
+        Assert.Equal(0, calculated.ExceptionCount);
+
+        var approved = await service.ApproveRunAsync(run.Id, "Payment details will be completed before bank-file generation.", CancellationToken.None, "reviewer");
+        Assert.Equal("approved", approved.Status);
+    }
+
+    [Fact]
+    public async Task CalculateRun_UsesRecordedOvertimeDivisorForWatchpersonGuard()
+    {
+        var (service, ctx) = Build(tenant: "payroll-overtime-divisor");
+        var (group, _, p2, profile, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+        profile.OvertimeCategory = "watchperson-guard";
+        profile.WeeklyOvertimeThresholdHours = 60m;
+        profile.MonthlyOvertimeDivisor = 240m;
+        ctx.AttendanceRecords.Add(new AttendanceRecord
+        {
+            WorkerId = profile.WorkerId,
+            WorkDate = new DateOnly(2026, 7, 10),
+            ClockIn = new TimeOnly(8, 0),
+            ClockOut = new TimeOnly(18, 0),
+            Source = "device-import",
+            DerivedStatus = "present",
+            TotalHours = 10m,
+            RegularHours = 8m,
+            OvertimeHours = 2m,
+            OvertimeMultiplier = 1.5m,
+            OvertimeHourlyDivisor = 240m,
+            OvertimeRuleCode = "watchperson-guard",
+            OvertimeStatus = "approved",
+        });
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+
+        var line = await ctx.PayrollRunLines
+            .Include(l => l.Components)
+            .SingleAsync(l => l.RunId == run.Id);
+        var overtime = line.Components.Single(c => c.ComponentCode == "overtime");
+        Assert.Equal(312.50m, overtime.Amount);
+        Assert.Equal(30312.50m, line.GrossPay);
+        Assert.Contains("configured hourly divisor", overtime.Explanation);
+    }
+
+    [Fact]
+    public async Task ReleaseRun_BlocksPayrollOfficerWhoApprovedSameRun()
+    {
+        var (service, ctx) = Build(tenant: "payroll-self-release", roles: ["payroll"]);
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+        await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Test release guard after exception review"), CancellationToken.None, "payroll-user");
+        await service.ApproveRunAsync(run.Id, "reviewed", CancellationToken.None, "payroll-user");
+
+        var error = await Assert.ThrowsAsync<DomainException>(() =>
+            service.ReleaseRunAsync(run.Id, CancellationToken.None, "payroll-user"));
+        Assert.Equal("run-self-release", error.Code);
+    }
+
+    [Fact]
+    public async Task ReleaseRun_AllowsHrAdminToApproveAndReleaseSameRun()
+    {
+        var (service, ctx) = Build(tenant: "admin-self-release", roles: ["hr_admin"]);
+        var (group, _, p2, _, _, _, _, _, _, _, _) = await SeedStackAsync(ctx);
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(p2.Id, group.Id), CancellationToken.None, "preparer");
+        await service.LockRunAsync(run.Id, CancellationToken.None, "preparer");
+        await service.CalculateRunAsync(run.Id, CancellationToken.None, "preparer");
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        if (line.HasException)
+            await service.DecideExceptionAsync(run.Id, line.Id,
+                new PayrollExceptionDecisionRequest("waived", "Top admin reviewed generated exception"), CancellationToken.None, "admin-user");
+        await service.ApproveRunAsync(run.Id, "top admin reviewed", CancellationToken.None, "admin-user");
+        var released = await service.ReleaseRunAsync(run.Id, CancellationToken.None, "admin-user");
+
+        Assert.Equal("released", released.Status);
+        Assert.Equal("admin-user", released.ApprovedBySubjectId);
+        Assert.Equal("admin-user", released.ReleasedBySubjectId);
+    }
+
+    [Fact]
     public async Task Ytd_AccumulatesAcrossReleasedRunsInSameTaxYear()
     {
         var (service, ctx) = Build();
@@ -116,15 +302,15 @@ public class PayrollEngineTests
 
         await RunLifecycleAsync(service, new PayrollRunCreate(p1.Id, group.Id));
 
-        // July: gross 30,000 with deductions 10,226 (PAYE 8,726 + NAPSA 1,250 + NHIMA 250).
+        // July: gross 30,000 with deductions 10,476 (PAYE 8,726 + NAPSA 1,500 + NHIMA 250).
         await RunLifecycleAsync(service, new PayrollRunCreate(p2.Id, group.Id));
 
         var slips = await ctx.Payslips.ToListAsync();
         var july = slips.Single(s => s.YtdGross == "60000.00");
-        // YTD includes June's released run: gross 60,000, tax 20,452, net 39,548.
+        // YTD includes June's released run: gross 60,000, deductions 20,952, net 39,048.
         Assert.Equal("60000.00", july.YtdGross);
-        Assert.Equal("20452.00", july.YtdTax);
-        Assert.Equal("39548.00", july.YtdNet);
+        Assert.Equal("20952.00", july.YtdTax);
+        Assert.Equal("39048.00", july.YtdNet);
 
         var june = slips.Single(s => s.YtdGross == "30000.00");
         Assert.Equal("30000.00", june.YtdGross);
@@ -209,8 +395,8 @@ public class PayrollEngineTests
         var replacement = slips.First();
         // YTD = this run only (prior run reversed): 30,000 gross.
         Assert.Equal("30000.00", replacement.YtdGross);
-        Assert.Equal("10226.00", replacement.YtdTax);
-        Assert.Equal("19774.00", replacement.YtdNet);
+        Assert.Equal("10476.00", replacement.YtdTax);
+        Assert.Equal("19524.00", replacement.YtdNet);
     }
 
     [Fact]
@@ -228,10 +414,10 @@ public class PayrollEngineTests
         var paye = report.Rows.Single(r => r.ComponentCode == "paye");
         Assert.Equal(8726m, paye.TotalAmount);
         var napsaEr = report.Rows.Single(r => r.ComponentCode == "napsa-er");
-        Assert.Equal(1250m, napsaEr.TotalAmount);
+        Assert.Equal(1500m, napsaEr.TotalAmount);
         Assert.Equal("employer", napsaEr.Payer);
-        // Employer liability total = NAPSA ER 1250 + NHIMA ER 250 = 1500.
-        Assert.Equal(1500m, report.TotalStatutory);
+        // Employer liability total = NAPSA ER 1500 + NHIMA ER 250 = 1750.
+        Assert.Equal(1750m, report.TotalStatutory);
     }
 
     [Fact]
@@ -307,7 +493,7 @@ public class M34RunPayslipTests
         var ctx = TestDbContextFactory.Create("m34-tenant");
         var basic = Comp("basic", "earning", "fixed", statutory: false, priority: 10);
         var paye = Comp("paye", "tax", "slab", tied: "gross", statutory: true, priority: 90);
-        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "basic", rate: 5m, statutory: true, priority: 91);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true, priority: 91);
         var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 92);
         foreach (var c in new[] { basic, paye, napsaEe, nhimaEe }) ctx.SalaryComponents.Add(c);
         foreach (var s in new[]
@@ -319,7 +505,7 @@ public class M34RunPayslipTests
         }) ctx.TaxSlabs.Add(s);
         foreach (var r in new[]
         {
-            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA EE", Payer = "employee", Rate = 5m, Ceiling = 1861.80m, TiedComponentCode = "gross", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
             new ContributionRule { Code = "nhima-ee", Name = "NHIMA EE", Payer = "employee", Rate = 1m, TiedComponentCode = "basic", IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 },
         }) ctx.ContributionRules.Add(r);
 

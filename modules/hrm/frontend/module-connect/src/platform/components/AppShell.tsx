@@ -4,17 +4,36 @@ import {
   Building2,
   CheckSquare,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   LogOut,
   Menu,
   Moon,
   Search,
   Sun,
+  LayoutGrid,
+  ArrowDownToLine,
+  Briefcase,
+  Banknote,
+  CalendarDays,
+  Clock3,
+  Sparkles,
+  ShieldCheck,
+  Upload,
   UserRound,
+  Users,
+  WalletCards,
+  Settings,
+  UserCog,
+  BarChart3,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,24 +82,31 @@ function useVisibleSections(mod: ModuleDefinition, role: Role) {
 }
 
 /** Out-of-scope sections stay in the rail, greyed, so the roadmap is visible. */
-function SoonSection({ section }: { section: NavSection }) {
+function SoonSection({ section, collapsed = false }: { section: NavSection; collapsed?: boolean }) {
   const Icon = section.icon;
   return (
     <div
-      className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted/50"
+      className={cn(
+        "flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted/50",
+        collapsed ? "justify-center px-2" : "px-2.5",
+      )}
       aria-disabled="true"
       title={`${section.label} — coming soon`}
     >
       <Icon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 text-left">{section.label}</span>
-      <span className="shrink-0 rounded-full border border-rail-active px-1.5 py-0.5 text-[10px] font-normal">
-        Soon
-      </span>
+      {collapsed ? <span className="sr-only">{section.label}</span> : (
+        <>
+          <span className="min-w-0 flex-1 text-left">{section.label}</span>
+          <span className="shrink-0 rounded-full border border-rail-active px-1.5 py-0.5 text-[10px] font-normal">
+            Soon
+          </span>
+        </>
+      )}
     </div>
   );
 }
 
-function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNavigate?: () => void; collapsed?: boolean }) {
   return (
     <Link
       to={item.to}
@@ -88,14 +114,23 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       onClick={onNavigate}
       activeProps={{ className: "bg-rail-active text-rail-foreground font-medium" }}
       activeOptions={{ exact: true }}
-      className="block rounded-md px-3 py-1.5 text-sm text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+      className={cn(
+        "rounded-md text-sm text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+        collapsed ? "mx-auto flex size-8 items-center justify-center px-0 py-0" : "block px-3 py-1.5",
+      )}
+      title={item.label}
     >
-      {item.label}
+      {collapsed ? (
+        <>
+          <span className="size-1.5 rounded-full bg-current" aria-hidden />
+          <span className="sr-only">{item.label}</span>
+        </>
+      ) : item.label}
     </Link>
   );
 }
 
-function Section({ section, onNavigate }: { section: NavSection; onNavigate?: () => void }) {
+function Section({ section, onNavigate, collapsed = false }: { section: NavSection; onNavigate?: () => void; collapsed?: boolean }) {
   const Icon = section.icon;
   const { role } = useApp();
   const visible = (i: NavItem) => (!i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
@@ -104,8 +139,9 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
     ?.map((g) => ({ ...g, items: g.items.filter(visible) }))
     .filter((g) => g.items.length > 0);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const groupedItems = groups?.flatMap((g) => g.items) ?? [];
   const childActive =
-    items?.some((i) => pathname.startsWith(i.to.split("/$")[0])) ?? false;
+    [...(items ?? []), ...groupedItems].some((i) => pathname.startsWith(i.to.split("/$")[0]));
   const [open, setOpen] = useState(childActive);
   useEffect(() => {
     if (childActive) setOpen(true);
@@ -118,11 +154,88 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
         onClick={onNavigate}
         activeProps={{ className: "bg-rail-active text-rail-foreground" }}
         activeOptions={{ exact: section.to === "/hrm" }}
-        className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+        className={cn(
+          "flex items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+          collapsed ? "justify-center px-2" : "px-2.5",
+        )}
+        title={section.label}
       >
         <Icon className="size-4 shrink-0" aria-hidden />
-        {section.label}
+        {collapsed ? <span className="sr-only">{section.label}</span> : section.label}
       </Link>
+    );
+  }
+
+  if (collapsed) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={section.label}
+            className={cn(
+              "mx-auto flex size-10 items-center justify-center rounded-md text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-active",
+              childActive && "bg-rail-active text-rail-foreground",
+            )}
+            title={section.label}
+          >
+            <Icon className="size-4 shrink-0" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="right"
+          align="start"
+          sideOffset={10}
+          className="w-72 rounded-lg border bg-card p-2 text-card-foreground shadow-xl"
+        >
+          <DropdownMenuLabel className="flex items-center gap-2 px-2 py-2 text-sm">
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Icon className="size-4" aria-hidden />
+            </span>
+            <span>{section.label}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <div className="max-h-[70vh] space-y-1 overflow-y-auto">
+            {items?.map((i) => (
+              <DropdownMenuItem key={i.to + i.label} asChild>
+                <Link
+                  to={i.to}
+                  params={i.params as never}
+                  onClick={onNavigate}
+                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2 text-sm"
+                >
+                  <span className="min-w-0 truncate">{i.label}</span>
+                  {pathname.startsWith(i.to.split("/$")[0]) ? (
+                    <span className="ml-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                  ) : null}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            {groups?.map((g) => (
+              <div key={g.label} className="pt-1">
+                <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {g.label}
+                </p>
+                {g.items.map((i) => (
+                  <DropdownMenuItem key={i.to + i.label} asChild>
+                    <Link
+                      to={i.to}
+                      params={i.params as never}
+                      onClick={onNavigate}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2 text-sm"
+                    >
+                      <span className="min-w-0 truncate">{i.label}</span>
+                      {pathname.startsWith(i.to.split("/$")[0]) ? (
+                        <span className="ml-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                      ) : null}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            ))}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
@@ -132,21 +245,29 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground"
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-md py-2 text-sm font-medium text-rail-muted transition-colors hover:bg-rail-active hover:text-rail-foreground",
+          collapsed ? "justify-center px-2" : "px-2.5",
+        )}
+        title={section.label}
       >
         <Icon className="size-4 shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1 text-left">{section.label}</span>
-        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+        {collapsed ? <span className="sr-only">{section.label}</span> : (
+          <>
+            <span className="min-w-0 flex-1 text-left">{section.label}</span>
+            <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
       </button>
       {open ? (
-        <div className="mt-0.5 space-y-0.5 border-l border-rail-active pl-3 ml-4">
-          {items?.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} />)}
+        <div className={cn("mt-0.5 space-y-0.5", collapsed ? "px-1" : "ml-4 border-l border-rail-active pl-3")}>
+          {items?.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
           {groups?.map((g) => (
             <div key={g.label} className="pt-2">
-              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-rail-muted/80">
+              <p className={cn("pb-1 text-[11px] font-semibold uppercase tracking-wide text-rail-muted/80", collapsed ? "sr-only" : "px-3")}>
                 {g.label}
               </p>
-              {g.items.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} />)}
+              {g.items.map((i) => <NavLink key={i.to + i.label} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
             </div>
           ))}
         </div>
@@ -155,7 +276,7 @@ function Section({ section, onNavigate }: { section: NavSection; onNavigate?: ()
   );
 }
 
-function RailContent({ onNavigate }: { onNavigate?: () => void }) {
+function RailContent({ onNavigate, collapsed = false, onToggleCollapsed }: { onNavigate?: () => void; collapsed?: boolean; onToggleCollapsed?: () => void }) {
   const { role } = useApp();
   const sections = useVisibleSections(hrmModule, role);
   const main = sections.filter((s) => s.id !== "configuration");
@@ -163,33 +284,55 @@ function RailContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 py-4">
-        <p className="px-2 text-xs font-semibold uppercase tracking-wide text-rail-muted">Module</p>
-        <p className="px-2 text-sm font-semibold text-rail-foreground">{hrmModule.name}</p>
+      <div className={cn("flex items-center gap-2 px-3 py-4", collapsed ? "flex-col justify-center px-2" : "justify-between")}>
+        {collapsed ? (
+          <span className="flex size-9 items-center justify-center rounded-md bg-rail-active" title={hrmModule.name}>
+            <Users className="size-4 text-rail-foreground" aria-hidden />
+            <span className="sr-only">{hrmModule.name}</span>
+          </span>
+        ) : (
+          <div>
+            <p className="px-2 text-xs font-semibold uppercase tracking-wide text-rail-muted">Module</p>
+            <p className="px-2 text-sm font-semibold text-rail-foreground">{hrmModule.name}</p>
+          </div>
+        )}
+        {onToggleCollapsed ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="hidden size-8 text-rail-muted hover:bg-rail-active hover:text-rail-foreground lg:inline-flex"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? "Expand side menu" : "Collapse side menu"}
+            title={collapsed ? "Expand side menu" : "Collapse side menu"}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" aria-hidden /> : <PanelLeftClose className="size-4" aria-hidden />}
+          </Button>
+        ) : null}
       </div>
       <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {main
           .filter((s) => isSectionEnabled(s.id))
           .map((s) => (
-            <Section key={s.id} section={s} onNavigate={onNavigate} />
+            <Section key={s.id} section={s} onNavigate={onNavigate} collapsed={collapsed} />
           ))}
         {main.some((s) => !isSectionEnabled(s.id)) ? (
           <div className="pt-3">
-            <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-rail-muted/70">
+            <p className={cn("pb-1 text-[10px] font-semibold uppercase tracking-wide text-rail-muted/70", collapsed ? "sr-only" : "px-2.5")}>
               Coming soon
             </p>
             {main
               .filter((s) => !isSectionEnabled(s.id))
               .map((s) => (
-                <SoonSection key={s.id} section={s} />
+                <SoonSection key={s.id} section={s} collapsed={collapsed} />
               ))}
           </div>
         ) : null}
       </nav>
       {config ? (
         <div className="border-t border-rail-active px-3 py-3">
-          <Section section={config} onNavigate={onNavigate} />
-          <p className="px-2.5 pt-1 text-[11px] text-rail-muted">
+          <Section section={config} onNavigate={onNavigate} collapsed={collapsed} />
+          <p className={cn("px-2.5 pt-1 text-[11px] text-rail-muted", collapsed && "sr-only")}>
             All setup and admin lives here.
           </p>
         </div>
@@ -208,11 +351,14 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const sections = useVisibleSections(hrmModule, role);
   const links = sections
     .filter((s) => isSectionEnabled(s.id))
-    .flatMap((s) =>
-      s.to
-        ? [{ label: s.label, to: s.to, params: undefined }]
-        : (s.items ?? []).map((i) => ({ label: `${s.label}: ${i.label}`, to: i.to, params: i.params })),
-    )
+    .flatMap((s) => {
+      if (s.to) return [{ label: s.label, to: s.to, params: undefined }];
+      const items = [
+        ...(s.items ?? []),
+        ...((s.groups ?? []).flatMap((g) => g.items)),
+      ];
+      return items.map((i) => ({ label: `${s.label}: ${i.label}`, to: i.to, params: i.params }));
+    })
     .filter((l) => isPathEnabled(l.to.split("/$")[0]));
 
   return (
@@ -285,6 +431,92 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </CommandGroup> : null}
       </CommandList>
     </CommandDialog>
+  );
+}
+
+type QuickAccessItem = { label: string; detail: string; to: string; icon: typeof Search; roles?: Role[] };
+type QuickAccessGroup = { label: string; items: QuickAccessItem[] };
+
+const QUICK_ACCESS_GROUPS: QuickAccessGroup[] = [
+  {
+    label: "Time & attendance",
+    items: [
+      { label: "Timesheets", detail: "Today, week, month and custom attendance views", to: "/hrm/time/timesheets", icon: Clock3 },
+      { label: "Import attendance", detail: "Bring in clock records through the shared importer", to: "/hrm/time/attendance/import", icon: Upload, roles: ["hr_ops", "hr_admin"] },
+      { label: "Overtime review", detail: "Review derived overtime before payroll", to: "/hrm/time/operations", icon: ShieldCheck, roles: ["manager", "hr_ops", "hr_admin"] },
+      { label: "My leave", detail: "View balances and leave requests", to: "/hrm/leave", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { label: "Employees", detail: "Find and manage the employee directory", to: "/hrm/employees", icon: Users },
+      { label: "My profile", detail: "View your own worker record", to: "/hrm/my-profile", icon: UserRound },
+      { label: "Organization chart", detail: "See reporting relationships", to: "/hrm/org-chart", icon: Users, roles: ["hr_ops", "hr_admin"] },
+    ],
+  },
+  {
+    label: "Payroll & benefits",
+    items: [
+      { label: "My payslips", detail: "View your payroll statements", to: "/hrm/payslips", icon: WalletCards },
+      { label: "Pay runs", detail: "Open payroll processing", to: "/hrm/payroll/runs", icon: Banknote, roles: ["payroll", "hr_admin"] },
+      { label: "Salary advances", detail: "Record advances and payslip deductions", to: "/hrm/payroll/salary-advances", icon: WalletCards, roles: ["hr_ops", "payroll", "hr_admin"] },
+      { label: "Benefits", detail: "Manage benefits and claims", to: "/hrm/benefits", icon: WalletCards, roles: ["hr_ops", "hr_admin", "payroll"] },
+    ],
+  },
+  {
+    label: "Performance & recruitment",
+    items: [
+      { label: "Performance cycles", detail: "Manage reviews and cycles", to: "/hrm/performance", icon: Sparkles },
+      { label: "Goals", detail: "Track employee goals", to: "/hrm/talent/goals", icon: Sparkles },
+      { label: "Hiring operations", detail: "Manage recruitment work", to: "/hrm/recruitment/operations", icon: Briefcase, roles: ["hr_ops", "hr_admin", "manager"] },
+    ],
+  },
+  {
+    label: "Reports & setup",
+    items: [
+      { label: "Analytics", detail: "Review workforce analytics", to: "/hrm/analytics", icon: BarChart3, roles: ["hr_ops", "hr_admin"] },
+      { label: "Import and export", detail: "Use shared CSV and Excel tools", to: "/hrm/data/import-export", icon: ArrowDownToLine, roles: ["manager", "hr_ops", "hr_admin", "payroll"] },
+      { label: "HR setup", detail: "Configure employer and HR rules", to: "/hrm/configuration", icon: Settings, roles: ["hr_admin"] },
+      { label: "User access", detail: "Manage local users and roles", to: "/hrm/configuration/users", icon: UserCog, roles: ["hr_admin"] },
+    ],
+  },
+];
+
+function QuickAccessDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { role } = useApp();
+  const [query, setQuery] = useState("");
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
+  const needle = query.trim().toLowerCase();
+  const groups = QUICK_ACCESS_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => (!item.roles || item.roles.includes(role)) && (!needle || `${item.label} ${item.detail} ${group.label}`.toLowerCase().includes(needle))),
+  })).filter((group) => group.items.length > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Quick access</DialogTitle>
+          <DialogDescription>Jump to a common HRM task. These shortcuts open the real page and respect your role.</DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks…" className="pl-9" aria-label="Search quick access tasks" />
+        </div>
+        <div className="grid max-h-[58vh] gap-5 overflow-y-auto pr-1 sm:grid-cols-2">
+          {groups.map((group) => (
+            <section key={group.label} aria-labelledby={`quick-access-${group.label}`}>
+              <h3 id={`quick-access-${group.label}`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</h3>
+              <div className="space-y-2">
+                {group.items.map((item) => { const Icon = item.icon; return <Link key={item.to} to={item.to} onClick={() => onOpenChange(false)} className="group flex items-start gap-3 rounded-xl border bg-card p-3 transition hover:border-primary/40 hover:bg-surface-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Icon className="size-4" aria-hidden /></span><span className="min-w-0 flex-1"><span className="block font-medium">{item.label}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{item.detail}</span></span><ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden /></Link>; })}
+              </div>
+            </section>
+          ))}
+          {groups.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground sm:col-span-2">No quick access tasks matched “{query}”.</p> : null}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -367,7 +599,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worker: myWorker, user } = useAuth();
   const shellState = useApi(async () => {
     if (!USE_REAL) return null;
-    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections, orgUnitsTree] = await Promise.all([
+    const [legalEntities, locations, shellScope, notificationInbox, queue, leave, corrections] = await Promise.all([
       realApi.legalEntities().catch(() => []),
       realApi.locations().catch(() => ({ items: [] as unknown[] })),
       realApi.shell().catch(() => null),
@@ -375,10 +607,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       realApi.workflowQueue().catch(() => ({ items: [], totalCount: 0 })),
       realApi.leaveRequests({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
       realApi.timeCorrections({ page: 1, pageSize: 1 }).catch(() => ({ items: [], totalCount: 0 })),
-      // M54.3: the switcher's branches are org units (entity-tree) — the shell
-      // needs their names to label the top bar / overlay when an org-unit id
-      // is the active scope.
-      realApi.orgUnitsTree().catch(() => [] as unknown[]),
     ]);
     return {
       // The backend wraps list endpoints in a `{ items: [...] }` envelope, so
@@ -415,22 +643,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         countOpen(Array.isArray(queue?.items) ? queue.items : []) +
         countOpen(Array.isArray(leave?.items) ? leave.items : []) +
         countOpen(Array.isArray(corrections?.items) ? corrections.items : []),
-      // M54.3: flattened org units for scope-name resolution (work locations
-      // live under organisational units, so a location id may need an
-      // org-unit name when no work-location row exists).
-      orgUnits: flattenOrgUnits(orgUnitsTree),
-      // M54.3: keep the raw entity tree (recursive) so the switcher can build
-      // its branch rows directly from org units instead of work locations.
-      orgUnitsTreeRaw: orgUnitsTree,
     };
   }, []);
   const canApprove = useRoleGate()(APPROVER_ROLES);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railPreferenceReady, setRailPreferenceReady] = useState(false);
   const liveEntities = shellState.data?.legalEntities ?? [];
   const liveLocations = shellState.data?.locations ?? [];
   const pendingDecisions = shellState.data?.pendingDecisions ?? 0;
-  const orgUnits = shellState.data?.orgUnits ?? [];
-  const orgUnitsTree = (shellState.data?.orgUnitsTreeRaw as unknown[]) ?? [];
   const assignedIds = shellState.data?.assignedLocationIds ?? [];
   const entity = USE_REAL
     ? liveEntities.find((e) => e.id === entityId) ?? liveEntities[0]
@@ -439,29 +661,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? liveLocations.filter((location) => !entity || location.legalEntityId === entity.id)
     : (entity as { branches?: string[] })?.branches?.map((name) => ({ id: String(name), name: String(name) })) ?? [];
 
-  /** M54.3: flatten the recursive org-unit tree into a single lookup list. */
-  function flattenOrgUnits(tree: unknown[]): { id: string; name: string }[] {
-    const out: { id: string; name: string }[] = [];
-    const walk = (node: Record<string, unknown>) => {
-      if (typeof node?.id === "string") out.push({ id: node.id, name: String(node.name ?? node.id) });
-      const children = Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : [];
-      for (const child of children) walk(child);
-    };
-    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
-    return out;
-  }
-
   /** Tree used by the organisation switcher: every legal entity with its branches nested underneath. */
   const entityTree = (USE_REAL ? liveEntities : entities).map((e) => {
     const raw = e as Record<string, unknown>;
     const branches = USE_REAL
-      ? // M54.3: the switcher's branches are org units from the entity tree
-        // (workers belong to org units, not work locations). Live branch rows
-        // come from realApi.orgUnitsTree() nested under each legal entity;
-        // direct children of the entity are shown as switchable branches,
-        // with the assigned-id confinement check applied to both the tree
-        // branch ids and any of their descendant ids.
-        collectEntityBranches(orgUnitsTree, String(e.id), assignedIds)
+      ? liveLocations
+          .filter((l) => l.legalEntityId === String(e.id))
+          // M45: a confined operator only sees their assigned branches in the switcher.
+          .filter((l) => !assignedIds.length || assignedIds.includes(String(l.id)))
+          .map((l) => ({ id: String(l.id), name: String(l.name ?? l.id), type: String(l.type ?? "branch") }))
       : ((raw.branches as string[] | undefined) ?? []).map((name) => ({ id: String(name), name: String(name), type: "" }));
     return {
       entityId: String(e.id),
@@ -470,50 +678,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       branches,
     };
   });
-  /** M54.3: collect the switchable branch rows for an entity from the org-unit tree. */
-  function collectEntityBranches(
-    tree: unknown[],
-    entityId: string,
-    assignedIds: string[],
-  ): Array<{ id: string; name: string; type: string }> {
-    const out: Array<{ id: string; name: string; type: string }> = [];
-    // NOTE (M54.3): the backend's entity-tree endpoint returns the legal
-    // entity's direct children WITHOUT the entity root itself — so every
-    // top-level node in the response IS one of this entity's branches
-    // (org units such as Lusaka/Ndola).
-    for (const root of tree) {
-      const r = root as Record<string, unknown>;
-      out.push({ id: String(r.id ?? ""), name: String(r.name ?? r.id), type: String(r.unitType ?? "branch") || "branch" });
-      // M45: a confined operator only sees branches whose subtree overlaps their assignments.
-      if (!assignedIds.length || idsInSubtree(tree, String(r.id)).some((id) => assignedIds.includes(id))) {
-        const children = Array.isArray(r?.children) ? (r.children as Record<string, unknown>[]) : [];
-        const walk = (node: Record<string, unknown>) => {
-          out.push({ id: String(node.id ?? ""), name: String(node.name ?? node.id), type: String(node.unitType ?? "").toLowerCase() || "unit" });
-          for (const child of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(child);
-        };
-        for (const child of children) walk(child);
-      }
-    }
-    return out;
-  }
-  /** M54.3: every org-unit id reachable from a given subtree root (inclusive). */
-  function idsInSubtree(tree: unknown[], rootId: string): string[] {
-    const ids: string[] = [];
-    const walk = (node: Record<string, unknown>) => {
-      const nid = String(node.id ?? "");
-      if (nid === rootId) {
-        const collect = (n: Record<string, unknown>) => {
-          ids.push(String(n.id ?? ""));
-          for (const c of Array.isArray(n?.children) ? (n.children as Record<string, unknown>[]) : []) collect(c);
-        };
-        collect(node);
-        return;
-      }
-      for (const c of Array.isArray(node?.children) ? (node.children as Record<string, unknown>[]) : []) walk(c);
-    };
-    for (const root of tree) if (typeof root === "object" && root !== null) walk(root as Record<string, unknown>);
-    return ids;
-  }
   const pathname = useRouterState({ select: (st) => st.location.pathname });
 
   const inScope = isPathEnabled(pathname);
@@ -534,13 +698,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (raw) {
         const shell = JSON.parse(raw) as { entityId?: string; branch?: string } | null;
         if (shell?.branch) {
-          // M54.3: the persisted branch id may be an org unit (entity-tree)
-          // rather than a work location — resolve against both name sources.
           const loc = liveLocations.find((l) => l.id === shell.branch);
-          if (loc) return `Switching to ${loc.name}…`;
-          const unit = orgUnits.find((u) => u.id === shell.branch);
-          if (unit) return `Switching to ${unit.name}…`;
-          return "Switching to branch…";
+          return loc ? `Switching to ${loc.name}…` : "Switching to branch…";
         }
         if (shell?.entityId) {
           const e = liveEntities.find((l) => String(l.id) === shell.entityId);
@@ -574,29 +733,40 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [shellState.error, shellState.reload]);
 
-  // M54: the operator can deliberately pick the entity-wide scope (branch
-  // cleared). Only re-select a default branch when the current branch value
-  // is stale for a DIFFERENT entity, never when scope was cleared on purpose.
   useEffect(() => {
-    // M54.3: branch ids are org-unit ids — if the currently persisted branch
-    // no longer exists in THIS entity's org-unit tree, reset it (only when a
-    // stale branch is set, never to force a default while scope is cleared).
-    if (!USE_REAL) return;
-    const node = entityTree.find((n) => n.entityId === entityId);
-    if (!branch || !node || node.branches.length === 0) return;
-    if (!node.branches.some((candidate) => candidate.id === branch)) setBranch(String(node.branches[0].id));
-  }, [branch, entityId, entityTree, setBranch]);
+    if (!USE_REAL || !entityLocations.length) return;
+    if (!entityLocations.some((candidate) => String(candidate.name ?? candidate.id) === branch))
+      setBranch(String(entityLocations[0].name ?? entityLocations[0].id));
+  }, [branch, entityLocations, setBranch]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      const key = e.key.toLowerCase();
+      if (key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+      }
+      if (key === "j" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setQuickAccessOpen((o) => !o);
       }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      setRailCollapsed(localStorage.getItem("erp.hrm.rail.collapsed") === "true");
+    }
+    setRailPreferenceReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!railPreferenceReady) return;
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem("erp.hrm.rail.collapsed", String(railCollapsed));
+  }, [railCollapsed, railPreferenceReady]);
 
   // M50.11: first-time gate — while setup is PENDING, keep non-confined
   // operators on the dedicated /hrm/setup wizard page (a full route, no
@@ -620,7 +790,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b bg-surface">
+      <header className="sticky top-0 z-40 border-b border-primary/40 bg-primary text-primary-foreground shadow-sm">
         <div className="flex h-14 items-center gap-2 px-3">
           <Sheet>
             <SheetTrigger asChild>
@@ -638,9 +808,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2 px-2">
-                <img src="/mightyfin-mark.png" alt="" className="size-5" aria-hidden />
-                <span className="hidden font-semibold sm:inline">Mightyfin ERP</span>
+              <Button variant="ghost" className="gap-2 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">
+                <img src="/newworld-cargo-logo.png" alt="New World Cargo" className="h-8 w-auto max-w-[132px] object-contain" />
+                <span className="hidden font-semibold sm:inline">New World Cargo HRM</span>
                 <ChevronDown className="size-3.5" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -673,11 +843,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Button variant="outline" size="sm" className="hidden min-w-0 gap-2 md:flex">
                 <Building2 className="size-4 shrink-0" aria-hidden />
                 <span className="max-w-40 truncate font-medium">{entity ? String((entity as Record<string, unknown>).registeredName ?? (entity as Record<string, unknown>).tradingName ?? (entity as Record<string, unknown>).name ?? "Organisation") : "Organisation"}</span>
-                {branch ? (
-                  <span className="max-w-32 truncate text-muted-foreground">· {(liveLocations.find((l) => l.id === branch)?.name ?? orgUnits.find((u) => u.id === branch)?.name ?? branch)}</span>
-                ) : (
-                  <span className="max-w-32 truncate text-muted-foreground">· all branches</span>
-                )}
+                {branch ? <span className="max-w-32 truncate text-muted-foreground">· {liveLocations.find((l) => l.id === branch)?.name ?? branch}</span> : null}
                 <ChevronDown className="size-3.5 shrink-0" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -687,47 +853,33 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuLabel>
               {entityTree.map((node) => (
                 <div key={node.entityId}>
-                  <DropdownMenuRadioGroup
-                    value={
-                      // M54: branch-level picks are stored in `branch`; the
-                      // entity-wide option lives in the same group with an
-                      // empty value so the radio visually tracks the active scope.
-                      node.branches.some((b) => b.id === branch) ? branch : ""
-                    }
-                    onValueChange={(v) => {
-                      // Picking the entity row (empty) or any branch of THIS
-                      // entity first scopes the work context to the entity,
-                      // then narrows to the branch if one was picked.
-                      // M45: branch-confined operators can never clear scope
-                      // (the backend would reject them anyway).
-                      setEntityId(String(node.entityId));
-                      if (v) setBranch(v);
-                      else if (!assignedIds.length) setBranch("");
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="">
+                  <DropdownMenuRadioGroup value={entityId} onValueChange={setEntityId}>
+                    <DropdownMenuRadioItem value={node.entityId}>
                       <span className="min-w-0">
                         <span className="flex items-center gap-1.5">
                           <Building2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                           <span className="block truncate font-medium">{node.entityName}</span>
                         </span>
                         {node.entityCode ? (
-                          <span className="block text-xs text-muted-foreground">{node.entityCode} · organisation-wide</span>
-                        ) : (
-                          <span className="block text-xs text-muted-foreground">organisation-wide</span>
-                        )}
+                          <span className="block text-xs text-muted-foreground">{node.entityCode}</span>
+                        ) : null}
                       </span>
                     </DropdownMenuRadioItem>
-                    {node.branches.map((b) => (
-                      <DropdownMenuRadioItem key={b.id} value={b.id} className="ml-2 text-sm">
-                        <span className="min-w-0 truncate">└ {b.name}</span>
-                        {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
-                      </DropdownMenuRadioItem>
-                    ))}
                   </DropdownMenuRadioGroup>
-                  {node.branches.length === 0 ? (
+                  {node.branches.length > 0 ? (
+                    <div className="ml-5 border-l border-border pl-3 py-0.5">
+                      <DropdownMenuRadioGroup value={branch} onValueChange={setBranch}>
+                        {node.branches.map((b) => (
+                          <DropdownMenuRadioItem key={b.id} value={b.id} className="text-sm">
+                            <span className="min-w-0 truncate">{b.name}</span>
+                            {b.type ? <span className="text-xs text-muted-foreground">· {b.type}</span> : null}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </div>
+                  ) : (
                     <p className="ml-5 pl-4 pb-1.5 text-xs text-muted-foreground">No branches configured</p>
-                  ) : null}
+                  )}
                 </div>
               ))}
             </DropdownMenuContent>
@@ -743,6 +895,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Search className="size-4" aria-hidden />
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+              onClick={() => setQuickAccessOpen(true)}
+              aria-label="Open Quick access"
+              title="Quick access (⌘J)"
+            >
+              <LayoutGrid className="size-4" aria-hidden />
+              <span className="hidden lg:inline">Quick access</span>
+              <kbd className="hidden rounded border border-primary-foreground/30 px-1 text-[10px] lg:inline">⌘J</kbd>
             </Button>
 
             {canApprove ? (
@@ -836,8 +1001,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <div className="flex">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 bg-rail text-rail-foreground lg:block">
-          <RailContent />
+        <aside className={cn(
+          "sticky top-14 hidden h-[calc(100vh-3.5rem)] shrink-0 bg-rail text-rail-foreground transition-[width] duration-200 lg:block",
+          railCollapsed ? "w-16" : "w-64",
+        )}>
+          <RailContent
+            collapsed={railCollapsed}
+            onToggleCollapsed={() => setRailCollapsed((value) => !value)}
+          />
         </aside>
         <main id="main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-6xl flex-col space-y-6">
@@ -847,6 +1018,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <QuickAccessDialog open={quickAccessOpen} onOpenChange={setQuickAccessOpen} />
     </div>
   );
 }

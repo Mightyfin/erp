@@ -70,7 +70,6 @@ public static class Routes
         g.MapGet("/", (ShellContext scope) => Results.Ok(new
         {
             locationId = scope.LocationId,
-            orgUnitId = scope.OrgUnitId,
             entityId = scope.EntityId,
             scopedToBranch = scope.IsScopedToBranch,
             // M45: confinement metadata — the switcher hides branches the
@@ -425,6 +424,14 @@ public static class Routes
                 throw new DomainException("no-subject-claim", "The token carries no subject claim.");
             return Results.Ok(new { url = await svc.GetMyPayslipDownloadUrlAsync(id, subject, ct) });
         });
+        g.MapGet("/payslips/{id:guid}/preview", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var subject = ResolveSubjectId(http);
+            if (string.IsNullOrEmpty(subject))
+                throw new DomainException("no-subject-claim", "The token carries no subject claim.");
+            var bytes = await svc.GetMyPayslipPreviewAsync(id, subject, ct);
+            return Results.File(bytes, "application/pdf", $"payslip-{id:D}.pdf");
+        });
 
         g.MapGet("/notifications", async (HttpContext http, IEmployeeNotificationService svc, CancellationToken ct) =>
             Results.Ok(await svc.ListAsync(ResolveSubjectId(http) ?? "", ct)));
@@ -481,39 +488,18 @@ public static class Routes
     {
         var g = app.MapGroup($"{HrmPrefix}/workers").RequireAuthorization();
 
-        g.MapGet("/", async ([AsParameters] WorkerListFilters filters, ShellContext scope, IWorkerService svc, CancellationToken ct) =>
-        {
-            // M54: when the operator is working inside one branch (either by
-            // confinement or by picking a branch in the top-nav switcher), the
-            // list defaults to that branch so they cannot see organisation-
-            // wide records by accident. Org-wide top HR (no header) sees all.
-            // M54.3: the switcher's branches are org units, and the X-Shell-
-            // Location header can therefore carry either a work location or
-            // an org unit — one header, two scope meanings.
-            if (scope.LocationId.HasValue && !filters.LocationId.HasValue)
-                filters = filters with { LocationId = scope.LocationId };
-            if (scope.OrgUnitId.HasValue && !filters.OrgUnitId.HasValue)
-                filters = filters with { OrgUnitId = scope.OrgUnitId };
-            return await svc.ListAsync(filters, ct);
-        });
+        g.MapGet("/", async ([AsParameters] WorkerListFilters filters, IWorkerService svc, CancellationToken ct)
+            => await svc.ListAsync(filters, ct));
 
         g.MapGet("/{id:guid}", async (Guid id, IWorkerService svc, CancellationToken ct)
             => await svc.GetByIdAsync(id, ct));
 
-        g.MapPost("/", async (HttpContext http, ShellContext scope, IWorkerService svc, CancellationToken ct) =>
+        g.MapPost("/", async (HttpContext http, IWorkerService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<WorkerCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var errors = ValidateWorkerCreate(request);
             if (errors.Count != 0)
                 return Results.UnprocessableEntity(new ApiError("validation-failed", string.Join("; ", errors), []));
-            // M54: stamp the current work scope onto records created without
-            // an explicit location — a branch-scoped operator always hires
-            // into their own branch. M54.3: the switcher's branches are org
-            // units, so the unit scope is stamped the same way.
-            if (!request.LocationId.HasValue && scope.LocationId.HasValue)
-                request = request with { LocationId = scope.LocationId };
-            if (!request.OrgUnitId.HasValue && scope.OrgUnitId.HasValue)
-                request = request with { OrgUnitId = scope.OrgUnitId };
             var created = await svc.CreateAsync(request, ct);
             return Results.Created($"{HrmPrefix}/workers/{created.Id}", created);
         });
@@ -744,6 +730,14 @@ public static class Routes
             => await svc.GetBalancesAsync(workerId, ct));
         g.MapGet("/corrections", async ([FromQuery] Guid? workerId, [FromQuery] string? status, ITimeService svc, CancellationToken ct)
             => await svc.ListCorrectionsAsync(workerId, status, ct));
+        g.MapGet("/overtime", async ([FromQuery] Guid? workerId, [FromQuery] string? from, [FromQuery] string? to, [FromQuery] string? status, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.ListOvertimeAsync(workerId, from, to, status, ct)));
+        g.MapPost("/overtime/{id:guid}/decide", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OvertimeDecisionRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.DecideOvertimeAsync(id, request, ResolveSubjectId(http) ?? "system", ct));
+        });
         g.MapPost("/corrections", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<AttendanceCorrectionCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -762,6 +756,8 @@ public static class Routes
             => Results.Ok(await svc.ClockOutAsync(workerId, ct)));
         g.MapGet("/attendance/{workerId:guid}/today", async (Guid workerId, ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
+        g.MapGet("/attendance", async ([FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct)));
         g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
@@ -774,6 +770,13 @@ public static class Routes
             var request = await ReadBodyAsync<ShiftCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateShiftAsync(request, ct));
         });
+        g.MapPatch("/shifts/{id:guid}", async (Guid id, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ShiftUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateShiftAsync(id, request, ct));
+        });
+        g.MapPost("/shifts/{id:guid}/close", async (Guid id, ITimeService svc, CancellationToken ct) =>
+            Results.Ok(await svc.CloseShiftAsync(id, ct)));
         g.MapPost("/shifts/assign/{workerId:guid}", async (Guid workerId, HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ShiftAssignmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -783,6 +786,11 @@ public static class Routes
         {
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ImportAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
+        });
+        g.MapPost("/overtime/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OvertimeImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ImportOvertimeAsync(request, ResolveSubjectId(http) ?? "system", ct));
         });
         g.MapPost("/leave/accruals/run", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
@@ -849,7 +857,18 @@ public static class Routes
             var request = await ReadBodyAsync<HrRequestCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             var _p = WorkerPrincipal.FromClaims(http.User.Claims);
             if (!_p.IsRole("hr_ops") && !_p.IsRole("hr_admin"))
-                return Results.Created("", await svc.CreateMyRequestAsync(ResolveSubjectId(http) ?? "", request, ct));
+            {
+                var subject = ResolveSubjectId(http);
+                if (!string.IsNullOrEmpty(subject))
+                {
+                    var ownWorker = await ws.GetBySubjectAsync(subject, ct);
+                    if (ownWorker is not null)
+                        return Results.Created("", await svc.CreateRequestAsync(ownWorker.Id, request with { WorkerId = ownWorker.Id }, ct));
+                }
+                if (_p.IsRole("payroll"))
+                    return Results.Created("", await svc.CreateRequestAsync(null, request with { WorkerId = null }, ct));
+                return Results.Created("", await svc.CreateMyRequestAsync(subject ?? "", request, ct));
+            }
             var workerId = request.WorkerId ?? ResolveWorkerId(http);
             // M22: without a worker_id claim, resolve the caller via the M14
             // subject identity link instead of the raw sub Guid (a Keycloak
@@ -925,12 +944,50 @@ public static class Routes
         });
         g.MapPatch("/contribution-rules/{ruleId:guid}", async (Guid ruleId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
         {
-            var request = await ReadBodyAsync<ContributionRuleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+                throw new DomainException("bad-request", "Request body is missing or invalid.");
+            decimal? ReadDecimal(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetDecimal()
+                    : null;
+            var request = new ContributionRuleUpdateRequest(
+                Rate: ReadDecimal("rate"),
+                Ceiling: ReadDecimal("ceiling"),
+                Floor: ReadDecimal("floor"),
+                CeilingSpecified: body.TryGetProperty("ceiling", out _),
+                FloorSpecified: body.TryGetProperty("floor", out _));
             return Results.Ok(await svc.UpdateContributionRuleAsync(ruleId, request, ct));
         });
         g.MapPatch("/components/{componentId:guid}", async (Guid componentId, IPayrollService svc, HttpContext http, CancellationToken ct) =>
         {
-            var request = await ReadBodyAsync<SalaryComponentUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var body = await ReadBodyAsync<System.Text.Json.JsonElement>(http, ct);
+            if (body.ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+                throw new DomainException("bad-request", "Request body is missing or invalid.");
+            string? ReadString(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetString()
+                    : null;
+            decimal? ReadDecimal(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetDecimal()
+                    : null;
+            bool? ReadBool(string name) =>
+                body.TryGetProperty(name, out var prop) && prop.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? prop.GetBoolean()
+                    : null;
+            var request = new SalaryComponentUpdateRequest(
+                Name: ReadString("name"),
+                CalculationBasis: ReadString("calculationBasis"),
+                BasisComponentCode: ReadString("basisComponentCode"),
+                Rate: ReadDecimal("rate"),
+                FixedAmount: ReadDecimal("fixedAmount"),
+                Ceiling: ReadDecimal("ceiling"),
+                IsTaxable: ReadBool("isTaxable"),
+                IsArchived: ReadBool("isArchived"),
+                RateSpecified: body.TryGetProperty("rate", out _),
+                FixedAmountSpecified: body.TryGetProperty("fixedAmount", out _),
+                CeilingSpecified: body.TryGetProperty("ceiling", out _));
             return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
         });
         // M21: salary structure administration
@@ -967,10 +1024,37 @@ public static class Routes
             var request = await ReadBodyAsync<PayBasisUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.SetPayBasisAsync(workerId, request, ct));
         });
+        g.MapPut("/profiles/{workerId:guid}/overtime-policy", async (Guid workerId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<OvertimePolicyUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.SetOvertimePolicyAsync(workerId, request, ct));
+        });
+        g.MapGet("/salary-advances", async ([FromQuery] Guid? workerId, [FromQuery] string? status, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.ListSalaryAdvancesAsync(workerId, status, ct)));
+        g.MapPost("/salary-advances", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateSalaryAdvanceAsync(request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPatch("/salary-advances/{advanceId:guid}", async (Guid advanceId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateSalaryAdvanceAsync(advanceId, request, ct));
+        });
+        g.MapPost("/salary-advances/{advanceId:guid}/cancel", async (Guid advanceId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryAdvanceCancelRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.CancelSalaryAdvanceAsync(advanceId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapPost("/runs", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.CreateRunAsync(request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPost("/runs/preflight", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunCreate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.GetRunPreflightAsync(request, ct));
         });
         g.MapGet("/runs", async (IPayrollService svc, CancellationToken ct) => await svc.ListRunsAsync(ct));
         // M48: the top-HR approval queue — branch runs awaiting review with
@@ -979,12 +1063,21 @@ public static class Routes
         g.MapGet("/queue", async (IPayrollService svc, CancellationToken ct) => await svc.ListPayrollQueueAsync(ct));
         g.MapGet("/runs/{id:guid}", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunAsync(id, ct));
+        g.MapPatch("/runs/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunUpdate>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapGet("/runs/{id:guid}/calculation-readiness", async (Guid id, IPayrollService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetCalculationReadinessAsync(id, ct)));
         g.MapPost("/runs/{id:guid}/lock", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             await svc.LockRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapPost("/runs/{id:guid}/calculate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             await svc.CalculateRunAsync(id, ct, ResolveSubjectId(http) ?? "system"));
         g.MapGet("/runs/{id:guid}/lines", async (Guid id, IPayrollService svc, CancellationToken ct)
             => await svc.GetRunLinesAsync(id, ct));
+        g.MapGet("/workers/{workerId:guid}/payslip-preview", async (Guid workerId, IPayrollService svc, CancellationToken ct)
+            => await svc.PreviewWorkerPayslipAsync(workerId, ct));
         g.MapPost("/runs/{id:guid}/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var note = await ReadBodyAsync<PayrollRunApprovalNote>(http, ct);
@@ -1010,6 +1103,8 @@ public static class Routes
         });
         g.MapPost("/runs/{id:guid}/payments/generate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             Results.Ok(await svc.GeneratePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
+        g.MapGet("/runs/{id:guid}/payments/readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetPaymentReadinessAsync(id, ct)));
         g.MapGet("/runs/{id:guid}/payments/file", async (Guid id, IPayrollService svc, CancellationToken ct) =>
             Results.Text(await svc.DownloadPaymentFileAsync(id, ct), "text/csv", Encoding.UTF8));
         g.MapPost("/runs/{id:guid}/payments/approve", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
@@ -1073,7 +1168,12 @@ public static class Routes
         g.MapGet("/payslips/id/{id:guid}", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct)
             => await svc.GetPayslipByIdAsync(id, ResolveSubjectId(http), ct));
 
-        // ---------- M6: reversal, liability reports, payslip documents ----------
+        // ---------- M6: cancellation/reversal, liability reports, payslip documents ----------
+        g.MapPost("/runs/{id:guid}/cancel", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();
+            return Results.Ok(await svc.CancelRunAsync(id, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapPost("/runs/{id:guid}/reverse", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<PayrollRunReverseCreate>(http, ct) ?? new PayrollRunReverseCreate();
@@ -1252,6 +1352,11 @@ public static class Routes
             Results.Ok(await svc.CloseJobAsync(id, ct)));
 
         g.MapGet("/roles", async (IJobsAdminService svc, CancellationToken ct) => await svc.ListRolesAsync(ct));
+        g.MapPost("/roles", async (HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<RoleCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateRoleAsync(request, ct));
+        });
         g.MapPatch("/roles/{roleKey}", async (string roleKey, HttpContext http, IJobsAdminService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<RoleUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -1526,6 +1631,8 @@ public static class Routes
             File.Delete(file);
             return Results.File(bytes, "text/csv", $"{q.ExportType}-{q.PeriodId:N}.csv");
         });
+        g.MapGet("/preview", async ([AsParameters] StatutoryExportQuery q, IStatutoryExportService svc, CancellationToken ct) =>
+            Results.Ok(await svc.PreviewAsync(q.ExportType, q.PeriodId, ct)));
         // M23: aggregate statutory liability summary (PAYE/NAPSA/NHIMA totals)
         // for the reports UI — totals visible without downloading a file.
         g.MapGet("/summary", async (Guid periodId, IStatutoryExportService svc, CancellationToken ct) =>
@@ -1916,6 +2023,12 @@ public static void RegisterBenefits(WebApplication app)
         var request = await ReadBodyAsync<Application.Benefits.AllowanceSetRequest>(http, ct)
             ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
         await svc.SetAllowanceAsync(request, ct);
+        return Results.Ok();
+    });
+    g.MapDelete("/allowances/{id:guid}", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        await svc.DeleteAllowanceAsync(id, ct);
         return Results.Ok();
     });
 

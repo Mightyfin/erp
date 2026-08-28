@@ -31,14 +31,20 @@ public interface ITimeService
     Task<PunchResultDto> ClockOutAsync(Guid workerId, CancellationToken ct);
     Task<PunchResultDto> GetTodayAsync(Guid workerId, CancellationToken ct);
     Task<List<AttendanceRecordDto>> ListAttendanceAsync(Guid workerId, string? from, string? to, CancellationToken ct);
+    Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct);
+    Task<List<AttendanceRecordDto>> ListOvertimeAsync(Guid? workerId, string? from, string? to, string? status, CancellationToken ct);
+    Task<AttendanceRecordDto> DecideOvertimeAsync(Guid id, OvertimeDecisionRequest request, string actorSubjectId, CancellationToken ct);
     Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct);
     Task<AttendanceCorrectionDto> DecideCorrectionAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
     Task<LeaveRequestDto> DecideLeaveAsync(Guid id, TimeDecisionRequest request, CancellationToken ct);
     // M28 operational administration
     Task<List<ShiftDto>> ListShiftsAsync(CancellationToken ct);
     Task<ShiftDto> CreateShiftAsync(ShiftCreateRequest request, CancellationToken ct);
+    Task<ShiftDto> UpdateShiftAsync(Guid id, ShiftUpdateRequest request, CancellationToken ct);
+    Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct);
     Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct);
     Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request, string actorSubjectId, CancellationToken ct);
+    Task<AttendanceImportResultDto> ImportOvertimeAsync(OvertimeImportRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request, string actorSubjectId, CancellationToken ct);
     Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
@@ -270,6 +276,88 @@ public sealed class TimeServiceImpl(
         return items.Select(MapAttendance).ToList();
     }
 
+    public async Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        DateOnly? f = from is null ? null : DateOnly.Parse(from);
+        DateOnly? t = to is null ? null : DateOnly.Parse(to);
+        var items = await repo.ListAttendanceForScopeAsync(f, t, scope?.LocationId, scope?.OrgUnitId, ct);
+        if (scope is not null && scope.IsConfined && !scope.IsScopedToBranch)
+            items = items.Where(a => (a.LocationId.HasValue && scope.AllowedLocationIds.Contains(a.LocationId.Value))
+                || (!a.LocationId.HasValue && a.Worker?.LocationId.HasValue == true && scope.AllowedLocationIds.Contains(a.Worker.LocationId.Value))).ToList();
+        return items.Select(MapAttendance).ToList();
+    }
+
+    public async Task<List<AttendanceRecordDto>> ListOvertimeAsync(Guid? workerId, string? from, string? to, string? status, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "employee");
+        if (IsEmployeeOnly && workerId is null)
+        {
+            var linked = string.IsNullOrWhiteSpace(authz.CurrentSubjectId)
+                ? null
+                : await workers.FindBySubjectIdAsync(authz.CurrentSubjectId, ct);
+            workerId = linked?.Id ?? throw new DomainException("worker-not-linked", "No worker record is linked to your account.");
+        }
+        if (workerId.HasValue) await RequireWorkerScopeAsync(workerId.Value, ct);
+        DateOnly? f = from is null ? null : DateOnly.Parse(from);
+        DateOnly? t = to is null ? null : DateOnly.Parse(to);
+        var items = await repo.ListOvertimeAsync(workerId, f, t, status, ct);
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false))
+            items = items.Where(a => a.LocationId == scope?.LocationId || a.LocationId == null).ToList();
+        return items.Select(MapAttendance).ToList();
+    }
+
+    public async Task<AttendanceRecordDto> DecideOvertimeAsync(Guid id, OvertimeDecisionRequest request, string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        var record = (await repo.ListOvertimeAsync(null, null, null, null, ct)).FirstOrDefault(a => a.Id == id)
+            ?? throw new DomainException("overtime-not-found", $"Overtime record {id} does not exist.");
+        if (!IsEmployeeOnly && (scope?.IsScopedToBranch ?? false)
+            && record.LocationId.HasValue && record.LocationId != scope?.LocationId)
+            throw new DomainException("overtime-scope-denied", "This overtime record is outside your assigned branch scope.");
+        if (record.OvertimeHours <= 0)
+            throw new DomainException("overtime-not-present", "This attendance record has no derived overtime hours.");
+        if (record.OvertimePayrollRunId.HasValue)
+            throw new DomainException("overtime-already-paid", "This overtime record is already linked to a payroll run and cannot be changed.");
+        var beforeJson = AttendanceSnapshot(record);
+        var action = (request.Action ?? "").Trim().ToLowerInvariant();
+        if (action is not ("approve" or "reject"))
+            throw new DomainException("overtime-invalid-decision", "Decision action must be approve or reject.");
+        if (action == "reject" && string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("overtime-rejection-reason-required", "A reason is required when rejecting overtime.");
+        record.OvertimeStatus = action == "approve" ? "approved" : "rejected";
+        record.OvertimeDecisionReason = request.Reason?.Trim();
+        record.OvertimeDecidedBySubjectId = actorSubjectId;
+        record.OvertimeDecidedAt = DateTimeOffset.UtcNow;
+        async Task Decide(CancellationToken transactionCt)
+        {
+            record = await repo.UpdateAttendanceAsync(record, transactionCt);
+            await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                "decision", actorSubjectId, beforeJson, AttendanceSnapshot(record), transactionCt);
+            if (outbox is not null)
+            {
+                await outbox.EnqueueAsync(HrmEventTypes.OvertimeDecided,
+                    record.Worker?.SubjectId ?? record.WorkerId.ToString("D"),
+                    new
+                    {
+                        overtime_id = record.Id,
+                        worker_id = record.WorkerId,
+                        work_date = record.WorkDate.ToString("yyyy-MM-dd"),
+                        overtime_hours = record.OvertimeHours,
+                        overtime_multiplier = record.OvertimeMultiplier,
+                        status = record.OvertimeStatus,
+                        reason = record.OvertimeDecisionReason,
+                        decided_by = actorSubjectId
+                    }, transactionCt);
+            }
+        }
+        if (unitOfWork is null)
+            await Decide(ct);
+        else
+            await unitOfWork.ExecuteAsync(Decide, ct);
+        return MapAttendance(record);
+    }
+
     public async Task<List<RosterDayDto>> GetRosterAsync(Guid workerId, string? from, string? to, CancellationToken ct)
     {
         authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "manager", "payroll");
@@ -343,6 +431,44 @@ public sealed class TimeServiceImpl(
         return MapShift(shift);
     }
 
+    public async Task<ShiftDto> UpdateShiftAsync(Guid id, ShiftUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var shift = await repo.GetShiftAsync(id, ct)
+            ?? throw new DomainException("shift-not-found", $"Shift {id} does not exist.");
+        if (string.IsNullOrWhiteSpace(request.Name))
+            throw new DomainException("shift-required-fields", "Shift name is required.");
+        if (!TimeOnly.TryParse(request.StartTime, out var start) || !TimeOnly.TryParse(request.EndTime, out var end))
+            throw new DomainException("shift-invalid-time", "Shift start and end must be valid times.");
+        if (request.DailyOvertimeThresholdHours <= 0 || request.StandardHours <= 0)
+            throw new DomainException("shift-invalid-hours", "Standard and overtime-threshold hours must be positive.");
+        shift.Name = request.Name.Trim();
+        shift.StartTime = start;
+        shift.EndTime = end;
+        shift.UnpaidBreakMinutes = request.UnpaidBreakMinutes;
+        shift.StandardHours = request.StandardHours;
+        shift.DailyOvertimeThresholdHours = request.DailyOvertimeThresholdHours;
+        shift.WeekdayOvertimeMultiplier = request.WeekdayOvertimeMultiplier;
+        shift.RestDayOvertimeMultiplier = request.RestDayOvertimeMultiplier;
+        shift.HolidayOvertimeMultiplier = request.HolidayOvertimeMultiplier;
+        shift.UpdatedAt = DateTimeOffset.UtcNow;
+        shift.UpdatedBy = authz.CurrentSubjectId;
+        await repo.UpdateShiftAsync(shift, ct);
+        return MapShift(shift);
+    }
+
+    public async Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var shift = await repo.GetShiftAsync(id, ct)
+            ?? throw new DomainException("shift-not-found", $"Shift {id} does not exist.");
+        shift.IsActive = false;
+        shift.UpdatedAt = DateTimeOffset.UtcNow;
+        shift.UpdatedBy = authz.CurrentSubjectId;
+        await repo.UpdateShiftAsync(shift, ct);
+        return MapShift(shift);
+    }
+
     public async Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
@@ -379,6 +505,7 @@ public sealed class TimeServiceImpl(
         }, ct);
         var errors = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var affectedWeeks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in request.Rows)
         {
             var key = $"{row.EmployeeNo}:{row.WorkDate}";
@@ -390,6 +517,7 @@ public sealed class TimeServiceImpl(
                 (row.ClockOut is not null && !TimeOnly.TryParse(row.ClockOut, out _)))
             { errors.Add($"{key}: invalid date or time"); continue; }
             var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
             var record = existing ?? new AttendanceRecord { WorkerId = worker.Id, WorkDate = date };
             record.ClockIn = row.ClockIn is null ? null : TimeOnly.Parse(row.ClockIn);
             record.ClockOut = row.ClockOut is null ? null : TimeOnly.Parse(row.ClockOut);
@@ -398,7 +526,105 @@ public sealed class TimeServiceImpl(
             await ApplyHoursAsync(record, ct);
             if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
             else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+            await WriteTimeAuditAsync("time.attendance", record.Id.ToString("D"), record.WorkerId,
+                existing is null ? "import-create" : "import-update", actorSubjectId, beforeJson,
+                AttendanceSnapshot(record), ct);
+            affectedWeeks.Add(WeekKey(worker.Id, date));
         }
+        foreach (var affected in affectedWeeks)
+        {
+            var parts = affected.Split('|');
+            await RecalculateWeeklyOvertimeAsync(Guid.Parse(parts[0]), DateOnly.Parse(parts[1]), ct);
+        }
+        batch.RejectedCount = errors.Count;
+        batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
+        batch.Status = errors.Count == 0 ? "completed" : "completed-with-errors";
+        await repo.UpdateImportBatchAsync(batch, ct);
+        return new AttendanceImportResultDto(batch.Id, batch.FileName, batch.Status, batch.RowCount,
+            batch.ImportedCount, batch.UpdatedCount, batch.RejectedCount, errors);
+    }
+
+    public async Task<AttendanceImportResultDto> ImportOvertimeAsync(OvertimeImportRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
+        if (string.IsNullOrWhiteSpace(request.FileName) || request.Rows.Count == 0)
+            throw new DomainException("overtime-import-empty", "A file name and at least one overtime row are required.");
+        if (request.Rows.Count > 10_000)
+            throw new DomainException("overtime-import-too-large", "An overtime batch cannot exceed 10,000 rows.");
+
+        var batch = await repo.CreateImportBatchAsync(new AttendanceImportBatch
+        {
+            FileName = $"overtime:{request.FileName.Trim()}",
+            Status = "processing",
+            RowCount = request.Rows.Count,
+            ImportedBySubjectId = actorSubjectId,
+        }, ct);
+
+        var errors = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in request.Rows)
+        {
+            var key = $"{row.EmployeeNo}:{row.WorkDate}";
+            if (!seen.Add(key)) { errors.Add($"{key}: duplicate row in batch"); continue; }
+            if (row.OvertimeHours <= 0) { errors.Add($"{key}: overtime hours must be greater than zero"); continue; }
+            var worker = await repo.FindWorkerByEmployeeNoAsync(row.EmployeeNo.Trim(), ct);
+            if (worker is null) { errors.Add($"{key}: employee not found"); continue; }
+            if (!DateOnly.TryParse(row.WorkDate, out var date)) { errors.Add($"{key}: invalid work date"); continue; }
+
+            var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            if (existing?.OvertimePayrollRunId.HasValue == true)
+            {
+                errors.Add($"{key}: overtime is already linked to payroll and cannot be changed");
+                continue;
+            }
+
+            var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
+            var record = existing ?? new AttendanceRecord
+            {
+                WorkerId = worker.Id,
+                WorkDate = date,
+                DerivedStatus = "present",
+            };
+            var profile = payroll is null ? null : await payroll.FindOpenProfileAsync(worker.Id, ct);
+            var category = profile?.OvertimeCategory ?? "ordinary";
+            var divisor = profile?.MonthlyOvertimeDivisor > 0
+                ? profile.MonthlyOvertimeDivisor
+                : (category == "watchperson-guard" ? 240m : 208m);
+            var assignment = await repo.GetShiftAssignmentAsync(worker.Id, date, ct);
+            var shiftMultiplier = assignment?.Shift?.WeekdayOvertimeMultiplier is > 0
+                ? assignment.Shift.WeekdayOvertimeMultiplier
+                : 1.5m;
+            record.Source = "overtime-import";
+            record.ImportBatchId = batch.Id;
+            record.ShiftId = assignment?.ShiftId;
+            record.LocationId ??= (scope?.IsScopedToBranch ?? false) ? scope?.LocationId : worker.LocationId;
+            record.OvertimeHours = row.OvertimeHours;
+            record.OvertimeMultiplier = row.OvertimeMultiplier is > 0 ? row.OvertimeMultiplier.Value : shiftMultiplier;
+            record.OvertimeHourlyDivisor = divisor;
+            record.OvertimeRuleCode = category;
+            record.OvertimeStatus = NormalizeImportedOvertimeStatus(row.Status, request.MarkApproved);
+            record.OvertimeDecisionReason = string.IsNullOrWhiteSpace(row.Reason)
+                ? "Imported overtime hours"
+                : row.Reason.Trim();
+            if (record.OvertimeStatus == "approved")
+            {
+                record.OvertimeDecidedBySubjectId = actorSubjectId;
+                record.OvertimeDecidedAt = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+
+            if (existing is null) { await repo.CreateAttendanceAsync(record, ct); batch.ImportedCount++; }
+            else { await repo.UpdateAttendanceAsync(record, ct); batch.UpdatedCount++; }
+            await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                existing is null ? "overtime-import-create" : "overtime-import-update", actorSubjectId,
+                beforeJson, AttendanceSnapshot(record), ct);
+        }
+
         batch.RejectedCount = errors.Count;
         batch.ErrorsJson = errors.Count == 0 ? null : JsonSerializer.Serialize(errors);
         batch.Status = errors.Count == 0 ? "completed" : "completed-with-errors";
@@ -499,7 +725,10 @@ public sealed class TimeServiceImpl(
             .Select(e => new LeaveEncashmentHistoryDto(
                 e.Id, e.WorkerId, e.Worker?.FullName ?? "", e.LeaveTypeCode, e.Days,
                 e.GrossAmount, e.Status, e.CreatedBySubjectId, e.CreatedAt)).ToList();
-        return new TimeOperationsHistoryDto(imports, accruals, adjustments, encashments);
+        var timeAudits = (await repo.ListTimeAuditEntriesAsync(ct)).Select(a => new TimeAuditEntryDto(
+            a.Id, a.EntityType, a.EntityId, a.Action, a.ActorSubjectId,
+            a.BeforeJson, a.AfterJson, a.CreatedAt)).ToList();
+        return new TimeOperationsHistoryDto(imports, accruals, adjustments, encashments, timeAudits);
     }
 
     // ===================== M41 Gap 6a: leave encashment =====================
@@ -614,6 +843,7 @@ public sealed class TimeServiceImpl(
                 c.Status = "approved";
                 // apply the proposed values to the underlying attendance record (or create one)
                 var existing = await repo.GetAttendanceAsync(c.WorkerId, c.WorkDate, ct);
+                var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
                 if (existing is null)
                 {
                     var corrected = new AttendanceRecord
@@ -626,6 +856,10 @@ public sealed class TimeServiceImpl(
                     };
                     await ApplyHoursAsync(corrected, ct);
                     await repo.CreateAttendanceAsync(corrected, ct);
+                    await WriteTimeAuditAsync("time.attendance", corrected.Id.ToString("D"), corrected.WorkerId,
+                        "correction-create", authz.CurrentSubjectId ?? "system", beforeJson,
+                        AttendanceSnapshot(corrected), ct);
+                    await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 else
                 {
@@ -635,6 +869,10 @@ public sealed class TimeServiceImpl(
                     existing.Source = "corrected";
                     await ApplyHoursAsync(existing, ct);
                     await repo.UpdateAttendanceAsync(existing, ct);
+                    await WriteTimeAuditAsync("time.attendance", existing.Id.ToString("D"), existing.WorkerId,
+                        "correction-update", authz.CurrentSubjectId ?? "system", beforeJson,
+                        AttendanceSnapshot(existing), ct);
+                    await RecalculateWeeklyOvertimeAsync(c.WorkerId, c.WorkDate, ct);
                 }
                 break;
             case "return":
@@ -702,6 +940,7 @@ public sealed class TimeServiceImpl(
     private async Task<PunchResultDto> GetOrCreatePunchAsync(Guid workerId, DateOnly date, bool? clockIn, CancellationToken ct)
     {
         var rec = await repo.GetAttendanceAsync(workerId, date, ct);
+        var beforeJson = rec is null ? null : AttendanceSnapshot(rec);
         if (rec is null)
         {
             rec = new AttendanceRecord { WorkerId = workerId, WorkDate = date, Source = "self-service",
@@ -719,6 +958,11 @@ public sealed class TimeServiceImpl(
         await ApplyHoursAsync(rec, ct);
 
         rec = await repo.UpdateAttendanceAsync(rec, ct);
+        await WriteTimeAuditAsync("time.attendance", rec.Id.ToString("D"), rec.WorkerId,
+            clockIn == true ? "clock-in" : clockIn == false ? "clock-out" : "view-today",
+            authz.CurrentSubjectId ?? "system", beforeJson, AttendanceSnapshot(rec), ct);
+        await RecalculateWeeklyOvertimeAsync(rec.WorkerId, rec.WorkDate, ct);
+        rec = await repo.GetAttendanceAsync(workerId, date, ct) ?? rec;
         var state = rec.ClockIn is null ? "out" : rec.ClockOut is null ? "in" : "done";
         return new PunchResultDto(rec.Id, rec.WorkerId, rec.WorkDate.ToString(),
             rec.ClockIn?.ToString() ?? "", rec.ClockOut?.ToString() ?? "",
@@ -742,6 +986,8 @@ public sealed class TimeServiceImpl(
         record.RegularHours = 0;
         record.OvertimeHours = 0;
         record.OvertimeMultiplier = 0;
+        record.OvertimeHourlyDivisor = 208;
+        record.OvertimeRuleCode = "ordinary";
         if (record.ClockIn.HasValue && record.ClockOut.HasValue)
         {
             var elapsed = record.ClockOut.Value - record.ClockIn.Value;
@@ -770,10 +1016,122 @@ public sealed class TimeServiceImpl(
             }
         }
         record.DerivedStatus = DeriveStatus(record.ClockIn, record.ClockOut, record.DerivedStatus);
+        if (record.OvertimeHours > 0 && !record.OvertimePayrollRunId.HasValue)
+        {
+            // Any newly derived or changed overtime must be reviewed again.
+            record.OvertimeStatus = "pending";
+            record.OvertimeDecisionReason = null;
+            record.OvertimeDecidedBySubjectId = null;
+            record.OvertimeDecidedAt = null;
+        }
+        else if (record.OvertimeHours <= 0 && !record.OvertimePayrollRunId.HasValue)
+        {
+            record.OvertimeStatus = "none";
+            record.OvertimeDecisionReason = null;
+            record.OvertimeDecidedBySubjectId = null;
+            record.OvertimeDecidedAt = null;
+        }
         if (shift is not null && record.ClockIn.HasValue && record.DerivedStatus == "present" && record.ClockIn > shift.StartTime)
             record.DerivedStatus = "late";
         if (shift is not null && record.ClockOut.HasValue && record.DerivedStatus == "present" && record.ClockOut < shift.EndTime)
             record.DerivedStatus = "early-departure";
+    }
+
+    private async Task RecalculateWeeklyOvertimeAsync(Guid workerId, DateOnly affectedDate, CancellationToken ct)
+    {
+        var weekStart = StartOfWeek(affectedDate);
+        var weekEnd = weekStart.AddDays(6);
+        var records = await repo.ListAttendanceForWorkerRangeAsync(workerId, weekStart, weekEnd, ct);
+        if (records.Count == 0) return;
+
+        var profile = payroll is null ? null : await payroll.FindOpenProfileAsync(workerId, ct);
+        var category = profile?.OvertimeCategory ?? "ordinary";
+        var weeklyThreshold = profile?.WeeklyOvertimeThresholdHours > 0
+            ? profile.WeeklyOvertimeThresholdHours
+            : (category == "watchperson-guard" ? 60m : 48m);
+        var hourlyDivisor = profile?.MonthlyOvertimeDivisor > 0
+            ? profile.MonthlyOvertimeDivisor
+            : (category == "watchperson-guard" ? 240m : 208m);
+
+        decimal regularWeekHours = 0;
+        var defaultCalendar = (await repo.ListCalendarsAsync(ct)).FirstOrDefault(c => c.IsDefault);
+        foreach (var record in records.OrderBy(r => r.WorkDate).ThenBy(r => r.ClockIn ?? TimeOnly.MinValue))
+        {
+            if (record.OvertimePayrollRunId.HasValue) continue;
+            var before = (record.RegularHours, record.OvertimeHours, record.OvertimeMultiplier, record.OvertimeHourlyDivisor, record.OvertimeRuleCode);
+
+            record.RegularHours = 0;
+            record.OvertimeHours = 0;
+            record.OvertimeMultiplier = 0;
+            record.OvertimeHourlyDivisor = hourlyDivisor;
+            record.OvertimeRuleCode = category;
+
+            if (record.ClockIn.HasValue && record.ClockOut.HasValue && record.TotalHours > 0)
+            {
+                var assignment = await repo.GetShiftAssignmentAsync(record.WorkerId, record.WorkDate, ct);
+                var shift = assignment?.Shift;
+                var calendar = assignment?.Calendar ?? defaultCalendar;
+                var weekend = calendar is not null && IsWeekend(calendar, record.WorkDate);
+                var holiday = calendar?.Holidays.Any(h => HolidayDate(h) == record.WorkDate) == true;
+
+                if (holiday)
+                {
+                    record.OvertimeHours = record.TotalHours;
+                    record.OvertimeMultiplier = shift?.HolidayOvertimeMultiplier ?? 2m;
+                }
+                else if (weekend)
+                {
+                    record.OvertimeHours = record.TotalHours;
+                    record.OvertimeMultiplier = shift?.RestDayOvertimeMultiplier ?? 2m;
+                }
+                else
+                {
+                    var dailyThreshold = shift?.DailyOvertimeThresholdHours > 0 ? shift.DailyOvertimeThresholdHours : 8m;
+                    var remainingWeeklyRegular = Math.Max(0, weeklyThreshold - regularWeekHours);
+                    var regularCap = Math.Min(dailyThreshold, remainingWeeklyRegular);
+                    record.RegularHours = Math.Min(record.TotalHours, regularCap);
+                    record.OvertimeHours = Math.Max(0, record.TotalHours - record.RegularHours);
+                    if (record.OvertimeHours > 0)
+                        record.OvertimeMultiplier = shift?.WeekdayOvertimeMultiplier ?? 1.5m;
+                    regularWeekHours += record.RegularHours;
+                }
+            }
+
+            var changed = before.RegularHours != record.RegularHours
+                || before.OvertimeHours != record.OvertimeHours
+                || before.OvertimeMultiplier != record.OvertimeMultiplier
+                || before.OvertimeHourlyDivisor != record.OvertimeHourlyDivisor
+                || before.OvertimeRuleCode != record.OvertimeRuleCode;
+            if (record.OvertimeHours > 0 && changed)
+            {
+                record.OvertimeStatus = "pending";
+                record.OvertimeDecisionReason = null;
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+            else if (record.OvertimeHours <= 0)
+            {
+                record.OvertimeStatus = "none";
+                record.OvertimeDecisionReason = null;
+                record.OvertimeDecidedBySubjectId = null;
+                record.OvertimeDecidedAt = null;
+            }
+            await repo.UpdateAttendanceAsync(record, ct);
+            if (changed)
+            {
+                await WriteTimeAuditAsync("time.overtime", record.Id.ToString("D"), record.WorkerId,
+                    "weekly-recalculation", "system", null,
+                    AttendanceSnapshot(record), ct);
+            }
+        }
+    }
+
+    private static string WeekKey(Guid workerId, DateOnly date) => $"{workerId:D}|{StartOfWeek(date):yyyy-MM-dd}";
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        var offset = ((int)date.DayOfWeek + 6) % 7;
+        return date.AddDays(-offset);
     }
 
     private static bool IsWeekend(WorkCalendar calendar, DateOnly date)
@@ -786,6 +1144,53 @@ public sealed class TimeServiceImpl(
     private static DateOnly HolidayDate(PublicHoliday holiday)
         => holiday.ObservedOn is not null && DateOnly.TryParse(holiday.ObservedOn, out var observed)
             ? observed : holiday.HolidayDate;
+
+    private static string NormalizeImportedOvertimeStatus(string? status, bool markApproved)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return markApproved ? "approved" : "pending";
+        var normalized = status.Trim().ToLowerInvariant();
+        return normalized is "approved" or "pending" or "rejected" ? normalized
+            : throw new DomainException("overtime-import-status-invalid", "Overtime status must be pending, approved, or rejected.");
+    }
+
+    private async Task WriteTimeAuditAsync(string entityType, string entityId, Guid? workerId,
+        string action, string actorSubjectId, string? beforeJson, string? afterJson, CancellationToken ct)
+    {
+        await repo.AddTimeAuditEntryAsync(new AuditEntry
+        {
+            EntityType = entityType,
+            EntityId = entityId,
+            Action = action,
+            BeforeJson = beforeJson,
+            AfterJson = afterJson,
+            ActorSubjectId = string.IsNullOrWhiteSpace(actorSubjectId) ? "system" : actorSubjectId,
+            CorrelationId = workerId?.ToString("D"),
+        }, ct);
+    }
+
+    private static string AttendanceSnapshot(AttendanceRecord record) => JsonSerializer.Serialize(new
+    {
+        record.Id,
+        record.WorkerId,
+        record.WorkDate,
+        record.ClockIn,
+        record.ClockOut,
+        record.Source,
+        record.DerivedStatus,
+        record.TotalHours,
+        record.RegularHours,
+        record.OvertimeHours,
+        record.OvertimeMultiplier,
+        record.OvertimeHourlyDivisor,
+        record.OvertimeRuleCode,
+        record.OvertimeStatus,
+        record.OvertimeDecisionReason,
+        record.OvertimeDecidedBySubjectId,
+        record.OvertimeDecidedAt,
+        record.OvertimePayrollRunId,
+        record.ImportBatchId,
+        record.LocationId,
+    });
 
     // ===================== M16: self-service leave =====================
 
@@ -883,7 +1288,9 @@ public sealed class TimeServiceImpl(
     private static AttendanceRecordDto MapAttendance(AttendanceRecord a) => new(
         a.Id, a.WorkerId, a.Worker?.FullName ?? "", a.WorkDate.ToString(),
         a.ClockIn?.ToString(), a.ClockOut?.ToString(), a.Source, a.DerivedStatus, a.TotalHours,
-        a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId);
+        a.ScheduledHours, a.RegularHours, a.OvertimeHours, a.OvertimeMultiplier, a.ShiftId, a.ImportBatchId,
+        a.OvertimeStatus, a.OvertimeDecisionReason, a.OvertimeDecidedBySubjectId,
+        a.OvertimeDecidedAt, a.OvertimePayrollRunId, a.OvertimePayrollLineId, a.Worker?.EmployeeNo ?? "");
 
     private static ShiftDto MapShift(ShiftDefinition shift) => new(
         shift.Id, shift.Code, shift.Name, shift.StartTime.ToString(), shift.EndTime.ToString(),

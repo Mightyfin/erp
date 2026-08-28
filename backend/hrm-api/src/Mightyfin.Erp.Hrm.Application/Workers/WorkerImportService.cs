@@ -2,6 +2,7 @@
 // every valid row becomes a worker; invalid rows are reported per row so a failed
 // header or a single bad phone number never aborts the whole batch.
 
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Mightyfin.Erp.Hrm.Domain.Entities;
@@ -58,7 +59,17 @@ public sealed partial class WorkerImportService : IWorkerImportService
         for (var page = 1; ; page++)
         {
             var (batch, total) = await repo.ListAsync(
-                new WorkerListFilters(null, null, null, null, null, null, true, page, 100), ct);
+                new WorkerListFilters(
+                    Search: null,
+                    Status: null,
+                    LegalEntityId: null,
+                    OrgUnitId: null,
+                    LocationId: null,
+                    WorkerType: null,
+                    Grade: null,
+                    IncludeArchived: true,
+                    Page: page,
+                    PageSize: 100), ct);
             existing.AddRange(batch);
             if (existing.Count >= total) break;
         }
@@ -127,6 +138,15 @@ public sealed partial class WorkerImportService : IWorkerImportService
                 continue;
             }
 
+            var rawStartDate = Get("startDate");
+            var startDate = NormalizeImportDate(rawStartDate);
+            if (!string.IsNullOrWhiteSpace(rawStartDate) && startDate is null)
+            {
+                errors.Add(new WorkerImportError(rowNo, $"startDate '{rawStartDate}' is not valid. Use DD-MM-YYYY, e.g. 02-01-2026."));
+                skipped++;
+                continue;
+            }
+
             var request = new WorkerCreateRequest(
                 Get("employeeNo"), firstName, lastName,
                 MiddleName: OrNull(Get("middleName")),
@@ -138,7 +158,7 @@ public sealed partial class WorkerImportService : IWorkerImportService
                 NhimaNumber: OrNull(Get("nhimaNumber")),
                 Grade: OrNull(Get("grade")),
                 JobTitle: OrNull(Get("jobTitle")),
-                StartDate: OrNull(Get("startDate")),
+                StartDate: startDate,
                 WorkerType: workerType,
                 OrgUnitId: orgUnitId);
 
@@ -158,6 +178,24 @@ public sealed partial class WorkerImportService : IWorkerImportService
     }
 
     private static string? OrNull(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static string? NormalizeImportDate(string? value)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : null;
+    }
 
     // RFC 4180-lite: commas inside double-quoted cells are kept, a doubled quote
     // inside quotes becomes a single quote, and the header row is normalised to

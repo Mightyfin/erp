@@ -11,13 +11,18 @@ export interface MockState<T> {
 
 /** Thin async reader for the mock service: loading / degraded / error / data. */
 export function useMock<T>(fn: () => Promise<T>, deps: unknown[] = []): MockState<T> {
+  // Production must never execute or display mock loaders. Mixed routes may
+  // retain a mock fallback for demo mode, but live API mode gets a settled,
+  // empty mock state so the real branch remains the only data source.
+  const realApiMode = import.meta.env.VITE_USE_REAL_API === "true";
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!realApiMode);
   const [degraded, setDegraded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
+    if (realApiMode) return;
     let live = true;
     setLoading(true);
     setDegraded(null);
@@ -34,7 +39,7 @@ export function useMock<T>(fn: () => Promise<T>, deps: unknown[] = []): MockStat
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, nonce]);
+  }, [realApiMode, ...deps, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { data, loading, degraded, error, reload };

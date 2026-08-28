@@ -1,3 +1,4 @@
+using System.Globalization;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 
 namespace Mightyfin.Erp.Hrm.Application.Setup;
@@ -512,15 +513,15 @@ public sealed class SetupServiceImpl(
         SalaryComponent NapsaEe() => new SalaryComponent
         {
             Code = "napsa-ee", Name = "NAPSA Employee", ComponentType = "deduction",
-              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
-              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 60,
+              CalculationBasis = "percent-of",   BasisComponentCode = "gross",   Rate = 5,
+              Ceiling = 1861.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 60,
               EffectiveFrom = today,
         };
         SalaryComponent NapsaEr() => new SalaryComponent
         {
             Code = "napsa-er", Name = "NAPSA Employer", ComponentType = "employer-contribution",
-              CalculationBasis = "percent-of",   BasisComponentCode = "basic",   Rate = 5,
-              Ceiling = 1221.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 110,
+              CalculationBasis = "percent-of",   BasisComponentCode = "gross",   Rate = 5,
+              Ceiling = 1861.80m,   IsTaxable = false,   IsStatutory = true,   Priority = 110,
               EffectiveFrom = today,
         };
         SalaryComponent NhimaEe() => new SalaryComponent
@@ -540,7 +541,7 @@ public sealed class SetupServiceImpl(
         SalaryComponent Paye() => new SalaryComponent
         {
             Code = "paye", Name = "PAYE (ZRA)", ComponentType = "tax",
-              CalculationBasis = "slab",   IsTaxable = false,   IsStatutory = true,   Priority = 80,
+              CalculationBasis = "slab",   BasisComponentCode = "gross",   IsTaxable = false,   IsStatutory = true,   Priority = 80,
               EffectiveFrom = today,
         };
         var codes = new[] { "basic", "napsa-ee", "napsa-er", "nhima-ee", "nhima-er", "paye" };
@@ -568,9 +569,9 @@ public sealed class SetupServiceImpl(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rules = new List<ContributionRule>
         {
-            new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
-            new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1221.80m, TiedComponentCode = "basic", EffectiveFrom = today },
-            new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, Ceiling = 50m,   Floor = 50m, TiedComponentCode = "basic", EffectiveFrom = today },
+            new ContributionRule { Code = "napsa-ee", Name = "NAPSA Employee Contribution", Payer = "employee", Rate = 5, Ceiling = 1861.80m, TiedComponentCode = "gross", EffectiveFrom = today },
+            new ContributionRule { Code = "napsa-er", Name = "NAPSA Employer Contribution", Payer = "employer", Rate = 5, Ceiling = 1861.80m, TiedComponentCode = "gross", EffectiveFrom = today },
+            new ContributionRule { Code = "nhima-ee", Name = "NHIMA Employee Contribution", Payer = "employee", Rate = 1, TiedComponentCode = "basic", EffectiveFrom = today },
             new ContributionRule { Code = "nhima-er", Name = "NHIMA Employer Contribution", Payer = "employer", Rate = 1, TiedComponentCode = "basic", EffectiveFrom = today },
         };
         foreach (var rule in rules)
@@ -581,9 +582,9 @@ public sealed class SetupServiceImpl(
         if (!(await payrollRepo.ListTaxSlabsAsync("2026", ct)).Any())
         {
             await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 0, MaxAmount = 5100, Rate = 0, Sequence = 1, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 5100.01m, MaxAmount = 6700, Rate = 20, Sequence = 2, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 6700.01m, MaxAmount = 8400, Rate = 30, Sequence = 3, EffectiveFrom = today }, ct);
-            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 8400.01m,   MaxAmount = null, Rate = 37.5m, Sequence = 4, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 5100, MaxAmount = 7100, Rate = 20, Sequence = 2, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 7100, MaxAmount = 9200, Rate = 30, Sequence = 3, EffectiveFrom = today }, ct);
+            await payrollRepo.CreateTaxSlabAsync(new TaxSlab { TaxYear = "2026", MinAmount = 9200,   MaxAmount = null, Rate = 37, Sequence = 4, EffectiveFrom = today }, ct);
         }
 
         // --- Default pay group. ---
@@ -701,8 +702,8 @@ public sealed class SetupServiceImpl(
                 errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: first name is required."));
             if (string.IsNullOrWhiteSpace(r.LastName))
                 errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: last name is required."));
-            if (r.StartDate is not null && !DateOnly.TryParse(r.StartDate, out _))
-                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: start date '{r.StartDate}' is not a valid date (YYYY-MM-DD)."));
+            if (r.StartDate is not null && !TryParseImportDate(r.StartDate, out _))
+                errors.Add(new WizardEmployeeError(i + 2, $"Row {i + 2}: start date '{r.StartDate}' is not a valid date (DD-MM-YYYY)."));
         }
         if (errors.Count != 0)
             throw new DomainException("employees-import-invalid",
@@ -734,7 +735,7 @@ public sealed class SetupServiceImpl(
             }
             sb.AppendJoin(',',
                 CsvEscape(r.FirstName), CsvEscape(r.LastName), CsvEscape(r.Email), CsvEscape(r.Phone),
-                CsvEscape(r.JobTitle), CsvEscape(r.Grade), CsvEscape(r.StartDate), CsvEscape(orgUnit));
+                CsvEscape(r.JobTitle), CsvEscape(r.Grade), CsvEscape(NormalizeImportDate(r.StartDate)), CsvEscape(orgUnit));
             sb.Append('\n');
         }
         if (errors.Count != 0)
@@ -801,6 +802,32 @@ public sealed class SetupServiceImpl(
         try { var addr = new System.Net.Mail.MailAddress(email); return addr.Address == email && email.Contains('@') && email.Length >= 5; }
         catch { return false; }
     }
+
+    private static readonly string[] ImportDateFormats =
+    [
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
+    ];
+
+    private static bool TryParseImportDate(string? value, out DateOnly date)
+    {
+        var t = value?.Trim();
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            date = default;
+            return false;
+        }
+
+        return DateOnly.TryParseExact(t, ImportDateFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out date);
+    }
+
+    private static string? NormalizeImportDate(string? value) =>
+        TryParseImportDate(value, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : value;
 
     private static string Slugify(string name)
     {
