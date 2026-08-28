@@ -706,7 +706,11 @@ function NewRun() {
             }
             try {
               const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: selectedGroupId });
-              setRef(String((r as { id?: string }).id ?? chosenPeriod.id));
+              const runId = String((r as { id?: string }).id ?? "");
+              if (!runId) {
+                throw new Error("The pay run was created, but the server did not return its reference. Refresh the pay-run list before continuing.");
+              }
+              setRef(runId);
               feedback.submitted(
                 "Run opened against the selected period.",
                 "Next: calculate gross to net. Nothing has been paid.",
@@ -735,7 +739,16 @@ function NewRun() {
               ]}
               actions={
                 <>
-                  <Button onClick={() => navigate({ to: "/hrm/payroll/runs" })}>View pay runs</Button>
+                  <Button
+                    onClick={() =>
+                      navigate({ to: "/hrm/payroll/runs/$id", params: { id: ref } })
+                    }
+                  >
+                    View pay run
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate({ to: "/hrm/payroll/runs" })}>
+                    View all pay runs
+                  </Button>
                   <Button variant="outline" asChild>
                     <Link to="/hrm/payroll">Back to Payroll</Link>
                   </Button>

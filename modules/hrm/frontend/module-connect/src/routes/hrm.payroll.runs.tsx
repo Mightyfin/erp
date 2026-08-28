@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches, useLocation } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { money, payrollRunApi } from "@/mock/payrollrun";
@@ -129,6 +129,7 @@ function branchName(branchId: string): string | undefined {
 }
 
 function RunsList() {
+  const location = useLocation();
   const state = useApi(async (): Promise<ListedPayRun[]> => {
     if (!USE_REAL) return adaptMockRunRows(await payrollRunApi.runs());
     if (!liveLocationsCache) {
@@ -142,7 +143,10 @@ function RunsList() {
     }
     const result = await realApi.payrollRuns();
     return adaptRunRows(result.items ?? []);
-  }, []);
+  // This parent route stays mounted while its new/detail child routes are open.
+  // Refetch when navigation returns here so a run created in a child is visible
+  // immediately instead of requiring a browser refresh.
+  }, [location.pathname]);
   const [view, setView] = useState("open");
   // `/payroll/runs/$id` is generated as a child of this route, so hand the
   // screen over whenever a run is open.
