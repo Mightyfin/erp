@@ -87,6 +87,7 @@ function Benefits() {
   const [mode, setMode] = useState<Mode>("list");
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
+  const [assignmentYearFilter, setAssignmentYearFilter] = useState(() => String(new Date().getFullYear()));
 
   const types = useApi(realApi.benefitTypes, []);
   const allowances = useApi(realApi.benefitAllowances, []);
@@ -160,6 +161,17 @@ function Benefits() {
   const typeByCode = useMemo(
     () => new Map(((types.data ?? []) as Row[]).map((row) => [text(row.code).toLowerCase(), row])),
     [types.data],
+  );
+  const assignmentYears = useMemo(
+    () => Array.from(new Set(((allowances.data ?? []) as Row[]).map((row) => text(row.year)).filter(Boolean)))
+      .sort((a, b) => Number(b) - Number(a)),
+    [allowances.data],
+  );
+  const visibleAllowanceRows = useMemo(
+    () => ((allowances.data ?? []) as Row[]).filter((row) =>
+      assignmentYearFilter === "all" || text(row.year) === assignmentYearFilter,
+    ),
+    [allowances.data, assignmentYearFilter],
   );
 
   const run = async <T,>(name: string, operation: () => Promise<T>, onSuccess?: () => void) => {
@@ -412,21 +424,42 @@ function Benefits() {
             <CardHeader>
               <CardTitle>Allowance assignments</CardTitle>
               <CardDescription>
-                One employee can have one allowance per benefit type per year. Editing updates the
-                existing assignment.
+                The current year is shown by default. One employee can have one allowance per benefit
+                type per year; choose all years only when reviewing payroll history.
               </CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div className="w-full max-w-52">
+                  <Label htmlFor="assignment-year-filter">Benefit year</Label>
+                  <Select value={assignmentYearFilter} onValueChange={setAssignmentYearFilter}>
+                    <SelectTrigger id="assignment-year-filter" className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All years (history)</SelectItem>
+                      {assignmentYears.map((year) => (
+                        <SelectItem key={year} value={year}>{year}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {visibleAllowanceRows.length} assignment{visibleAllowanceRows.length === 1 ? "" : "s"} shown
+                </p>
+              </div>
               {allowances.loading ? (
                 <p className="text-sm text-muted-foreground">Loading assignments...</p>
               ) : null}
               {allowances.error ? (
                 <p className="text-sm text-destructive">{allowances.error}</p>
               ) : null}
-              {allowances.data && !(allowances.data as Row[]).length ? (
-                <p className="text-sm text-muted-foreground">No allowance assignments yet.</p>
+              {allowances.data && !visibleAllowanceRows.length ? (
+                <p className="text-sm text-muted-foreground">
+                  No allowance assignments for {assignmentYearFilter === "all" ? "the selected history" : assignmentYearFilter}.
+                </p>
               ) : null}
-              {allowances.data && (allowances.data as Row[]).length ? (
+              {allowances.data && visibleAllowanceRows.length ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -440,7 +473,7 @@ function Benefits() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(allowances.data as Row[]).map((row) => {
+                    {visibleAllowanceRows.map((row) => {
                       const benefitType = typeByCode.get(text(row.benefitTypeCode).toLowerCase());
                       return (
                         <TableRow key={text(row.id)}>
