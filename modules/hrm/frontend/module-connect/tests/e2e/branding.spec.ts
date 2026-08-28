@@ -20,6 +20,7 @@ test("login wordmark keeps its native aspect ratio", async ({ page }) => {
   const container = page.getByTestId("signin-brand-logo-container").first();
   await expect(logo).toBeVisible();
   await expect(container).toBeVisible();
+  await expect(logo).not.toHaveClass(/(?:^|\s)(?:h|w)-/);
   const dimensions = await logo.evaluate((element: HTMLImageElement) => {
     const box = element.getBoundingClientRect();
     return {
