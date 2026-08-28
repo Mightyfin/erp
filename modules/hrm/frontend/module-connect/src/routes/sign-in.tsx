@@ -97,7 +97,26 @@ function SignIn() {
           <div className="max-w-md"><h1 className="text-2xl font-semibold">Human resources</h1><p className="mt-3 text-sm text-rail-muted">One place for your profile, leave, attendance, pay and requests.</p></div>
           <p className="text-xs text-rail-muted">Demonstration build — no real accounts.</p>
         </div>
-        <main className="flex items-center justify-center px-4 py-12 sm:px-8"><div className="w-full max-w-sm"><h2 className="text-xl font-semibold">Sign in</h2><p className="mt-1 text-sm text-muted-foreground">Demo mode — choose a role to explore the app.</p><Button className="mt-6 w-full" onClick={continueDemo}>Enter the workspace</Button></div></main>
+        <main className="flex items-center justify-center px-4 py-12 sm:px-8">
+          <div className="w-full max-w-sm">
+            <div
+              className="mb-6 flex h-20 w-32 shrink-0 items-start justify-start lg:hidden"
+              data-testid="signin-mobile-brand-logo-container"
+            >
+              <img
+                src="/mightyfin-logo-color.png"
+                alt="Mightyfin HRMS"
+                data-testid="signin-mobile-brand-logo"
+                className="block max-h-full max-w-full object-contain object-left"
+              />
+            </div>
+            <h2 className="text-xl font-semibold">Sign in</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Demo mode — choose a role to explore the app.
+            </p>
+            <Button className="mt-6 w-full" onClick={continueDemo}>Enter the workspace</Button>
+          </div>
+        </main>
       </div>
     );
   }
@@ -130,7 +149,7 @@ function SignIn() {
       <main className="flex items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
           <div
-            className="flex h-20 w-32 shrink-0 items-start justify-start lg:hidden"
+            className="mb-6 flex h-20 w-32 shrink-0 items-start justify-start lg:hidden"
             data-testid="signin-mobile-brand-logo-container"
           >
             <img

@@ -44,3 +44,14 @@ test("login wordmark keeps its native aspect ratio", async ({ page }) => {
     ),
   ).toBeLessThan(0.02);
 });
+
+test("mobile login keeps the Mightyfin logo visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/sign-in");
+
+  const container = page.getByTestId("signin-mobile-brand-logo-container");
+  const logo = page.getByTestId("signin-mobile-brand-logo");
+  await expect(container).toBeVisible();
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("src", "/mightyfin-logo-color.png");
+});
