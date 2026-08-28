@@ -583,6 +583,21 @@ function Benefits() {
                   </p>
                 ) : null}
               </div>
+              {isPayrollBenefit(selectedType) ? (
+                <div>
+                  <Label htmlFor="allowance-annual-preview">Annual amount to save</Label>
+                  <Input
+                    id="allowance-annual-preview"
+                    className="bg-muted"
+                    value={money(allowanceAmount)}
+                    readOnly
+                    aria-describedby="allowance-annual-help"
+                  />
+                  <p id="allowance-annual-help" className="mt-1 text-xs text-muted-foreground">
+                    The monthly amount is multiplied by 12. This is the yearly amount checked against the cap and saved when you submit.
+                  </p>
+                </div>
+              ) : null}
               <div className="flex items-end justify-end gap-2">
                 <Button variant="outline" onClick={() => setMode("list")}>
                   Cancel
@@ -711,7 +726,7 @@ function Benefits() {
                   />
                 </div>
                 <div>
-                <Label htmlFor="bulk-amount">{bulkInputLabel}</Label>
+                  <Label htmlFor="bulk-amount">{bulkInputLabel}</Label>
                 <Input
                     id="bulk-amount"
                     type="number"
@@ -734,6 +749,21 @@ function Benefits() {
                     </p>
                   ) : null}
                 </div>
+                {isPayrollBenefit(selectedBulkType) ? (
+                  <div>
+                    <Label htmlFor="bulk-annual-preview">Annual amount to save</Label>
+                    <Input
+                      id="bulk-annual-preview"
+                      className="bg-muted"
+                      value={money(bulkAmount)}
+                      readOnly
+                      aria-describedby="bulk-annual-help"
+                    />
+                    <p id="bulk-annual-help" className="mt-1 text-xs text-muted-foreground">
+                      Monthly amount x 12. The same annual amount will be saved for every selected employee.
+                    </p>
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">
