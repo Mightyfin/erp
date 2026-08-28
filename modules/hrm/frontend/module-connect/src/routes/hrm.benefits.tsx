@@ -78,6 +78,18 @@ function isPayrollBenefit(type: Row | undefined) {
   return Boolean(type?.includeInPayroll);
 }
 
+function monthlyAmountFromAnnual(annualAmount: string) {
+  if (!annualAmount) return "";
+  const annual = Number(annualAmount);
+  return Number.isFinite(annual) ? String(Math.round((annual / 12) * 100) / 100) : annualAmount;
+}
+
+function annualAmountFromMonthly(monthlyAmount: string) {
+  if (!monthlyAmount) return "";
+  const monthly = Number(monthlyAmount);
+  return Number.isFinite(monthly) ? String(Math.round(monthly * 12 * 100) / 100) : monthlyAmount;
+}
+
 function employeeLabel(row: Row) {
   const name = text(row.fullName ?? row.name ?? row.employeeName) || "Employee";
   return `${name}${row.employeeNo ? ` (${text(row.employeeNo)})` : ""}`;
@@ -600,13 +612,15 @@ function Benefits() {
                   <Label htmlFor="allowance-monthly-preview">Monthly payslip amount</Label>
                   <Input
                     id="allowance-monthly-preview"
-                    className="bg-muted"
-                    value={money(Number(allowanceAmount || 0) / 12)}
-                    readOnly
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={monthlyAmountFromAnnual(allowanceAmount)}
+                    onChange={(e) => setAllowanceAmount(annualAmountFromMonthly(e.target.value))}
                     aria-describedby="allowance-monthly-help"
                   />
                   <p id="allowance-monthly-help" className="mt-1 text-xs text-muted-foreground">
-                    Calculated automatically as annual amount divided by 12. This is the amount added to each monthly payslip.
+                    Edit either amount. Monthly x 12 updates the annual amount; annual / 12 updates this monthly amount.
                   </p>
                 </div>
               ) : null}
@@ -763,13 +777,15 @@ function Benefits() {
                     <Label htmlFor="bulk-monthly-preview">Monthly payslip amount</Label>
                     <Input
                       id="bulk-monthly-preview"
-                      className="bg-muted"
-                      value={money(Number(bulkAmount || 0) / 12)}
-                      readOnly
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={monthlyAmountFromAnnual(bulkAmount)}
+                      onChange={(e) => setBulkAmount(annualAmountFromMonthly(e.target.value))}
                       aria-describedby="bulk-monthly-help"
                     />
                     <p id="bulk-monthly-help" className="mt-1 text-xs text-muted-foreground">
-                      Calculated as annual amount divided by 12 for every selected employee.
+                      Edit either amount. Monthly x 12 updates the annual amount for every selected employee.
                     </p>
                   </div>
                 ) : null}
