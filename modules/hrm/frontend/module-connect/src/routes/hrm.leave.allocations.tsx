@@ -17,7 +17,7 @@ const list = (value: unknown): Row[] => Array.isArray(value) ? value as Row[] : 
 const val = (row: Row, key: string, fallback = "—") => row[key] == null || row[key] === "" ? fallback : String(row[key]);
 
 export const Route = createFileRoute("/hrm/leave/allocations")({
-  head: () => ({ meta: [{ title: "Leave Allocation — New World Cargo HRM" }, { name: "description", content: "Live leave balances and audited allocation adjustments." }] }),
+  head: () => ({ meta: [{ title: "Leave Allocation — Mightyfin HRMS" }, { name: "description", content: "Live leave balances and audited allocation adjustments." }] }),
   component: LeaveAllocationsPage,
 });
 

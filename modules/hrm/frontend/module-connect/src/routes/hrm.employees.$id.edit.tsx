@@ -26,9 +26,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/employees/$id/edit")({
   head: () => ({
     meta: [
-      { title: "Edit employee — New World Cargo HRM" },
+      { title: "Edit employee — Mightyfin HRMS" },
       { name: "description", content: "Edit an employee record: personal details, job and grade, where they work, and the pay details payroll relies on." },
-      { property: "og:title", content: "Edit employee — New World Cargo HRM" },
+      { property: "og:title", content: "Edit employee — Mightyfin HRMS" },
       { property: "og:description", content: "Edit personal details, job, location and pay details on an employee record." },
     ],
   }),

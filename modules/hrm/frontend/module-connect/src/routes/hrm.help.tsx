@@ -7,9 +7,9 @@ import { EmptyState } from "@/platform/components/States";
 export const Route = createFileRoute("/hrm/help")({
   head: () => ({
     meta: [
-      { title: "Help — New World Cargo HRM" },
+      { title: "Help — Mightyfin HRMS" },
       { name: "description", content: "Guidance, contact routes and service status." },
-      { property: "og:title", content: "Help — New World Cargo HRM" },
+      { property: "og:title", content: "Help — Mightyfin HRMS" },
       { property: "og:description", content: "Guidance, contact routes and service status." },
     ],
   }),

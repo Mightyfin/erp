@@ -24,12 +24,12 @@ import { useAuth } from "@/platform/auth";
 export const Route = createFileRoute("/hrm/payroll/exceptions")({
   head: () => ({
     meta: [
-      { title: "Payroll exceptions — New World Cargo HRM" },
+      { title: "Payroll exceptions — Mightyfin HRMS" },
       {
         name: "description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",
       },
-      { property: "og:title", content: "Payroll exceptions — New World Cargo HRM" },
+      { property: "og:title", content: "Payroll exceptions — Mightyfin HRMS" },
       {
         property: "og:description",
         content: "What is blocking release, what it would cost, and the safe way to resolve it.",

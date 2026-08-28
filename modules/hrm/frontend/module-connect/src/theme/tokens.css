@@ -5,9 +5,9 @@
  * file only. Components must never hardcode hex values or palette utilities
  * (bg-blue-500, text-white, ...) — they use the semantic names below.
  *
- * BRAND: New World Cargo — yellow #ffcd04, deep navy #00123d, white logo,
- * and a restrained green success accent. The palette mirrors the public
- * New World Cargo website while preserving the semantic contrast structure.
+ * BRAND: MightyFin — purple #5d2b85, gold #fec00f, green #21a501, deep rail
+ * #410064. These are the real values in use by `applications/partner-portal`,
+ * copied exactly rather than re-derived, so the two MightyFin surfaces match.
  * Brand hues are written as hex for that reason; the neutral and surface ramps
  * stay in oklch, which derives light/dark pairs more predictably.
  *
@@ -89,15 +89,17 @@
 :root {
   --radius: 0.5rem;
 
-   /* brand — New World Cargo */
-  --primary: #ffcd04;
-  --primary-foreground: #00123d;
-  --primary-soft: #fff7cc;
-  /* Navy carries secondary emphasis so the yellow remains the clear brand action. */
-  --secondary: #e8eef7;
-  --secondary-foreground: #00123d;
-  --accent: #fff7cc;
-  --accent-foreground: #00123d;
+  /* brand — MightyFin */
+  --primary: #5d2b85;
+  --primary-foreground: #ffffff;
+  --primary-soft: #f2edf6;
+  /* Secondary stays a low-emphasis neutral on purpose. MightyFin gold is loud,
+     and a gold `secondary` button would compete with the primary action on every
+     screen. Gold's home is --warning below, matching partner-portal. */
+  --secondary: oklch(0.955 0.008 290);
+  --secondary-foreground: #3d1c58;
+  --accent: #f2edf6;
+  --accent-foreground: #5d2b85;
 
   /* status */
   --success: #21a501;
@@ -131,24 +133,25 @@
   --border: oklch(0.87 0.01 290);
   --border-strong: oklch(0.76 0.015 290);
   --input: oklch(0.83 0.012 290);
-  --ring: #ffcd04;
+  --ring: #5d2b85;
 
-  /* navigation rail — New World Cargo deep navy */
-  --rail: #00123d;
+  /* navigation rail — MightyFin deep purple */
+  --rail: #410064;
   --rail-foreground: #ffffff;
-  --rail-muted: #b7c5dd;
-  --rail-active: #0a2b55;
+  --rail-muted: oklch(0.78 0.045 305);
+  --rail-active: #531773;
 }
 
 .dark {
-  /* New World Cargo hues, lifted for dark-mode readability. */
-  --primary: #ffdb4d;
-  --primary-foreground: #00123d;
-  --primary-soft: #4a3e00;
-  --secondary: #1c2b45;
-  --secondary-foreground: #f4f7fb;
-  --accent: #403700;
-  --accent-foreground: #fff3a8;
+  /* Same MightyFin hues, lifted in lightness so they carry on a dark surface —
+     following this file's existing dark strategy of light brand + dark text. */
+  --primary: #c49ae0;
+  --primary-foreground: #2b1240;
+  --primary-soft: oklch(0.34 0.07 305);
+  --secondary: oklch(0.28 0.02 290);
+  --secondary-foreground: oklch(0.95 0.005 290);
+  --accent: oklch(0.32 0.055 305);
+  --accent-foreground: oklch(0.93 0.02 305);
 
   --success: oklch(0.75 0.17 145);
   --success-foreground: oklch(0.18 0.04 145);
@@ -178,10 +181,10 @@
   --border: oklch(0.36 0.025 290);
   --border-strong: oklch(0.47 0.03 290);
   --input: oklch(0.4 0.025 290);
-  --ring: #ffdb4d;
+  --ring: #c49ae0;
 
-  --rail: #00102f;
-  --rail-foreground: #f7faff;
-  --rail-muted: #b4c2d9;
-  --rail-active: #0c2b52;
+  --rail: oklch(0.19 0.055 305);
+  --rail-foreground: oklch(0.96 0.008 305);
+  --rail-muted: oklch(0.74 0.04 305);
+  --rail-active: oklch(0.29 0.07 305);
 }

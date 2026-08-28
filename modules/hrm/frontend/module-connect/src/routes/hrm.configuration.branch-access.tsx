@@ -34,9 +34,9 @@ const description =
 export const Route = createFileRoute("/hrm/configuration/branch-access")({
   head: () => ({
     meta: [
-      { title: "Branch access — New World Cargo HRM" },
+      { title: "Branch access — Mightyfin HRMS" },
       { name: "description", content: description },
-      { property: "og:title", content: "Branch access — New World Cargo HRM" },
+      { property: "og:title", content: "Branch access — Mightyfin HRMS" },
     ],
   }),
   component: () => {

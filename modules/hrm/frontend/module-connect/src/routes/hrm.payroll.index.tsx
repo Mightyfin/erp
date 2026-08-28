@@ -10,9 +10,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/payroll/")({
   head: () => ({
     meta: [
-      { title: "Payroll — New World Cargo HRM" },
+      { title: "Payroll — Mightyfin HRMS" },
       { name: "description", content: "Payroll administration: readiness, runs, exceptions, payments and statutory output." },
-      { property: "og:title", content: "Payroll — New World Cargo HRM" },
+      { property: "og:title", content: "Payroll — Mightyfin HRMS" },
       { property: "og:description", content: "Payroll administration: readiness, runs, exceptions, payments and statutory output." },
     ],
   }),

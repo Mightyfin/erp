@@ -30,13 +30,13 @@ import type { LeaveRequest } from "@/mock/types";
 export const Route = createFileRoute("/hrm/leave/")({
   head: () => ({
     meta: [
-      { title: "My leave — New World Cargo HRM" },
+      { title: "My leave — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "Your leave balances, open requests and what happens next — one self-service page.",
       },
-      { property: "og:title", content: "My leave — New World Cargo HRM" },
+      { property: "og:title", content: "My leave — Mightyfin HRMS" },
       {
         property: "og:description",
         content:

@@ -8,9 +8,9 @@ import { PageHeader } from "@/platform/components/PageHeader";
 export const Route = createFileRoute("/hrm/configuration/")({
   head: () => ({
     meta: [
-      { title: "Configuration — New World Cargo HRM" },
+      { title: "Configuration — Mightyfin HRMS" },
       { name: "description", content: "The single entry point for business setup, process design, security and technical settings." },
-      { property: "og:title", content: "Configuration — New World Cargo HRM" },
+      { property: "og:title", content: "Configuration — Mightyfin HRMS" },
       { property: "og:description", content: "The single entry point for business setup, process design, security and technical settings." },
     ],
   }),

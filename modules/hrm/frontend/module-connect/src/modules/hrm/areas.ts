@@ -92,7 +92,7 @@ export const areas = {
     capabilities: [
       { label: "Attendance review and approval", detail: "Live attendance records, correction workflow, and overtime review.", tier: "Essentials", state: "built", to: "/hrm/time/timesheets" },
       { label: "Payroll evidence hand-off", detail: "Approved attendance-derived overtime with source traceability.", tier: "Essentials", state: "built", to: "/hrm/time/timesheets" },
-      { label: "Project and cost-centre allocation", detail: "Not part of the New World Cargo attendance-timesheet model.", tier: "Advanced", state: "planned", to: "/hrm/time/timesheets" },
+      { label: "Project and cost-centre allocation", detail: "Not part of the current attendance-timesheet model.", tier: "Advanced", state: "planned", to: "/hrm/time/timesheets" },
       { label: "Utilisation reporting", detail: "Attendance and overtime reporting without project costing.", tier: "Advanced", state: "planned", to: "/hrm/time/timesheets" },
     ],
   },

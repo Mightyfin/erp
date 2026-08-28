@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { employees } from "@/mock/data";
+import { employees, entities } from "@/mock/data";
 import { realApi, useApi } from "@/platform/use-api";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
@@ -25,13 +25,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/hrm/experience/letters")({
   head: () => ({
     meta: [
-      { title: "Letters — New World Cargo HRM" },
+      { title: "Letters — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "Request an employment letter and see exactly what it will say before it is issued.",
       },
-      { property: "og:title", content: "Letters — New World Cargo HRM" },
+      { property: "og:title", content: "Letters — Mightyfin HRMS" },
       {
         property: "og:description",
         content:
@@ -152,6 +152,7 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
   const [addressee, setAddressee] = useState("");
   const type = letterTypes.find((t) => t.id === typeId)!;
   const me = employees[0];
+  const employerName = entities.find((entity) => entity.id === me.entityId)?.name ?? "the employing legal entity";
 
   const steps: FlowStep[] = [
     {
@@ -248,7 +249,7 @@ function RequestFlow({ onDone }: { onDone: (ref: string) => void }) {
             <p className="font-medium">{addressee || "To whom it may concern"}</p>
             <p className="mt-3">
               This confirms that <span className="font-medium">{me.fullName}</span> ({me.employeeNo}
-              ) is employed by New World Cargo Logistics Zambia Ltd as{" "}
+              ) is employed by {employerName} as{" "}
               <span className="font-medium">{me.jobTitle}</span>, on a{" "}
               {me.employmentType.toLowerCase()} basis, since {me.startDate}.
             </p>

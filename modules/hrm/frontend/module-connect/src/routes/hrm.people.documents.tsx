@@ -27,9 +27,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/people/documents")({
   head: () => ({
     meta: [
-      { title: "Documents — New World Cargo HRM" },
+      { title: "Documents — Mightyfin HRMS" },
       { name: "description", content: "The digital employee file: classification, versions, signatures, expiry and retention." },
-      { property: "og:title", content: "Documents — New World Cargo HRM" },
+      { property: "og:title", content: "Documents — Mightyfin HRMS" },
       { property: "og:description", content: "The digital employee file: classification, versions, signatures, expiry and retention." },
     ],
   }),

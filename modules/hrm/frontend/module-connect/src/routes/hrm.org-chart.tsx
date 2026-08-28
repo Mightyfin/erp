@@ -10,7 +10,7 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/org-chart")({
   head: () => ({
     meta: [
-      { title: "Organization chart — New World Cargo HRM" },
+      { title: "Organization chart — Mightyfin HRMS" },
       { name: "description", content: "Visual organization chart of legal entities, branches, departments and teams with headcount and unit leads." },
     ],
   }),

@@ -24,7 +24,7 @@ export const demoEntityTree: OrgTreeNode[] = [
   {
     id: "entity:ent-zm1",
     code: "ZM1",
-    name: "New World Cargo Logistics Zambia Ltd",
+    name: "Demo Logistics Zambia Ltd",
     unitType: "entity",
     status: "active",
     managerId: null,
@@ -98,7 +98,7 @@ export const demoEntityTree: OrgTreeNode[] = [
   {
     id: "entity:ent-zm2",
     code: "ZM2",
-    name: "New World Cargo Copperbelt Services Ltd",
+    name: "Demo Copperbelt Services Ltd",
     unitType: "entity",
     status: "active",
     managerId: null,

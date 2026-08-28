@@ -16,13 +16,13 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/talent/goals")({
   head: () => ({
     meta: [
-      { title: "Goals — New World Cargo HRM" },
+      { title: "Goals — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "My goals and my team's goals: measure, weighting, target against current, progress and the organisational goal each one is aligned to.",
       },
-      { property: "og:title", content: "Goals — New World Cargo HRM" },
+      { property: "og:title", content: "Goals — Mightyfin HRMS" },
       {
         property: "og:description",
         content:

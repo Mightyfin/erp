@@ -22,13 +22,13 @@ const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "
 export const Route = createFileRoute("/hrm/payslips/$id")({
   head: () => ({
     meta: [
-      { title: "Payslip — New World Cargo HRM" },
+      { title: "Payslip — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "Every line explained: the calculation, the rule version and the difference from last period.",
       },
-      { property: "og:title", content: "Payslip — New World Cargo HRM" },
+      { property: "og:title", content: "Payslip — Mightyfin HRMS" },
       {
         property: "og:description",
         content:
