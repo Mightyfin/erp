@@ -83,7 +83,12 @@ function SignIn() {
     return (
       <div className="grid min-h-screen lg:grid-cols-2">
         <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
-          <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-10 w-auto object-contain object-left" />
+          <img
+            src="/mightyfin-logo-light.png"
+            alt="Mightyfin HRMS"
+            data-testid="signin-brand-logo"
+            className="h-auto w-32 shrink-0 object-contain object-left"
+          />
           <div className="max-w-md"><h1 className="text-2xl font-semibold">Human resources</h1><p className="mt-3 text-sm text-rail-muted">One place for your profile, leave, attendance, pay and requests.</p></div>
           <p className="text-xs text-rail-muted">Demonstration build — no real accounts.</p>
         </div>
@@ -95,7 +100,12 @@ function SignIn() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
-        <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-10 w-auto object-contain object-left" />
+        <img
+          src="/mightyfin-logo-light.png"
+          alt="Mightyfin HRMS"
+          data-testid="signin-brand-logo"
+          className="h-auto w-32 shrink-0 object-contain object-left"
+        />
         <div className="max-w-md">
           <h1 className="text-2xl font-semibold">Human resources</h1>
           <p className="mt-3 text-sm text-rail-muted">One place for your profile, leave, attendance, pay and requests — and for the people who administer them.</p>
@@ -109,7 +119,14 @@ function SignIn() {
 
       <main className="flex items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden"><img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-9 w-auto object-contain object-left" /></div>
+          <div className="lg:hidden">
+            <img
+              src="/mightyfin-logo-color.png"
+              alt="Mightyfin HRMS"
+              data-testid="signin-mobile-brand-logo"
+              className="h-auto w-28 shrink-0 object-contain object-left"
+            />
+          </div>
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">{accessToken ? "Set your password" : "Sign in"}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{accessToken ? "Choose a password for your Mightyfin HRMS account." : "Use an account created by a Mightyfin HRMS administrator."}</p>
 
