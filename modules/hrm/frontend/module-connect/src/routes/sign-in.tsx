@@ -12,10 +12,10 @@ import { hrmApi } from "@/platform/api-client";
 export const Route = createFileRoute("/sign-in")({
   head: () => ({
     meta: [
-      { title: "Sign in — New World Cargo HRM" },
-      { name: "description", content: "Sign in to the New World Cargo HR workspace." },
-      { property: "og:title", content: "Sign in — New World Cargo HRM" },
-      { property: "og:description", content: "Sign in to the New World Cargo HR workspace." },
+      { title: "Sign in — Mightyfin HRMS" },
+      { name: "description", content: "Sign in to the Mightyfin HRMS workspace." },
+      { property: "og:title", content: "Sign in — Mightyfin HRMS" },
+      { property: "og:description", content: "Sign in to the Mightyfin HRMS workspace." },
     ],
   }),
   component: SignIn,
@@ -83,11 +83,28 @@ function SignIn() {
     return (
       <div className="grid min-h-screen lg:grid-cols-2">
         <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
-          <img src="/newworld-cargo-logo.png" alt="New World Cargo HRM" className="h-10 w-auto object-contain object-left" />
+          <div
+            className="flex h-24 w-36 shrink-0 items-start justify-start"
+            data-testid="signin-brand-logo-container"
+          >
+            <img
+              src="/mightyfin-logo-light.png"
+              alt="Mightyfin HRMS"
+              data-testid="signin-brand-logo"
+              className="block max-h-full max-w-full object-contain object-left"
+            />
+          </div>
           <div className="max-w-md"><h1 className="text-2xl font-semibold">Human resources</h1><p className="mt-3 text-sm text-rail-muted">One place for your profile, leave, attendance, pay and requests.</p></div>
           <p className="text-xs text-rail-muted">Demonstration build — no real accounts.</p>
         </div>
-        <main className="flex items-center justify-center px-4 py-12 sm:px-8"><div className="w-full max-w-sm"><h2 className="text-xl font-semibold">Sign in</h2><p className="mt-1 text-sm text-muted-foreground">Demo mode — choose a role to explore the app.</p><Button className="mt-6 w-full" onClick={continueDemo}>Enter the workspace</Button></div></main>
+        <main className="flex items-center justify-center px-4 py-12 sm:px-8">
+          <div className="w-full max-w-sm">
+            <div className="mb-6 flex h-20 w-32 shrink-0 items-start justify-start lg:hidden" data-testid="signin-mobile-brand-logo-container">
+              <img src="/mightyfin-logo-color.png" alt="Mightyfin HRMS" data-testid="signin-mobile-brand-logo" className="block max-h-full max-w-full object-contain object-left" />
+            </div>
+            <h2 className="text-xl font-semibold">Sign in</h2><p className="mt-1 text-sm text-muted-foreground">Demo mode — choose a role to explore the app.</p><Button className="mt-6 w-full" onClick={continueDemo}>Enter the workspace</Button>
+          </div>
+        </main>
       </div>
     );
   }
@@ -95,13 +112,23 @@ function SignIn() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between bg-rail p-10 text-rail-foreground lg:flex">
-        <img src="/newworld-cargo-logo.png" alt="New World Cargo HRM" className="h-10 w-auto object-contain object-left" />
+        <div
+          className="flex h-24 w-36 shrink-0 items-start justify-start"
+          data-testid="signin-brand-logo-container"
+        >
+          <img
+            src="/mightyfin-logo-light.png"
+            alt="Mightyfin HRMS"
+            data-testid="signin-brand-logo"
+            className="block max-h-full max-w-full object-contain object-left"
+          />
+        </div>
         <div className="max-w-md">
           <h1 className="text-2xl font-semibold">Human resources</h1>
           <p className="mt-3 text-sm text-rail-muted">One place for your profile, leave, attendance, pay and requests — and for the people who administer them.</p>
           <ul className="mt-6 space-y-2 text-sm text-rail-muted">
             <li className="flex gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />Access is scoped to your role, entity and branch.</li>
-            <li className="flex gap-2"><KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />Accounts and passwords are managed by New World Cargo HRM.</li>
+            <li className="flex gap-2"><KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />Accounts and passwords are managed by Mightyfin HRMS.</li>
           </ul>
         </div>
         <p className="text-xs text-rail-muted">Secure local sign-in with the HRMS account database.</p>
@@ -109,16 +136,18 @@ function SignIn() {
 
       <main className="flex items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden"><img src="/newworld-cargo-logo.png" alt="New World Cargo HRM" className="h-9 w-auto object-contain object-left" /></div>
+          <div className="mb-6 flex h-20 w-32 shrink-0 items-start justify-start lg:hidden" data-testid="signin-mobile-brand-logo-container">
+            <img src="/mightyfin-logo-color.png" alt="Mightyfin HRMS" data-testid="signin-mobile-brand-logo" className="block max-h-full max-w-full object-contain object-left" />
+          </div>
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">{accessToken ? "Set your password" : "Sign in"}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{accessToken ? "Choose a password for your NewWorldCargo HRM account." : "Use an account created by a NewWorldCargo HRM administrator."}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{accessToken ? "Choose a password for your Mightyfin HRMS account." : "Use an account created by a Mightyfin HRMS administrator."}</p>
 
           {accessToken ? <form className="mt-6 space-y-4" onSubmit={completeSetup}>
             <div><Label htmlFor="setup-password">New password</Label><Input id="setup-password" type="password" autoComplete="new-password" className="mt-1" value={setupPassword} onChange={(e) => setSetupPassword(e.target.value)} minLength={12} required /></div>
             {error && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert"><AlertTriangle className="mr-2 inline size-4" aria-hidden />{error}</div>}
             <Button className="w-full" type="submit" disabled={setupBusy}>{setupBusy ? "Setting password…" : "Set password"}</Button>
           </form> : <form className="mt-6 space-y-4" onSubmit={submit}>
-            <div><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" className="mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@newworldcargo.com" required /></div>
+            <div><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" className="mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.example" required /></div>
             <div><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" className="mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
             {error && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert"><AlertTriangle className="mr-2 inline size-4" aria-hidden />{error}</div>}
             <Button className="w-full" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
