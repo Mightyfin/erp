@@ -78,18 +78,6 @@ function isPayrollBenefit(type: Row | undefined) {
   return Boolean(type?.includeInPayroll);
 }
 
-function storedAmountForInput(storedAnnualAmount: string, type: Row | undefined) {
-  if (!isPayrollBenefit(type)) return storedAnnualAmount;
-  const annual = Number(storedAnnualAmount);
-  return Number.isFinite(annual) ? String(Math.round((annual / 12) * 100) / 100) : storedAnnualAmount;
-}
-
-function inputAmountForStorage(inputAmount: string, type: Row | undefined) {
-  if (!inputAmount || !isPayrollBenefit(type)) return inputAmount;
-  const monthly = Number(inputAmount);
-  return Number.isFinite(monthly) ? String(Math.round(monthly * 12 * 100) / 100) : inputAmount;
-}
-
 function employeeLabel(row: Row) {
   const name = text(row.fullName ?? row.name ?? row.employeeName) || "Employee";
   return `${name}${row.employeeNo ? ` (${text(row.employeeNo)})` : ""}`;
@@ -192,9 +180,6 @@ function Benefits() {
 
   const amountOverCap = (amount: string, type: Row | undefined) =>
     Boolean(type) && Number(amount || 0) > Number(type?.annualCap ?? 0);
-
-  const allowanceInputLabel = isPayrollBenefit(selectedType) ? "Monthly payslip amount" : "Annual amount";
-  const bulkInputLabel = isPayrollBenefit(selectedBulkType) ? "Monthly payslip amount" : "Annual amount";
 
   const typeOptions = (rows: Row[]) =>
     rows.map((row) => (
@@ -449,7 +434,8 @@ function Benefits() {
                       <TableHead>Benefit</TableHead>
                       <TableHead>Payroll use</TableHead>
                       <TableHead>Year</TableHead>
-                      <TableHead className="text-right">Allowance amount</TableHead>
+                      <TableHead className="text-right">Annual amount</TableHead>
+                      <TableHead className="text-right">Monthly payslip</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -477,16 +463,12 @@ function Benefits() {
                           </TableCell>
                           <TableCell>{text(row.year)}</TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {benefitType?.includeInPayroll ? (
-                              <>
-                                <div>{money(Number(row.annualAmount ?? 0) / 12)} monthly</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {money(row.annualAmount)} annual
-                                </div>
-                              </>
-                            ) : (
-                              <div>{money(row.annualAmount)} annual</div>
-                            )}
+                            {money(row.annualAmount)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {benefitType?.includeInPayroll
+                              ? money(Number(row.annualAmount ?? 0) / 12)
+                              : "-"}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -521,8 +503,8 @@ function Benefits() {
             <CardHeader>
               <CardTitle>Assign allowance</CardTitle>
               <CardDescription>
-                Payroll benefits are entered as the monthly amount shown on a payslip. Claim-only
-                benefits remain annual allowances. The yearly cap is always enforced.
+                Enter the annual allowance. For benefits added to payroll, the monthly payslip amount
+                is calculated below. The yearly cap is always enforced.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -560,21 +542,18 @@ function Benefits() {
                 />
               </div>
               <div>
-                <Label htmlFor="allowance-amount">{allowanceInputLabel}</Label>
+                <Label htmlFor="allowance-amount">Annual amount</Label>
                 <Input
                   id="allowance-amount"
                   type="number"
                   min="0"
                   step="0.01"
-                  value={storedAmountForInput(allowanceAmount, selectedType)}
-                  onChange={(e) => setAllowanceAmount(inputAmountForStorage(e.target.value, selectedType))}
+                  value={allowanceAmount}
+                  onChange={(e) => setAllowanceAmount(e.target.value)}
                 />
                 {selectedType ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Annual cap: {money(selectedType.annualCap)}
-                    {isPayrollBenefit(selectedType)
-                      ? ` · maximum monthly payslip amount: ${money(Number(selectedType.annualCap ?? 0) / 12)}`
-                      : ""}
                   </p>
                 ) : null}
                 {amountOverCap(allowanceAmount, selectedType) ? (
@@ -585,16 +564,16 @@ function Benefits() {
               </div>
               {isPayrollBenefit(selectedType) ? (
                 <div>
-                  <Label htmlFor="allowance-annual-preview">Annual amount to save</Label>
+                  <Label htmlFor="allowance-monthly-preview">Monthly payslip amount</Label>
                   <Input
-                    id="allowance-annual-preview"
+                    id="allowance-monthly-preview"
                     className="bg-muted"
-                    value={money(allowanceAmount)}
+                    value={money(Number(allowanceAmount || 0) / 12)}
                     readOnly
-                    aria-describedby="allowance-annual-help"
+                    aria-describedby="allowance-monthly-help"
                   />
-                  <p id="allowance-annual-help" className="mt-1 text-xs text-muted-foreground">
-                    The monthly amount is multiplied by 12. This is the yearly amount checked against the cap and saved when you submit.
+                  <p id="allowance-monthly-help" className="mt-1 text-xs text-muted-foreground">
+                    Calculated automatically as annual amount divided by 12. This is the amount added to each monthly payslip.
                   </p>
                 </div>
               ) : null}
@@ -726,21 +705,18 @@ function Benefits() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="bulk-amount">{bulkInputLabel}</Label>
+                <Label htmlFor="bulk-amount">Annual amount</Label>
                 <Input
                     id="bulk-amount"
                     type="number"
                     min="0"
                     step="0.01"
-                  value={storedAmountForInput(bulkAmount, selectedBulkType)}
-                  onChange={(e) => setBulkAmount(inputAmountForStorage(e.target.value, selectedBulkType))}
+                  value={bulkAmount}
+                  onChange={(e) => setBulkAmount(e.target.value)}
                 />
                 {selectedBulkType ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Annual cap: {money(selectedBulkType.annualCap)}
-                    {isPayrollBenefit(selectedBulkType)
-                      ? ` · maximum monthly payslip amount: ${money(Number(selectedBulkType.annualCap ?? 0) / 12)}`
-                      : ""}
                   </p>
                   ) : null}
                   {amountOverCap(bulkAmount, selectedBulkType) ? (
@@ -751,16 +727,16 @@ function Benefits() {
                 </div>
                 {isPayrollBenefit(selectedBulkType) ? (
                   <div>
-                    <Label htmlFor="bulk-annual-preview">Annual amount to save</Label>
+                    <Label htmlFor="bulk-monthly-preview">Monthly payslip amount</Label>
                     <Input
-                      id="bulk-annual-preview"
+                      id="bulk-monthly-preview"
                       className="bg-muted"
-                      value={money(bulkAmount)}
+                      value={money(Number(bulkAmount || 0) / 12)}
                       readOnly
-                      aria-describedby="bulk-annual-help"
+                      aria-describedby="bulk-monthly-help"
                     />
-                    <p id="bulk-annual-help" className="mt-1 text-xs text-muted-foreground">
-                      Monthly amount x 12. The same annual amount will be saved for every selected employee.
+                    <p id="bulk-monthly-help" className="mt-1 text-xs text-muted-foreground">
+                      Calculated as annual amount divided by 12 for every selected employee.
                     </p>
                   </div>
                 ) : null}
