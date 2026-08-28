@@ -74,6 +74,22 @@ function money(value: unknown) {
     : "0";
 }
 
+function isPayrollBenefit(type: Row | undefined) {
+  return Boolean(type?.includeInPayroll);
+}
+
+function storedAmountForInput(storedAnnualAmount: string, type: Row | undefined) {
+  if (!isPayrollBenefit(type)) return storedAnnualAmount;
+  const annual = Number(storedAnnualAmount);
+  return Number.isFinite(annual) ? String(Math.round((annual / 12) * 100) / 100) : storedAnnualAmount;
+}
+
+function inputAmountForStorage(inputAmount: string, type: Row | undefined) {
+  if (!inputAmount || !isPayrollBenefit(type)) return inputAmount;
+  const monthly = Number(inputAmount);
+  return Number.isFinite(monthly) ? String(Math.round(monthly * 12 * 100) / 100) : inputAmount;
+}
+
 function employeeLabel(row: Row) {
   const name = text(row.fullName ?? row.name ?? row.employeeName) || "Employee";
   return `${name}${row.employeeNo ? ` (${text(row.employeeNo)})` : ""}`;
@@ -176,6 +192,9 @@ function Benefits() {
 
   const amountOverCap = (amount: string, type: Row | undefined) =>
     Boolean(type) && Number(amount || 0) > Number(type?.annualCap ?? 0);
+
+  const allowanceInputLabel = isPayrollBenefit(selectedType) ? "Monthly payslip amount" : "Annual amount";
+  const bulkInputLabel = isPayrollBenefit(selectedBulkType) ? "Monthly payslip amount" : "Annual amount";
 
   const typeOptions = (rows: Row[]) =>
     rows.map((row) => (
@@ -430,7 +449,7 @@ function Benefits() {
                       <TableHead>Benefit</TableHead>
                       <TableHead>Payroll use</TableHead>
                       <TableHead>Year</TableHead>
-                      <TableHead className="text-right">Annual amount</TableHead>
+                      <TableHead className="text-right">Allowance amount</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -458,7 +477,16 @@ function Benefits() {
                           </TableCell>
                           <TableCell>{text(row.year)}</TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {money(row.annualAmount)}
+                            {benefitType?.includeInPayroll ? (
+                              <>
+                                <div>{money(Number(row.annualAmount ?? 0) / 12)} monthly</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {money(row.annualAmount)} annual
+                                </div>
+                              </>
+                            ) : (
+                              <div>{money(row.annualAmount)} annual</div>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -493,7 +521,8 @@ function Benefits() {
             <CardHeader>
               <CardTitle>Assign allowance</CardTitle>
               <CardDescription>
-                Save one employee allowance. The amount cannot exceed the benefit type annual cap.
+                Payroll benefits are entered as the monthly amount shown on a payslip. Claim-only
+                benefits remain annual allowances. The yearly cap is always enforced.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -531,18 +560,21 @@ function Benefits() {
                 />
               </div>
               <div>
-                <Label htmlFor="allowance-amount">Annual amount</Label>
+                <Label htmlFor="allowance-amount">{allowanceInputLabel}</Label>
                 <Input
                   id="allowance-amount"
                   type="number"
                   min="0"
                   step="0.01"
-                  value={allowanceAmount}
-                  onChange={(e) => setAllowanceAmount(e.target.value)}
+                  value={storedAmountForInput(allowanceAmount, selectedType)}
+                  onChange={(e) => setAllowanceAmount(inputAmountForStorage(e.target.value, selectedType))}
                 />
                 {selectedType ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Cap: {money(selectedType.annualCap)}
+                    Annual cap: {money(selectedType.annualCap)}
+                    {isPayrollBenefit(selectedType)
+                      ? ` · maximum monthly payslip amount: ${money(Number(selectedType.annualCap ?? 0) / 12)}`
+                      : ""}
                   </p>
                 ) : null}
                 {amountOverCap(allowanceAmount, selectedType) ? (
@@ -679,19 +711,22 @@ function Benefits() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="bulk-amount">Annual amount</Label>
-                  <Input
+                <Label htmlFor="bulk-amount">{bulkInputLabel}</Label>
+                <Input
                     id="bulk-amount"
                     type="number"
                     min="0"
                     step="0.01"
-                    value={bulkAmount}
-                    onChange={(e) => setBulkAmount(e.target.value)}
-                  />
-                  {selectedBulkType ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Cap: {money(selectedBulkType.annualCap)}
-                    </p>
+                  value={storedAmountForInput(bulkAmount, selectedBulkType)}
+                  onChange={(e) => setBulkAmount(inputAmountForStorage(e.target.value, selectedBulkType))}
+                />
+                {selectedBulkType ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Annual cap: {money(selectedBulkType.annualCap)}
+                    {isPayrollBenefit(selectedBulkType)
+                      ? ` · maximum monthly payslip amount: ${money(Number(selectedBulkType.annualCap ?? 0) / 12)}`
+                      : ""}
+                  </p>
                   ) : null}
                   {amountOverCap(bulkAmount, selectedBulkType) ? (
                     <p className="mt-1 text-xs text-destructive">
