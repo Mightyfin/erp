@@ -19,17 +19,7 @@ function Entrance() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-primary/40 bg-primary text-primary-foreground shadow-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4">
-          <span
-            className="flex h-10 w-16 shrink-0 items-center justify-start"
-            data-testid="entrance-brand-logo-container"
-          >
-            <img
-              src="/mightyfin-logo-light.png"
-              alt="Mightyfin HRMS"
-              data-testid="entrance-brand-logo"
-              className="block max-h-full max-w-full object-contain"
-            />
-          </span>
+          <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-8 w-auto max-w-[132px] object-contain" />
           <span className="font-semibold">Mightyfin HRMS</span>
         </div>
       </header>

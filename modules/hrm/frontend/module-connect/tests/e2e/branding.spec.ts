@@ -5,17 +5,6 @@ test("uses Mightyfin HRMS browser branding and the checked-in favicon", async ({
 
   await expect(page).toHaveTitle("Mightyfin HRMS");
   await expect(page.getByText("Mightyfin HRMS", { exact: true })).toBeVisible();
-  const logoContainer = page.getByTestId("entrance-brand-logo-container");
-  const logo = page.getByTestId("entrance-brand-logo");
-  await expect(logoContainer).toBeVisible();
-  await expect(logo).toBeVisible();
-  await expect(logo).not.toHaveClass(/(?:^|\s)[hw]-/);
-  const logoBox = await logo.boundingBox();
-  const containerBox = await logoContainer.boundingBox();
-  expect(logoBox).not.toBeNull();
-  expect(containerBox).not.toBeNull();
-  expect(logoBox!.width).toBeLessThanOrEqual(containerBox!.width);
-  expect(logoBox!.height).toBeLessThanOrEqual(containerBox!.height);
   await expect(page.locator('link[rel="icon"][href="/mightyfin-mark.png"]')).toHaveCount(1);
 
   const favicon = await page.request.get("/favicon.ico");

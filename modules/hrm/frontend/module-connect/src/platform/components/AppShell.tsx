@@ -809,17 +809,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">
-                <span
-                  className="flex h-10 w-16 shrink-0 items-center justify-start"
-                  data-testid="shell-brand-logo-container"
-                >
-                  <img
-                    src="/mightyfin-logo-light.png"
-                    alt="Mightyfin HRMS"
-                    data-testid="shell-brand-logo"
-                    className="block max-h-full max-w-full object-contain"
-                  />
-                </span>
+                <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-8 w-auto max-w-[132px] object-contain" />
                 <span className="hidden font-semibold sm:inline">Mightyfin HRMS</span>
                 <ChevronDown className="size-3.5" aria-hidden />
               </Button>
