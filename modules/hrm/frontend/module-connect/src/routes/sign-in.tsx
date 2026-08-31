@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/platform/app-context";
 import { useAuth } from "@/platform/auth";
-import { ApiError } from "@/platform/api-client";
+import { ApiError, hrmApi } from "@/platform/api-client";
 import {
   getSession,
   handleLoginCallback,
@@ -55,8 +55,15 @@ function SignIn() {
   const [busy, setBusy] = useState(false);
   const [localBusy, setLocalBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupPasswordConfirmation, setSetupPasswordConfirmation] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupComplete, setSetupComplete] = useState(false);
   const [silenceFailed, setSilenceFailed] = useState(false);
   const callbackInProgress = useRef(false);
+  const credentialToken = typeof window === "undefined"
+    ? ""
+    : new URLSearchParams(window.location.search).get("token") ?? "";
 
   // (1) Handle every redirect back from Keycloak before considering another
   // silent attempt. In particular, `login_required` is the expected response
@@ -80,6 +87,7 @@ function SignIn() {
   // (2) Auto-login whenever a valid session exists.
   useEffect(() => {
     if (!USE_REAL) return;
+    if (credentialToken) return;
     if (authenticated) {
       void navigate({ to: "/hrm", replace: true });
       return;
@@ -95,7 +103,7 @@ function SignIn() {
     const session = getSession();
     if (isSessionValid(session)) return;
     startSilentSso(window.location.pathname === "/sign-in" ? "/hrm" : window.location.pathname);
-  }, [authenticated, navigate, silenceFailed]);
+  }, [authenticated, credentialToken, navigate, silenceFailed]);
 
   const enterWithOrganisation = () => {
     setBusy(true);
@@ -113,6 +121,31 @@ function SignIn() {
       setLocalError(error instanceof ApiError ? error.message : "Local HRMS sign-in failed.");
     } finally {
       setLocalBusy(false);
+    }
+  };
+
+  const completePasswordSetup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLocalError(null);
+    if (setupPassword !== setupPasswordConfirmation) {
+      setLocalError("The passwords do not match.");
+      return;
+    }
+    if (setupPassword.length < 12) {
+      setLocalError("Use at least 12 characters for your password.");
+      return;
+    }
+    setSetupBusy(true);
+    try {
+      await hrmApi.auth.setPassword(credentialToken, setupPassword);
+      window.history.replaceState({}, "", "/sign-in");
+      setSetupComplete(true);
+      setSetupPassword("");
+      setSetupPasswordConfirmation("");
+    } catch (error) {
+      setLocalError(error instanceof ApiError ? error.message : "Unable to set the account password.");
+    } finally {
+      setSetupBusy(false);
     }
   };
 
@@ -210,6 +243,37 @@ function SignIn() {
             </div>
           </div>
 
+          {credentialToken ? (
+            <>
+              <h2 className="mt-6 text-xl font-semibold lg:mt-0">Set your HRMS password</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Complete your local HRMS account setup. This one-time link expires after 24 hours.
+              </p>
+              {setupComplete ? (
+                <div className="mt-6 space-y-4">
+                  <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-primary" role="status">
+                    Your password is ready. You can now sign in with your HRMS local account.
+                  </p>
+                  <Button className="w-full" onClick={() => window.location.assign("/sign-in")}>Continue to sign in</Button>
+                </div>
+              ) : (
+                <form className="mt-6 space-y-4" onSubmit={completePasswordSetup}>
+                  <div>
+                    <Label htmlFor="setup-password">New password</Label>
+                    <Input id="setup-password" type="password" autoComplete="new-password" className="mt-1" value={setupPassword} onChange={(event) => setSetupPassword(event.target.value)} minLength={12} required />
+                    <p className="mt-1 text-xs text-muted-foreground">Use at least 12 characters.</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="setup-password-confirmation">Confirm new password</Label>
+                    <Input id="setup-password-confirmation" type="password" autoComplete="new-password" className="mt-1" value={setupPasswordConfirmation} onChange={(event) => setSetupPasswordConfirmation(event.target.value)} minLength={12} required />
+                  </div>
+                  {localError ? <p className="text-sm text-destructive" role="alert">{localError}</p> : null}
+                  <Button type="submit" className="w-full" disabled={setupBusy}>{setupBusy ? "Setting password…" : "Set password"}</Button>
+                </form>
+              )}
+            </>
+          ) : (
+            <>
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">Sign in</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Use your organisation account. If you are already signed in with the platform identity
@@ -279,6 +343,8 @@ function SignIn() {
               </p>
             </div>
           </form>
+            </>
+          )}
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <LifeBuoy className="size-3.5" aria-hidden />

@@ -405,7 +405,7 @@ internal static class LocalIdentityRoutes
         db.LocalCredentialLinks.Add(new LocalCredentialLink { TenantId = user.TenantId, LocalUserId = user.Id, TokenHash = LocalSessionTokens.Hash(token), ExpiresAt = now.AddHours(24) });
         user.MustChangePassword = true;
         await db.SaveChangesAsync(ct);
-        var publicUrl = config["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.newworldcargo.com";
+        var publicUrl = config["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.mightyfinance.co.zm";
         await outbox.EnqueueAsync(HrmEventTypes.AccountAccessLink, user.Id.ToString("D"), new
         {
             email = user.Email,

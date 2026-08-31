@@ -354,7 +354,7 @@ public sealed class SmtpNotificationFallback : ISmtpNotificationFallback
         var root = payload.RootElement;
         var email = Required(root, "email");
         var firstName = Optional(root, "first_name");
-        var portalUrl = configuration["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://hrm.mightyfinance.co.zm";
+        var portalUrl = configuration["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.mightyfinance.co.zm";
         var (subject, plainBody, htmlBody) = row.EventType switch
         {
             HrmEventTypes.PayslipReleased => (
