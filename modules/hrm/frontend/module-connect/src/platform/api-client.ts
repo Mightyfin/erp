@@ -7,8 +7,12 @@
  *   scope queries to the right tenant.
  * - All responses follow the backend's problem-details-ish envelope and this
  *   client normalises them into an `ApiError` class the UI can surface.
- * - Standalone auth: requests carry the application-owned HttpOnly session cookie.
+ * - OIDC auth: requests carry the current ERP-realm access token. Cookies stay
+ *   enabled so the same client remains compatible with explicitly configured
+ *   standalone/local deployments.
  */
+
+import { getSession } from "@/platform/oidc";
 
 export class ApiError extends Error {
   constructor(
@@ -138,9 +142,13 @@ function headers(extra?: Record<string, string>): Record<string, string> {
     // Corrupt or missing shell state — send no scope and let the backend
     // treat the operator as global (entity-wide) view.
   }
+  const session = typeof localStorage !== "undefined" ? getSession() : null;
+  const authHeaders: Record<string, string> = {};
+  if (session?.accessToken) authHeaders.Authorization = `Bearer ${session.accessToken}`;
   return {
     Accept: "application/json",
     "HRM-Default-TenantId": TENANT_ID,
+    ...authHeaders,
     ...shellHeaders,
     ...extra,
   };
@@ -240,7 +248,7 @@ export const hrmApi = {
     form.append("title", title);
     const res = await fetch(`${BASE}/hrm/documents/upload`, {
       method: "POST",
-      headers: { "HRM-Default-TenantId": TENANT_ID },
+      headers: headers(),
       body: form,
     });
     return handleResponse(res);
