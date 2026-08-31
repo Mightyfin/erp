@@ -60,12 +60,12 @@ const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 export const Route = createFileRoute("/hrm/employees/$id")({
   head: () => ({
     meta: [
-      { title: "Employee profile — New World Cargo HRM" },
+      { title: "Employee profile — Mightyfin HRMS" },
       {
         name: "description",
         content: "Employment record: identity, contract, pay context, history and related records.",
       },
-      { property: "og:title", content: "Employee profile — New World Cargo HRM" },
+      { property: "og:title", content: "Employee profile — Mightyfin HRMS" },
       {
         property: "og:description",
         content: "Employment record: identity, contract, pay context, history and related records.",

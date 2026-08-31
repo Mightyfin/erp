@@ -17,7 +17,7 @@ import { PageHeader } from "@/platform/components/PageHeader";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/time/timesheets")({
-  head: () => ({ meta: [{ title: "Timesheet summary — New World Cargo HRM" }, { name: "description", content: "Review live attendance across daily, weekly, and monthly periods." }] }),
+  head: () => ({ meta: [{ title: "Timesheet summary — Mightyfin HRMS" }, { name: "description", content: "Review live attendance across daily, weekly, and monthly periods." }] }),
   component: TimesheetsPage,
 });
 

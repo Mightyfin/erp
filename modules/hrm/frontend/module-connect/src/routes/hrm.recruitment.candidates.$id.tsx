@@ -20,13 +20,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/recruitment/candidates/$id")({
   head: () => ({
     meta: [
-      { title: "Candidate — New World Cargo HRM" },
+      { title: "Candidate — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "Selection pipeline, interview scorecards, reference and background checks, retention basis and the offer decision.",
       },
-      { property: "og:title", content: "Candidate — New World Cargo HRM" },
+      { property: "og:title", content: "Candidate — Mightyfin HRMS" },
       {
         property: "og:description",
         content: "Pipeline, scorecards, checks, retention basis and the offer decision for one candidate.",
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/hrm/recruitment/candidates/$id")({
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
-const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "New World Cargo Logistics Zambia Ltd";
+const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "Demo Logistics Zambia Ltd";
 
 const stageMap: Record<string, string> = {
   applied: "Applied",

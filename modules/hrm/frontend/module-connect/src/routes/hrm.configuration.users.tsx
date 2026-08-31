@@ -23,9 +23,9 @@ import { realApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/configuration/users")({
   head: () => ({
     meta: [
-      { title: "Users — New World Cargo HRM" },
+      { title: "Users — Mightyfin HRMS" },
       { name: "description", content: "Manage local HRM accounts, roles, access and passwords." },
-      { property: "og:title", content: "Users — New World Cargo HRM" },
+      { property: "og:title", content: "Users — Mightyfin HRMS" },
       { property: "og:description", content: "Manage local HRM accounts, roles, access and passwords." },
     ],
   }),

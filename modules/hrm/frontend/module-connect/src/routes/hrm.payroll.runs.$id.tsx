@@ -46,13 +46,13 @@ import { useAuth } from "@/platform/auth";
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
   head: () => ({
     meta: [
-      { title: "Pay run — New World Cargo HRM" },
+      { title: "Pay run — Mightyfin HRMS" },
       {
         name: "description",
         content:
           "A pay run stage by stage: population, calculation, variances, approval and controlled release.",
       },
-      { property: "og:title", content: "Pay run — New World Cargo HRM" },
+      { property: "og:title", content: "Pay run — Mightyfin HRMS" },
       {
         property: "og:description",
         content:
@@ -1526,7 +1526,7 @@ function adaptRun(raw: unknown, auditRows: unknown[] = []): OperationalPayRun {
     id: String(r.id ?? ""),
     period: String(r.periodLabel ?? r.period ?? ""),
     entityId: "",
-    entityName: String(r.entityName ?? "New World Cargo Zambia Ltd"),
+    entityName: String(r.entityName ?? "Demo Zambia Ltd"),
     payGroup: String(r.payGroup ?? "Monthly ZMW"),
     currency: String(r.currency ?? "ZMW"),
     status: status as PayRun["status"],

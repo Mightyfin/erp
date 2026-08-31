@@ -15,7 +15,7 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/")({
   head: () => ({
     meta: [
-      { title: "Home — New World Cargo HRM" },
+      { title: "Home — Mightyfin HRMS" },
       { name: "description", content: "Live HR work queue: exceptions, approvals, tasks and deadlines." },
     ],
   }),

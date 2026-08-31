@@ -109,8 +109,8 @@ export const assignments: Assignment[] = [
     id: "ASG-0007",
     employee: "Nalukui Simasiku",
     type: "Short-term",
-    homeEntity: "New World Cargo Copperbelt Services Ltd",
-    hostEntity: "New World Cargo Logistics Zambia Ltd",
+    homeEntity: "Demo Copperbelt Services Ltd",
+    hostEntity: "Demo Logistics Zambia Ltd",
     from: "2026-10-01",
     to: "2027-01-31",
     status: "Approved",
@@ -127,8 +127,8 @@ export const assignments: Assignment[] = [
     id: "ASG-0004",
     employee: "Natasha Chirwa",
     type: "Commuter",
-    homeEntity: "New World Cargo Engineering Zambia Ltd",
-    hostEntity: "New World Cargo Logistics Zambia Ltd",
+    homeEntity: "Demo Engineering Zambia Ltd",
+    hostEntity: "Demo Logistics Zambia Ltd",
     from: "2026-09-14",
     status: "Proposed",
     permit: "Not required",
@@ -175,9 +175,9 @@ export interface Offer {
 }
 
 export const offers: Offer[] = [
-  { id: "OFR-0044", candidate: "Mwaka Lungu", role: "Maintenance Planner", entity: "New World Cargo Logistics Zambia Ltd", salary: 198_000, currency: "ZMW", startDate: "2026-10-01", status: "Sent", approver: "Mutale Kabwe", expires: "2026-08-15", vsBand: "Within G6 band, 3% above midpoint" },
-  { id: "OFR-0041", candidate: "Chembo Katongo", role: "Yard Supervisor", entity: "New World Cargo Copperbelt Services Ltd", salary: 186_000, currency: "ZMW", startDate: "2026-09-15", status: "Awaiting approval", approver: "Mutale Kabwe", expires: "2026-08-20", vsBand: "Above band maximum — needs written justification" },
-  { id: "OFR-0038", candidate: "Lubona Mubita", role: "Welding Technician", entity: "New World Cargo Engineering Zambia Ltd", salary: 114_000, currency: "ZMW", startDate: "2026-09-01", status: "Accepted", approver: "Mutale Kabwe", expires: "2026-08-01", vsBand: "Within G4 band" },
+  { id: "OFR-0044", candidate: "Mwaka Lungu", role: "Maintenance Planner", entity: "Demo Logistics Zambia Ltd", salary: 198_000, currency: "ZMW", startDate: "2026-10-01", status: "Sent", approver: "Mutale Kabwe", expires: "2026-08-15", vsBand: "Within G6 band, 3% above midpoint" },
+  { id: "OFR-0041", candidate: "Chembo Katongo", role: "Yard Supervisor", entity: "Demo Copperbelt Services Ltd", salary: 186_000, currency: "ZMW", startDate: "2026-09-15", status: "Awaiting approval", approver: "Mutale Kabwe", expires: "2026-08-20", vsBand: "Above band maximum — needs written justification" },
+  { id: "OFR-0038", candidate: "Lubona Mubita", role: "Welding Technician", entity: "Demo Engineering Zambia Ltd", salary: 114_000, currency: "ZMW", startDate: "2026-09-01", status: "Accepted", approver: "Mutale Kabwe", expires: "2026-08-01", vsBand: "Within G4 band" },
 ];
 
 export interface Referral {

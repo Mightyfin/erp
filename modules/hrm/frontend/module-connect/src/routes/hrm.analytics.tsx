@@ -18,7 +18,7 @@ import { PageHeader } from "@/platform/components/PageHeader";
 export const Route = createFileRoute("/hrm/analytics")({
   head: () => ({
     meta: [
-      { title: "HR analytics — New World Cargo HRM" },
+      { title: "HR analytics — Mightyfin HRMS" },
       {
         name: "description",
         content:

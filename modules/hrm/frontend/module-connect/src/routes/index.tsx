@@ -5,9 +5,9 @@ import { modules } from "@/platform/modules";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "New World Cargo HRM" },
+      { title: "Mightyfin HRMS" },
       { name: "description", content: "Choose a module to enter." },
-      { property: "og:title", content: "New World Cargo HRM" },
+      { property: "og:title", content: "Mightyfin HRMS" },
       { property: "og:description", content: "Choose a module to enter." },
     ],
   }),
@@ -19,8 +19,8 @@ function Entrance() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-primary/40 bg-primary text-primary-foreground shadow-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4">
-          <img src="/newworld-cargo-logo.png" alt="New World Cargo" className="h-8 w-auto max-w-[132px] object-contain" />
-          <span className="font-semibold">New World Cargo HRM</span>
+          <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-8 w-auto max-w-[132px] object-contain" />
+          <span className="font-semibold">Mightyfin HRMS</span>
         </div>
       </header>
 

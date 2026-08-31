@@ -13,7 +13,7 @@ import { feedback } from "@/platform/feedback";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/configuration/holidays")({
-  head: () => ({ meta: [{ title: "Holiday List — New World Cargo HRM" }, { name: "description", content: "Live public holiday calendars." }] }),
+  head: () => ({ meta: [{ title: "Holiday List — Mightyfin HRMS" }, { name: "description", content: "Live public holiday calendars." }] }),
   component: HolidaysPage,
 });
 

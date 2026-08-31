@@ -19,21 +19,21 @@ export const workspaces: Workspace[] = [
 export const entities: Entity[] = [
   {
     id: "ent-zm1",
-    name: "New World Cargo Logistics Zambia Ltd",
+    name: "Demo Logistics Zambia Ltd",
     country: "Zambia",
     legalId: "PACRA 120190001234 · TPIN 1001234567",
     branches: ["Lusaka HQ", "Ndola Plant", "Kitwe Depot"],
   },
   {
     id: "ent-zm2",
-    name: "New World Cargo Copperbelt Services Ltd",
+    name: "Demo Copperbelt Services Ltd",
     country: "Zambia",
     legalId: "PACRA 120150004417 · TPIN 1002298431",
     branches: ["Chingola Office", "Solwezi Yard"],
   },
   {
     id: "ent-zm3",
-    name: "New World Cargo Engineering Zambia Ltd",
+    name: "Demo Engineering Zambia Ltd",
     country: "Zambia",
     legalId: "PACRA 120210007782 · TPIN 1003844126",
     branches: ["Livingstone Works"],

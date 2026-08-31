@@ -15,9 +15,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/leave/$id")({
   head: () => ({
     meta: [
-      { title: "Leave decision — New World Cargo HRM" },
+      { title: "Leave decision — Mightyfin HRMS" },
       { name: "description", content: "Approve, return, reject or delegate a leave request with full policy context." },
-      { property: "og:title", content: "Leave decision — New World Cargo HRM" },
+      { property: "og:title", content: "Leave decision — Mightyfin HRMS" },
       { property: "og:description", content: "Approve, return, reject or delegate a leave request with full policy context." },
     ],
   }),

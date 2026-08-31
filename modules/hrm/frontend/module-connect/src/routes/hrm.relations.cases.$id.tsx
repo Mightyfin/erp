@@ -16,9 +16,9 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/relations/cases/$id")({
   head: () => ({
     meta: [
-      { title: "Case — New World Cargo HRM" },
+      { title: "Case — Mightyfin HRMS" },
       { name: "description", content: "A restricted employee-relations case." },
-      { property: "og:title", content: "Case — New World Cargo HRM" },
+      { property: "og:title", content: "Case — Mightyfin HRMS" },
       { property: "og:description", content: "A restricted employee-relations case." },
     ],
   }),

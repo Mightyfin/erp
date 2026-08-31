@@ -78,7 +78,7 @@ export const legalEntityConfigs: LegalEntityConfig[] = [
   {
     id: "cfg-ent-zm1",
     entityId: "ent-zm1",
-    registeredName: "New World Cargo Logistics Zambia Ltd",
+    registeredName: "Demo Logistics Zambia Ltd",
     country: "Zambia",
     legalIdLabel: "PACRA / TPIN",
     legalId: "PACRA 120190001234 · TPIN 1001234567",
@@ -93,7 +93,7 @@ export const legalEntityConfigs: LegalEntityConfig[] = [
   {
     id: "cfg-ent-zm2",
     entityId: "ent-zm2",
-    registeredName: "New World Cargo Copperbelt Services Ltd",
+    registeredName: "Demo Copperbelt Services Ltd",
     country: "Zambia",
     legalIdLabel: "PACRA / TPIN",
     legalId: "PACRA 120150004417 · TPIN 1002298431",
@@ -108,7 +108,7 @@ export const legalEntityConfigs: LegalEntityConfig[] = [
   {
     id: "cfg-ent-zm3",
     entityId: "ent-zm3",
-    registeredName: "New World Cargo Engineering Zambia Ltd",
+    registeredName: "Demo Engineering Zambia Ltd",
     country: "Zambia",
     legalIdLabel: "PACRA / TPIN",
     legalId: "PACRA 120210007782 · TPIN 1003844126",
@@ -433,7 +433,7 @@ export const scheduledChanges: ScheduledChange[] = [
     id: "chg-002",
     scope: "Work location",
     unit: "Kabwe Service Hub (ZM-KAB)",
-    change: "Open new work location under New World Cargo Logistics Zambia Ltd",
+    change: "Open new work location under Demo Logistics Zambia Ltd",
     effectiveFrom: "2026-10-01",
     requestedBy: "Thandiwe Banda",
     requestedOn: "2026-07-02",
@@ -471,7 +471,7 @@ export const scheduledChanges: ScheduledChange[] = [
   {
     id: "chg-005",
     scope: "Legal entity",
-    unit: "New World Cargo Engineering Zambia Ltd",
+    unit: "Demo Engineering Zambia Ltd",
     change: "Update registered address to Plot 33, Mosi-oa-Tunya Road, Livingstone",
     effectiveFrom: "2026-08-01",
     requestedBy: "Thandiwe Banda",
@@ -497,7 +497,7 @@ export const structureAudit: TimelineEvent[] = [
     id: "sa-2",
     at: "2026-07-14T14:40:00Z",
     actor: "Thandiwe Banda",
-    event: "Scheduled registered address change for New World Cargo Engineering Zambia Ltd",
+    event: "Scheduled registered address change for Demo Engineering Zambia Ltd",
     reason: "Lease moved to the Billstraße site.",
     before: "Süderstraße 77, 20097 Livingstone",
     after: "Plot 33, Mosi-oa-Tunya Road, Livingstone",
@@ -606,7 +606,7 @@ export const roleDefs: RoleDef[] = [
     holderIds: ["w-1005"],
     scope: "Entity",
     scopeNote:
-      "Assigned to New World Cargo Logistics Zambia Ltd only. A second holder is needed for the Zambian entity.",
+      "Assigned to Demo Logistics Zambia Ltd only. A second holder is needed for the Zambian entity.",
     administrative: false,
   },
   {
@@ -765,7 +765,7 @@ export const sodRules: SodRule[] = [
     holders: [{ employeeId: "w-1005", roles: ["hr_ops", "hr_admin"] }],
     mitigated: true,
     mitigation:
-      "Accepted for New World Cargo Logistics Zambia Ltd until a second HR operations holder is appointed. Reviewed on 30 June 2026, next review 31 December 2026.",
+      "Accepted for Demo Logistics Zambia Ltd until a second HR operations holder is appointed. Reviewed on 30 June 2026, next review 31 December 2026.",
   },
   {
     id: "sod-3",

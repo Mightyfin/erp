@@ -12,9 +12,9 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/lifecycle/onboarding")({
   head: () => ({
     meta: [
-      { title: "Onboarding — New World Cargo HRM" },
+      { title: "Onboarding — Mightyfin HRMS" },
       { name: "description", content: "Every joiner's onboarding case with progress, blockers, owner, next action and due date." },
-      { property: "og:title", content: "Onboarding — New World Cargo HRM" },
+      { property: "og:title", content: "Onboarding — Mightyfin HRMS" },
       { property: "og:description", content: "Every joiner's onboarding case with progress, blockers, owner, next action and due date." },
     ],
   }),

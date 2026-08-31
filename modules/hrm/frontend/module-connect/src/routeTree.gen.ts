@@ -117,6 +117,7 @@ import { Route as HrmTimeTimesheetsRouteImport } from './routes/hrm.time.timeshe
 import { Route as HrmTimeToilRouteImport } from './routes/hrm.time.toil'
 import { Route as HrmTimeTravelRouteImport } from './routes/hrm.time.travel'
 import { Route as HrmTimeUtilisationRouteImport } from './routes/hrm.time.utilisation'
+import { Route as HrmConfigurationUsersIdRouteImport } from './routes/hrm.configuration.users.$id'
 import { Route as HrmEmployeesIdEditRouteImport } from './routes/hrm.employees.$id.edit'
 import { Route as HrmLifecycleMovementsNewRouteImport } from './routes/hrm.lifecycle.movements.new'
 import { Route as HrmLifecycleOffboardingIdRouteImport } from './routes/hrm.lifecycle.offboarding.$id'
@@ -688,6 +689,11 @@ const HrmTimeUtilisationRoute = HrmTimeUtilisationRouteImport.update({
   path: '/hrm/time/utilisation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrmConfigurationUsersIdRoute = HrmConfigurationUsersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => HrmConfigurationUsersRoute,
+} as any)
 const HrmEmployeesIdEditRoute = HrmEmployeesIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
@@ -804,7 +810,7 @@ export interface FileRoutesByFullPath {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
-  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRouteWithChildren
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/import': typeof HrmEmployeesImportRoute
@@ -878,6 +884,7 @@ export interface FileRoutesByFullPath {
   '/hrm/reports/': typeof HrmReportsIndexRoute
   '/hrm/requests/': typeof HrmRequestsIndexRoute
   '/hrm/talent/': typeof HrmTalentIndexRoute
+  '/hrm/configuration/users/$id': typeof HrmConfigurationUsersIdRoute
   '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
   '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
   '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
@@ -929,7 +936,7 @@ export interface FileRoutesByTo {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
-  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRouteWithChildren
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/import': typeof HrmEmployeesImportRoute
@@ -1003,6 +1010,7 @@ export interface FileRoutesByTo {
   '/hrm/reports': typeof HrmReportsIndexRoute
   '/hrm/requests': typeof HrmRequestsIndexRoute
   '/hrm/talent': typeof HrmTalentIndexRoute
+  '/hrm/configuration/users/$id': typeof HrmConfigurationUsersIdRoute
   '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
   '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
   '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
@@ -1055,7 +1063,7 @@ export interface FileRoutesById {
   '/hrm/configuration/process': typeof HrmConfigurationProcessRoute
   '/hrm/configuration/roles': typeof HrmConfigurationRolesRoute
   '/hrm/configuration/technical': typeof HrmConfigurationTechnicalRoute
-  '/hrm/configuration/users': typeof HrmConfigurationUsersRoute
+  '/hrm/configuration/users': typeof HrmConfigurationUsersRouteWithChildren
   '/hrm/data/import-export': typeof HrmDataImportExportRoute
   '/hrm/employees/$id': typeof HrmEmployeesIdRouteWithChildren
   '/hrm/employees/import': typeof HrmEmployeesImportRoute
@@ -1129,6 +1137,7 @@ export interface FileRoutesById {
   '/hrm/reports/': typeof HrmReportsIndexRoute
   '/hrm/requests/': typeof HrmRequestsIndexRoute
   '/hrm/talent/': typeof HrmTalentIndexRoute
+  '/hrm/configuration/users/$id': typeof HrmConfigurationUsersIdRoute
   '/hrm/employees/$id/edit': typeof HrmEmployeesIdEditRoute
   '/hrm/lifecycle/movements/new': typeof HrmLifecycleMovementsNewRoute
   '/hrm/lifecycle/offboarding/$id': typeof HrmLifecycleOffboardingIdRoute
@@ -1256,6 +1265,7 @@ export interface FileRouteTypes {
     | '/hrm/reports/'
     | '/hrm/requests/'
     | '/hrm/talent/'
+    | '/hrm/configuration/users/$id'
     | '/hrm/employees/$id/edit'
     | '/hrm/lifecycle/movements/new'
     | '/hrm/lifecycle/offboarding/$id'
@@ -1381,6 +1391,7 @@ export interface FileRouteTypes {
     | '/hrm/reports'
     | '/hrm/requests'
     | '/hrm/talent'
+    | '/hrm/configuration/users/$id'
     | '/hrm/employees/$id/edit'
     | '/hrm/lifecycle/movements/new'
     | '/hrm/lifecycle/offboarding/$id'
@@ -1506,6 +1517,7 @@ export interface FileRouteTypes {
     | '/hrm/reports/'
     | '/hrm/requests/'
     | '/hrm/talent/'
+    | '/hrm/configuration/users/$id'
     | '/hrm/employees/$id/edit'
     | '/hrm/lifecycle/movements/new'
     | '/hrm/lifecycle/offboarding/$id'
@@ -1558,7 +1570,7 @@ export interface RootRouteChildren {
   HrmConfigurationProcessRoute: typeof HrmConfigurationProcessRoute
   HrmConfigurationRolesRoute: typeof HrmConfigurationRolesRoute
   HrmConfigurationTechnicalRoute: typeof HrmConfigurationTechnicalRoute
-  HrmConfigurationUsersRoute: typeof HrmConfigurationUsersRoute
+  HrmConfigurationUsersRoute: typeof HrmConfigurationUsersRouteWithChildren
   HrmDataImportExportRoute: typeof HrmDataImportExportRoute
   HrmEmployeesIdRoute: typeof HrmEmployeesIdRouteWithChildren
   HrmEmployeesImportRoute: typeof HrmEmployeesImportRoute
@@ -2395,6 +2407,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmTimeUtilisationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hrm/configuration/users/$id': {
+      id: '/hrm/configuration/users/$id'
+      path: '/$id'
+      fullPath: '/hrm/configuration/users/$id'
+      preLoaderRoute: typeof HrmConfigurationUsersIdRouteImport
+      parentRoute: typeof HrmConfigurationUsersRoute
+    }
     '/hrm/employees/$id/edit': {
       id: '/hrm/employees/$id/edit'
       path: '/edit'
@@ -2502,6 +2521,19 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface HrmConfigurationUsersRouteChildren {
+  HrmConfigurationUsersIdRoute: typeof HrmConfigurationUsersIdRoute
+}
+
+const HrmConfigurationUsersRouteChildren: HrmConfigurationUsersRouteChildren = {
+  HrmConfigurationUsersIdRoute: HrmConfigurationUsersIdRoute,
+}
+
+const HrmConfigurationUsersRouteWithChildren =
+  HrmConfigurationUsersRoute._addFileChildren(
+    HrmConfigurationUsersRouteChildren,
+  )
 
 interface HrmEmployeesIdRouteChildren {
   HrmEmployeesIdEditRoute: typeof HrmEmployeesIdEditRoute
@@ -2677,7 +2709,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmConfigurationProcessRoute: HrmConfigurationProcessRoute,
   HrmConfigurationRolesRoute: HrmConfigurationRolesRoute,
   HrmConfigurationTechnicalRoute: HrmConfigurationTechnicalRoute,
-  HrmConfigurationUsersRoute: HrmConfigurationUsersRoute,
+  HrmConfigurationUsersRoute: HrmConfigurationUsersRouteWithChildren,
   HrmDataImportExportRoute: HrmDataImportExportRoute,
   HrmEmployeesIdRoute: HrmEmployeesIdRouteWithChildren,
   HrmEmployeesImportRoute: HrmEmployeesImportRoute,
