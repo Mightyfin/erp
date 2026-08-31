@@ -80,6 +80,22 @@ export interface LocalAuthResult {
   user: LocalAuthUser;
 }
 
+export interface IdentityAccessUser {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: string[];
+  isActive: boolean;
+  federated: boolean;
+  source?: "idp" | "local";
+}
+
+export interface IdentityDirectoryUser {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
 /** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
 export interface LinkedWorker {
   id: string;
@@ -166,6 +182,25 @@ function qs(params: Record<string, unknown>): string {
 
 /** Generic typed wrapper around the HRM API surface. */
 export const hrmApi = {
+  identity: {
+    users: () =>
+      hrmApi.get<{ provider: string; realm: string; items: IdentityAccessUser[] }>(
+        "/hrm/identity/users",
+      ),
+    searchDirectory: (query: string) =>
+      hrmApi.get<{ items: IdentityDirectoryUser[] }>("/hrm/identity/users/directory", { query }),
+    inviteUser: (body: {
+      email: string;
+      displayName: string;
+      roles: string[];
+      sourceUserId: string;
+    }) =>
+      hrmApi.post<IdentityAccessUser>("/hrm/identity/users", body),
+    updateUser: (id: string, body: Partial<{ roles: string[]; isActive: boolean }>) =>
+      hrmApi.patch<IdentityAccessUser>(`/hrm/identity/users/${id}`, body),
+    sendPasswordLink: (id: string) =>
+      hrmApi.post<{ sent: boolean }>(`/hrm/identity/users/${id}/send-password-link`, {}),
+  },
   auth: {
     login: (email: string, password: string) =>
       hrmApi.post<LocalAuthResult>("/hrm/auth/login", { email, password }),

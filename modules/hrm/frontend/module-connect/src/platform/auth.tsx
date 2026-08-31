@@ -20,7 +20,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Role } from "@/mock/types";
-import { hrmApi, type LinkedWorker } from "@/platform/api-client";
+import { hrmApi, type LinkedWorker, type LocalAuthUser } from "@/platform/api-client";
 import {
   clearSession,
   decodeSessionUser,
@@ -46,6 +46,7 @@ interface AuthState {
   /** Map Keycloak realm roles to the shell's demo workspace role. */
   resolveRole: () => Role;
   signInInteractive: () => void;
+  signInLocal: (email: string, password: string) => Promise<void>;
   signOut: () => void;
   /**
    * M14 identity link: the HRM worker record bound to the caller's Keycloak
@@ -96,6 +97,7 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/speak-up"]);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<OidcSession | null>(null);
+  const [localUser, setLocalUser] = useState<LocalAuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState<LinkedWorker | null>(null);
   const [resolvingWorker, setResolvingWorker] = useState(false);
@@ -110,8 +112,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       const fresh = await ensureFreshSession();
+      let restoredLocal: LocalAuthUser | null = null;
+      if (!fresh) {
+        try {
+          const local = await hrmApi.auth.me();
+          restoredLocal = local.authenticated ? local.user : null;
+        } catch {
+          restoredLocal = null;
+        }
+      }
       if (!cancelled) {
         setSession(fresh);
+        setLocalUser(restoredLocal);
         setLoading(false);
       }
     })();
@@ -124,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //    Runs after the session is up and never blocks the gate: a real user
   //    who isn't linked yet simply sees their IdP name until HR links them.
   useEffect(() => {
-    if (!USE_REAL || !isSessionValid(session)) return;
+    if (!USE_REAL || (!isSessionValid(session) && !localUser)) return;
     let cancelled = false;
     setResolvingWorker(true);
     (async () => {
@@ -141,20 +153,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, localUser]);
 
   // Remember where the user was heading so a login round-trip can return them
   // to the same place (e.g. a deep link like /hrm/leave/abc).
   useEffect(() => {
-    if (!loading && !isSessionValid(session)) {
+    if (!loading && !isSessionValid(session) && !localUser) {
       const path = window.location.pathname;
       setOrigin(PUBLIC_PATHS.has(path) ? "/hrm" : path);
     }
-  }, [loading, session]);
+  }, [loading, session, localUser]);
 
-  const user = useMemo(() => (session ? decodeSessionUser(session) : null), [session]);
+  const user = useMemo<OidcUser | null>(() => {
+    if (session) return decodeSessionUser(session);
+    if (!localUser) return null;
+    return {
+      subject: localUser.id,
+      email: localUser.email,
+      preferredUsername: localUser.email,
+      name: localUser.displayName,
+      roles: localUser.roles,
+    };
+  }, [session, localUser]);
 
-  const authenticated = !USE_REAL || isSessionValid(session);
+  const authenticated = !USE_REAL || isSessionValid(session) || Boolean(localUser);
   const authorized = !USE_REAL || (authenticated && hasHrmStaffRole(user?.roles ?? []));
 
   const signInInteractive = useCallback(() => {
@@ -164,13 +186,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void import("@/platform/oidc").then((m) => m.startInteractiveLogin(path));
   }, []);
 
+  const signInLocal = useCallback(async (email: string, password: string) => {
+    const result = await hrmApi.auth.login(email, password);
+    setLocalUser(result.user);
+    setSession(null);
+  }, []);
+
   const signOut = useCallback(() => {
     clearSession();
     setSession(null);
+    if (localUser) {
+      setLocalUser(null);
+      void hrmApi.auth.logout().finally(() => window.location.assign("/sign-in"));
+      return;
+    }
     if (USE_REAL) {
       oidcSignOut("/sign-in");
     }
-  }, []);
+  }, [localUser]);
 
   const resolveRole = useCallback((): Role => {
     if (!USE_REAL) return "employee";
@@ -186,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authorized,
       resolveRole,
       signInInteractive,
+      signInLocal,
       signOut,
       worker,
       resolvingWorker,
@@ -198,6 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authorized,
       resolveRole,
       signInInteractive,
+      signInLocal,
       signOut,
       worker,
       resolvingWorker,

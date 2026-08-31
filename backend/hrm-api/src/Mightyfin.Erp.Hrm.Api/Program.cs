@@ -158,8 +158,22 @@ else
     var authority = builder.Configuration["ERP:OidcAuthority"] ?? builder.Configuration["HRM:OidcAuthority"];
     if (string.IsNullOrWhiteSpace(authority))
         throw new InvalidOperationException("ERP:AuthMode=oidc requires ERP:OidcAuthority or HRM:OidcAuthority.");
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(o =>
+    var authentication = authMode.Equals("hybrid", StringComparison.OrdinalIgnoreCase)
+        ? builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = "hybrid";
+            options.DefaultChallengeScheme = "hybrid";
+        }).AddPolicyScheme("hybrid", "OIDC or HRMS local session", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+                context.Request.Headers.Authorization.ToString()
+                    .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? JwtBearerDefaults.AuthenticationScheme
+                    : LocalAuthenticationHandler.Scheme;
+        }).AddScheme<LocalAuthOptions, LocalAuthenticationHandler>(
+            LocalAuthenticationHandler.Scheme, _ => { })
+        : builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme);
+    authentication.AddJwtBearer(o =>
         {
             o.Authority = authority;
             o.RequireHttpsMetadata = true;

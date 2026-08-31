@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/platform/app-context";
 import { useAuth } from "@/platform/auth";
+import { ApiError } from "@/platform/api-client";
 import {
   getSession,
   handleLoginCallback,
@@ -41,17 +42,19 @@ const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "
  *    stays visible and the "Sign in with your organisation account" button
  *    drives the interactive redirect flow.
  *
- * Credentials are never entered or validated by the ERP — the email field
- * is informational only, and password handling belongs to the IdP's hosted
- * login form. The demo branch (VITE_USE_REAL_API=false) keeps the old mock
- * explorer behaviour so the build stays usable without an IdP.
+ * Organisation credentials stay in the IdP. The secondary local-account form
+ * is only for users HR explicitly created inside this HRMS because no shared
+ * directory identity exists yet. The demo branch keeps the mock explorer.
  */
 function SignIn() {
   const navigate = useNavigate();
   const { setRole } = useApp();
-  const { authenticated } = useAuth();
+  const { authenticated, signInLocal } = useAuth();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [localBusy, setLocalBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [silenceFailed, setSilenceFailed] = useState(false);
   const callbackInProgress = useRef(false);
 
@@ -97,6 +100,20 @@ function SignIn() {
   const enterWithOrganisation = () => {
     setBusy(true);
     startInteractiveLogin("/hrm");
+  };
+
+  const enterWithLocalAccount = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLocalBusy(true);
+    setLocalError(null);
+    try {
+      await signInLocal(email, password);
+      window.location.assign("/hrm");
+    } catch (error) {
+      setLocalError(error instanceof ApiError ? error.message : "Local HRMS sign-in failed.");
+    } finally {
+      setLocalBusy(false);
+    }
   };
 
   const continueDemo = () => {
@@ -212,11 +229,11 @@ function SignIn() {
 
           <div className="my-6 flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">Your work email</span>
+            <span className="text-xs text-muted-foreground">HRMS local account</span>
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <div className="space-y-4">
+          <form className="space-y-4" onSubmit={enterWithLocalAccount}>
             <div>
               <Label htmlFor="email">Work email</Label>
               <Input
@@ -229,20 +246,39 @@ function SignIn() {
                 placeholder="you@mightyfinance.co.zm"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                For reference only — your organisation's identity provider verifies who you are.
+                Use this only when HR created an HRMS-local account because you are not yet in the organisation directory.
               </p>
             </div>
+
+            <div>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                className="mt-1"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {localError ? <p className="text-sm text-destructive" role="alert">{localError}</p> : null}
+
+            <Button type="submit" variant="outline" className="w-full" disabled={localBusy}>
+              {localBusy ? "Signing in…" : "Sign in with HRMS local account"}
+            </Button>
 
             <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
               <p className="flex gap-2 text-xs text-warning">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 <span>
-                  No password is requested or stored here. Pressing the button above opens your
-                  organisation's secure sign-in page, where MFA and password policies still apply.
+                  Prefer the organisation account above whenever one exists. Local accounts are
+                  isolated to this HRMS and should be migrated to the shared identity directory later.
                 </span>
               </p>
             </div>
-          </div>
+          </form>
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <LifeBuoy className="size-3.5" aria-hidden />

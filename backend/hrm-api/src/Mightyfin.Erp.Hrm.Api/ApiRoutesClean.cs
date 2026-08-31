@@ -19,6 +19,7 @@ using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Shared;
 using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
+using Mightyfin.Erp.Hrm.Application.Integration;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
@@ -59,6 +60,7 @@ public static class Routes
         RegisterRequisitions(app);
         RegisterBenefits(app);
         RegisterSetup(app);
+        RegisterIdentityAccess(app);
         RegisterShell(app);
     }
 
@@ -199,6 +201,48 @@ public static class Routes
                     "Reset the organisation only if you understand that ALL data will be permanently erased. Send {\"confirm\": \"RESET\"} to proceed.");
             await svc.ResetAsync(ct);
             return Results.Ok(new { reset = true });
+        });
+    }
+
+    /// <summary>
+    /// OIDC realm access administration. Production ERP identities live in
+    /// Keycloak; these routes intentionally do not touch the optional
+    /// standalone local_users tables.
+    /// </summary>
+    public static void RegisterIdentityAccess(WebApplication app)
+    {
+        var group = app.MapGroup($"{HrmPrefix}/identity/users")
+            .RequireAuthorization("hrm-admin");
+
+        group.MapGet("/", async (IIdentityProvisioningService service, CancellationToken ct) =>
+            Results.Ok(await service.ListUsersAsync(ct)));
+
+        group.MapGet("/directory", async (
+            string query,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(new { items = await service.SearchDirectoryAsync(query, ct) }));
+
+        group.MapPost("/", async (
+            IdentityUserInvite request,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(await service.InviteUserAsync(request, ct)));
+
+        group.MapPatch("/{id}", async (
+            string id,
+            IdentityUserUpdate request,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(await service.UpdateUserAsync(id, request, ct)));
+
+        group.MapPost("/{id}/send-password-link", async (
+            string id,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+        {
+            await service.SendPasswordResetAsync(id, ct);
+            return Results.Ok(new { sent = true });
         });
     }
     public static void RegisterNotifications(WebApplication app)
