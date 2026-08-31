@@ -92,6 +92,45 @@ test("a shared IdP identity without an HRM workforce role is denied ERP entry", 
   await expect(page.getByText("Human Resources", { exact: true })).toHaveCount(0);
 });
 
+test("HR admin keeps Configuration navigation when also assigned payroll roles", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-multi-role-admin",
+        preferred_username: "admin@example.test",
+        realm_access: { roles: ["employee", "manager", "hr_ops", "payroll", "hr_admin"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({
+        accessToken: token,
+        idToken: token,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], totalCount: 0, linked: false, worker: null }),
+    });
+  });
+
+  await page.goto("/hrm");
+
+  await expect(page.locator('a[href="/hrm/configuration"]')).toContainText("Configuration");
+  await expect
+    .poll(() =>
+      page.evaluate(() => JSON.parse(localStorage.getItem("erp.shell.state.v1") ?? "null")?.role),
+    )
+    .toBe("hr_admin");
+});
+
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
   await page.addInitScript(() => {
     const payload = btoa(JSON.stringify({

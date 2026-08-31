@@ -81,9 +81,12 @@ export function hasHrmStaffRole(roles: string[]): boolean {
 
 function mapRolesToDemoRole(roles: string[]): Role {
   const set = new Set(roles);
-  if (set.has("payroll") || set.has("finance_approver")) return "payroll";
+  // Users can hold several operational roles. Resolve the most privileged
+  // workspace first so an HR administrator who also processes payroll keeps
+  // access to Configuration and other administrator-only navigation.
   if (set.has("hr_admin") || set.has("investigator")) return "hr_admin";
   if (set.has("hr_ops")) return "hr_ops";
+  if (set.has("payroll") || set.has("finance_approver")) return "payroll";
   if (set.has("manager")) return "manager";
   return "employee";
 }
