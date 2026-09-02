@@ -1129,6 +1129,13 @@ function EmployeePage() {
   };
 
   const printCorrectionStatement = async (workerId: string, employeeNo: string, employeeName: string) => {
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      feedback.blocked("Correction statement is unavailable.", "Your browser blocked the print window. Allow popups for this site and try again.");
+      return;
+    }
+    tab.document.write("<!doctype html><title>Preparing correction statement</title><p style='font-family:Arial;margin:32px'>Preparing correction statement...</p>");
+    tab.document.close();
     setPayslipBusy("print");
     try {
       const slip = await latestPayslipFor(workerId);
@@ -1140,10 +1147,11 @@ function EmployeePage() {
       if (!rows.length) throw new Error("No paid or pending payroll adjustment is recorded for this employee.");
       const adjustment = rows.reduce((sum, row) => sum + Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0), 0);
       const html = `<!doctype html><html><head><title>Payroll correction statement</title><style>body{font:13px Arial;margin:32px;color:#111}table{width:100%;border-collapse:collapse;margin:16px 0}td,th{border:1px solid #bbb;padding:8px;text-align:left}.r{text-align:right}h1{margin-bottom:4px}.muted{color:#555}</style></head><body><h1>Payroll Correction Statement</h1><p class="muted">This document supplements, and does not replace, the released payslip.</p><table><tr><td>Employee</td><td>${escapeHtml(employeeName)}</td><td>Employee no.</td><td>${escapeHtml(employeeNo)}</td></tr><tr><td>Period</td><td>${escapeHtml(slip.periodLabel)}</td><td>Original payslip</td><td>${escapeHtml(slip.payslipNo)}</td></tr></table><table><tr><th>Description</th><th class="r">Amount (ZMW)</th></tr><tr><td>Original released net pay</td><td class="r">${Number(slip.net ?? 0).toFixed(2)}</td></tr>${rows.map((row) => `<tr><td>${escapeHtml(row.component ?? "Payroll adjustment")}</td><td class="r">${Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0).toFixed(2)}</td></tr>`).join("")}<tr><th>Adjusted payment total</th><th class="r">${(Number(slip.net ?? 0) + adjustment).toFixed(2)}</th></tr></table><p class="muted">Generated from the HRM audit trail on ${new Date().toLocaleString()}. Statutory treatment remains recorded on the original payroll and any approved supplementary payroll.</p><script>window.onload=()=>window.print()</script></body></html>`;
-      const tab = window.open("", "_blank", "noopener,noreferrer");
-      if (!tab) throw new Error("Your browser blocked the print window.");
       tab.document.write(html); tab.document.close();
-    } catch (error) { feedback.blocked("Correction statement is unavailable.", error instanceof Error ? error.message : "Try again."); }
+    } catch (error) {
+      tab.close();
+      feedback.blocked("Correction statement is unavailable.", error instanceof Error ? error.message : "Try again.");
+    }
     finally { setPayslipBusy(null); }
   };
 
