@@ -80,6 +80,10 @@ type PayslipRecord = {
   id?: string;
   payslipNo?: string;
   periodLabel?: string;
+  runId?: string;
+  gross?: number;
+  deductions?: number;
+  net?: number;
   releasedAt?: string | null;
   payDate?: string | null;
 };
@@ -115,12 +119,20 @@ function text(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
 }
 
+function escapeHtml(value: unknown) {
+  return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+}
+
 function mapPayslip(raw: unknown): PayslipRecord {
   const p = raw as Record<string, unknown>;
   return {
     id: text(p.id),
     payslipNo: text(p.payslipNo),
     periodLabel: text(p.periodLabel),
+    runId: text(p.runId),
+    gross: Number(p.grossPay ?? 0),
+    deductions: Number(p.totalDeductions ?? 0),
+    net: Number(p.netPay ?? 0),
     releasedAt: p.releasedAt ? text(p.releasedAt) : null,
     payDate: p.payDate ? text(p.payDate) : null,
   };
@@ -1116,6 +1128,25 @@ function EmployeePage() {
     }
   };
 
+  const printCorrectionStatement = async (workerId: string, employeeNo: string, employeeName: string) => {
+    setPayslipBusy("print");
+    try {
+      const slip = await latestPayslipFor(workerId);
+      if (!slip?.runId) throw new Error("No released payslip is available for a correction statement.");
+      const events = await realApi.payrollRunAudit(slip.runId) as Array<Record<string, unknown>>;
+      const rows = events.map((event) => {
+        try { return JSON.parse(text(event.detailsJson)) as Record<string, unknown>; } catch { return null; }
+      }).filter((row): row is Record<string, unknown> => row?.employeeNo === employeeNo && Boolean(row.grossAdjustment ?? row.netAdjustmentPaid));
+      if (!rows.length) throw new Error("No paid or pending payroll adjustment is recorded for this employee.");
+      const adjustment = rows.reduce((sum, row) => sum + Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0), 0);
+      const html = `<!doctype html><html><head><title>Payroll correction statement</title><style>body{font:13px Arial;margin:32px;color:#111}table{width:100%;border-collapse:collapse;margin:16px 0}td,th{border:1px solid #bbb;padding:8px;text-align:left}.r{text-align:right}h1{margin-bottom:4px}.muted{color:#555}</style></head><body><h1>Payroll Correction Statement</h1><p class="muted">This document supplements, and does not replace, the released payslip.</p><table><tr><td>Employee</td><td>${escapeHtml(employeeName)}</td><td>Employee no.</td><td>${escapeHtml(employeeNo)}</td></tr><tr><td>Period</td><td>${escapeHtml(slip.periodLabel)}</td><td>Original payslip</td><td>${escapeHtml(slip.payslipNo)}</td></tr></table><table><tr><th>Description</th><th class="r">Amount (ZMW)</th></tr><tr><td>Original released net pay</td><td class="r">${Number(slip.net ?? 0).toFixed(2)}</td></tr>${rows.map((row) => `<tr><td>${escapeHtml(row.component ?? "Payroll adjustment")}</td><td class="r">${Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0).toFixed(2)}</td></tr>`).join("")}<tr><th>Adjusted payment total</th><th class="r">${(Number(slip.net ?? 0) + adjustment).toFixed(2)}</th></tr></table><p class="muted">Generated from the HRM audit trail on ${new Date().toLocaleString()}. Statutory treatment remains recorded on the original payroll and any approved supplementary payroll.</p><script>window.onload=()=>window.print()</script></body></html>`;
+      const tab = window.open("", "_blank", "noopener,noreferrer");
+      if (!tab) throw new Error("Your browser blocked the print window.");
+      tab.document.write(html); tab.document.close();
+    } catch (error) { feedback.blocked("Correction statement is unavailable.", error instanceof Error ? error.message : "Try again."); }
+    finally { setPayslipBusy(null); }
+  };
+
   // `/employees/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
   if (childMatches.length > 0) return <Outlet />;
@@ -1160,6 +1191,14 @@ function EmployeePage() {
                     >
                       <Printer className="mr-2 size-4" aria-hidden />
                       {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void printCorrectionStatement(e.id, e.employeeNo, e.fullName)}
+                      disabled={payslipBusy !== null}
+                    >
+                      <Printer className="mr-2 size-4" aria-hidden />
+                      Print correction statement
                     </Button>
                     <Button asChild>
                       <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>
