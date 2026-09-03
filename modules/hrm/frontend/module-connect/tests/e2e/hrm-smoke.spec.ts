@@ -221,6 +221,20 @@ test("HR admin can add housing allowance as thirty percent of basic", async ({ p
   await expect(page.getByLabel("Rate (%)")).toHaveValue("30");
 });
 
+test("employee reports offer a print-ready PDF export alongside CSV", async ({ page }) => {
+  await page.goto("/hrm/employees/w-1001");
+  await page.getByRole("tab", { name: "Reports" }).click();
+  const exportPdf = page.getByTestId("export-employee-report-pdf");
+  await expect(exportPdf).toBeEnabled();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    exportPdf.click(),
+  ]);
+  await expect(popup.locator("h1")).toHaveText("Employee master and profile");
+  await expect(popup.locator("body")).toContainText("EMP-1001");
+});
+
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
   await page.addInitScript(() => {
     const payload = btoa(JSON.stringify({

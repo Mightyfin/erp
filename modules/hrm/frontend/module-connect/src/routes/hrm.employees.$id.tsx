@@ -536,6 +536,36 @@ function downloadReportCsv(employee: EmployeeRecord, report: EmployeeReport) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+function escapeReportHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/** Opens the browser's native print dialog, where the user can save a genuine
+ * PDF. Keeping this rendering client-side means it exports the exact live
+ * report currently displayed, including reports assembled from multiple HRM
+ * resources, without a second data-export path to keep in sync. */
+function exportReportPdf(employee: EmployeeRecord, report: EmployeeReport) {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    feedback.error("PDF export was blocked", "Allow pop-ups for this site, then try again.");
+    return;
+  }
+  const rows = report.rows.length
+    ? report.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeReportHtml(cell || "—")}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${report.columns.length}">${escapeReportHtml(report.empty)}</td></tr>`;
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeReportHtml(employee.employeeNo)} — ${escapeReportHtml(report.title)}</title><style>
+    @page { size: A4; margin: 15mm; } body { color:#172033; font: 11px/1.45 Arial,sans-serif; } h1 { font-size:20px; margin:0 0 4px; } p { color:#56627a; margin:0 0 16px; } table { width:100%; border-collapse:collapse; } th { background:#eef2f8; text-align:left; } th,td { border:1px solid #cbd5e1; padding:7px; vertical-align:top; } @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body><h1>${escapeReportHtml(report.title)}</h1><p>${escapeReportHtml(employee.fullName)} · ${escapeReportHtml(employee.employeeNo)}<br>${escapeReportHtml(report.description)}</p><table><thead><tr>${report.columns.map((column) => `<th>${escapeReportHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></body></html>`);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 250);
+}
+
 function ReportTable({ report }: { report: EmployeeReport }) {
   return (
     <DetailSection title={report.title} description={report.description}>
@@ -704,13 +734,23 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
           <SelectContent>{employeeReports.map((report) => <SelectItem key={report.value} value={report.value}>{report.label}</SelectItem>)}</SelectContent>
         </Select>
         </div>
-        <Button
-          variant="outline"
-          disabled={!state.data || state.loading}
-          onClick={() => state.data && downloadReportCsv(employee, state.data)}
-        >
-          <Download className="size-4" aria-hidden /> Download CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && downloadReportCsv(employee, state.data)}
+          >
+            <Download className="size-4" aria-hidden /> Download CSV
+          </Button>
+          <Button
+            variant="outline"
+            data-testid="export-employee-report-pdf"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && exportReportPdf(employee, state.data)}
+          >
+            <Printer className="size-4" aria-hidden /> Export PDF
+          </Button>
+        </div>
       </div>
       <Async state={state} rows={5}>{(report) => <ReportTable report={report} />}</Async>
     </div>
