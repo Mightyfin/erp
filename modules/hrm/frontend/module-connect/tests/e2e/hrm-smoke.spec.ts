@@ -131,6 +131,85 @@ test("HR admin keeps Configuration navigation when also assigned payroll roles",
     .toBe("hr_admin");
 });
 
+test("HR admin can add housing allowance as thirty percent of basic", async ({ page }) => {
+  let createdBody: Record<string, unknown> | null = null;
+  const basic = {
+    id: "component-basic",
+    code: "basic",
+    name: "Basic Salary",
+    componentType: "earning",
+    calculationBasis: "fixed",
+    basisComponentCode: null,
+    fixedAmount: 0,
+    rate: null,
+    ceiling: null,
+    isTaxable: true,
+    isStatutory: false,
+    priority: 10,
+    version: 1,
+    isActive: true,
+  };
+  await page.route("**/api/hrm/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let body: unknown = [];
+    let status = 200;
+    if (path.endsWith("/payroll/components") && request.method() === "POST") {
+      createdBody = request.postDataJSON() as Record<string, unknown>;
+      status = 201;
+      body = { id: "component-housing", ...createdBody, isActive: true, isStatutory: false };
+    } else if (path.endsWith("/payroll/components")) {
+      body = createdBody
+        ? [basic, { id: "component-housing", ...createdBody, isActive: true, isStatutory: false }]
+        : [basic];
+    } else if (path.endsWith("/auth/me")) {
+      body = {
+        authenticated: true,
+        user: {
+          id: "playwright-payroll-setup-admin",
+          email: "playwright.hr.admin@example.test",
+          displayName: "Payroll Setup Admin",
+          roles: ["hr_admin", "hr_ops"],
+          isActive: true,
+          mustChangePassword: false,
+        },
+      };
+    } else if (path.endsWith("/setup/state")) {
+      body = { status: "complete" };
+    } else if (path.endsWith("/me")) {
+      body = { linked: false, worker: null };
+    } else if (path.endsWith("/me/notifications")) {
+      body = { unreadCount: 0, items: [] };
+    }
+    await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/hrm/configuration/payroll");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: "Salary components" }).click();
+  await expect(page.getByRole("tab", { name: "Salary components" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Add salary component" }).click();
+  await page.getByLabel("Code").fill("housing-allowance");
+  await page.getByLabel("Name").fill("Housing Allowance");
+  await page.getByLabel("Calculation basis").click();
+  await page.getByRole("option", { name: "Percent of component" }).click();
+  await page.getByLabel("Basis component").click();
+  await page.getByRole("option", { name: "Basic Salary" }).click();
+  await page.getByLabel("Rate (%)").fill("30");
+  await page.getByRole("button", { name: "Add component" }).click();
+
+  await expect(page.getByRole("row", { name: /Housing Allowance/ })).toContainText("30%");
+  expect(createdBody).toMatchObject({
+    code: "housing-allowance",
+    name: "Housing Allowance",
+    componentType: "earning",
+    calculationBasis: "percent-of",
+    basisComponentCode: "basic",
+    rate: 30,
+    priority: 20,
+  });
+});
+
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
   await page.addInitScript(() => {
     const payload = btoa(JSON.stringify({

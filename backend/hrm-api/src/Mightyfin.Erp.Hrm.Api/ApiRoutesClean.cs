@@ -972,6 +972,13 @@ public static class Routes
         var g = app.MapGroup($"{HrmPrefix}/payroll").RequireAuthorization();
         g.MapGet("/components", async ([FromQuery] string? type, IPayrollService svc, CancellationToken ct)
             => await svc.ListComponentsAsync(type, ct));
+        g.MapPost("/components", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryComponentCreateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.CreateSalaryComponentAsync(request, ct);
+            return Results.Created($"{HrmPrefix}/payroll/components/{created.Id}", created);
+        });
         g.MapGet("/pay-groups", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListPayGroupsAsync(ct));
         g.MapGet("/pay-groups/full", async (IPayrollService svc, CancellationToken ct)

@@ -1264,6 +1264,9 @@ export const realApi = {
   /** Patch-update a statutory contribution rule (NAPSA/NHIMA rate/ceiling/floor). */
   updateContributionRule: (id: string, body: Record<string, unknown>) =>
     hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/contribution-rules/${id}`, body),
+  /** Create an organisation salary component such as housing allowance. */
+  createSalaryComponent: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/payroll/components", body),
   /** Patch-update a salary component (rate, fixed amount, taxable flag, archive). */
   updateSalaryComponent: (id: string, body: Record<string, unknown>) =>
     hrmApi.patch<Record<string, unknown>>(`/hrm/payroll/components/${id}`, body),

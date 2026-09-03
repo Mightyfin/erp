@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BadgeDollarSign, CalendarClock, Info, Pencil, ShieldCheck, Unplug } from "lucide-react";
+import { BadgeDollarSign, CalendarClock, Info, Pencil, Plus, ShieldCheck, Unplug } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -508,16 +508,20 @@ function ContributionRuleDialog({
 
 function ComponentDialog({
   comp,
+  components,
   open,
   onOpenChange,
   onSaved,
 }: {
   comp: Raw | null;
+  components: Raw[];
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [componentType, setComponentType] = useState("earning");
   const [calculationBasis, setCalculationBasis] = useState("fixed");
   const [basisComponentCode, setBasisComponentCode] = useState("");
   const [rate, setRate] = useState("");
@@ -525,10 +529,12 @@ function ComponentDialog({
   const [ceiling, setCeiling] = useState("");
   const [isTaxable, setIsTaxable] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
+  const [priority, setPriority] = useState("20");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!comp) return null;
   const id = String(comp.id ?? "");
+  const creating = id === "";
   const isStatutory = Boolean(comp.isStatutory);
 
   return (
@@ -537,7 +543,9 @@ function ComponentDialog({
       onOpenChange={(o) => {
         onOpenChange(o);
         if (o) {
+          setCode(String(comp.code ?? ""));
           setName(String(comp.name ?? comp.code ?? ""));
+          setComponentType(String(comp.componentType ?? "earning"));
           setCalculationBasis(String(comp.calculationBasis ?? "fixed"));
           setBasisComponentCode(String(comp.basisComponentCode ?? ""));
           setRate(comp.rate === undefined || comp.rate === null ? "" : String(comp.rate));
@@ -547,16 +555,17 @@ function ComponentDialog({
           setCeiling(comp.ceiling === undefined || comp.ceiling === null ? "" : String(comp.ceiling));
           setIsTaxable(Boolean(comp.isTaxable));
           setIsArchived(!Boolean(comp.isActive));
+          setPriority(String(comp.priority ?? 20));
         }
       }}
     >
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            Edit salary component
-          </DialogTitle>
+          <DialogTitle>{creating ? "Add salary component" : "Edit salary component"}</DialogTitle>
           <DialogDescription>
-            {isStatutory
+            {creating
+              ? "Create a reusable earning or deduction. Percentage components calculate automatically from Basic Salary or Gross Pay."
+              : isStatutory
               ? "This component is statutory. You can edit its component setup, but PAYE slabs and NAPSA/NHIMA contribution rules still control the legal calculation amounts."
               : "A standard component a run can post to. Archiving keeps every past run correct but hides it from new ones."}
           </DialogDescription>
@@ -570,20 +579,33 @@ function ComponentDialog({
               setError("Component name is required.");
               return;
             }
+            if (creating && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(code.trim())) {
+              setError("Code must use lowercase letters, numbers and single hyphens, for example housing-allowance.");
+              return;
+            }
+            if (calculationBasis === "percent-of" && (!basisComponentCode || !rate || Number(rate) <= 0)) {
+              setError("Select a basis component and enter a percentage greater than zero.");
+              return;
+            }
             setBusy(true);
             try {
-              await realApi.updateSalaryComponent(id, {
+              const body = {
+                ...(creating ? { code: code.trim(), componentType, priority: Number(priority) } : {}),
                 name: name.trim(),
                 calculationBasis,
-                basisComponentCode: basisComponentCode.trim() || undefined,
+                basisComponentCode: calculationBasis === "percent-of" ? basisComponentCode : undefined,
                 rate: rate.trim() === "" ? null : Number(rate),
                 fixedAmount: fixedAmount.trim() === "" ? null : Number(fixedAmount),
                 ceiling: ceiling.trim() === "" ? null : Number(ceiling),
                 isTaxable,
-                isArchived,
-              });
+                ...(!creating ? { isArchived } : {}),
+              };
+              if (creating) await realApi.createSalaryComponent(body);
+              else await realApi.updateSalaryComponent(id, body);
               feedback.saved(
-                isArchived
+                creating
+                  ? `${name.trim()} created.`
+                  : isArchived
                   ? `${String(comp.name ?? comp.code ?? "Component")} archived for new runs.`
                   : `${String(comp.name ?? comp.code ?? "Component")} saved.`,
               );
@@ -596,6 +618,32 @@ function ComponentDialog({
             }
           }}
         >
+          {creating ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="min-w-0">
+                <Label htmlFor="comp-code">Code</Label>
+                <Input
+                  id="comp-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+                  className="mt-1.5"
+                  placeholder="housing-allowance"
+                  required
+                />
+              </div>
+              <div className="min-w-0">
+                <Label htmlFor="comp-type">Type</Label>
+                <Select value={componentType} onValueChange={setComponentType}>
+                  <SelectTrigger id="comp-type" className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="earning">Earning</SelectItem>
+                    <SelectItem value="deduction">Deduction</SelectItem>
+                    <SelectItem value="employer-contribution">Employer contribution</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : null}
           <div className="min-w-0">
             <Label htmlFor="comp-name">Name</Label>
             <Input
@@ -605,9 +653,7 @@ function ComponentDialog({
               className="mt-1.5"
               required
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Code: <span className="font-mono">{String(comp.code ?? "")}</span>
-            </p>
+            {!creating ? <p className="mt-1 text-xs text-muted-foreground">Code: <span className="font-mono">{String(comp.code ?? "")}</span></p> : null}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="min-w-0">
@@ -619,23 +665,26 @@ function ComponentDialog({
                 <SelectContent>
                   <SelectItem value="fixed">Fixed amount</SelectItem>
                   <SelectItem value="percent-of">Percent of component</SelectItem>
-                  <SelectItem value="slab">Tax slab</SelectItem>
+                  {!creating || isStatutory ? <SelectItem value="slab">Tax slab</SelectItem> : null}
                 </SelectContent>
               </Select>
             </div>
             <div className="min-w-0">
-              <Label htmlFor="comp-basis-code">Basis component code</Label>
-              <Input
-                id="comp-basis-code"
-                value={basisComponentCode}
-                onChange={(e) => setBasisComponentCode(e.target.value)}
-                className="mt-1.5"
-                placeholder="basic or gross"
-              />
+              <Label htmlFor="comp-basis-code">Basis component</Label>
+              <Select value={basisComponentCode || "none"} onValueChange={(v) => setBasisComponentCode(v === "none" ? "" : v)} disabled={calculationBasis !== "percent-of"}>
+                <SelectTrigger id="comp-basis-code" className="mt-1.5"><SelectValue placeholder="Select component" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select component</SelectItem>
+                  {components.filter((item) => Boolean(item.isActive) && String(item.code) !== code).map((item) => (
+                    <SelectItem key={String(item.id)} value={String(item.code)}>{String(item.name ?? item.code)}</SelectItem>
+                  ))}
+                  <SelectItem value="gross">Gross pay</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="min-w-0">
+            {calculationBasis === "percent-of" ? <div className="min-w-0">
               <Label htmlFor="comp-rate">Rate (%)</Label>
               <Input
                 id="comp-rate"
@@ -650,8 +699,8 @@ function ComponentDialog({
               <p id="comp-rate-hint" className="mt-1 text-xs text-muted-foreground">
                 For percent-of calculations.
               </p>
-            </div>
-            <div className="min-w-0">
+            </div> : null}
+            {calculationBasis === "fixed" ? <div className="min-w-0">
               <Label htmlFor="comp-fixed">Fixed amount (K)</Label>
               <Input
                 id="comp-fixed"
@@ -662,7 +711,7 @@ function ComponentDialog({
                 onChange={(e) => setFixedAmount(e.target.value)}
                 className="mt-1.5"
               />
-            </div>
+            </div> : null}
             <div className="min-w-0">
               <Label htmlFor="comp-ceiling">Ceiling (K)</Label>
               <Input
@@ -676,14 +725,21 @@ function ComponentDialog({
               />
             </div>
           </div>
+          {creating ? (
+            <div className="min-w-0">
+              <Label htmlFor="comp-priority">Evaluation order</Label>
+              <Input id="comp-priority" type="number" min={1} max={1000} value={priority} onChange={(e) => setPriority(e.target.value)} className="mt-1.5" required />
+              <p className="mt-1 text-xs text-muted-foreground">Use 20 for Housing Allowance so Basic Salary (10) is calculated first.</p>
+            </div>
+          ) : null}
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={isTaxable} onCheckedChange={setIsTaxable} aria-label="Taxable component" />
             <span>Taxable — PAYE applies to this component</span>
           </label>
-          <label className="flex items-center gap-2 text-sm">
+          {!creating ? <label className="flex items-center gap-2 text-sm">
             <Switch checked={isArchived} onCheckedChange={setIsArchived} aria-label="Archive component" />
             <span>Archive — keep history, hide from new runs</span>
-          </label>
+          </label> : null}
           {isStatutory ? (
             <p className="flex items-start gap-2 rounded-md border border-info/30 bg-info-soft px-3 py-2 text-xs text-info">
               <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -701,7 +757,7 @@ function ComponentDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save component"}
+              {busy ? "Saving…" : creating ? "Add component" : "Save component"}
             </Button>
           </div>
         </form>
@@ -1273,6 +1329,7 @@ function PayrollSetup() {
   const [editingSlab, setEditingSlab] = useState<Raw | null>(null);
   const [editingRule, setEditingRule] = useState<Raw | null>(null);
   const [editingComp, setEditingComp] = useState<Raw | null>(null);
+  const [addingComp, setAddingComp] = useState(false);
   const taxYear = String(new Date().getFullYear());
 
   return (
@@ -1405,6 +1462,14 @@ function PayrollSetup() {
                       component to keep every past run correct while hiding it from new ones.
                     </p>
                   </div>
+                  {canAct ? (
+                    <div className="flex justify-end">
+                      <Button onClick={() => setAddingComp(true)}>
+                        <Plus className="size-4" aria-hidden />
+                        Add salary component
+                      </Button>
+                    </div>
+                  ) : null}
                   <ComponentTable
                     rows={data.components}
                     canAct={canAct}
@@ -1444,9 +1509,15 @@ function PayrollSetup() {
         onSaved={state.reload}
       />
       <ComponentDialog
-        comp={editingComp}
-        open={editingComp !== null}
-        onOpenChange={(o) => !o && setEditingComp(null)}
+        comp={addingComp ? {} : editingComp}
+        components={state.data ? state.data.components : []}
+        open={addingComp || editingComp !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddingComp(false);
+            setEditingComp(null);
+          }
+        }}
         onSaved={state.reload}
       />
     </AppShell>

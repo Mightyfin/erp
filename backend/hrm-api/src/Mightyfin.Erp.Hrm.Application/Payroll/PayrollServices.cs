@@ -26,6 +26,7 @@ public interface IPayrollService
     Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct);
     Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct);
     Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct);
+    Task<SalaryComponentDto> CreateSalaryComponentAsync(SalaryComponentCreateRequest request, CancellationToken ct);
     Task<SalaryComponentDto> UpdateSalaryComponentAsync(Guid id, SalaryComponentUpdateRequest request, CancellationToken ct);
     // M21: salary structures admin (which components + default amounts ship with a structure)
     Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct);
@@ -112,7 +113,9 @@ public interface IPayrollService
     Task<byte[]> GetPayslipPreviewAsync(Guid payslipId, CancellationToken ct);
 }
 
-public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType, string CalculationBasis, decimal? Rate, decimal? FixedAmount, decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Version, bool IsActive);
+public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType,
+    string CalculationBasis, string? BasisComponentCode, decimal? Rate, decimal? FixedAmount,
+    decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Priority, int Version, bool IsActive);
 public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status);
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
@@ -140,6 +143,17 @@ public sealed record ContributionRuleUpdateRequest(
     decimal? Floor = null,
     bool CeilingSpecified = false,
     bool FloorSpecified = false);
+public sealed record SalaryComponentCreateRequest(
+    string Code,
+    string Name,
+    string ComponentType,
+    string CalculationBasis,
+    string? BasisComponentCode = null,
+    decimal? Rate = null,
+    decimal? FixedAmount = null,
+    decimal? Ceiling = null,
+    bool IsTaxable = true,
+    int Priority = 100);
 public sealed record SalaryComponentUpdateRequest(
     string? Name = null,
     string? CalculationBasis = null,
@@ -166,7 +180,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var items = await repo.ListComponentsAsync(type, ct);
-        return items.Select(c => new SalaryComponentDto(c.Id, c.Code, c.Name, c.ComponentType, c.CalculationBasis, c.Rate, c.FixedAmount, c.Ceiling, c.IsTaxable, c.IsStatutory, c.Version, c.IsActive)).ToList();
+        return items.Select(MapComponent).ToList();
     }
 
     public async Task<List<PayGroupDto>> ListPayGroupsAsync(CancellationToken ct)
@@ -322,9 +336,74 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             }
             await repo.UpdateComponentAsync(comp, ct);
         }
-        return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
-            comp.Rate, comp.FixedAmount, comp.Ceiling, comp.IsTaxable, comp.IsStatutory, comp.Version, comp.IsActive);
+        return MapComponent(comp);
     }
+
+    public async Task<SalaryComponentDto> CreateSalaryComponentAsync(SalaryComponentCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var code = (request.Code ?? "").Trim().ToLowerInvariant();
+        if (code.Length is < 2 or > 40 || code.Any(ch => !(char.IsLower(ch) || char.IsDigit(ch) || ch == '-')))
+            throw new DomainException("salary-component-code-invalid", "Component code must be 2-40 lowercase letters, numbers or hyphens.");
+        var name = (request.Name ?? "").Trim();
+        if (name.Length is < 2 or > 80)
+            throw new DomainException("salary-component-name-invalid", "Component name must be 2-80 characters.");
+        var allowedTypes = new[] { "earning", "deduction", "employer-contribution", "tax" };
+        if (!allowedTypes.Contains(request.ComponentType, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("salary-component-type-invalid", "Component type must be earning, deduction, employer-contribution or tax.");
+        var allowedBases = new[] { "fixed", "percent-of", "slab" };
+        if (!allowedBases.Contains(request.CalculationBasis, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("salary-component-basis-invalid", "Calculation basis must be fixed, percent-of or slab.");
+        if (request.Priority is < 1 or > 1000)
+            throw new DomainException("salary-component-priority-invalid", "Evaluation priority must be between 1 and 1000.");
+        if (request.FixedAmount is < 0 || request.Ceiling is < 0)
+            throw new DomainException("salary-component-amount-invalid", "Fixed amount and ceiling cannot be negative.");
+
+        var allComponents = await repo.ListAllComponentsAsync(ct);
+        if (allComponents.Any(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            throw new DomainException("salary-component-code-duplicate", $"A salary component with code {code} already exists.");
+
+        var calculationBasis = request.CalculationBasis.ToLowerInvariant();
+        var basisCode = string.IsNullOrWhiteSpace(request.BasisComponentCode)
+            ? null
+            : request.BasisComponentCode.Trim().ToLowerInvariant();
+        if (calculationBasis == "percent-of")
+        {
+            if (basisCode is null)
+                throw new DomainException("salary-component-basis-required", "Choose the component this percentage is calculated from.");
+            if (basisCode == code)
+                throw new DomainException("salary-component-basis-circular", "A component cannot be calculated from itself.");
+            if (basisCode is not ("gross" or "taxable") && !allComponents.Any(c => c.Code.Equals(basisCode, StringComparison.OrdinalIgnoreCase)))
+                throw new DomainException("salary-component-basis-not-found", $"Basis component {basisCode} does not exist.");
+            if (request.Rate is null or <= 0 or > 100)
+                throw new DomainException("salary-component-rate-invalid", "Percentage rate must be greater than 0 and no more than 100.");
+        }
+
+        var component = new SalaryComponent
+        {
+            Code = code,
+            Name = name,
+            ComponentType = request.ComponentType.ToLowerInvariant(),
+            CalculationBasis = calculationBasis,
+            BasisComponentCode = calculationBasis is "percent-of" or "slab" ? basisCode : null,
+            Rate = calculationBasis == "percent-of" ? request.Rate : null,
+            FixedAmount = calculationBasis == "fixed" ? request.FixedAmount : null,
+            Ceiling = request.Ceiling,
+            IsTaxable = request.IsTaxable,
+            IsStatutory = false,
+            Priority = request.Priority,
+            Version = 1,
+            IsActive = true,
+            EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow),
+        };
+        await repo.CreateComponentAsync(component, ct);
+        return MapComponent(component);
+    }
+
+    private static SalaryComponentDto MapComponent(SalaryComponent comp) =>
+        new(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
+            comp.BasisComponentCode, comp.Rate, comp.FixedAmount, comp.Ceiling,
+            comp.IsTaxable, comp.IsStatutory, comp.Priority, comp.Version, comp.IsActive);
 
     // ---------- M21: salary structure administration ----------
     public async Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct)
