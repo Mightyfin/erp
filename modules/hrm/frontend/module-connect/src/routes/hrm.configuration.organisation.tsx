@@ -55,9 +55,9 @@ const description =
 export const Route = createFileRoute("/hrm/configuration/organisation")({
   head: () => ({
     meta: [
-      { title: "Organisation setup — Mightyfin HRMS" },
+      { title: "Organisation setup — Newworldcargo HRM" },
       { name: "description", content: description },
-      { property: "og:title", content: "Organisation setup — Mightyfin HRMS" },
+      { property: "og:title", content: "Organisation setup — Newworldcargo HRM" },
       { property: "og:description", content: description },
     ],
   }),

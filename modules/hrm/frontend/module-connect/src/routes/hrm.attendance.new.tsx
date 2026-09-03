@@ -16,9 +16,9 @@ import { PageHeader } from "@/platform/components/PageHeader";
 export const Route = createFileRoute("/hrm/attendance/new")({
   head: () => ({
     meta: [
-      { title: "Raise a correction — Mightyfin HRMS" },
+      { title: "Raise a correction — Newworldcargo HRM" },
       { name: "description", content: "Guided attendance correction: the day, the issue, the proposed fix and its impact." },
-      { property: "og:title", content: "Raise a correction — Mightyfin HRMS" },
+      { property: "og:title", content: "Raise a correction — Newworldcargo HRM" },
       { property: "og:description", content: "Guided attendance correction with a preview of the payroll impact before you submit." },
     ],
   }),

@@ -13,9 +13,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/time/travel")({
   head: () => ({
     meta: [
-      { title: "Travel — Mightyfin HRMS" },
+      { title: "Travel — Newworldcargo HRM" },
       { name: "description", content: "Travel authorisation, per diem rates, advances and their retirement." },
-      { property: "og:title", content: "Travel — Mightyfin HRMS" },
+      { property: "og:title", content: "Travel — Newworldcargo HRM" },
       { property: "og:description", content: "Travel authorisation, per diem rates, advances and their retirement." },
     ],
   }),

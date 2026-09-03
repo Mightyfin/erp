@@ -1,4 +1,4 @@
-# Mightyfin HRMS Payroll Preparation Instructions
+# Newworldcargo HRM Payroll Preparation Instructions
 
 Use this checklist before generating payroll. The goal is to make payroll a controlled process: setup first, validate, generate drafts, review, approve, then post and pay.
 

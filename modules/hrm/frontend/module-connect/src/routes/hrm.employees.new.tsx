@@ -25,9 +25,9 @@ import { PageHeader } from "@/platform/components/PageHeader";
 export const Route = createFileRoute("/hrm/employees/new")({
   head: () => ({
     meta: [
-      { title: "Add an employee — Mightyfin HRMS" },
+      { title: "Add an employee — Newworldcargo HRM" },
       { name: "description", content: "Create an employee record, place them in the organisation, and hand over to onboarding." },
-      { property: "og:title", content: "Add an employee — Mightyfin HRMS" },
+      { property: "og:title", content: "Add an employee — Newworldcargo HRM" },
       { property: "og:description", content: "Create an employee record, place them in the organisation, and hand over to onboarding." },
     ],
   }),

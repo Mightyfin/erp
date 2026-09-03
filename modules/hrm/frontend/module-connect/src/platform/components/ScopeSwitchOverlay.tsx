@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
  * branch in the top-nav organisation switcher, the whole screen is briefly
  * covered by an intense-but-slightly-transparent white blur. A rotating
  * two-arrow "switch" mark sits above a live message — "Switching to
- * M3 Test HQ…" for a branch or "Switching to Mighty Finance Limited
+ * M3 Test HQ…" for a branch or "Switching to Newworldcargo
  * (organisation-wide)…" when the whole entity is selected — so the text is
  * fully legible on the frosted cover.
  *

@@ -16,9 +16,9 @@ import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 export const Route = createFileRoute("/hrm/attendance/")({
   head: () => ({
     meta: [
-      { title: "Attendance corrections — Mightyfin HRMS" },
+      { title: "Attendance corrections — Newworldcargo HRM" },
       { name: "description", content: "Review and correct clocking exceptions with a full audit trail." },
-      { property: "og:title", content: "Attendance corrections — Mightyfin HRMS" },
+      { property: "og:title", content: "Attendance corrections — Newworldcargo HRM" },
       { property: "og:description", content: "Review and correct clocking exceptions with a full audit trail." },
     ],
   }),

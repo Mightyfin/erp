@@ -49,13 +49,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/people/positions")({
   head: () => ({
     meta: [
-      { title: "Positions — Mightyfin HRMS" },
+      { title: "Positions — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "Establishment register of positions: vacant, filled, frozen and closed, with incumbency, funding and mandatory licence status.",
       },
-      { property: "og:title", content: "Positions — Mightyfin HRMS" },
+      { property: "og:title", content: "Positions — Newworldcargo HRM" },
       {
         property: "og:description",
         content:

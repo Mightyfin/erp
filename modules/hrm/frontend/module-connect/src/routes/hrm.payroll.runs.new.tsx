@@ -25,9 +25,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/payroll/runs/new")({
   head: () => ({
     meta: [
-      { title: "Start a pay run — Mightyfin HRMS" },
+      { title: "Start a pay run — Newworldcargo HRM" },
       { name: "description", content: "Open a pay period: choose the entity and pay group, confirm who is in and who is deliberately out, and check readiness before calculating." },
-      { property: "og:title", content: "Start a pay run — Mightyfin HRMS" },
+      { property: "og:title", content: "Start a pay run — Newworldcargo HRM" },
       { property: "og:description", content: "Open a pay period, confirm the population, and check readiness before calculating." },
     ],
   }),

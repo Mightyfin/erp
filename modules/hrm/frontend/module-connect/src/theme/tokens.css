@@ -5,14 +5,12 @@
  * file only. Components must never hardcode hex values or palette utilities
  * (bg-blue-500, text-white, ...) — they use the semantic names below.
  *
- * BRAND: MightyFin — purple #5d2b85, gold #fec00f, green #21a501, deep rail
- * #410064. These are the real values in use by `applications/partner-portal`,
- * copied exactly rather than re-derived, so the two MightyFin surfaces match.
+ * BRAND: Newworldcargo — navy #012642 and yellow #ffcc04. Brand hues are
+ * defined here so every HRM surface uses the same tenant identity.
  * Brand hues are written as hex for that reason; the neutral and surface ramps
  * stay in oklch, which derives light/dark pairs more predictably.
  *
- * This is VENDOR branding. The employer on screen is a tenant and must stay
- * swappable — see ../../00-architecture-position.md §7 on standalone HRM sales.
+ * The employer identity is tenant-scoped and should remain configurable.
  *
  * LEGIBILITY: foreground and muted-foreground are deliberately darker than a
  * default shadcn palette, and borders deliberately stronger. Primary users
@@ -89,23 +87,22 @@
 :root {
   --radius: 0.5rem;
 
-  /* brand — MightyFin */
-  --primary: #5d2b85;
+  /* brand — Newworldcargo */
+  --primary: #012642;
   --primary-foreground: #ffffff;
-  --primary-soft: #f2edf6;
-  /* Secondary stays a low-emphasis neutral on purpose. MightyFin gold is loud,
-     and a gold `secondary` button would compete with the primary action on every
-     screen. Gold's home is --warning below, matching partner-portal. */
+  --primary-soft: #e8f0f5;
+  /* Yellow is reserved for supporting actions and warnings so navy remains the
+     clear primary action throughout operational screens. */
   --secondary: oklch(0.955 0.008 290);
-  --secondary-foreground: #3d1c58;
-  --accent: #f2edf6;
-  --accent-foreground: #5d2b85;
+  --secondary-foreground: #012642;
+  --accent: #e8f0f5;
+  --accent-foreground: #012642;
 
   /* status */
   --success: #21a501;
   --success-foreground: #ffffff;
   --success-soft: oklch(0.95 0.045 145);
-  --warning: #fec00f;
+  --warning: #ffcc04;
   --warning-foreground: #1e1d1d;
   --warning-soft: oklch(0.96 0.05 90);
   --danger: #d31408;
@@ -133,30 +130,30 @@
   --border: oklch(0.87 0.01 290);
   --border-strong: oklch(0.76 0.015 290);
   --input: oklch(0.83 0.012 290);
-  --ring: #5d2b85;
+  --ring: #012642;
 
-  /* navigation rail — MightyFin deep purple */
-  --rail: #410064;
+  /* navigation rail — Newworldcargo navy */
+  --rail: #012642;
   --rail-foreground: #ffffff;
   --rail-muted: oklch(0.78 0.045 305);
-  --rail-active: #531773;
+  --rail-active: #0b3a5d;
 }
 
 .dark {
-  /* Same MightyFin hues, lifted in lightness so they carry on a dark surface —
+  /* Same Newworldcargo hues, lifted in lightness so they carry on a dark surface —
      following this file's existing dark strategy of light brand + dark text. */
-  --primary: #c49ae0;
-  --primary-foreground: #2b1240;
-  --primary-soft: oklch(0.34 0.07 305);
+  --primary: #71b7df;
+  --primary-foreground: #012642;
+  --primary-soft: #123d5d;
   --secondary: oklch(0.28 0.02 290);
   --secondary-foreground: oklch(0.95 0.005 290);
-  --accent: oklch(0.32 0.055 305);
-  --accent-foreground: oklch(0.93 0.02 305);
+  --accent: #123d5d;
+  --accent-foreground: #e8f0f5;
 
   --success: oklch(0.75 0.17 145);
   --success-foreground: oklch(0.18 0.04 145);
   --success-soft: oklch(0.3 0.06 145);
-  --warning: #fed44f;
+  --warning: #ffcc04;
   --warning-foreground: #2a2205;
   --warning-soft: oklch(0.33 0.06 90);
   --danger: oklch(0.68 0.18 27);
@@ -181,10 +178,10 @@
   --border: oklch(0.36 0.025 290);
   --border-strong: oklch(0.47 0.03 290);
   --input: oklch(0.4 0.025 290);
-  --ring: #c49ae0;
+  --ring: #71b7df;
 
-  --rail: oklch(0.19 0.055 305);
-  --rail-foreground: oklch(0.96 0.008 305);
-  --rail-muted: oklch(0.74 0.04 305);
-  --rail-active: oklch(0.29 0.07 305);
+  --rail: #012642;
+  --rail-foreground: #ffffff;
+  --rail-muted: #a7c7da;
+  --rail-active: #0b3a5d;
 }

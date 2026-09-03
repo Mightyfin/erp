@@ -14,7 +14,7 @@ import { PageHeader } from "@/platform/components/PageHeader";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/time/operations")({
-  head: () => ({ meta: [{ title: "Overtime review — Mightyfin HRMS" }, { name: "description", content: "Review attendance-derived overtime before payroll." }] }),
+  head: () => ({ meta: [{ title: "Overtime review — Newworldcargo HRM" }, { name: "description", content: "Review attendance-derived overtime before payroll." }] }),
   component: OvertimeReviewPage,
 });
 

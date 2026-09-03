@@ -49,13 +49,13 @@ const payrollRunTabKey = (runId: string) => `hrm.payroll.run.${runId}.active-tab
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
   head: () => ({
     meta: [
-      { title: "Pay run — Mightyfin HRMS" },
+      { title: "Pay run — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "A pay run stage by stage: population, calculation, variances, approval and controlled release.",
       },
-      { property: "og:title", content: "Pay run — Mightyfin HRMS" },
+      { property: "og:title", content: "Pay run — Newworldcargo HRM" },
       {
         property: "og:description",
         content:
