@@ -16,6 +16,7 @@ public interface IPayrollService
     Task<List<SalaryComponentDto>> ListComponentsAsync(string? type, CancellationToken ct);
     Task<List<PayGroupDto>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriodDto>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
+    Task<PayPeriodDto> CreateHistoricalPeriodAsync(HistoricalPayPeriodCreateRequest request, CancellationToken ct);
     Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct);
 
@@ -116,7 +117,9 @@ public interface IPayrollService
 public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType,
     string CalculationBasis, string? BasisComponentCode, decimal? Rate, decimal? FixedAmount,
     decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Priority, int Version, bool IsActive);
-public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status);
+public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status, bool IsHistorical = false);
+public sealed record HistoricalPayPeriodCreateRequest(Guid PayGroupId, string PeriodLabel, string StartDate,
+    string EndDate, string CutoffDate, string PayDate, string Reason);
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
 public sealed record WorkerPayslipPreviewDto(string Status, string PeriodLabel, string Currency,
@@ -194,7 +197,28 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var items = await repo.ListPeriodsAsync(payGroupId, ct);
-        return items.Select(p => new PayPeriodDto(p.Id, p.PeriodLabel, p.StartDate.ToString(), p.EndDate.ToString(), p.CutoffDate.ToString(), p.PayDate.ToString(), p.Status)).ToList();
+        return items.Select(p => new PayPeriodDto(p.Id, p.PeriodLabel, p.StartDate.ToString(), p.EndDate.ToString(), p.CutoffDate.ToString(), p.PayDate.ToString(), p.Status, p.IsHistorical)).ToList();
+    }
+
+    public async Task<PayPeriodDto> CreateHistoricalPeriodAsync(HistoricalPayPeriodCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "payroll");
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct)
+            ?? throw new DomainException("pay-group-not-found", "Choose an existing pay group.");
+        if (!DateOnly.TryParse(request.StartDate, out var start) || !DateOnly.TryParse(request.EndDate, out var end)
+            || !DateOnly.TryParse(request.CutoffDate, out var cutoff) || !DateOnly.TryParse(request.PayDate, out var payDate))
+            throw new DomainException("historical-period-date-invalid", "Enter valid historical period, cutoff and pay dates.");
+        var reason = (request.Reason ?? "").Trim();
+        if (reason.Length < 10) throw new DomainException("historical-period-reason-required", "Explain the historical entry in at least 10 characters.");
+        if (start > end || cutoff > payDate || end >= DateOnly.FromDateTime(DateTime.UtcNow))
+            throw new DomainException("historical-period-invalid", "A historical period must end before today and have a cutoff on or before its pay date.");
+        if ((request.PeriodLabel ?? "").Trim().Length < 3)
+            throw new DomainException("historical-period-label-required", "Provide a clear period label, for example June 2026.");
+        var existing = await repo.ListPeriodsAsync(group.Id, ct);
+        if (existing.Any(p => p.StartDate == start && p.EndDate == end))
+            throw new DomainException("historical-period-duplicate", "A pay period already covers those dates for this pay group.");
+        var created = await repo.CreatePeriodAsync(new PayPeriod { PayGroupId = group.Id, PeriodLabel = request.PeriodLabel.Trim(), StartDate = start, EndDate = end, CutoffDate = cutoff, PayDate = payDate, Status = "historical", IsHistorical = true, HistoricalReason = reason, IsCurrent = false }, ct);
+        return new PayPeriodDto(created.Id, created.PeriodLabel, created.StartDate.ToString(), created.EndDate.ToString(), created.CutoffDate.ToString(), created.PayDate.ToString(), created.Status, true);
     }
 
     public async Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct)
@@ -554,8 +578,15 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 "Payroll run preflight failed: " + string.Join("; ", failures.Select(f => f.Label)));
         var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
-        if (period.Status != "open")
-            throw new DomainException("pay-period-not-open", $"Pay period {period.PeriodLabel} is {period.Status} and cannot accept a new run.");
+        if (request.IsHistorical != period.IsHistorical)
+            throw new DomainException("payroll-history-mode-mismatch", request.IsHistorical
+                ? "Choose a historical period when recording a backdated payroll run."
+                : "This is a historical period. Start it using Backdated payroll mode so normal cutoffs stay unchanged.");
+        if ((!request.IsHistorical && period.Status != "open") || (request.IsHistorical && period.Status != "historical"))
+            throw new DomainException("pay-period-not-open", $"Pay period {period.PeriodLabel} is {period.Status} and cannot accept this type of run.");
+        var historicalReason = (request.HistoricalReason ?? "").Trim();
+        if (request.IsHistorical && historicalReason.Length < 10)
+            throw new DomainException("historical-run-reason-required", "Explain the backdated payroll entry in at least 10 characters.");
         // M46 branch payroll drafts: a draft tagged with LocationId belongs to
         // one branch and pays only that branch's workers; multiple branch runs
         // may coexist for a period (one per branch), but an organisation-wide
@@ -581,7 +612,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         // M44 branch scoping: a run created while scoped to a branch is that branch's run (draft flows up).
         var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId,
             Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId,
-            LocationId = targetLocation };
+            LocationId = targetLocation, IsHistorical = request.IsHistorical,
+            HistoricalReason = request.IsHistorical ? historicalReason : null };
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
@@ -661,9 +693,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             checks.Add(new("pay-group-exists", "Selected pay group exists", "fail",
                 $"Pay group {request.PayGroupId} does not exist.", 0));
         }
-        checks.Add(new("period-open", "Selected pay period is open",
-            period.Status == "open" ? "pass" : "fail",
-            $"{period.PeriodLabel} is {period.Status}.", 0));
+        var periodAvailable = request.IsHistorical ? period.IsHistorical && period.Status == "historical" : !period.IsHistorical && period.Status == "open";
+        checks.Add(new("period-open", request.IsHistorical ? "Selected historical period is available" : "Selected pay period is open",
+            periodAvailable ? "pass" : "fail",
+            request.IsHistorical ? $"{period.PeriodLabel} is a protected historical period." : $"{period.PeriodLabel} is {period.Status}.", 0));
+        if (request.IsHistorical)
+            checks.Add(new("history-reason", "Historical entry is explained",
+                (request.HistoricalReason ?? "").Trim().Length >= 10 ? "pass" : "fail",
+                "Historical runs preserve normal deadlines and never generate a bank payment file.", 0));
         checks.Add(new("period-pay-group", "Pay period belongs to selected pay group",
             period.PayGroupId == request.PayGroupId ? "pass" : "fail",
             period.PayGroupId == request.PayGroupId
@@ -1546,6 +1583,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.IsHistorical)
+            throw new DomainException("historical-run-payment-blocked", "This is a historical payroll record. It cannot generate a bank payment file because payment was handled outside the HRM.");
         if (run.Status != "released")
             throw new DomainException("payment-run-not-released", "Payslips must be released before a payment file can be generated.");
         if (run.PaymentStatus != "not-created")
@@ -1949,7 +1988,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
         r.PaymentFileReference, r.PaymentFileGeneratedBySubjectId, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
         r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId,
-        r.PayPeriodId, r.PayGroupId, r.ApprovalNote);
+        r.PayPeriodId, r.PayGroupId, r.ApprovalNote, r.IsHistorical, r.HistoricalReason);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),

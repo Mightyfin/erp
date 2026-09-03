@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Ban, Check, Info, X } from "lucide-react";
+import { AlertTriangle, Ban, Check, History, Info, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,6 +110,7 @@ type PayPeriodRow = {
   cutoffDate: string;
   payDate: string;
   status: string;
+  isHistorical?: boolean;
 };
 
 type ProfileRow = {
@@ -163,6 +164,10 @@ function NewRun() {
     POPULATION.filter((p) => !p.in).map((p) => p.name),
   );
   const [note, setNote] = useState("");
+  const [historicalMode, setHistoricalMode] = useState(false);
+  const [historicalMonth, setHistoricalMonth] = useState("");
+  const [historicalReason, setHistoricalReason] = useState("");
+  const [createdHistoricalPeriod, setCreatedHistoricalPeriod] = useState<PayPeriodRow | null>(null);
 
   const setup = useApi(
     async (): Promise<PayrollSetup> => {
@@ -197,6 +202,7 @@ function NewRun() {
               cutoffDate: text(row.cutoffDate),
               payDate: text(row.payDate),
               status: text(row.status),
+              isHistorical: Boolean(row.isHistorical),
             };
           })
         : [];
@@ -240,6 +246,7 @@ function NewRun() {
     setup.data?.groups.find((g) => g.isDefault)?.id || setup.data?.groups[0]?.id || "";
   const selectedGroupId = USE_REAL ? payGroup || defaultGroupId : payGroup || PAY_GROUPS[0];
   const selectedGroup = setup.data?.groups.find((g) => g.id === selectedGroupId);
+  const availablePeriods = [...(setup.data?.periods ?? []), ...(createdHistoricalPeriod ? [createdHistoricalPeriod] : [])];
 
   useEffect(() => {
     if (!USE_REAL || !setup.data) return;
@@ -247,15 +254,15 @@ function NewRun() {
   }, [defaultGroupId, payGroup, setup.data]);
 
   useEffect(() => {
-    if (!USE_REAL || !setup.data?.periods.length) return;
-    const current = setup.data.periods.find((p) => p.id === periodId);
+    if (!USE_REAL || !availablePeriods.length) return;
+    const current = availablePeriods.find((p) => p.id === periodId);
     if (current) return;
-    const open = setup.data.periods.find((p) => p.status === "open") ?? setup.data.periods[0];
+    const open = availablePeriods.find((p) => p.status === "open") ?? availablePeriods[0];
     setPeriodId(open.id);
     setPeriod(open.periodLabel);
     setCutoff(open.cutoffDate);
     setPayDate(open.payDate);
-  }, [periodId, setup.data]);
+  }, [periodId, availablePeriods]);
 
   const placementUnits = flattenEntityTree(setup.data?.tree ?? demoEntityTree);
   const placementOptions = treeToSelectOptions(setup.data?.tree ?? demoEntityTree).map((o) => ({
@@ -263,11 +270,11 @@ function NewRun() {
     entity: o.value.startsWith("entity:"),
   }));
   const chosenPeriod = USE_REAL
-    ? setup.data?.periods.find((p) => p.id === periodId)
+    ? availablePeriods.find((p) => p.id === periodId)
     : undefined;
   const preflight = useApi(async () => {
     if (!USE_REAL || !chosenPeriod?.id || !selectedGroupId) return null;
-    const raw = (await realApi.payrollRunPreflight(chosenPeriod.id, selectedGroupId)) as Record<string, unknown>;
+    const raw = (await realApi.payrollRunPreflight(chosenPeriod.id, selectedGroupId, historicalMode, historicalReason)) as Record<string, unknown>;
     const checks = Array.isArray(raw.checks)
       ? (raw.checks as Record<string, unknown>[]).map((check) => ({
           id: text(check.id),
@@ -435,6 +442,37 @@ function NewRun() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
+            {USE_REAL ? (
+              <div className="sm:col-span-3 rounded-md border bg-surface-muted p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">Run mode</p>
+                    <p className="text-xs text-muted-foreground">Historical mode creates a separate prior-period record. It never reopens or changes the normal payroll calendar.</p>
+                  </div>
+                  <Button type="button" variant={historicalMode ? "default" : "outline"} size="sm" onClick={() => setHistoricalMode((value) => !value)}>
+                    <History className="size-4" aria-hidden /> {historicalMode ? "Backdated payroll" : "Use backdated payroll"}
+                  </Button>
+                </div>
+                {historicalMode ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div><Label htmlFor="historical-month">Historical month</Label><Input id="historical-month" type="month" className="mt-1" value={historicalMonth} onChange={(e) => setHistoricalMonth(e.target.value)} /></div>
+                    <div className="sm:col-span-2"><Label htmlFor="historical-reason">Why is this being entered retrospectively?</Label><Input id="historical-reason" className="mt-1" value={historicalReason} onChange={(e) => setHistoricalReason(e.target.value)} placeholder="June payroll was paid manually before HRM go-live" /></div>
+                    <div className="sm:col-span-3"><Button type="button" size="sm" disabled={!selectedGroupId || !historicalMonth || historicalReason.trim().length < 10} onClick={async () => {
+                      const [year, month] = historicalMonth.split("-").map(Number);
+                      const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+                      const label = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+                      try {
+                        const created = await realApi.createHistoricalPayrollPeriod({ payGroupId: selectedGroupId, periodLabel: label, startDate: `${historicalMonth}-01`, endDate: `${historicalMonth}-${String(endDay).padStart(2, "0")}`, cutoffDate: `${historicalMonth}-${String(Math.max(1, endDay - 5)).padStart(2, "0")}`, payDate: `${historicalMonth}-${String(endDay).padStart(2, "0")}`, reason: historicalReason });
+                        const row = created as Record<string, unknown>;
+                        const next = { id: text(row.id), periodLabel: text(row.periodLabel), startDate: text(row.startDate), endDate: text(row.endDate), cutoffDate: text(row.cutoffDate), payDate: text(row.payDate), status: text(row.status), isHistorical: true };
+                        setCreatedHistoricalPeriod(next); setPeriodId(next.id); setPeriod(next.periodLabel); setCutoff(next.cutoffDate); setPayDate(next.payDate);
+                        feedback.submitted("Historical period created", "It is separate from the normal pay calendar and cannot create a bank payment file.");
+                      } catch (error) { feedback.blocked("Could not create historical period", error instanceof Error ? error.message : "Unknown error."); }
+                    }}>Create protected historical period</Button></div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div>
               <Label htmlFor="period">Period</Label>
               {USE_REAL && setup.data?.periods.length ? (
@@ -452,9 +490,9 @@ function NewRun() {
                 >
                   <SelectTrigger id="period" className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {setup.data.periods.map((p) => (
+                    {availablePeriods.filter((p) => historicalMode ? p.isHistorical : !p.isHistorical).map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.periodLabel} ({p.status})
+                        {p.periodLabel} ({p.isHistorical ? "historical" : p.status})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -686,10 +724,10 @@ function NewRun() {
               );
               return;
             }
-            if (chosenPeriod.status !== "open") {
+            if ((historicalMode && !chosenPeriod.isHistorical) || (!historicalMode && chosenPeriod.status !== "open")) {
               feedback.blocked(
-                "Period is not open",
-                `${chosenPeriod.periodLabel} is ${chosenPeriod.status}. Choose an open period before creating a run.`,
+                "Period is not available for this mode",
+                historicalMode ? "Create or choose a protected historical period before backdating." : `${chosenPeriod.periodLabel} is ${chosenPeriod.status}. Choose an open period before creating a run.`,
               );
               return;
             }
@@ -705,7 +743,7 @@ function NewRun() {
               return;
             }
             try {
-              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: selectedGroupId });
+              const r = await realApi.createPayrollRun({ payPeriodId: chosenPeriod.id, payGroupId: selectedGroupId, isHistorical: historicalMode, historicalReason: historicalMode ? historicalReason : undefined });
               const runId = String((r as { id?: string }).id ?? "");
               if (!runId) {
                 throw new Error("The pay run was created, but the server did not return its reference. Refresh the pay-run list before continuing.");

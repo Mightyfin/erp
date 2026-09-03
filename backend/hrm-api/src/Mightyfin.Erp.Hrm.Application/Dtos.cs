@@ -140,7 +140,7 @@ public sealed record SalaryStructureCreateRequest(string Code, string Name, List
 public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsActive = null,
     List<SalaryStructureItemUpsert>? Items = null);
 
-public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
+public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId, bool IsHistorical = false, string? HistoricalReason = null);
 public sealed record PayrollRunUpdate(Guid PayPeriodId, Guid PayGroupId, string? ApprovalNote = null);
 public sealed record PayrollRunPreflightDto(Guid PayPeriodId, Guid PayGroupId, Guid? LocationId,
     bool Ready, int IncludedWorkerCount, int WarningCount, List<PayrollRunPreflightCheckDto> Checks);
@@ -178,7 +178,8 @@ public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, i
     string? PaymentApprovedBySubjectId = null, string? PaymentReleasedBySubjectId = null,
     string? ReconciliationReference = null,
     decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null,
-    Guid? PayPeriodId = null, Guid? PayGroupId = null, string? ApprovalNote = null);
+    Guid? PayPeriodId = null, Guid? PayGroupId = null, string? ApprovalNote = null,
+    bool IsHistorical = false, string? HistoricalReason = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,

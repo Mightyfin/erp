@@ -235,6 +235,34 @@ test("employee reports offer a print-ready PDF export alongside CSV", async ({ p
   await expect(popup.locator("body")).toContainText("EMP-1001");
 });
 
+test("payroll start keeps backdated periods separate from the open payroll calendar", async ({ page }) => {
+  let historicalRequest: Record<string, unknown> | null = null;
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ sub: "payroll-history-admin", preferred_username: "payroll@example.test", realm_access: { roles: ["hr_admin", "payroll"] } }));
+    const token = `test.${payload}.signature`;
+    localStorage.setItem("erp.oidc.session", JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }));
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = [];
+    if (path.endsWith("/payroll/pay-groups")) body = [{ id: "pg-1", code: "MONTHLY", name: "Monthly", currency: "ZMW", isDefault: true }];
+    else if (path.endsWith("/payroll/pay-groups/pg-1/periods")) body = [{ id: "period-open", periodLabel: "August 2026", startDate: "2026-08-01", endDate: "2026-08-31", cutoffDate: "2026-08-20", payDate: "2026-08-25", status: "open", isHistorical: false }];
+    else if (path.endsWith("/organisation/tree")) body = [];
+    else if (path.endsWith("/payroll/historical-periods")) { historicalRequest = route.request().postDataJSON() as Record<string, unknown>; body = { id: "period-june", periodLabel: "June 2026", startDate: "2026-06-01", endDate: "2026-06-30", cutoffDate: "2026-06-25", payDate: "2026-06-30", status: "historical", isHistorical: true }; }
+    else if (path.endsWith("/auth/me")) body = { authenticated: true, user: { id: "payroll-history-admin", email: "payroll@example.test", displayName: "Payroll Admin", roles: ["hr_admin", "payroll"], isActive: true } };
+    else if (path.endsWith("/setup/state")) body = { status: "complete" };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/hrm/payroll/runs/new");
+  await page.getByRole("button", { name: "Use backdated payroll" }).click();
+  await page.getByLabel("Historical month").fill("2026-06");
+  await page.getByLabel("Why is this being entered retrospectively?").fill("June payroll was paid manually before HRM go-live");
+  await page.getByRole("button", { name: "Create protected historical period" }).click();
+  await expect.poll(() => historicalRequest).not.toBeNull();
+  expect(historicalRequest).toMatchObject({ payGroupId: "pg-1", startDate: "2026-06-01", endDate: "2026-06-30" });
+  await expect(page.getByText("Historical period created")).toBeVisible();
+});
+
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
   await page.addInitScript(() => {
     const payload = btoa(JSON.stringify({

@@ -1058,6 +1058,11 @@ public static class Routes
         });
         g.MapGet("/pay-groups/{groupId:guid}/periods", async (Guid groupId, IPayrollService svc, CancellationToken ct)
             => await svc.ListPeriodsAsync(groupId, ct));
+        g.MapPost("/historical-periods", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<HistoricalPayPeriodCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateHistoricalPeriodAsync(request, ct));
+        });
         g.MapGet("/tax-slabs", async ([FromQuery] string taxYear, IPayrollService svc, CancellationToken ct)
             => await svc.ListTaxSlabsAsync(taxYear, ct));
         g.MapGet("/contribution-rules", async (IPayrollService svc, CancellationToken ct)

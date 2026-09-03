@@ -183,6 +183,10 @@ public class PayPeriod : Entity
     public DateOnly PayDate { get; set; }
     public string Status { get; set; } = "open";      // open | locked | closed
     public bool IsCurrent { get; set; }
+    // Historical periods are deliberately separate from the operational calendar:
+    // creating one never reopens a closed period or changes its cutoff.
+    public bool IsHistorical { get; set; }
+    public string? HistoricalReason { get; set; }
 }
 
 /// <summary>J-group 11: Versioned tax slabs (ZRA PAYE) — configuration, not code

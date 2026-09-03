@@ -581,6 +581,8 @@ export const realApi = {
   payrollPayGroups: () => hrmApi.get<unknown[]>("/hrm/payroll/pay-groups"),
   payrollPayGroupPeriods: (groupId: string) =>
     hrmApi.get<unknown[]>(`/hrm/payroll/pay-groups/${groupId}/periods`),
+  createHistoricalPayrollPeriod: (body: Record<string, unknown>) =>
+    hrmApi.post<Record<string, unknown>>("/hrm/payroll/historical-periods", body),
   payrollTaxSlabs: (taxYear: string) =>
     hrmApi.get<unknown[]>("/hrm/payroll/tax-slabs", { taxYear }),
   payrollContributionRules: () => hrmApi.get<unknown[]>("/hrm/payroll/contribution-rules"),
@@ -694,8 +696,8 @@ export const realApi = {
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/cancel`, { reason }),
   payrollRunReverse: (id: string, reason?: string) =>
     hrmApi.post<unknown>(`/hrm/payroll/runs/${id}/reverse`, { reason }),
-  payrollRunPreflight: (payPeriodId: string, payGroupId: string) =>
-    hrmApi.post<unknown>("/hrm/payroll/runs/preflight", { payPeriodId, payGroupId }),
+  payrollRunPreflight: (payPeriodId: string, payGroupId: string, isHistorical = false, historicalReason?: string) =>
+    hrmApi.post<unknown>("/hrm/payroll/runs/preflight", { payPeriodId, payGroupId, isHistorical, historicalReason }),
   payrollCalculationReadiness: (id: string) =>
     hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/calculation-readiness`),
   payrollRunLines: (id: string) => hrmApi.get<unknown>(`/hrm/payroll/runs/${id}/lines`),
