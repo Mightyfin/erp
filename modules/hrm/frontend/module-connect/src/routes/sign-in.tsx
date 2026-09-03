@@ -18,9 +18,9 @@ import {
 export const Route = createFileRoute("/sign-in")({
   head: () => ({
     meta: [
-      { title: "Sign in — Mightyfin HRMS" },
+      { title: "Sign in — Newworldcargo HRM" },
       { name: "description", content: "Sign in to the HR workspace." },
-      { property: "og:title", content: "Sign in — Mightyfin HRMS" },
+      { property: "og:title", content: "Sign in — Newworldcargo HRM" },
       { property: "og:description", content: "Sign in to the HR workspace." },
     ],
   }),
@@ -28,6 +28,9 @@ export const Route = createFileRoute("/sign-in")({
 });
 
 const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
+const ORGANISATION_LOGIN = ["oidc", "hybrid"].includes(
+  (import.meta.env.VITE_HRM_AUTH_MODE as string | undefined)?.trim().toLowerCase() ?? "local",
+);
 
 /**
  * ERP-hosted login page (M12 — hybrid auth).
@@ -70,7 +73,7 @@ function SignIn() {
   // when no SSO cookie exists and must leave the hosted form stable.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (USE_REAL && (params.has("code") || params.has("error"))) {
+    if (USE_REAL && ORGANISATION_LOGIN && (params.has("code") || params.has("error"))) {
       callbackInProgress.current = true;
       void handleLoginCallback().then((origin) => {
         // The callback stores the new OIDC session outside React state. Force
@@ -86,7 +89,7 @@ function SignIn() {
 
   // (2) Auto-login whenever a valid session exists.
   useEffect(() => {
-    if (!USE_REAL) return;
+    if (!USE_REAL || !ORGANISATION_LOGIN) return;
     if (credentialToken) return;
     if (authenticated) {
       void navigate({ to: "/hrm", replace: true });
@@ -165,8 +168,8 @@ function SignIn() {
             data-testid="signin-brand-logo-container"
           >
             <img
-              src="/mightyfin-logo-light.png"
-              alt="Mightyfin HRMS"
+              src="/newworld-cargo-logo.png"
+              alt="Newworldcargo"
               data-testid="signin-brand-logo"
               className="block max-h-full max-w-full object-contain object-left"
             />
@@ -205,8 +208,8 @@ function SignIn() {
           data-testid="signin-brand-logo-container"
         >
           <img
-            src="/mightyfin-logo-light.png"
-            alt="Mightyfin HRMS"
+            src="/newworld-cargo-logo.png"
+            alt="Newworldcargo"
             data-testid="signin-brand-logo"
             className="block max-h-full max-w-full object-contain object-left"
           />
@@ -224,12 +227,12 @@ function SignIn() {
             </li>
             <li className="flex gap-2">
               <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
-              Credentials stay with your organisation's identity provider.
+              Your account access is protected and managed by HR.
             </li>
           </ul>
         </div>
         <p className="text-xs text-rail-muted">
-          Secure sign-in via the platform identity provider.
+          Secure Newworldcargo HRM sign-in.
         </p>
       </div>
 
@@ -243,14 +246,14 @@ function SignIn() {
                 data-testid="signin-mobile-brand-logo-container"
               >
                 <img
-                  src="/mightyfin-logo-color.png"
+                  src="/newworld-cargo-logo.png"
                   alt=""
                   aria-hidden
                   data-testid="signin-mobile-brand-logo"
                   className="block max-h-full max-w-full object-contain"
                 />
               </div>
-              <span className="font-semibold">Mightyfin HRMS</span>
+              <span className="font-semibold">Newworldcargo HRM</span>
             </div>
           </div>
 
@@ -287,11 +290,10 @@ function SignIn() {
             <>
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">Sign in</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Use your organisation account. If you are already signed in with the platform identity
-            provider you will be taken straight in.
+            {ORGANISATION_LOGIN ? "Use your organisation account or HRMS local account." : "Use your Newworldcargo HRM local account."}
           </p>
 
-          <Button className="mt-6 w-full" onClick={enterWithOrganisation} disabled={busy}>
+          {ORGANISATION_LOGIN ? <Button className="mt-6 w-full" onClick={enterWithOrganisation} disabled={busy}>
             {busy ? (
               "Checking your session\u2026"
             ) : (
@@ -300,13 +302,13 @@ function SignIn() {
                 <ArrowRight className="size-4" aria-hidden />
               </>
             )}
-          </Button>
+          </Button> : null}
 
-          <div className="my-6 flex items-center gap-3">
+          {ORGANISATION_LOGIN ? <div className="my-6 flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
             <span className="text-xs text-muted-foreground">HRMS local account</span>
             <span className="h-px flex-1 bg-border" />
-          </div>
+          </div> : null}
 
           <form className="space-y-4" onSubmit={enterWithLocalAccount}>
             <div>
@@ -318,11 +320,9 @@ function SignIn() {
                 className="mt-1"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@mightyfinance.co.zm"
+                placeholder="you@newworldcargo.com"
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Use this only when HR created an HRMS-local account because you are not yet in the organisation directory.
-              </p>
+              {ORGANISATION_LOGIN ? <p className="mt-1 text-xs text-muted-foreground">Use this when HR created an HRMS-local account.</p> : null}
             </div>
 
             <div>
@@ -340,11 +340,11 @@ function SignIn() {
 
             {localError ? <p className="text-sm text-destructive" role="alert">{localError}</p> : null}
 
-            <Button type="submit" variant="outline" className="w-full" disabled={localBusy}>
+            <Button type="submit" variant={ORGANISATION_LOGIN ? "outline" : "default"} className="w-full" disabled={localBusy}>
               {localBusy ? "Signing in…" : "Sign in with HRMS local account"}
             </Button>
 
-            <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
+            {ORGANISATION_LOGIN ? <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
               <p className="flex gap-2 text-xs text-warning">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 <span>
@@ -352,7 +352,7 @@ function SignIn() {
                   isolated to this HRMS and should be migrated to the shared identity directory later.
                 </span>
               </p>
-            </div>
+            </div> : null}
           </form>
             </>
           )}
