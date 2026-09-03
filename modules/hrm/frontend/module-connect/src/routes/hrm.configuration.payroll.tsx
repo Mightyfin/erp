@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BadgeDollarSign, CalendarClock, Info, Pencil, Plus, ShieldCheck, Unplug } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -532,6 +532,29 @@ function ComponentDialog({
   const [priority, setPriority] = useState("20");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The dialog is controlled by the parent. Opening it by selecting a row does
+  // not call Radix's onOpenChange(true), so initialise from the selected record
+  // here rather than relying on that callback. It also clears a prior edit when
+  // the user switches straight to adding a new component.
+  useEffect(() => {
+    if (!open || !comp) return;
+    setCode(String(comp.code ?? ""));
+    setName(String(comp.name ?? comp.code ?? ""));
+    setComponentType(String(comp.componentType ?? "earning"));
+    setCalculationBasis(String(comp.calculationBasis ?? "fixed"));
+    setBasisComponentCode(String(comp.basisComponentCode ?? ""));
+    setRate(comp.rate === undefined || comp.rate === null ? "" : String(comp.rate));
+    setFixedAmount(
+      comp.fixedAmount === undefined || comp.fixedAmount === null ? "" : String(comp.fixedAmount),
+    );
+    setCeiling(comp.ceiling === undefined || comp.ceiling === null ? "" : String(comp.ceiling));
+    setIsTaxable(Boolean(comp.isTaxable));
+    setIsArchived(!Boolean(comp.isActive));
+    setPriority(String(comp.priority ?? 20));
+    setError(null);
+  }, [comp, open]);
+
   if (!comp) return null;
   const id = String(comp.id ?? "");
   const creating = id === "";
@@ -542,21 +565,6 @@ function ComponentDialog({
       open={open}
       onOpenChange={(o) => {
         onOpenChange(o);
-        if (o) {
-          setCode(String(comp.code ?? ""));
-          setName(String(comp.name ?? comp.code ?? ""));
-          setComponentType(String(comp.componentType ?? "earning"));
-          setCalculationBasis(String(comp.calculationBasis ?? "fixed"));
-          setBasisComponentCode(String(comp.basisComponentCode ?? ""));
-          setRate(comp.rate === undefined || comp.rate === null ? "" : String(comp.rate));
-          setFixedAmount(
-            comp.fixedAmount === undefined || comp.fixedAmount === null ? "" : String(comp.fixedAmount),
-          );
-          setCeiling(comp.ceiling === undefined || comp.ceiling === null ? "" : String(comp.ceiling));
-          setIsTaxable(Boolean(comp.isTaxable));
-          setIsArchived(!Boolean(comp.isActive));
-          setPriority(String(comp.priority ?? 20));
-        }
       }}
     >
       <DialogContent className="max-w-md">

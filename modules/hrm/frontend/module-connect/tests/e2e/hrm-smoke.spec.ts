@@ -208,6 +208,17 @@ test("HR admin can add housing allowance as thirty percent of basic", async ({ p
     rate: 30,
     priority: 20,
   });
+
+  // Editing is a controlled-dialog flow. The selected component must hydrate
+  // every saved value before an HR administrator makes a change.
+  const housingRow = page.getByRole("row", { name: /Housing Allowance/ });
+  await housingRow.getByRole("button", { name: /Edit Housing Allowance/ }).click();
+  await expect(page.getByRole("dialog", { name: "Edit salary component" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Housing Allowance");
+  await expect(page.getByText("Code:").locator("..")).toContainText("housing-allowance");
+  await expect(page.getByLabel("Calculation basis")).toContainText("Percent of component");
+  await expect(page.getByLabel("Basis component")).toContainText("Basic Salary");
+  await expect(page.getByLabel("Rate (%)")).toHaveValue("30");
 });
 
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
