@@ -98,6 +98,9 @@ public class BenefitType : Entity
     /// <summary>When enabled, the worker's annual allowance is paid through
     /// payroll as a monthly earning. When disabled, it remains claim-only.</summary>
     public bool IncludeInPayroll { get; set; }
+    /// <summary>Payroll-paid cash or taxable benefits are included in PAYE
+    /// taxable emoluments. Genuine non-cash exempt benefits remain false.</summary>
+    public bool IsTaxable { get; set; }
     public bool IsActive { get; set; } = true;
 }
 

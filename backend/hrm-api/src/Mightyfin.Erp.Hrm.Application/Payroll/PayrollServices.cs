@@ -2043,9 +2043,12 @@ internal sealed class CalcContext
 
         // Earnings must resolve before dependent components read them, so the
         // proration factor is baked into the resolved value immediately.
-        if (comp.ComponentType == "earning") _values[comp.Code] = amount;
-
-        if (comp.ComponentType == "earning") Gross += amount;
+        if (comp.ComponentType == "earning")
+        {
+            _values[comp.Code] = amount;
+            if (comp.IsTaxable) _taxableEarnings += amount;
+            Gross += amount;
+        }
         else if (comp.ComponentType is "deduction" or "tax") Deductions += amount;
         else if (comp.ComponentType == "employer-contribution") EmployerCost += amount;
     }
@@ -2053,7 +2056,8 @@ internal sealed class CalcContext
     private decimal Resolve(string code) =>
         code switch
         {
-            "gross" or "taxable" => Gross, // 'gross'/'taxable' are engine keywords
+            "gross" => Gross,
+            "taxable" => _taxableEarnings,
             // An earning already evaluated in this run carries its prorated
             // value in _values — that always wins over the raw profile
             // override, so dependent components read prorated earnings.
@@ -2073,6 +2077,9 @@ internal sealed class CalcContext
             : comp.FixedAmount ?? 0;
 
     private decimal _lastTaxable;
+    // PAYE follows chargeable/taxable emoluments, which can differ from gross
+    // statutory earnings used by NAPSA.
+    private decimal _taxableEarnings;
 
     private decimal ApplySlabs(decimal taxable)
     {
@@ -2126,6 +2133,7 @@ internal sealed class CalcContext
         Components.Add(("overtime", "Overtime", "earning", amount,
             $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier and configured hourly divisor; source attendance {sourceIds}", false));
         Gross += amount;
+        _taxableEarnings += amount;
     }
 
     public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances)
@@ -2146,6 +2154,7 @@ internal sealed class CalcContext
                     ? $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months, prorated for {PaymentDays:N0}/{WorkingDays:N0} paid days."
                     : $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months.", false));
             Gross += monthlyAmount;
+            if (type.IsTaxable) _taxableEarnings += monthlyAmount;
         }
     }
 
