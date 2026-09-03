@@ -165,7 +165,7 @@ function NewRun() {
   );
   const [note, setNote] = useState("");
   const [historicalMode, setHistoricalMode] = useState(false);
-  const [historicalMonth, setHistoricalMonth] = useState("");
+  const [historicalDate, setHistoricalDate] = useState("");
   const [historicalReason, setHistoricalReason] = useState("");
   const [createdHistoricalPeriod, setCreatedHistoricalPeriod] = useState<PayPeriodRow | null>(null);
 
@@ -455,9 +455,10 @@ function NewRun() {
                 </div>
                 {historicalMode ? (
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <div><Label htmlFor="historical-month">Historical month</Label><Input id="historical-month" type="month" className="mt-1" value={historicalMonth} onChange={(e) => setHistoricalMonth(e.target.value)} /></div>
+                    <div><Label htmlFor="historical-date">Date in historical month</Label><Input id="historical-date" type="date" className="mt-1" value={historicalDate} onChange={(e) => setHistoricalDate(e.target.value)} /><p className="mt-1 text-xs text-muted-foreground">Choose any date in the month to record; HRM creates that whole payroll month.</p></div>
                     <div className="sm:col-span-2"><Label htmlFor="historical-reason">Why is this being entered retrospectively?</Label><Input id="historical-reason" className="mt-1" value={historicalReason} onChange={(e) => setHistoricalReason(e.target.value)} placeholder="June payroll was paid manually before HRM go-live" /></div>
-                    <div className="sm:col-span-3"><Button type="button" size="sm" disabled={!selectedGroupId || !historicalMonth || historicalReason.trim().length < 10} onClick={async () => {
+                    <div className="sm:col-span-3"><Button type="button" size="sm" disabled={!selectedGroupId || !historicalDate || historicalReason.trim().length < 10} onClick={async () => {
+                      const historicalMonth = historicalDate.slice(0, 7);
                       const [year, month] = historicalMonth.split("-").map(Number);
                       const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
                       const label = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));

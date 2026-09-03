@@ -255,7 +255,7 @@ test("payroll start keeps backdated periods separate from the open payroll calen
   });
   await page.goto("/hrm/payroll/runs/new");
   await page.getByRole("button", { name: "Use backdated payroll" }).click();
-  await page.getByLabel("Historical month").fill("2026-06");
+  await page.getByLabel("Date in historical month").fill("2026-06-15");
   await page.getByLabel("Why is this being entered retrospectively?").fill("June payroll was paid manually before HRM go-live");
   await page.getByRole("button", { name: "Create protected historical period" }).click();
   await expect.poll(() => historicalRequest).not.toBeNull();
