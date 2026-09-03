@@ -238,7 +238,18 @@ function SignIn() {
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
             <div className="flex items-center gap-2">
-              <img src="/mightyfin-mark.png" alt="" className="size-5" aria-hidden />
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center"
+                data-testid="signin-mobile-brand-logo-container"
+              >
+                <img
+                  src="/mightyfin-logo-color.png"
+                  alt=""
+                  aria-hidden
+                  data-testid="signin-mobile-brand-logo"
+                  className="block max-h-full max-w-full object-contain"
+                />
+              </div>
               <span className="font-semibold">Mightyfin HRMS</span>
             </div>
           </div>

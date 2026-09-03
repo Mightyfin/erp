@@ -89,14 +89,17 @@
 :root {
   --radius: 0.5rem;
 
-  /* brand — Newworldcargo */
-  --primary: #012642;
+  /* brand — MightyFin */
+  --primary: #5d2b85;
   --primary-foreground: #ffffff;
-  --primary-soft: #e7f0f5;
-  --secondary: #ffcc04;
-  --secondary-foreground: #012642;
-  --accent: #fff4bd;
-  --accent-foreground: #012642;
+  --primary-soft: #f2edf6;
+  /* Secondary stays a low-emphasis neutral on purpose. MightyFin gold is loud,
+     and a gold `secondary` button would compete with the primary action on every
+     screen. Gold's home is --warning below, matching partner-portal. */
+  --secondary: oklch(0.955 0.008 290);
+  --secondary-foreground: #3d1c58;
+  --accent: #f2edf6;
+  --accent-foreground: #5d2b85;
 
   /* status */
   --success: #21a501;
@@ -130,24 +133,25 @@
   --border: oklch(0.87 0.01 290);
   --border-strong: oklch(0.76 0.015 290);
   --input: oklch(0.83 0.012 290);
-  --ring: #012642;
+  --ring: #5d2b85;
 
-  /* navigation rail — Newworldcargo navy */
-  --rail: #012642;
+  /* navigation rail — MightyFin deep purple */
+  --rail: #410064;
   --rail-foreground: #ffffff;
   --rail-muted: oklch(0.78 0.045 305);
-  --rail-active: #073e65;
+  --rail-active: #531773;
 }
 
 .dark {
-  /* Newworldcargo navy and yellow, lifted for dark surfaces. */
-  --primary: #73b6dd;
-  --primary-foreground: #012642;
-  --primary-soft: #123b57;
+  /* Same MightyFin hues, lifted in lightness so they carry on a dark surface —
+     following this file's existing dark strategy of light brand + dark text. */
+  --primary: #c49ae0;
+  --primary-foreground: #2b1240;
+  --primary-soft: oklch(0.34 0.07 305);
   --secondary: oklch(0.28 0.02 290);
   --secondary-foreground: oklch(0.95 0.005 290);
-  --accent: #5b4900;
-  --accent-foreground: #ffdf54;
+  --accent: oklch(0.32 0.055 305);
+  --accent-foreground: oklch(0.93 0.02 305);
 
   --success: oklch(0.75 0.17 145);
   --success-foreground: oklch(0.18 0.04 145);
