@@ -365,7 +365,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         w.Nationality, includeSensitive ? w.DateOfBirth : null, includeSensitive ? w.SubjectId : null, w.WorkerType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
         w.Manager?.FullName, w.Grade, w.JobTitle,
-        w.StartDate?.ToString(), w.EndDate?.ToString(),
+        w.StartDate?.ToString("yyyy-MM-dd"), w.EndDate?.ToString("yyyy-MM-dd"),
         includeSensitive && w.EmergencyContacts.Count > 0
             ? w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList()
             : null,
