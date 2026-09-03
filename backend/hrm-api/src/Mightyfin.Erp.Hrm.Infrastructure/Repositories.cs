@@ -1331,8 +1331,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Select(lr => new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate, lr.RequestedDays))
             .ToListAsync(ct);
         // Effective calendar: tenant default, falling back to any Zambia
-        // calendar. Holiday dates are informational (Zambian public holidays
-        // are paid, so they never reduce payment days).
+        // calendar. Its weekend definition drives monthly payroll proration;
+        // holiday dates are paid days, so they do not reduce payment days.
         var calendar = await db.WorkCalendars
             .OrderByDescending(c => c.IsDefault)
             .FirstOrDefaultAsync(ct);
@@ -1340,7 +1340,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(h => h.CalendarId == calendar.Id && h.HolidayDate >= period.StartDate && h.HolidayDate <= period.EndDate)
             .Select(h => h.HolidayDate)
             .ToListAsync(ct);
-        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays);
+        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays,
+            calendar?.WeekendDays ?? "sat,sun");
     }
 
     public async Task ClearRunLinesAsync(Guid runId, CancellationToken ct)

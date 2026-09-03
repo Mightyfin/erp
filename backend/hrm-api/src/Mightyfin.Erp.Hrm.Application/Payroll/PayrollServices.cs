@@ -2317,7 +2317,7 @@ public interface IPayrollRepository
     Task<List<LegalEntity>> ListLegalEntitiesAsync(CancellationToken ct);
     // M41 Gap 2: proration inputs — pay period dates, approved unpaid leave
     // requests overlapping the period (with leave-type category), and the
-    // effective work calendar's holiday dates (informational only).
+    // effective work calendar. Public holidays remain paid days.
     Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct);
 }
 
@@ -2325,7 +2325,8 @@ public interface IPayrollRepository
 public sealed record PayrollProrationInputs(
     DateOnly PeriodStart, DateOnly PeriodEnd,
     List<ApprovedUnpaidLeave> UnpaidLeaves,
-    List<DateOnly> HolidayDates);
+    List<DateOnly> HolidayDates,
+    string WeekendDays = "sat,sun");
 
 /// <summary>One approved leave of an unpaid leave type overlapping the period.</summary>
 public sealed record ApprovedUnpaidLeave(Guid WorkerId, DateOnly StartDate, DateOnly EndDate, decimal RequestedDays);
