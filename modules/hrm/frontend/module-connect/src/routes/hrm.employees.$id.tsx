@@ -219,6 +219,31 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
 }
 
 async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
+  // A historical payslip is authoritative. Do not replace it with a fresh
+  // simulation that may use a different work calendar or later configuration.
+  const releasedSlip = await latestPayslipFor(workerId);
+  if (releasedSlip?.runId) {
+    const rawLines = await realApi.payrollRunLines(releasedSlip.runId);
+    const lines = ((rawLines as { items?: unknown[] }).items ?? []) as Record<string, unknown>[];
+    const rawLine = lines.find((line) => rawText(line, "workerId", "employeeId") === workerId);
+    if (rawLine) {
+      const runs = (await realApi.payrollRuns()).items.map(previewRun);
+      const run = runs.find((item) => item.id === releasedSlip.runId);
+      return {
+        status: "ready",
+        guardrails: ["Showing the latest released or corrected payslip. A new simulation is not used for this historical period."],
+        run: {
+          id: releasedSlip.runId,
+          period: releasedSlip.periodLabel || run?.period || "Released pay period",
+          payGroup: run?.payGroup ?? "Payroll run",
+          currency: run?.currency ?? "ZMW",
+          status: "released",
+        },
+        line: previewLine(rawLine),
+      };
+    }
+  }
+
   try {
     const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
     const rawLine = rawPreview.line as Record<string, unknown> | undefined;
@@ -355,8 +380,9 @@ function PayslipPreviewDialog({
             Payslip preview for {employee.fullName}
           </DialogTitle>
           <DialogDescription>
-            Preview uses current payroll configuration. The last released payslip remains unchanged
-            and is available from Print last payslip.
+            {preview?.run?.status === "preview"
+              ? "No released payslip exists for this employee, so this is a current payroll simulation."
+              : "Showing the complete latest released or corrected payslip."}
           </DialogDescription>
         </DialogHeader>
 
