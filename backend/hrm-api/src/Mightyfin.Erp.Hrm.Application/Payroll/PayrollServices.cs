@@ -1344,6 +1344,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
         var before = component.Amount;
         component.Amount = Math.Round(request.Amount, 2);
+        component.Explanation = $"HR-authorised August 2026 overtime correction: K{component.Amount:N2} monthly gross earning. This correction is not annualised and does not create another bank payment.";
         var delta = component.Amount - before;
         switch (component.ComponentType)
         {
