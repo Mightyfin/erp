@@ -1157,6 +1157,11 @@ public static class Routes
             var request = await ReadBodyAsync<PayrollCorrectionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ApplyCorrectionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
         });
+        g.MapPost("/runs/{id:guid}/lines/{lineId:guid}/released-correction", async (Guid id, Guid lineId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollCorrectionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ApplyReleasedCorrectionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
         g.MapPost("/runs/{id:guid}/payments/generate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             Results.Ok(await svc.GeneratePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
         g.MapGet("/runs/{id:guid}/payments/readiness", async (Guid id, IPayrollService svc, CancellationToken ct) =>

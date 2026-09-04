@@ -1376,6 +1376,19 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<Payslip?> GetCurrentPayslipForRunLineAsync(Guid runLineId, CancellationToken ct)
+        => await db.Payslips
+            .Where(p => p.RunLineId == runLineId && (p.Status == "final" || p.Status == "corrected"))
+            .OrderByDescending(p => p.Version)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<Payslip> CreatePayslipAsync(Payslip payslip, CancellationToken ct)
+    {
+        db.Payslips.Add(payslip);
+        await db.SaveChangesAsync(ct);
+        return payslip;
+    }
+
     public async Task RecalculateRunTotalsAsync(PayrollRun run, CancellationToken ct)
     {
         var lines = await db.PayrollRunLines.Where(l => l.RunId == run.Id && !l.IsExcluded).ToListAsync(ct);

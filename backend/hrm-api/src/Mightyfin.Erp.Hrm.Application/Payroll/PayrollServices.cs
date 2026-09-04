@@ -63,6 +63,7 @@ public interface IPayrollService
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ApplyReleasedCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct, string actorSubjectId = "system");
     // M46: branch payroll draft (in-review) workflow — the preparer sends the
     // calculated branch run up for top-HR approval; it then appears on the
@@ -1363,6 +1364,110 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         return MapRun(run);
     }
 
+    /// <summary>
+    /// Applies a narrowly scoped correction to a payroll that has already been paid. The bank
+    /// payment remains untouched; a corrected payslip version becomes the current document.
+    /// This is intentionally separate from draft/calculated corrections.
+    /// </summary>
+    public async Task<PayrollRunDto> ApplyReleasedCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("correction-reason-required", "A reason is required for a payroll correction.");
+
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "released" || run.PaymentStatus != "released")
+            throw new DomainException("released-correction-not-available", "This correction route is only available after payslips and the payment file have both been released.");
+
+        var line = await repo.GetRunLineAsync(id, lineId, ct)
+            ?? throw new DomainException("payroll-line-not-found", $"Line {lineId} does not belong to run {id}.");
+        var component = line.Components.FirstOrDefault(c => c.ComponentCode.Equals(request.ComponentCode, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
+        if (component.ComponentType != "earning" || component.IsStatutory)
+            throw new DomainException("released-correction-component-not-allowed", "Only a non-statutory earning can be corrected after payment.");
+
+        var previousPayslip = await repo.GetCurrentPayslipForRunLineAsync(line.Id, ct)
+            ?? throw new DomainException("payslip-not-found", "The paid payroll line does not have a current payslip to correct.");
+        var before = component.Amount;
+        component.Amount = Math.Round(request.Amount, 2);
+
+        var (_, definitions, rules, slabs, _) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        RecalculateReleasedLine(line, definitions, rules, slabs);
+        await repo.UpdateRunLineAsync(line, ct);
+        await repo.RecalculateRunTotalsAsync(run, ct);
+
+        previousPayslip.Status = "superseded";
+        await repo.UpdatePayslipAsync(previousPayslip, ct);
+        var corrected = new Payslip
+        {
+            RunLineId = line.Id,
+            WorkerId = line.WorkerId,
+            PayslipNo = $"{previousPayslip.PayslipNo}-V{previousPayslip.Version + 1}",
+            Version = previousPayslip.Version + 1,
+            SupersedesId = previousPayslip.Id,
+            GrossPay = line.GrossPay,
+            TotalDeductions = line.TotalDeductions,
+            NetPay = line.NetPay,
+            YtdGross = (ParseMoney(previousPayslip.YtdGross) + (line.GrossPay - previousPayslip.GrossPay)).ToString("F2"),
+            YtdTax = (ParseMoney(previousPayslip.YtdTax) + (line.TotalDeductions - previousPayslip.TotalDeductions)).ToString("F2"),
+            YtdNet = (ParseMoney(previousPayslip.YtdNet) + (line.NetPay - previousPayslip.NetPay)).ToString("F2"),
+            Status = "corrected",
+            ReleasedAt = DateTimeOffset.UtcNow,
+            LocationId = previousPayslip.LocationId,
+            WorkerNrc = previousPayslip.WorkerNrc,
+            WorkerTpin = previousPayslip.WorkerTpin,
+            WorkerNapsaNumber = previousPayslip.WorkerNapsaNumber,
+            WorkerNhimaNumber = previousPayslip.WorkerNhimaNumber,
+        };
+        await repo.CreatePayslipAsync(corrected, ct);
+        await RecordEventAsync(run, "released-correction-applied", actorSubjectId, "released", "released", request.Reason,
+            new { lineId, line.WorkerId, component = component.ComponentCode, before, after = component.Amount, correctedPayslipId = corrected.Id, paymentTreatment = "already-paid-no-bank-file-generated" }, ct);
+        return MapRun(run);
+    }
+
+    private static decimal ParseMoney(string? value) => decimal.TryParse(value, out var amount) ? amount : 0m;
+
+    private static void RecalculateReleasedLine(PayrollRunLine line, List<SalaryComponent> definitions,
+        List<ContributionRule> rules, List<TaxSlab> slabs)
+    {
+        var configured = definitions.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
+        var earnings = line.Components.Where(c => c.ComponentType == "earning").ToList();
+        var gross = earnings.Sum(c => c.Amount);
+        var taxable = earnings.Sum(c => !configured.TryGetValue(c.ComponentCode, out var definition) || definition.IsTaxable ? c.Amount : 0m);
+        decimal Resolve(string code) => code.Equals("gross", StringComparison.OrdinalIgnoreCase) ? gross : code.Equals("taxable", StringComparison.OrdinalIgnoreCase) ? taxable : line.Components.FirstOrDefault(c => c.ComponentCode.Equals(code, StringComparison.OrdinalIgnoreCase))?.Amount ?? 0m;
+        foreach (var statutory in line.Components.Where(c => c.IsStatutory && c.ComponentType != "earning"))
+        {
+            if (!configured.TryGetValue(statutory.ComponentCode, out var definition)) continue;
+            decimal amount;
+            var rule = rules.FirstOrDefault(r => r.IsActive && r.Code.Equals(statutory.ComponentCode, StringComparison.OrdinalIgnoreCase));
+            if (rule is not null)
+            {
+                amount = Resolve(rule.TiedComponentCode ?? "") * rule.Rate / 100m;
+                if (rule.Ceiling.HasValue) amount = Math.Min(amount, rule.Ceiling.Value);
+                if (rule.Floor.HasValue) amount = Math.Max(amount, rule.Floor.Value);
+            }
+            else if (definition.CalculationBasis == "slab")
+            {
+                amount = slabs.Where(s => s.IsActive).OrderBy(s => s.Sequence).Sum(s =>
+                {
+                    if (taxable <= s.MinAmount) return 0m;
+                    return Math.Max(0m, Math.Min(taxable, s.MaxAmount ?? taxable) - s.MinAmount) * s.Rate / 100m;
+                });
+            }
+            else if (definition.CalculationBasis == "percent-of") amount = Resolve(definition.BasisComponentCode ?? "") * (definition.Rate ?? 0m) / 100m;
+            else continue;
+            statutory.Amount = Math.Round(amount, 2);
+            statutory.Explanation = definition.CalculationBasis == "slab"
+                ? $"Progressive PAYE slab calculation on taxable income K{taxable:N2} (ZRA bands)"
+                : $"Recalculated from corrected payroll gross K{gross:N2}.";
+        }
+        line.GrossPay = Math.Round(gross, 2);
+        line.TotalDeductions = Math.Round(line.Components.Where(c => c.ComponentType is "deduction" or "tax").Sum(c => c.Amount), 2);
+        line.EmployerCost = Math.Round(line.Components.Where(c => c.ComponentType == "employer-contribution").Sum(c => c.Amount), 2);
+        line.NetPay = Math.Round(line.GrossPay - line.TotalDeductions, 2);
+    }
+
     private async Task<PayrollRun> RequireCalculatedRunAsync(Guid id, CancellationToken ct)
     {
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
@@ -2311,6 +2416,8 @@ public interface IPayrollRepository
     Task UpdatePayslipAsync(Payslip payslip, CancellationToken ct);
     Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
+    Task<Payslip?> GetCurrentPayslipForRunLineAsync(Guid runLineId, CancellationToken ct);
+    Task<Payslip> CreatePayslipAsync(Payslip payslip, CancellationToken ct);
     // M34: payslips for a specific run (HR admin surface).
     Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
     // M41: legal entities for payroll report company headers.
