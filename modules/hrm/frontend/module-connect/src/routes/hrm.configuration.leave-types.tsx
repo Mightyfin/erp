@@ -13,7 +13,7 @@ import { feedback } from "@/platform/feedback";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/configuration/leave-types")({
-  head: () => ({ meta: [{ title: "Leave Types — Mightyfin HRMS" }, { name: "description", content: "Live leave entitlement and policy master data." }] }),
+  head: () => ({ meta: [{ title: "Leave Types — Newworldcargo HRM" }, { name: "description", content: "Live leave entitlement and policy master data." }] }),
   component: LeaveTypesPage,
 });
 

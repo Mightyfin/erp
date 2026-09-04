@@ -92,6 +92,177 @@ test("a shared IdP identity without an HRM workforce role is denied ERP entry", 
   await expect(page.getByText("Human Resources", { exact: true })).toHaveCount(0);
 });
 
+test("HR admin keeps Configuration navigation when also assigned payroll roles", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const payload = btoa(
+      JSON.stringify({
+        sub: "playwright-multi-role-admin",
+        preferred_username: "admin@example.test",
+        realm_access: { roles: ["employee", "manager", "hr_ops", "payroll", "hr_admin"] },
+      }),
+    );
+    const token = `test.${payload}.signature`;
+    localStorage.setItem(
+      "erp.oidc.session",
+      JSON.stringify({
+        accessToken: token,
+        idToken: token,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    );
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], totalCount: 0, linked: false, worker: null }),
+    });
+  });
+
+  await page.goto("/hrm");
+
+  await expect(page.locator('a[href="/hrm/configuration"]')).toContainText("Configuration");
+  await expect
+    .poll(() =>
+      page.evaluate(() => JSON.parse(localStorage.getItem("erp.shell.state.v1") ?? "null")?.role),
+    )
+    .toBe("hr_admin");
+});
+
+test("HR admin can add housing allowance as thirty percent of basic", async ({ page }) => {
+  let createdBody: Record<string, unknown> | null = null;
+  const basic = {
+    id: "component-basic",
+    code: "basic",
+    name: "Basic Salary",
+    componentType: "earning",
+    calculationBasis: "fixed",
+    basisComponentCode: null,
+    fixedAmount: 0,
+    rate: null,
+    ceiling: null,
+    isTaxable: true,
+    isStatutory: false,
+    priority: 10,
+    version: 1,
+    isActive: true,
+  };
+  await page.route("**/api/hrm/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    let body: unknown = [];
+    let status = 200;
+    if (path.endsWith("/payroll/components") && request.method() === "POST") {
+      createdBody = request.postDataJSON() as Record<string, unknown>;
+      status = 201;
+      body = { id: "component-housing", ...createdBody, isActive: true, isStatutory: false };
+    } else if (path.endsWith("/payroll/components")) {
+      body = createdBody
+        ? [basic, { id: "component-housing", ...createdBody, isActive: true, isStatutory: false }]
+        : [basic];
+    } else if (path.endsWith("/auth/me")) {
+      body = {
+        authenticated: true,
+        user: {
+          id: "playwright-payroll-setup-admin",
+          email: "playwright.hr.admin@example.test",
+          displayName: "Payroll Setup Admin",
+          roles: ["hr_admin", "hr_ops"],
+          isActive: true,
+          mustChangePassword: false,
+        },
+      };
+    } else if (path.endsWith("/setup/state")) {
+      body = { status: "complete" };
+    } else if (path.endsWith("/me")) {
+      body = { linked: false, worker: null };
+    } else if (path.endsWith("/me/notifications")) {
+      body = { unreadCount: 0, items: [] };
+    }
+    await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/hrm/configuration/payroll");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: "Salary components" }).click();
+  await expect(page.getByRole("tab", { name: "Salary components" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Add salary component" }).click();
+  await page.getByLabel("Code").fill("housing-allowance");
+  await page.getByLabel("Name").fill("Housing Allowance");
+  await page.getByLabel("Calculation basis").click();
+  await page.getByRole("option", { name: "Percent of component" }).click();
+  await page.getByLabel("Basis component").click();
+  await page.getByRole("option", { name: "Basic Salary" }).click();
+  await page.getByLabel("Rate (%)").fill("30");
+  await page.getByRole("button", { name: "Add component" }).click();
+
+  await expect(page.getByRole("row", { name: /Housing Allowance/ })).toContainText("30%");
+  expect(createdBody).toMatchObject({
+    code: "housing-allowance",
+    name: "Housing Allowance",
+    componentType: "earning",
+    calculationBasis: "percent-of",
+    basisComponentCode: "basic",
+    rate: 30,
+    priority: 20,
+  });
+
+  // Editing is a controlled-dialog flow. The selected component must hydrate
+  // every saved value before an HR administrator makes a change.
+  const housingRow = page.getByRole("row", { name: /Housing Allowance/ });
+  await housingRow.getByRole("button", { name: /Edit Housing Allowance/ }).click();
+  await expect(page.getByRole("dialog", { name: "Edit salary component" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Housing Allowance");
+  await expect(page.getByText("Code:").locator("..")).toContainText("housing-allowance");
+  await expect(page.getByLabel("Calculation basis")).toContainText("Percent of component");
+  await expect(page.getByLabel("Basis component")).toContainText("Basic Salary");
+  await expect(page.getByLabel("Rate (%)")).toHaveValue("30");
+});
+
+test("employee reports offer a print-ready PDF export alongside CSV", async ({ page }) => {
+  await page.goto("/hrm/employees/w-1001");
+  await page.getByRole("tab", { name: "Reports" }).click();
+  const exportPdf = page.getByTestId("export-employee-report-pdf");
+  await expect(exportPdf).toBeEnabled();
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    exportPdf.click(),
+  ]);
+  await expect(popup.locator("h1")).toHaveText("Employee master and profile");
+  await expect(popup.locator("body")).toContainText("EMP-1001");
+});
+
+test("payroll start keeps backdated periods separate from the open payroll calendar", async ({ page }) => {
+  let historicalRequest: Record<string, unknown> | null = null;
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ sub: "payroll-history-admin", preferred_username: "payroll@example.test", realm_access: { roles: ["hr_admin", "payroll"] } }));
+    const token = `test.${payload}.signature`;
+    localStorage.setItem("erp.oidc.session", JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }));
+  });
+  await page.route("**/api/hrm/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = [];
+    if (path.endsWith("/payroll/pay-groups")) body = [{ id: "pg-1", code: "MONTHLY", name: "Monthly", currency: "ZMW", isDefault: true }];
+    else if (path.endsWith("/payroll/pay-groups/pg-1/periods")) body = [{ id: "period-open", periodLabel: "August 2026", startDate: "2026-08-01", endDate: "2026-08-31", cutoffDate: "2026-08-20", payDate: "2026-08-25", status: "open", isHistorical: false }];
+    else if (path.endsWith("/organisation/tree")) body = [];
+    else if (path.endsWith("/payroll/historical-periods")) { historicalRequest = route.request().postDataJSON() as Record<string, unknown>; body = { id: "period-june", periodLabel: "June 2026", startDate: "2026-06-01", endDate: "2026-06-30", cutoffDate: "2026-06-25", payDate: "2026-06-30", status: "historical", isHistorical: true }; }
+    else if (path.endsWith("/auth/me")) body = { authenticated: true, user: { id: "payroll-history-admin", email: "payroll@example.test", displayName: "Payroll Admin", roles: ["hr_admin", "payroll"], isActive: true } };
+    else if (path.endsWith("/setup/state")) body = { status: "complete" };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/hrm/payroll/runs/new");
+  await page.getByRole("button", { name: "Use backdated payroll" }).click();
+  await page.getByLabel("Date in historical month").fill("2026-06-15");
+  await page.getByLabel("Why is this being entered retrospectively?").fill("June payroll was paid manually before HRM go-live");
+  await page.getByRole("button", { name: "Create protected historical period" }).click();
+  await expect.poll(() => historicalRequest).not.toBeNull();
+  expect(historicalRequest).toMatchObject({ payGroupId: "pg-1", startDate: "2026-06-01", endDate: "2026-06-30" });
+  await expect(page.getByText("Historical period created")).toBeVisible();
+});
+
 test("HR admin home is assembled from live tenant APIs, not seeded dashboard records", async ({ page }) => {
   await page.addInitScript(() => {
     const payload = btoa(JSON.stringify({

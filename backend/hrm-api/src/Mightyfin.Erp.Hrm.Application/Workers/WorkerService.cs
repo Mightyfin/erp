@@ -135,6 +135,14 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         if (request.Grade is not null) worker.Grade = request.Grade;
         if (request.JobTitle is not null) worker.JobTitle = request.JobTitle;
         if (request.Status is not null) worker.Status = request.Status;
+        if (request.StartDate is not null)
+        {
+            if (!DateOnly.TryParse(request.StartDate, out var startDate))
+                throw new DomainException("invalid-start-date", "Employment start date must be a valid date.");
+            if (worker.EndDate.HasValue && startDate > worker.EndDate.Value)
+                throw new DomainException("invalid-employment-dates", "Employment start date cannot be after the employment end date.");
+            worker.StartDate = startDate;
+        }
         if (request.EndDate is not null) worker.EndDate = DateOnly.Parse(request.EndDate);
         // M27 P0 UX audit: the profile page's Link account action arrives here
         // (PUT /workers/{id}), so the admin update honours SubjectId with the
@@ -357,7 +365,7 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         w.Nationality, includeSensitive ? w.DateOfBirth : null, includeSensitive ? w.SubjectId : null, w.WorkerType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
         w.Manager?.FullName, w.Grade, w.JobTitle,
-        w.StartDate?.ToString(), w.EndDate?.ToString(),
+        w.StartDate?.ToString("yyyy-MM-dd"), w.EndDate?.ToString("yyyy-MM-dd"),
         includeSensitive && w.EmergencyContacts.Count > 0
             ? w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList()
             : null,

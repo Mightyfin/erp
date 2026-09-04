@@ -87,11 +87,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      // Product identity is Mightyfin; employer data remains tenant-scoped and configurable.
-      { title: "Mightyfin HRMS — HR workspace" },
-      { name: "description", content: "Mightyfin HRMS workspace for leave, attendance, requests and pay." },
-      { name: "author", content: "Mightyfin" },
-      { property: "og:title", content: "Mightyfin HRMS — HR workspace" },
+      // Product identity is Newworldcargo; employer data remains tenant-scoped and configurable.
+      { title: "Newworldcargo HRM — HR workspace" },
+      { name: "description", content: "Newworldcargo HRM workspace for leave, attendance, requests and pay." },
+      { name: "author", content: "Newworldcargo" },
+      { property: "og:title", content: "Newworldcargo HRM — HR workspace" },
       { property: "og:description", content: "HR operations workspace for leave, attendance, requests and pay." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -107,7 +107,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap",
       },
-      { rel: "icon", href: "/mightyfin-mark.png", type: "image/png" },
+      { rel: "icon", href: "/newworld-cargo-logo.png", type: "image/png" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),

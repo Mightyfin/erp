@@ -26,9 +26,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/employees/$id/edit")({
   head: () => ({
     meta: [
-      { title: "Edit employee — Mightyfin HRMS" },
+      { title: "Edit employee — Newworldcargo HRM" },
       { name: "description", content: "Edit an employee record: personal details, job and grade, where they work, and the pay details payroll relies on." },
-      { property: "og:title", content: "Edit employee — Mightyfin HRMS" },
+      { property: "og:title", content: "Edit employee — Newworldcargo HRM" },
       { property: "og:description", content: "Edit personal details, job, location and pay details on an employee record." },
     ],
   }),
@@ -200,6 +200,13 @@ function EditEmployee() {
                 { name: "department", label: "Department", type: "select", options: departmentOptions, required: true },
                 { name: "grade", label: "Grade", type: "select", options: gradeOptions, required: !!employee.grade },
                 { name: "employmentType", label: "Employment type", type: "select", options: [...EMPLOYMENT_TYPES], required: true },
+                {
+                  name: "startDate",
+                  label: "Employment start date",
+                  type: "date",
+                  required: true,
+                  hint: "Used for payroll proration when the employee starts partway through a pay period.",
+                },
                 { name: "reportsTo", label: "Reports to", required: !!pr?.reportsTo },
                 { name: "costCentre", label: "Cost centre", required: !!pr?.costCentre, hint: "Where this person's cost lands in the ledger." },
                 {
@@ -267,8 +274,9 @@ function EditEmployee() {
                   validate: (v, all) => {
                     if (paymentMethodKey(all.paymentMethod) !== "bank") return null;
                     if (!v) return "Account number is required for bank transfer.";
-                    return v.replace(/\s/g, "").length < 10
-                      ? "A Zambian account number is at least 10 digits. Check it against the bank letter."
+                    const digits = v.replace(/\D/g, "");
+                    return digits.length < 6
+                      ? "Enter the account number shown on the bank letter. Account-number length varies by bank."
                       : null;
                   },
                 },
@@ -331,7 +339,7 @@ function EditEmployee() {
           const liveFields = new Set([
             "fullName", "preferredName", "nationality", "dateOfBirth", "nationalId",
             "passportNo", "email", "phone", "jobTitle", "grade", "tpin",
-            "napsaNumber", "nhimaNumber", "paymentMethod", "accountName", "bankName",
+            "napsaNumber", "nhimaNumber", "startDate", "paymentMethod", "accountName", "bankName",
             "bankBranch", "bankAccount", "mobileMoneyNumber",
           ]);
           const visibleSections = USE_REAL
@@ -408,6 +416,7 @@ function EditEmployee() {
                 department: employee.department,
                 grade: employee.grade,
                 employmentType: employee.employmentType,
+                startDate: employee.startDate ?? "",
                 reportsTo: pr?.reportsTo ?? "",
                 costCentre: pr?.costCentre ?? "",
                 noticePeriodDays: String(pr?.noticePeriodDays ?? 30),
@@ -464,6 +473,7 @@ function EditEmployee() {
                   if (changed.includes("nhimaNumber")) body.nhimaNumber = values.nhimaNumber || null;
                   if (changed.includes("jobTitle")) body.jobTitle = values.jobTitle || null;
                   if (changed.includes("grade")) body.grade = values.grade || null;
+                  if (changed.includes("startDate")) body.startDate = values.startDate || null;
                   if (changed.includes("employmentType"))
                     body.workerType =
                       values.employmentType === "Contractor"

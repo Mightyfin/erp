@@ -48,15 +48,15 @@ public interface IBenefitService
     Task<BenefitClaimDto> PayClaimAsync(Guid id, CancellationToken ct);
 }
 
-public sealed record BenefitTypeCreateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IncludeInPayroll);
-public sealed record BenefitTypeUpdateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IsActive, bool IncludeInPayroll);
+public sealed record BenefitTypeCreateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IncludeInPayroll, bool IsTaxable = false);
+public sealed record BenefitTypeUpdateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IsActive, bool IncludeInPayroll, bool IsTaxable = false);
 public sealed record AllowanceSetRequest(Guid WorkerId, string BenefitTypeCode, decimal AnnualAmount, int Year);
 public sealed record BenefitClaimCreateRequest(Guid WorkerId, string BenefitTypeCode, decimal AmountClaimed, string Currency, string? Note, bool EvidenceAttached);
 public sealed record ClaimDecideRequest(string Action, string? Reason, decimal? ApprovedAmount);
 
 public sealed record BenefitTypeDto(
     Guid Id, string Code, string Name, string? Description, decimal AnnualCap,
-    bool RequiresEvidence, bool IncludeInPayroll, bool IsActive);
+    bool RequiresEvidence, bool IncludeInPayroll, bool IsTaxable, bool IsActive);
 public sealed record BenefitAllowanceDto(
     Guid Id, Guid WorkerId, string WorkerName, string? EmployeeNo, string BenefitTypeCode,
     string BenefitTypeName, decimal AnnualAmount, int Year);

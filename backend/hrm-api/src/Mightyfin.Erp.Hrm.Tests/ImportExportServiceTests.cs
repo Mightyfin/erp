@@ -4,8 +4,10 @@
 using Xunit;
 using Microsoft.EntityFrameworkCore;
 using Mightyfin.Erp.Hrm.Application.Shared;
+using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Workers;
 using Mightyfin.Erp.Hrm.Infrastructure;
+using Mightyfin.Erp.Hrm.Infrastructure.Benefits;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
 namespace Mightyfin.Erp.Hrm.Tests;
@@ -229,6 +231,84 @@ public class ImportExportServiceTests
         var svc = BuildService();
         var schemas = svc.ListSchemas();
         Assert.Contains(schemas, s => s.TypeKey == "workers" && s.Fields.Count > 10);
+    }
+
+    [Fact]
+    public async Task CostOfLivingImport_CreatesAnnualPayrollBenefitAllowance()
+    {
+        var (payroll, db) = PayrollEngineTests.Build(tenant: $"cola-import-{Guid.NewGuid():N}");
+        var (group, _, _, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(db);
+        var benefit = new Domain.Entities.BenefitType
+        {
+            Code = "cost-of-living-allowance",
+            Name = "Cost of Living Allowance",
+            AnnualCap = 24_000m,
+            IncludeInPayroll = true,
+            IsActive = true,
+        };
+        db.BenefitTypes.Add(benefit);
+        await db.SaveChangesAsync();
+
+        var workerRepo = new WorkerRepository(db);
+        var workerService = new WorkerServiceImpl(workerRepo, new PermissiveAuthz(), new UlidIdProvider());
+        var payrollRepo = new PayrollRepository(db);
+        var benefitRepo = new BenefitRepository(db);
+        var schema = new WorkersImportSchema(workerRepo, workerService, new PermissiveAuthz(),
+            new Application.ShellContext(), payrollRepo, payroll, benefits: benefitRepo);
+        var service = new ImportExportServiceImpl(new[] { schema });
+        var employeeNo = (await db.Workers.SingleAsync(worker => worker.Id == profile.WorkerId)).EmployeeNo;
+        var preview = await service.PreviewAsync("workers", "cola.csv", "update",
+            [new()
+            {
+                ["employeeNo"] = employeeNo,
+                ["costOfLivingAllowance"] = "1000",
+                ["payGroup"] = group.Name,
+                ["salaryEffectiveFrom"] = "01-01-2026",
+            }], CancellationToken.None);
+
+        Assert.Equal("update", preview.Rows[0].Status);
+        await service.ApplyAsync(preview.Id, [0], CancellationToken.None);
+        var allowance = await db.WorkerBenefitAllowances.SingleAsync();
+        Assert.Equal(profile.WorkerId, allowance.WorkerId);
+        Assert.Equal(benefit.Id, allowance.BenefitTypeId);
+        Assert.Equal(12_000m, allowance.AnnualAmount);
+        Assert.Equal(2026, allowance.Year);
+    }
+
+    [Fact]
+    public async Task CostOfLivingImport_RejectsMonthlyAmountAboveAnnualBenefitCap()
+    {
+        var (payroll, db) = PayrollEngineTests.Build(tenant: $"cola-cap-{Guid.NewGuid():N}");
+        var (group, _, _, profile, _, _, _, _, _, _, _) = await PayrollEngineTests.SeedStackAsync(db);
+        db.BenefitTypes.Add(new Domain.Entities.BenefitType
+        {
+            Code = "cost-of-living-allowance",
+            Name = "Cost of Living Allowance",
+            AnnualCap = 10_000m,
+            IncludeInPayroll = true,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var workerRepo = new WorkerRepository(db);
+        var schema = new WorkersImportSchema(workerRepo,
+            new WorkerServiceImpl(workerRepo, new PermissiveAuthz(), new UlidIdProvider()),
+            new PermissiveAuthz(), new Application.ShellContext(), new PayrollRepository(db), payroll,
+            benefits: new BenefitRepository(db));
+        var service = new ImportExportServiceImpl(new[] { schema });
+        var employeeNo = (await db.Workers.SingleAsync(worker => worker.Id == profile.WorkerId)).EmployeeNo;
+        var preview = await service.PreviewAsync("workers", "cola.csv", "update",
+            [new()
+            {
+                ["employeeNo"] = employeeNo,
+                ["costOfLivingAllowance"] = "1000",
+                ["payGroup"] = group.Name,
+                ["salaryEffectiveFrom"] = "01-01-2026",
+            }], CancellationToken.None);
+
+        Assert.Equal("error", preview.Rows[0].Status);
+        Assert.Contains("exceeds", preview.Rows[0].Message);
+        Assert.Empty(db.WorkerBenefitAllowances);
     }
 
     private static ImportExportServiceImpl BuildService()

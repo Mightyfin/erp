@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
 #nullable disable
 
 namespace Mightyfin.Erp.Hrm.Infrastructure.Migrations;
 
+[DbContext(typeof(HrmDbContext))]
 [Migration("20260821000000_LocalIdentity")]
 public partial class LocalIdentity : Migration
 {

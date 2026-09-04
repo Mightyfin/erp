@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  // Pill buttons — MightyFin's current direction. Fully rounded reads as friendlier
+  // Pill buttons — Newworldcargo's current direction. Fully rounded reads as friendlier
   // and, at these target sizes, makes the hit area obvious to someone scanning a
   // dense screen. Radius lives here rather than on --radius so cards, inputs and
   // dialogs keep their softer rectangle and the buttons stay the thing that pops.

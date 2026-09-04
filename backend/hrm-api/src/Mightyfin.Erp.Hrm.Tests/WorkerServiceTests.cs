@@ -288,6 +288,25 @@ public class WorkerServiceTests
     }
 
     [Fact]
+    public async Task UpdateWorker_ChangesEmploymentStartDate()
+    {
+        var (service, ctx) = Build();
+        var worker = new Worker
+        {
+            EmployeeNo = "EMP-START-1", FirstName = "Start", LastName = "Date",
+            WorkerType = "employee", Status = "active", StartDate = new DateOnly(2026, 8, 1),
+        };
+        ctx.Workers.Add(worker);
+        await ctx.SaveChangesAsync();
+
+        var updated = await service.UpdateAsync(worker.Id,
+            new WorkerUpdateRequest(StartDate: "2026-07-10"), CancellationToken.None);
+
+        Assert.Equal("2026-07-10", updated.StartDate);
+        Assert.Equal(new DateOnly(2026, 7, 10), (await ctx.Workers.SingleAsync()).StartDate);
+    }
+
+    [Fact]
     public void CreateWorker_MissingNames_InvalidWorkerType_FailRouteValidation()
     {
         // The API route (ValidateWorkerCreate) is what produces the 422 for HR.

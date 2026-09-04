@@ -102,6 +102,17 @@ public class M27PayrollOperationsTests
         await service.LockRunAsync(run.Id, default, "preparer-1");
         await service.CalculateRunAsync(run.Id, default, "preparer-1");
 
+        // Missing bank details are now a payment-file warning, not a payroll
+        // calculation exception. Seed a genuine open calculation exception so
+        // this M27 test continues to exercise approval segregation and the
+        // exception-decision gate independently of bank-file policy.
+        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        line.HasException = true;
+        line.ExceptionReason = "negative-net";
+        var persistedRun = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        persistedRun.ExceptionCount = 1;
+        await ctx.SaveChangesAsync();
+
         var selfApproval = await Assert.ThrowsAsync<DomainException>(() =>
             service.ApproveRunAsync(run.Id, "looks fine", default, "preparer-1"));
         Assert.Equal("run-self-approval", selfApproval.Code);
@@ -110,7 +121,6 @@ public class M27PayrollOperationsTests
             service.ApproveRunAsync(run.Id, "reviewed", default, "approver-2"));
         Assert.Equal("run-exceptions-open", openException.Code);
 
-        var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
         await service.DecideExceptionAsync(run.Id, line.Id,
             new PayrollExceptionDecisionRequest("waived", "Bank instruction will be handled manually"), default, "approver-2");
         var approved = await service.ApproveRunAsync(run.Id, "controlled exception accepted", default, "approver-2");
@@ -130,6 +140,11 @@ public class M27PayrollOperationsTests
         await service.CalculateRunAsync(run.Id, default, "top-admin");
 
         var line = await ctx.PayrollRunLines.SingleAsync(l => l.RunId == run.Id);
+        line.HasException = true;
+        line.ExceptionReason = "negative-net";
+        var persistedRun = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        persistedRun.ExceptionCount = 1;
+        await ctx.SaveChangesAsync();
         await service.DecideExceptionAsync(run.Id, line.Id,
             new PayrollExceptionDecisionRequest("waived", "Top-admin setup override"), default, "separate-reviewer");
         var approved = await service.ApproveRunAsync(run.Id, "Emergency top-admin approval during setup", default, "top-admin");

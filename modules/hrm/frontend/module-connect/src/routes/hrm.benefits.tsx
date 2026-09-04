@@ -61,6 +61,7 @@ function emptyType(): Row {
     annualCap: 0,
     requiresEvidence: false,
     includeInPayroll: false,
+    isTaxable: false,
     isActive: true,
   };
 }
@@ -271,6 +272,7 @@ function Benefits() {
             annualCap,
             requiresEvidence: Boolean(typeForm.requiresEvidence),
             includeInPayroll: Boolean(typeForm.includeInPayroll),
+            isTaxable: Boolean(typeForm.isTaxable),
             isActive: Boolean(typeForm.isActive),
           }),
         () => {
@@ -289,6 +291,7 @@ function Benefits() {
             annualCap,
             requiresEvidence: Boolean(typeForm.requiresEvidence),
             includeInPayroll: Boolean(typeForm.includeInPayroll),
+            isTaxable: Boolean(typeForm.isTaxable),
           }),
         () => setTypeForm(emptyType()),
       );
@@ -628,7 +631,7 @@ function Benefits() {
               {visibleAllowanceRows.length > ASSIGNMENT_PAGE_SIZE ? (
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
                   <span className="text-muted-foreground">Page {currentAssignmentPage} of {assignmentTotalPages}</span>
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                     <Button type="button" variant="outline" size="sm" disabled={currentAssignmentPage <= 1} onClick={() => setAssignmentPage((page) => Math.max(1, page - 1))}>
                       <ChevronLeft className="mr-1 size-4" aria-hidden /> Previous
                     </Button>
@@ -1023,6 +1026,17 @@ function Benefits() {
                   />
                   <Label htmlFor="type-payroll">Add to payslip</Label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="type-taxable"
+                    checked={Boolean(typeForm.isTaxable)}
+                    disabled={!Boolean(typeForm.includeInPayroll)}
+                    onCheckedChange={(checked) =>
+                      setTypeForm({ ...typeForm, isTaxable: Boolean(checked) })
+                    }
+                  />
+                  <Label htmlFor="type-taxable">Taxable for PAYE</Label>
+                </div>
                 <div className="md:col-span-2">
                   <Label htmlFor="type-description">Description</Label>
                   <Textarea
@@ -1058,6 +1072,7 @@ function Benefits() {
                       <TableHead className="text-right">Cap</TableHead>
                       <TableHead>Evidence</TableHead>
                       <TableHead>Payroll use</TableHead>
+                      <TableHead>PAYE</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead />
                     </TableRow>
@@ -1074,6 +1089,7 @@ function Benefits() {
                         <TableCell>
                           {row.includeInPayroll ? "Added to payslip" : "Claim only"}
                         </TableCell>
+                        <TableCell>{row.includeInPayroll ? (row.isTaxable ? "Taxable" : "Exempt") : "—"}</TableCell>
                         <TableCell>{row.isActive ? "Active" : "Inactive"}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">

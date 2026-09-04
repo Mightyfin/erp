@@ -6,6 +6,8 @@
  * sections, teams) under `children`. Flat list variant lives at /org-units.
  */
 
+import { getSession } from "@/platform/oidc";
+
 export interface OrgTreeNode {
   id: string;
   code: string;
@@ -124,6 +126,13 @@ export const demoEntityTree: OrgTreeNode[] = [
 
 const USE_REAL = import.meta.env.VITE_USE_REAL_API === "true";
 
+function authHeaders(): Record<string, string> {
+  const accessToken = typeof localStorage !== "undefined" ? getSession()?.accessToken : null;
+  return accessToken
+    ? { accept: "application/json", Authorization: `Bearer ${accessToken}` }
+    : { accept: "application/json" };
+}
+
 export interface EntityUnit {
   entityId: string;
   entityName: string;
@@ -139,7 +148,7 @@ export async function fetchEntityTree(): Promise<OrgTreeNode[]> {
   if (!USE_REAL) return demoEntityTree;
   const res = await fetch("/api/hrm/admin/org-units/entity-tree", {
     credentials: "include",
-    headers: { accept: "application/json" },
+    headers: authHeaders(),
   });
   if (!res.ok) return [];
   return (await res.json()) as OrgTreeNode[];
@@ -154,7 +163,7 @@ export async function fetchOrgUnits(): Promise<Record<string, unknown>[]> {
   }));
   const res = await fetch("/api/hrm/admin/org-units", {
     credentials: "include",
-    headers: { accept: "application/json" },
+    headers: authHeaders(),
   });
   if (!res.ok) return [];
   return (await res.json()) as Record<string, unknown>[];

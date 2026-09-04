@@ -60,12 +60,12 @@ const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 export const Route = createFileRoute("/hrm/employees/$id")({
   head: () => ({
     meta: [
-      { title: "Employee profile — Mightyfin HRMS" },
+      { title: "Employee profile — Newworldcargo HRM" },
       {
         name: "description",
         content: "Employment record: identity, contract, pay context, history and related records.",
       },
-      { property: "og:title", content: "Employee profile — Mightyfin HRMS" },
+      { property: "og:title", content: "Employee profile — Newworldcargo HRM" },
       {
         property: "og:description",
         content: "Employment record: identity, contract, pay context, history and related records.",
@@ -80,6 +80,10 @@ type PayslipRecord = {
   id?: string;
   payslipNo?: string;
   periodLabel?: string;
+  runId?: string;
+  gross?: number;
+  deductions?: number;
+  net?: number;
   releasedAt?: string | null;
   payDate?: string | null;
 };
@@ -115,12 +119,20 @@ function text(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
 }
 
+function escapeHtml(value: unknown) {
+  return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+}
+
 function mapPayslip(raw: unknown): PayslipRecord {
   const p = raw as Record<string, unknown>;
   return {
     id: text(p.id),
     payslipNo: text(p.payslipNo),
     periodLabel: text(p.periodLabel),
+    runId: text(p.runId),
+    gross: Number(p.grossPay ?? 0),
+    deductions: Number(p.totalDeductions ?? 0),
+    net: Number(p.netPay ?? 0),
     releasedAt: p.releasedAt ? text(p.releasedAt) : null,
     payDate: p.payDate ? text(p.payDate) : null,
   };
@@ -207,6 +219,31 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
 }
 
 async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
+  // A historical payslip is authoritative. Do not replace it with a fresh
+  // simulation that may use a different work calendar or later configuration.
+  const releasedSlip = await latestPayslipFor(workerId);
+  if (releasedSlip?.runId) {
+    const rawLines = await realApi.payrollRunLines(releasedSlip.runId);
+    const lines = ((rawLines as { items?: unknown[] }).items ?? []) as Record<string, unknown>[];
+    const rawLine = lines.find((line) => rawText(line, "workerId", "employeeId") === workerId);
+    if (rawLine) {
+      const runs = (await realApi.payrollRuns()).items.map(previewRun);
+      const run = runs.find((item) => item.id === releasedSlip.runId);
+      return {
+        status: "ready",
+        guardrails: ["Showing the latest released or corrected payslip. A new simulation is not used for this historical period."],
+        run: {
+          id: releasedSlip.runId,
+          period: releasedSlip.periodLabel || run?.period || "Released pay period",
+          payGroup: run?.payGroup ?? "Payroll run",
+          currency: run?.currency ?? "ZMW",
+          status: "released",
+        },
+        line: previewLine(rawLine),
+      };
+    }
+  }
+
   try {
     const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
     const rawLine = rawPreview.line as Record<string, unknown> | undefined;
@@ -343,8 +380,9 @@ function PayslipPreviewDialog({
             Payslip preview for {employee.fullName}
           </DialogTitle>
           <DialogDescription>
-            Preview uses current payroll configuration. The last released payslip remains unchanged
-            and is available from Print last payslip.
+            {preview?.run?.status === "preview"
+              ? "No released payslip exists for this employee, so this is a current payroll simulation."
+              : "Showing the complete latest released or corrected payslip."}
           </DialogDescription>
         </DialogHeader>
 
@@ -524,6 +562,36 @@ function downloadReportCsv(employee: EmployeeRecord, report: EmployeeReport) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+function escapeReportHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/** Opens the browser's native print dialog, where the user can save a genuine
+ * PDF. Keeping this rendering client-side means it exports the exact live
+ * report currently displayed, including reports assembled from multiple HRM
+ * resources, without a second data-export path to keep in sync. */
+function exportReportPdf(employee: EmployeeRecord, report: EmployeeReport) {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    feedback.error("PDF export was blocked", "Allow pop-ups for this site, then try again.");
+    return;
+  }
+  const rows = report.rows.length
+    ? report.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeReportHtml(cell || "—")}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${report.columns.length}">${escapeReportHtml(report.empty)}</td></tr>`;
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeReportHtml(employee.employeeNo)} — ${escapeReportHtml(report.title)}</title><style>
+    @page { size: A4; margin: 15mm; } body { color:#172033; font: 11px/1.45 Arial,sans-serif; } h1 { font-size:20px; margin:0 0 4px; } p { color:#56627a; margin:0 0 16px; } table { width:100%; border-collapse:collapse; } th { background:#eef2f8; text-align:left; } th,td { border:1px solid #cbd5e1; padding:7px; vertical-align:top; } @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body><h1>${escapeReportHtml(report.title)}</h1><p>${escapeReportHtml(employee.fullName)} · ${escapeReportHtml(employee.employeeNo)}<br>${escapeReportHtml(report.description)}</p><table><thead><tr>${report.columns.map((column) => `<th>${escapeReportHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></body></html>`);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 250);
+}
+
 function ReportTable({ report }: { report: EmployeeReport }) {
   return (
     <DetailSection title={report.title} description={report.description}>
@@ -692,13 +760,23 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
           <SelectContent>{employeeReports.map((report) => <SelectItem key={report.value} value={report.value}>{report.label}</SelectItem>)}</SelectContent>
         </Select>
         </div>
-        <Button
-          variant="outline"
-          disabled={!state.data || state.loading}
-          onClick={() => state.data && downloadReportCsv(employee, state.data)}
-        >
-          <Download className="size-4" aria-hidden /> Download CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && downloadReportCsv(employee, state.data)}
+          >
+            <Download className="size-4" aria-hidden /> Download CSV
+          </Button>
+          <Button
+            variant="outline"
+            data-testid="export-employee-report-pdf"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && exportReportPdf(employee, state.data)}
+          >
+            <Printer className="size-4" aria-hidden /> Export PDF
+          </Button>
+        </div>
       </div>
       <Async state={state} rows={5}>{(report) => <ReportTable report={report} />}</Async>
     </div>
@@ -1116,6 +1194,39 @@ function EmployeePage() {
     }
   };
 
+  const printCorrectionStatement = async (workerId: string, employeeNo: string, employeeName: string) => {
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      feedback.blocked("Correction statement is unavailable.", "Your browser blocked the print window. Allow popups for this site and try again.");
+      return;
+    }
+    tab.document.write("<!doctype html><title>Preparing correction statement</title><p style='font-family:Arial;margin:32px'>Preparing correction statement...</p>");
+    tab.document.close();
+    setPayslipBusy("print");
+    try {
+      const slip = await latestPayslipFor(workerId);
+      if (!slip?.runId) throw new Error("No released payslip is available for a correction statement.");
+      const events = await realApi.payrollRunAudit(slip.runId) as Array<Record<string, unknown>>;
+      const rows = events.map((event) => {
+        try { return JSON.parse(text(event.detailsJson)) as Record<string, unknown>; } catch { return null; }
+      }).filter((row): row is Record<string, unknown> => row?.employeeNo === employeeNo && Boolean(row.grossAdjustment ?? row.netAdjustmentPaid));
+      if (!rows.length) throw new Error("No paid or pending payroll adjustment is recorded for this employee.");
+      const paidRow = rows.find((row) => Number.isFinite(Number(row.actualPaidNetAmount)) && Number(row.actualPaidNetAmount) > 0);
+      const currentNet = Number(slip.net ?? 0);
+      const adjustment = rows.reduce((sum, row) => sum + Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0), 0);
+      const paymentRows = paidRow
+        ? `<tr><td>Corrected payslip net pay</td><td class="r">${currentNet.toFixed(2)}</td></tr><tr><td>Actual payment already made</td><td class="r">${Number(paidRow.actualPaidNetAmount).toFixed(2)}</td></tr><tr><td>Current reconciliation difference</td><td class="r">${(Number(paidRow.actualPaidNetAmount) - currentNet).toFixed(2)}</td></tr>`
+        : `<tr><td>Corrected payslip net pay</td><td class="r">${currentNet.toFixed(2)}</td></tr>${rows.map((row) => `<tr><td>${escapeHtml(row.component ?? "Payroll adjustment")}</td><td class="r">${Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0).toFixed(2)}</td></tr>`).join("")}`;
+      const displayedTotal = paidRow ? Number(paidRow.actualPaidNetAmount) : currentNet + adjustment;
+      const html = `<!doctype html><html><head><title>Newworldcargo HRM payroll correction statement</title><style>@page{margin:16mm}body{font:13px Arial,sans-serif;color:#17212b;margin:0}.brand{background:#012642;color:#fff;padding:22px 24px;border-bottom:6px solid #ffcc04}.brand strong{font-size:22px;display:block}.brand span{font-size:11px;opacity:.88}.document{margin:24px}.document h1{font-size:19px;color:#012642;margin:0 0 4px}.muted{color:#59636d;font-size:11px}table{width:100%;border-collapse:collapse;margin:18px 0}td,th{border:1px solid #cfd6dc;padding:8px;text-align:left}th{background:#e8f0f5;color:#012642}.r{text-align:right}.total th{background:#012642;color:#fff;font-size:14px}.notice{border-left:4px solid #ffcc04;background:#fff9df;padding:9px 12px;font-size:11px}</style></head><body><header class="brand"><strong>Newworldcargo HRM</strong><span>Human Resources &middot; Payroll Correction Statement</span></header><main class="document"><h1>Payroll Correction Statement</h1><p class="muted">This document supplements, and does not replace, the released payslip.</p><table><tr><td>Employee</td><td>${escapeHtml(employeeName)}</td><td>Employee no.</td><td>${escapeHtml(employeeNo)}</td></tr><tr><td>Period</td><td>${escapeHtml(slip.periodLabel)}</td><td>Corrected payslip</td><td>${escapeHtml(slip.payslipNo)}</td></tr></table><table><tr><th>Description</th><th class="r">Amount (ZMW)</th></tr>${paymentRows}<tr class="total"><th>Actual payment total</th><th class="r">${displayedTotal.toFixed(2)}</th></tr></table><p class="notice">Generated from the HRM audit trail on ${new Date().toLocaleString()}. Statutory treatment remains recorded on the corrected payslip.</p></main><script>window.onload=()=>window.print()</script></body></html>`;
+      tab.document.write(html); tab.document.close();
+    } catch (error) {
+      tab.close();
+      feedback.blocked("Correction statement is unavailable.", error instanceof Error ? error.message : "Try again.");
+    }
+    finally { setPayslipBusy(null); }
+  };
+
   // `/employees/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
   if (childMatches.length > 0) return <Outlet />;
@@ -1160,6 +1271,14 @@ function EmployeePage() {
                     >
                       <Printer className="mr-2 size-4" aria-hidden />
                       {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void printCorrectionStatement(e.id, e.employeeNo, e.fullName)}
+                      disabled={payslipBusy !== null}
+                    >
+                      <Printer className="mr-2 size-4" aria-hidden />
+                      Print correction statement
                     </Button>
                     <Button asChild>
                       <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>

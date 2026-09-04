@@ -40,8 +40,8 @@ public class M41Gap2ProrationTests : IDisposable
     {
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2025, 1, 1) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(31, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 
@@ -50,9 +50,21 @@ public class M41Gap2ProrationTests : IDisposable
     {
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2026, 7, 16) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(16, payment); // 16th..31st inclusive
+        Assert.Equal(23, working);
+        Assert.Equal(12, payment); // 16th..31st, excluding weekends
         Assert.Contains("started 16 Jul 2026", note);
+    }
+
+    [Fact]
+    public void WeekdayCalendar_MidMonthStarter_ExcludesSaturdayAndSunday()
+    {
+        var (working, payment, note) = PaymentDaysCalculator.For(
+            July2026(), new Worker { StartDate = new DateOnly(2026, 7, 10) }, []);
+        // July 2026 contains 23 Mon–Fri workdays. From Friday 10th through
+        // Friday 31st, the employee has 16 scheduled workdays.
+        Assert.Equal(23, working);
+        Assert.Equal(16, payment);
+        Assert.Contains("started 10 Jul 2026", note);
     }
 
     [Fact]
@@ -61,8 +73,8 @@ public class M41Gap2ProrationTests : IDisposable
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(),
             new Worker { StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2026, 7, 15) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(15, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(11, payment);
         Assert.Contains("ended", note);
     }
 
@@ -76,8 +88,8 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2025, 1, 1) }, leaves);
-        Assert.Equal(31, working);
-        Assert.Equal(29, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(21, payment);
         Assert.Contains("unpaid leave days", note);
     }
 
@@ -91,7 +103,7 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2025, 1, 1) }, leaves);
-        Assert.Equal(31, payment);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 
@@ -105,8 +117,8 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, _) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2026, 7, 16) }, leaves);
-        Assert.Equal(31, working);
-        Assert.Equal(14, payment); // 16..31 = 16 days minus 2 unpaid
+        Assert.Equal(23, working);
+        Assert.Equal(10, payment); // 12 scheduled days minus 2 unpaid
     }
 
     [Fact]
@@ -124,9 +136,9 @@ public class M41Gap2ProrationTests : IDisposable
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2025, 1, 1) }, []);
         // July2026 includes Heroes' Day (6 Jul) as a holiday — payment days
-        // must still be the full 31.
-        Assert.Equal(31, working);
-        Assert.Equal(31, payment);
+        // remain the full 23 scheduled weekdays.
+        Assert.Equal(23, working);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 

@@ -16,6 +16,7 @@ public interface IPayrollService
     Task<List<SalaryComponentDto>> ListComponentsAsync(string? type, CancellationToken ct);
     Task<List<PayGroupDto>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriodDto>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
+    Task<PayPeriodDto> CreateHistoricalPeriodAsync(HistoricalPayPeriodCreateRequest request, CancellationToken ct);
     Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct);
     Task<List<ContributionRuleDto>> ListContributionRulesAsync(CancellationToken ct);
 
@@ -26,6 +27,7 @@ public interface IPayrollService
     Task<PayGroupFullDto> UpdatePayGroupAsync(Guid id, PayGroupUpdateRequest request, CancellationToken ct);
     Task<TaxSlabDto> UpdateTaxSlabAsync(Guid id, TaxSlabUpdateRequest request, CancellationToken ct);
     Task<ContributionRuleDto> UpdateContributionRuleAsync(Guid id, ContributionRuleUpdateRequest request, CancellationToken ct);
+    Task<SalaryComponentDto> CreateSalaryComponentAsync(SalaryComponentCreateRequest request, CancellationToken ct);
     Task<SalaryComponentDto> UpdateSalaryComponentAsync(Guid id, SalaryComponentUpdateRequest request, CancellationToken ct);
     // M21: salary structures admin (which components + default amounts ship with a structure)
     Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct);
@@ -61,6 +63,7 @@ public interface IPayrollService
     Task<Paged<PayrollRunLineDto>> GetRunLinesAsync(Guid id, CancellationToken ct);
     Task<PayrollRunDto> DecideExceptionAsync(Guid id, Guid lineId, PayrollExceptionDecisionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApplyCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
+    Task<PayrollRunDto> ApplyReleasedCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request, CancellationToken ct, string actorSubjectId = "system");
     Task<PayrollRunDto> ApproveRunAsync(Guid id, string? note, CancellationToken ct, string actorSubjectId = "system");
     // M46: branch payroll draft (in-review) workflow — the preparer sends the
     // calculated branch run up for top-HR approval; it then appears on the
@@ -112,8 +115,12 @@ public interface IPayrollService
     Task<byte[]> GetPayslipPreviewAsync(Guid payslipId, CancellationToken ct);
 }
 
-public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType, string CalculationBasis, decimal? Rate, decimal? FixedAmount, decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Version, bool IsActive);
-public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status);
+public sealed record SalaryComponentDto(Guid Id, string Code, string Name, string ComponentType,
+    string CalculationBasis, string? BasisComponentCode, decimal? Rate, decimal? FixedAmount,
+    decimal? Ceiling, bool IsTaxable, bool IsStatutory, int Priority, int Version, bool IsActive);
+public sealed record PayPeriodDto(Guid Id, string PeriodLabel, string StartDate, string EndDate, string CutoffDate, string PayDate, string Status, bool IsHistorical = false);
+public sealed record HistoricalPayPeriodCreateRequest(Guid PayGroupId, string PeriodLabel, string StartDate,
+    string EndDate, string CutoffDate, string PayDate, string Reason);
 public sealed record TaxSlabDto(Guid Id, string TaxYear, decimal MinAmount, decimal? MaxAmount, decimal Rate, int Sequence);
 public sealed record ContributionRuleDto(Guid Id, string Code, string Name, string Payer, decimal Rate, decimal? Ceiling, decimal? Floor);
 public sealed record WorkerPayslipPreviewDto(string Status, string PeriodLabel, string Currency,
@@ -140,6 +147,17 @@ public sealed record ContributionRuleUpdateRequest(
     decimal? Floor = null,
     bool CeilingSpecified = false,
     bool FloorSpecified = false);
+public sealed record SalaryComponentCreateRequest(
+    string Code,
+    string Name,
+    string ComponentType,
+    string CalculationBasis,
+    string? BasisComponentCode = null,
+    decimal? Rate = null,
+    decimal? FixedAmount = null,
+    decimal? Ceiling = null,
+    bool IsTaxable = true,
+    int Priority = 100);
 public sealed record SalaryComponentUpdateRequest(
     string? Name = null,
     string? CalculationBasis = null,
@@ -166,7 +184,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var items = await repo.ListComponentsAsync(type, ct);
-        return items.Select(c => new SalaryComponentDto(c.Id, c.Code, c.Name, c.ComponentType, c.CalculationBasis, c.Rate, c.FixedAmount, c.Ceiling, c.IsTaxable, c.IsStatutory, c.Version, c.IsActive)).ToList();
+        return items.Select(MapComponent).ToList();
     }
 
     public async Task<List<PayGroupDto>> ListPayGroupsAsync(CancellationToken ct)
@@ -180,7 +198,28 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("hr_ops", "hr_admin", "payroll");
         var items = await repo.ListPeriodsAsync(payGroupId, ct);
-        return items.Select(p => new PayPeriodDto(p.Id, p.PeriodLabel, p.StartDate.ToString(), p.EndDate.ToString(), p.CutoffDate.ToString(), p.PayDate.ToString(), p.Status)).ToList();
+        return items.Select(p => new PayPeriodDto(p.Id, p.PeriodLabel, p.StartDate.ToString(), p.EndDate.ToString(), p.CutoffDate.ToString(), p.PayDate.ToString(), p.Status, p.IsHistorical)).ToList();
+    }
+
+    public async Task<PayPeriodDto> CreateHistoricalPeriodAsync(HistoricalPayPeriodCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_admin", "payroll");
+        var group = await repo.GetPayGroupAsync(request.PayGroupId, ct)
+            ?? throw new DomainException("pay-group-not-found", "Choose an existing pay group.");
+        if (!DateOnly.TryParse(request.StartDate, out var start) || !DateOnly.TryParse(request.EndDate, out var end)
+            || !DateOnly.TryParse(request.CutoffDate, out var cutoff) || !DateOnly.TryParse(request.PayDate, out var payDate))
+            throw new DomainException("historical-period-date-invalid", "Enter valid historical period, cutoff and pay dates.");
+        var reason = (request.Reason ?? "").Trim();
+        if (reason.Length < 10) throw new DomainException("historical-period-reason-required", "Explain the historical entry in at least 10 characters.");
+        if (start > end || cutoff > payDate || end >= DateOnly.FromDateTime(DateTime.UtcNow))
+            throw new DomainException("historical-period-invalid", "A historical period must end before today and have a cutoff on or before its pay date.");
+        if ((request.PeriodLabel ?? "").Trim().Length < 3)
+            throw new DomainException("historical-period-label-required", "Provide a clear period label, for example June 2026.");
+        var existing = await repo.ListPeriodsAsync(group.Id, ct);
+        if (existing.Any(p => p.StartDate == start && p.EndDate == end))
+            throw new DomainException("historical-period-duplicate", "A pay period already covers those dates for this pay group.");
+        var created = await repo.CreatePeriodAsync(new PayPeriod { PayGroupId = group.Id, PeriodLabel = request.PeriodLabel.Trim(), StartDate = start, EndDate = end, CutoffDate = cutoff, PayDate = payDate, Status = "historical", IsHistorical = true, HistoricalReason = reason, IsCurrent = false }, ct);
+        return new PayPeriodDto(created.Id, created.PeriodLabel, created.StartDate.ToString(), created.EndDate.ToString(), created.CutoffDate.ToString(), created.PayDate.ToString(), created.Status, true);
     }
 
     public async Task<List<TaxSlabDto>> ListTaxSlabsAsync(string taxYear, CancellationToken ct)
@@ -322,9 +361,74 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             }
             await repo.UpdateComponentAsync(comp, ct);
         }
-        return new SalaryComponentDto(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
-            comp.Rate, comp.FixedAmount, comp.Ceiling, comp.IsTaxable, comp.IsStatutory, comp.Version, comp.IsActive);
+        return MapComponent(comp);
     }
+
+    public async Task<SalaryComponentDto> CreateSalaryComponentAsync(SalaryComponentCreateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin");
+        var code = (request.Code ?? "").Trim().ToLowerInvariant();
+        if (code.Length is < 2 or > 40 || code.Any(ch => !(char.IsLower(ch) || char.IsDigit(ch) || ch == '-')))
+            throw new DomainException("salary-component-code-invalid", "Component code must be 2-40 lowercase letters, numbers or hyphens.");
+        var name = (request.Name ?? "").Trim();
+        if (name.Length is < 2 or > 80)
+            throw new DomainException("salary-component-name-invalid", "Component name must be 2-80 characters.");
+        var allowedTypes = new[] { "earning", "deduction", "employer-contribution", "tax" };
+        if (!allowedTypes.Contains(request.ComponentType, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("salary-component-type-invalid", "Component type must be earning, deduction, employer-contribution or tax.");
+        var allowedBases = new[] { "fixed", "percent-of", "slab" };
+        if (!allowedBases.Contains(request.CalculationBasis, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("salary-component-basis-invalid", "Calculation basis must be fixed, percent-of or slab.");
+        if (request.Priority is < 1 or > 1000)
+            throw new DomainException("salary-component-priority-invalid", "Evaluation priority must be between 1 and 1000.");
+        if (request.FixedAmount is < 0 || request.Ceiling is < 0)
+            throw new DomainException("salary-component-amount-invalid", "Fixed amount and ceiling cannot be negative.");
+
+        var allComponents = await repo.ListAllComponentsAsync(ct);
+        if (allComponents.Any(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            throw new DomainException("salary-component-code-duplicate", $"A salary component with code {code} already exists.");
+
+        var calculationBasis = request.CalculationBasis.ToLowerInvariant();
+        var basisCode = string.IsNullOrWhiteSpace(request.BasisComponentCode)
+            ? null
+            : request.BasisComponentCode.Trim().ToLowerInvariant();
+        if (calculationBasis == "percent-of")
+        {
+            if (basisCode is null)
+                throw new DomainException("salary-component-basis-required", "Choose the component this percentage is calculated from.");
+            if (basisCode == code)
+                throw new DomainException("salary-component-basis-circular", "A component cannot be calculated from itself.");
+            if (basisCode is not ("gross" or "taxable") && !allComponents.Any(c => c.Code.Equals(basisCode, StringComparison.OrdinalIgnoreCase)))
+                throw new DomainException("salary-component-basis-not-found", $"Basis component {basisCode} does not exist.");
+            if (request.Rate is null or <= 0 or > 100)
+                throw new DomainException("salary-component-rate-invalid", "Percentage rate must be greater than 0 and no more than 100.");
+        }
+
+        var component = new SalaryComponent
+        {
+            Code = code,
+            Name = name,
+            ComponentType = request.ComponentType.ToLowerInvariant(),
+            CalculationBasis = calculationBasis,
+            BasisComponentCode = calculationBasis is "percent-of" or "slab" ? basisCode : null,
+            Rate = calculationBasis == "percent-of" ? request.Rate : null,
+            FixedAmount = calculationBasis == "fixed" ? request.FixedAmount : null,
+            Ceiling = request.Ceiling,
+            IsTaxable = request.IsTaxable,
+            IsStatutory = false,
+            Priority = request.Priority,
+            Version = 1,
+            IsActive = true,
+            EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow),
+        };
+        await repo.CreateComponentAsync(component, ct);
+        return MapComponent(component);
+    }
+
+    private static SalaryComponentDto MapComponent(SalaryComponent comp) =>
+        new(comp.Id, comp.Code, comp.Name, comp.ComponentType, comp.CalculationBasis,
+            comp.BasisComponentCode, comp.Rate, comp.FixedAmount, comp.Ceiling,
+            comp.IsTaxable, comp.IsStatutory, comp.Priority, comp.Version, comp.IsActive);
 
     // ---------- M21: salary structure administration ----------
     public async Task<List<SalaryStructureDto>> ListStructuresAsync(CancellationToken ct)
@@ -475,8 +579,15 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 "Payroll run preflight failed: " + string.Join("; ", failures.Select(f => f.Label)));
         var period = await repo.GetPeriodAsync(request.PayPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", $"Pay period {request.PayPeriodId} does not exist.");
-        if (period.Status != "open")
-            throw new DomainException("pay-period-not-open", $"Pay period {period.PeriodLabel} is {period.Status} and cannot accept a new run.");
+        if (request.IsHistorical != period.IsHistorical)
+            throw new DomainException("payroll-history-mode-mismatch", request.IsHistorical
+                ? "Choose a historical period when recording a backdated payroll run."
+                : "This is a historical period. Start it using Backdated payroll mode so normal cutoffs stay unchanged.");
+        if ((!request.IsHistorical && period.Status != "open") || (request.IsHistorical && period.Status != "historical"))
+            throw new DomainException("pay-period-not-open", $"Pay period {period.PeriodLabel} is {period.Status} and cannot accept this type of run.");
+        var historicalReason = (request.HistoricalReason ?? "").Trim();
+        if (request.IsHistorical && historicalReason.Length < 10)
+            throw new DomainException("historical-run-reason-required", "Explain the backdated payroll entry in at least 10 characters.");
         // M46 branch payroll drafts: a draft tagged with LocationId belongs to
         // one branch and pays only that branch's workers; multiple branch runs
         // may coexist for a period (one per branch), but an organisation-wide
@@ -502,7 +613,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         // M44 branch scoping: a run created while scoped to a branch is that branch's run (draft flows up).
         var run = new PayrollRun { PayPeriodId = request.PayPeriodId, PayGroupId = request.PayGroupId,
             Status = "draft", CalcVersion = "engine-v1", PreparedBySubjectId = actorSubjectId,
-            LocationId = targetLocation };
+            LocationId = targetLocation, IsHistorical = request.IsHistorical,
+            HistoricalReason = request.IsHistorical ? historicalReason : null };
         var created = await repo.CreateRunAsync(run, ct);
         await RecordEventAsync(created, "created", actorSubjectId, null, "draft", null, null, ct);
         return MapRun(created);
@@ -582,9 +694,14 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             checks.Add(new("pay-group-exists", "Selected pay group exists", "fail",
                 $"Pay group {request.PayGroupId} does not exist.", 0));
         }
-        checks.Add(new("period-open", "Selected pay period is open",
-            period.Status == "open" ? "pass" : "fail",
-            $"{period.PeriodLabel} is {period.Status}.", 0));
+        var periodAvailable = request.IsHistorical ? period.IsHistorical && period.Status == "historical" : !period.IsHistorical && period.Status == "open";
+        checks.Add(new("period-open", request.IsHistorical ? "Selected historical period is available" : "Selected pay period is open",
+            periodAvailable ? "pass" : "fail",
+            request.IsHistorical ? $"{period.PeriodLabel} is a protected historical period." : $"{period.PeriodLabel} is {period.Status}.", 0));
+        if (request.IsHistorical)
+            checks.Add(new("history-reason", "Historical entry is explained",
+                (request.HistoricalReason ?? "").Trim().Length >= 10 ? "pass" : "fail",
+                "Historical runs preserve normal deadlines and never generate a bank payment file.", 0));
         checks.Add(new("period-pay-group", "Pay period belongs to selected pay group",
             period.PayGroupId == request.PayGroupId ? "pass" : "fail",
             period.PayGroupId == request.PayGroupId
@@ -1227,6 +1344,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
         var before = component.Amount;
         component.Amount = Math.Round(request.Amount, 2);
+        component.Explanation = $"HR-authorised August 2026 overtime correction: K{component.Amount:N2} monthly gross earning. This correction is not annualised and does not create another bank payment.";
         var delta = component.Amount - before;
         switch (component.ComponentType)
         {
@@ -1245,6 +1363,110 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         await RecordEventAsync(run, "correction-applied", actorSubjectId, run.Status, run.Status, request.Reason,
             new { lineId, line.WorkerId, component = component.ComponentCode, before, after = component.Amount }, ct);
         return MapRun(run);
+    }
+
+    /// <summary>
+    /// Applies a narrowly scoped correction to a payroll that has already been paid. The bank
+    /// payment remains untouched; a corrected payslip version becomes the current document.
+    /// This is intentionally separate from draft/calculated corrections.
+    /// </summary>
+    public async Task<PayrollRunDto> ApplyReleasedCorrectionAsync(Guid id, Guid lineId, PayrollCorrectionRequest request,
+        CancellationToken ct, string actorSubjectId = "system")
+    {
+        authz.RequireAnyRole("hr_admin");
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            throw new DomainException("correction-reason-required", "A reason is required for a payroll correction.");
+
+        var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.Status != "released" || run.PaymentStatus != "released")
+            throw new DomainException("released-correction-not-available", "This correction route is only available after payslips and the payment file have both been released.");
+
+        var line = await repo.GetRunLineAsync(id, lineId, ct)
+            ?? throw new DomainException("payroll-line-not-found", $"Line {lineId} does not belong to run {id}.");
+        var component = line.Components.FirstOrDefault(c => c.ComponentCode.Equals(request.ComponentCode, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
+        if (component.ComponentType != "earning" || component.IsStatutory)
+            throw new DomainException("released-correction-component-not-allowed", "Only a non-statutory earning can be corrected after payment.");
+
+        var previousPayslip = await repo.GetCurrentPayslipForRunLineAsync(line.Id, ct)
+            ?? throw new DomainException("payslip-not-found", "The paid payroll line does not have a current payslip to correct.");
+        var before = component.Amount;
+        component.Amount = Math.Round(request.Amount, 2);
+
+        var (_, definitions, rules, slabs, _) = await repo.LoadCalculationInputsAsync(run.PayPeriodId, ct, run.LocationId);
+        RecalculateReleasedLine(line, definitions, rules, slabs);
+        await repo.UpdateRunLineAsync(line, ct);
+        await repo.RecalculateRunTotalsAsync(run, ct);
+
+        previousPayslip.Status = "superseded";
+        await repo.UpdatePayslipAsync(previousPayslip, ct);
+        var corrected = new Payslip
+        {
+            RunLineId = line.Id,
+            WorkerId = line.WorkerId,
+            PayslipNo = $"{previousPayslip.PayslipNo}-V{previousPayslip.Version + 1}",
+            Version = previousPayslip.Version + 1,
+            SupersedesId = previousPayslip.Id,
+            GrossPay = line.GrossPay,
+            TotalDeductions = line.TotalDeductions,
+            NetPay = line.NetPay,
+            YtdGross = (ParseMoney(previousPayslip.YtdGross) + (line.GrossPay - previousPayslip.GrossPay)).ToString("F2"),
+            YtdTax = (ParseMoney(previousPayslip.YtdTax) + (line.TotalDeductions - previousPayslip.TotalDeductions)).ToString("F2"),
+            YtdNet = (ParseMoney(previousPayslip.YtdNet) + (line.NetPay - previousPayslip.NetPay)).ToString("F2"),
+            Status = "corrected",
+            ReleasedAt = DateTimeOffset.UtcNow,
+            LocationId = previousPayslip.LocationId,
+            WorkerNrc = previousPayslip.WorkerNrc,
+            WorkerTpin = previousPayslip.WorkerTpin,
+            WorkerNapsaNumber = previousPayslip.WorkerNapsaNumber,
+            WorkerNhimaNumber = previousPayslip.WorkerNhimaNumber,
+        };
+        await repo.CreatePayslipAsync(corrected, ct);
+        await RecordEventAsync(run, "released-correction-applied", actorSubjectId, "released", "released", request.Reason,
+            new { lineId, line.WorkerId, component = component.ComponentCode, before, after = component.Amount, correctedPayslipId = corrected.Id, paymentTreatment = "already-paid-no-bank-file-generated" }, ct);
+        return MapRun(run);
+    }
+
+    private static decimal ParseMoney(string? value) => decimal.TryParse(value, out var amount) ? amount : 0m;
+
+    private static void RecalculateReleasedLine(PayrollRunLine line, List<SalaryComponent> definitions,
+        List<ContributionRule> rules, List<TaxSlab> slabs)
+    {
+        var configured = definitions.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
+        var earnings = line.Components.Where(c => c.ComponentType == "earning").ToList();
+        var gross = earnings.Sum(c => c.Amount);
+        var taxable = earnings.Sum(c => !configured.TryGetValue(c.ComponentCode, out var definition) || definition.IsTaxable ? c.Amount : 0m);
+        decimal Resolve(string code) => code.Equals("gross", StringComparison.OrdinalIgnoreCase) ? gross : code.Equals("taxable", StringComparison.OrdinalIgnoreCase) ? taxable : line.Components.FirstOrDefault(c => c.ComponentCode.Equals(code, StringComparison.OrdinalIgnoreCase))?.Amount ?? 0m;
+        foreach (var statutory in line.Components.Where(c => c.IsStatutory && c.ComponentType != "earning"))
+        {
+            if (!configured.TryGetValue(statutory.ComponentCode, out var definition)) continue;
+            decimal amount;
+            var rule = rules.FirstOrDefault(r => r.IsActive && r.Code.Equals(statutory.ComponentCode, StringComparison.OrdinalIgnoreCase));
+            if (rule is not null)
+            {
+                amount = Resolve(rule.TiedComponentCode ?? "") * rule.Rate / 100m;
+                if (rule.Ceiling.HasValue) amount = Math.Min(amount, rule.Ceiling.Value);
+                if (rule.Floor.HasValue) amount = Math.Max(amount, rule.Floor.Value);
+            }
+            else if (definition.CalculationBasis == "slab")
+            {
+                amount = slabs.Where(s => s.IsActive).OrderBy(s => s.Sequence).Sum(s =>
+                {
+                    if (taxable <= s.MinAmount) return 0m;
+                    return Math.Max(0m, Math.Min(taxable, s.MaxAmount ?? taxable) - s.MinAmount) * s.Rate / 100m;
+                });
+            }
+            else if (definition.CalculationBasis == "percent-of") amount = Resolve(definition.BasisComponentCode ?? "") * (definition.Rate ?? 0m) / 100m;
+            else continue;
+            statutory.Amount = Math.Round(amount, 2);
+            statutory.Explanation = definition.CalculationBasis == "slab"
+                ? $"Progressive PAYE slab calculation on taxable income K{taxable:N2} (ZRA bands)"
+                : $"Recalculated from corrected payroll gross K{gross:N2}.";
+        }
+        line.GrossPay = Math.Round(gross, 2);
+        line.TotalDeductions = Math.Round(line.Components.Where(c => c.ComponentType is "deduction" or "tax").Sum(c => c.Amount), 2);
+        line.EmployerCost = Math.Round(line.Components.Where(c => c.ComponentType == "employer-contribution").Sum(c => c.Amount), 2);
+        line.NetPay = Math.Round(line.GrossPay - line.TotalDeductions, 2);
     }
 
     private async Task<PayrollRun> RequireCalculatedRunAsync(Guid id, CancellationToken ct)
@@ -1467,6 +1689,8 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
     {
         authz.RequireAnyRole("payroll", "hr_admin");
         var run = await repo.GetRunAsync(id, ct) ?? throw new DomainException("payroll-run-not-found", $"Run {id} does not exist.");
+        if (run.IsHistorical)
+            throw new DomainException("historical-run-payment-blocked", "This is a historical payroll record. It cannot generate a bank payment file because payment was handled outside the HRM.");
         if (run.Status != "released")
             throw new DomainException("payment-run-not-released", "Payslips must be released before a payment file can be generated.");
         if (run.PaymentStatus != "not-created")
@@ -1870,7 +2094,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         r.PreparedBySubjectId, r.ApprovedBySubjectId, r.ReleasedBySubjectId, r.PaymentStatus,
         r.PaymentFileReference, r.PaymentFileGeneratedBySubjectId, r.PaymentApprovedBySubjectId, r.PaymentReleasedBySubjectId,
         r.ReconciliationReference, r.ReconciledAmount, r.ReconciledAt, r.LocationId,
-        r.PayPeriodId, r.PayGroupId, r.ApprovalNote);
+        r.PayPeriodId, r.PayGroupId, r.ApprovalNote, r.IsHistorical, r.HistoricalReason);
 
     private static WorkerPayrollProfileDto MapProfile(WorkerPayrollProfile p) => new(
         p.Id, p.WorkerId, p.Worker?.FullName, p.PayGroupId, p.PayGroup?.Name, p.EffectiveFrom.ToString(),
@@ -1964,9 +2188,12 @@ internal sealed class CalcContext
 
         // Earnings must resolve before dependent components read them, so the
         // proration factor is baked into the resolved value immediately.
-        if (comp.ComponentType == "earning") _values[comp.Code] = amount;
-
-        if (comp.ComponentType == "earning") Gross += amount;
+        if (comp.ComponentType == "earning")
+        {
+            _values[comp.Code] = amount;
+            if (comp.IsTaxable) _taxableEarnings += amount;
+            Gross += amount;
+        }
         else if (comp.ComponentType is "deduction" or "tax") Deductions += amount;
         else if (comp.ComponentType == "employer-contribution") EmployerCost += amount;
     }
@@ -1974,7 +2201,8 @@ internal sealed class CalcContext
     private decimal Resolve(string code) =>
         code switch
         {
-            "gross" or "taxable" => Gross, // 'gross'/'taxable' are engine keywords
+            "gross" => Gross,
+            "taxable" => _taxableEarnings,
             // An earning already evaluated in this run carries its prorated
             // value in _values — that always wins over the raw profile
             // override, so dependent components read prorated earnings.
@@ -1994,6 +2222,9 @@ internal sealed class CalcContext
             : comp.FixedAmount ?? 0;
 
     private decimal _lastTaxable;
+    // PAYE follows chargeable/taxable emoluments, which can differ from gross
+    // statutory earnings used by NAPSA.
+    private decimal _taxableEarnings;
 
     private decimal ApplySlabs(decimal taxable)
     {
@@ -2047,6 +2278,7 @@ internal sealed class CalcContext
         Components.Add(("overtime", "Overtime", "earning", amount,
             $"{hours:N2} approved attendance overtime hour(s), weighted by recorded shift multiplier and configured hourly divisor; source attendance {sourceIds}", false));
         Gross += amount;
+        _taxableEarnings += amount;
     }
 
     public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances)
@@ -2067,6 +2299,7 @@ internal sealed class CalcContext
                     ? $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months, prorated for {PaymentDays:N0}/{WorkingDays:N0} paid days."
                     : $"Payroll benefit from {type.Name}: annual allowance K{allowance.AnnualAmount:N2} / 12 months.", false));
             Gross += monthlyAmount;
+            if (type.IsTaxable) _taxableEarnings += monthlyAmount;
         }
     }
 
@@ -2184,13 +2417,15 @@ public interface IPayrollRepository
     Task UpdatePayslipAsync(Payslip payslip, CancellationToken ct);
     Task<(List<Payslip> Items, int Total)> ListPayslipsAsync(Guid workerId, CancellationToken ct);
     Task<Payslip?> GetPayslipAsync(Guid id, CancellationToken ct);
+    Task<Payslip?> GetCurrentPayslipForRunLineAsync(Guid runLineId, CancellationToken ct);
+    Task<Payslip> CreatePayslipAsync(Payslip payslip, CancellationToken ct);
     // M34: payslips for a specific run (HR admin surface).
     Task<List<Payslip>> ListRunPayslipsAsync(Guid runId, CancellationToken ct);
     // M41: legal entities for payroll report company headers.
     Task<List<LegalEntity>> ListLegalEntitiesAsync(CancellationToken ct);
     // M41 Gap 2: proration inputs — pay period dates, approved unpaid leave
     // requests overlapping the period (with leave-type category), and the
-    // effective work calendar's holiday dates (informational only).
+    // effective work calendar. Public holidays remain paid days.
     Task<PayrollProrationInputs> LoadProrationInputsAsync(Guid payPeriodId, CancellationToken ct);
 }
 
@@ -2198,7 +2433,8 @@ public interface IPayrollRepository
 public sealed record PayrollProrationInputs(
     DateOnly PeriodStart, DateOnly PeriodEnd,
     List<ApprovedUnpaidLeave> UnpaidLeaves,
-    List<DateOnly> HolidayDates);
+    List<DateOnly> HolidayDates,
+    string WeekendDays = "sat,sun");
 
 /// <summary>One approved leave of an unpaid leave type overlapping the period.</summary>
 public sealed record ApprovedUnpaidLeave(Guid WorkerId, DateOnly StartDate, DateOnly EndDate, decimal RequestedDays);

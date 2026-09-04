@@ -132,13 +132,13 @@ function CreateOrgUnitDialog({
 export const Route = createFileRoute("/hrm/people/org")({
   head: () => ({
     meta: [
-      { title: "Organisation structure — Mightyfin HRMS" },
+      { title: "Organisation structure — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "Indented tree of entities, branches, departments and teams with headcount, vacancies and the lead of each unit.",
       },
-      { property: "og:title", content: "Organisation structure — Mightyfin HRMS" },
+      { property: "og:title", content: "Organisation structure — Newworldcargo HRM" },
       {
         property: "og:description",
         content:

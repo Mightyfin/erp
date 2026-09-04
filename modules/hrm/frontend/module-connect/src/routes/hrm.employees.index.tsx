@@ -45,9 +45,9 @@ import { ExportButton } from "@/platform/components/ImportExport/ExportButton";
 export const Route = createFileRoute("/hrm/employees/")({
   head: () => ({
     meta: [
-      { title: "Employees — Mightyfin HRMS" },
+      { title: "Employees — Newworldcargo HRM" },
       { name: "description", content: "Filterable employee directory across entities, branches and employment types." },
-      { property: "og:title", content: "Employees — Mightyfin HRMS" },
+      { property: "og:title", content: "Employees — Newworldcargo HRM" },
       { property: "og:description", content: "Filterable employee directory across entities, branches and employment types." },
     ],
   }),

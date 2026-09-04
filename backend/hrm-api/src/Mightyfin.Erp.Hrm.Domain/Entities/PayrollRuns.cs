@@ -28,6 +28,8 @@ public class PayrollRun : Entity
     public int ExceptionCount { get; set; }
     public string? CalcVersion { get; set; }          // pinned engine + rule version snapshot
     public string? ApprovalNote { get; set; }
+    public bool IsHistorical { get; set; }
+    public string? HistoricalReason { get; set; }
 
     // M27 operational controls. Subject ids are captured at each boundary so
     // segregation of duties is enforceable, rather than implied by status.

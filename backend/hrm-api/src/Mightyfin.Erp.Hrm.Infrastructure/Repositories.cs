@@ -1331,8 +1331,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Select(lr => new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate, lr.RequestedDays))
             .ToListAsync(ct);
         // Effective calendar: tenant default, falling back to any Zambia
-        // calendar. Holiday dates are informational (Zambian public holidays
-        // are paid, so they never reduce payment days).
+        // calendar. Its weekend definition drives monthly payroll proration;
+        // holiday dates are paid days, so they do not reduce payment days.
         var calendar = await db.WorkCalendars
             .OrderByDescending(c => c.IsDefault)
             .FirstOrDefaultAsync(ct);
@@ -1340,7 +1340,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(h => h.CalendarId == calendar.Id && h.HolidayDate >= period.StartDate && h.HolidayDate <= period.EndDate)
             .Select(h => h.HolidayDate)
             .ToListAsync(ct);
-        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays);
+        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays,
+            calendar?.WeekendDays ?? "sat,sun");
     }
 
     public async Task ClearRunLinesAsync(Guid runId, CancellationToken ct)
@@ -1373,6 +1374,19 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     {
         if (db.Entry(line).State == EntityState.Detached) db.PayrollRunLines.Update(line);
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<Payslip?> GetCurrentPayslipForRunLineAsync(Guid runLineId, CancellationToken ct)
+        => await db.Payslips
+            .Where(p => p.RunLineId == runLineId && (p.Status == "final" || p.Status == "corrected"))
+            .OrderByDescending(p => p.Version)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<Payslip> CreatePayslipAsync(Payslip payslip, CancellationToken ct)
+    {
+        db.Payslips.Add(payslip);
+        await db.SaveChangesAsync(ct);
+        return payslip;
     }
 
     public async Task RecalculateRunTotalsAsync(PayrollRun run, CancellationToken ct)

@@ -691,11 +691,11 @@ function OrganisationStep(props: { sending: boolean; onComplete: (p: Record<stri
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="org-name">Registered name *</Label>
-            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mighty Finance Limited" />
+            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Newworldcargo" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="org-trading">Trading name</Label>
-            <Input id="org-trading" value={trading} onChange={(e) => setTrading(e.target.value)} placeholder="e.g. Mighty Finance" />
+            <Input id="org-trading" value={trading} onChange={(e) => setTrading(e.target.value)} placeholder="e.g. Newworldcargo" />
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -1428,7 +1428,7 @@ function RolesStep(props: { sending: boolean; onComplete: (p: Record<string, unk
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="hr.manager@mightyfinance.co.zm"
+            placeholder="hr.manager@newworldcargo.com"
             onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEmail())}
           />
           <Button type="button" variant="outline" onClick={addEmail}>
