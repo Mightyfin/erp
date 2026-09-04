@@ -1340,8 +1340,21 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             throw new DomainException("correction-reason-required", "A reason is required for a payroll correction.");
         var line = await repo.GetRunLineAsync(id, lineId, ct)
             ?? throw new DomainException("payroll-line-not-found", $"Line {lineId} does not belong to run {id}.");
-        var component = line.Components.FirstOrDefault(c => c.ComponentCode.Equals(request.ComponentCode, StringComparison.OrdinalIgnoreCase))
-            ?? throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
+        var component = line.Components.FirstOrDefault(c => c.ComponentCode.Equals(request.ComponentCode, StringComparison.OrdinalIgnoreCase));
+        if (component is null && request.ComponentCode.Equals("one-off-payment-top-up", StringComparison.OrdinalIgnoreCase))
+        {
+            component = new PayrollLineComponent
+            {
+                ComponentCode = "one-off-payment-top-up",
+                ComponentName = "Approved payment top-up",
+                ComponentType = "earning",
+                IsStatutory = false,
+                Explanation = "Approved taxable one-off payment top-up.",
+            };
+            line.Components.Add(component);
+        }
+        if (component is null)
+            throw new DomainException("payroll-component-not-found", $"Component {request.ComponentCode} is not present on this line.");
         var before = component.Amount;
         component.Amount = Math.Round(request.Amount, 2);
         component.Explanation = $"HR-authorised August 2026 overtime correction: K{component.Amount:N2} monthly gross earning. This correction is not annualised and does not create another bank payment.";
