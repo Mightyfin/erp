@@ -1,6 +1,7 @@
 # Optional overlay for the coordinated event-bus migration. Never run standalone.
 services:
   hrm-outbox-publisher:
+    image: mightyfin/hrm-api:scoped-events-7e0ec8719
     environment:
       HRM__NatsToken: ""
       HRM__NatsTokenFile: ""
