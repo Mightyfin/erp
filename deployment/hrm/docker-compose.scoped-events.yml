@@ -1,0 +1,8 @@
+# Optional overlay for the coordinated event-bus migration. Never run standalone.
+services:
+  hrm-outbox-publisher:
+    environment:
+      HRM__NatsToken: ""
+      HRM__NatsTokenFile: ""
+      HRM__NatsUser: hrm-publisher
+      HRM__NatsPassword: ${NATS_HRM_PUBLISHER_PASSWORD:?dedicated event credential required}
