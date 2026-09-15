@@ -49,6 +49,24 @@ The API stack runs as Docker Compose at `/home/mightyfin/production/hrm` on `187
 
 The `hrm-outbox-publisher-1` service uses the same API image in publisher mode. It joins the shared communications network and publishes `mightyfin.hrm.>` events to the `HRM_EVENTS` JetStream stream. Deploy Compose with the communications environment file so `NATS_AUTH_TOKEN` is supplied during interpolation, for example `docker compose --env-file /home/mightyfin/.config/mightyfin/communications-sandbox/.env -f docker-compose.prod.yml up -d`. Direct SMTP remains off unless `HRM__NotificationFallback=smtp` is set explicitly. See [M26 notification delivery](../../docs/hrm/M26-NOTIFICATION-DELIVERY.md).
 
+## Scoped event credentials (pending broker cutover)
+
+The publisher also supports `HRM__NatsUser` and `HRM__NatsPassword` (or
+`HRM__NatsPasswordFile`). Use its own `hrm-publisher` identity and unset both
+`HRM__NatsToken` and `HRM__NatsTokenFile` when switching. Missing, partial or
+mixed credentials fail startup. Existing token authentication remains only
+for the staged migration; the running deployment has not switched yet.
+
+Infrastructure must provision `HRM_EVENTS` with subject `mightyfin.hrm.>`.
+The publisher validates the stream and cannot create or change it. A
+broker-confirmed duplicate of the immutable outbox ID counts as success;
+errors or acknowledgements for a different stream do not.
+
+Run `scripts/test-financial-event-permissions.mjs --hrm-client-test` from the
+platform-infrastructure repository for the isolated broker test. It uses
+synthetic events, temporary .NET build outputs and no payroll database or
+notification provider. This is transport evidence, not payroll or Green UAT.
+
 ## Conventions respected
 
 The deployment deliberately introduces minimal new networking: it reuses the existing token-based Cloudflare Tunnel (remote config), the `erp_default` bridge network, the shared `erp-postgres-1` container, the `:local` image-tag convention, the `/home/mightyfin/production/*` stack layout, and the `/home/mightyfin/.config/mightyfin/*` env convention. The entire public surface is exactly one subdomain (`erp.mightyfinance.co.zm`); the API rule is appended as a path rule on the existing tunnel hostname, with no other names or records touched.

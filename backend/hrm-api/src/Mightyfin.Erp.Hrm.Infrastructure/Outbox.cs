@@ -258,14 +258,10 @@ public sealed class NatsHrmEventPublisher : IHrmEventPublisher
         var url = configuration["HRM:NatsUrl"];
         if (string.IsNullOrWhiteSpace(url))
             throw new InvalidOperationException("HRM:NatsUrl is required by the outbox publisher.");
-        var token = configuration["HRM:NatsToken"];
-        var tokenFile = configuration["HRM:NatsTokenFile"];
-        if (string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(tokenFile))
-            token = File.ReadAllText(tokenFile).Trim();
         var opts = NatsOpts.Default with
         {
             Url = url,
-            AuthOpts = NatsAuthOpts.Default with { Token = token },
+            AuthOpts = EventCredentials(configuration),
         };
         client = new NatsClient(opts);
         jetStream = client.CreateJetStreamContext();
@@ -273,8 +269,34 @@ public sealed class NatsHrmEventPublisher : IHrmEventPublisher
 
     public async Task EnsureStreamAsync(CancellationToken ct)
     {
-        await jetStream.CreateOrUpdateStreamAsync(
-            new StreamConfig("HRM_EVENTS", ["mightyfin.hrm.>"]) { Storage = StreamConfigStorage.File }, ct);
+        // Provisioning owns stream creation; a publisher must not mutate subjects.
+        var stream = await jetStream.GetStreamAsync("HRM_EVENTS", cancellationToken: ct);
+        if (stream.Info.Config.Subjects is not { Count: 1 } subjects || subjects.Single() != "mightyfin.hrm.>")
+            throw new InvalidOperationException("HRM event stream subjects do not match the configured domain.");
+    }
+
+    public static NatsAuthOpts EventCredentials(IConfiguration configuration)
+    {
+        static string? Secret(IConfiguration cfg, string name)
+        {
+            var value = cfg[name]?.Trim();
+            var file = cfg[name + "File"]?.Trim();
+            if (!string.IsNullOrEmpty(value) && !string.IsNullOrEmpty(file))
+                throw new InvalidOperationException("Event secret value and file cannot both be configured.");
+            return string.IsNullOrEmpty(file) ? value : File.ReadAllText(file).Trim();
+        }
+        var token = Secret(configuration, "HRM:NatsToken");
+        var password = Secret(configuration, "HRM:NatsPassword");
+        var user = configuration["HRM:NatsUser"]?.Trim();
+        if (!string.IsNullOrEmpty(user) || !string.IsNullOrEmpty(password))
+        {
+            if (!string.IsNullOrEmpty(token) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(password))
+                throw new InvalidOperationException("Event credentials are incomplete or ambiguous.");
+            return NatsAuthOpts.Default with { Username = user, Password = password };
+        }
+        if (string.IsNullOrEmpty(token))
+            throw new InvalidOperationException("Event credentials are required.");
+        return NatsAuthOpts.Default with { Token = token };
     }
 
     public async Task PublishAsync(OutboxMessage row, CancellationToken ct)
@@ -296,7 +318,12 @@ public sealed class NatsHrmEventPublisher : IHrmEventPublisher
             envelope,
             opts: new NatsJSPubOpts { MsgId = row.PublicId },
             cancellationToken: ct);
-        ack.EnsureSuccess();
+        if (ack.Error is not null)
+            throw new NatsJSApiException(ack.Error);
+        if (ack.Stream != "HRM_EVENTS" || ack.Seq < 1)
+            throw new InvalidOperationException("Event acknowledgement does not identify the HRM stream.");
+        // A broker-confirmed duplicate is successful delivery of this immutable
+        // outbox ID, not a reason to retry or fall back to another transport.
     }
 
     public ValueTask DisposeAsync() => client.DisposeAsync();
