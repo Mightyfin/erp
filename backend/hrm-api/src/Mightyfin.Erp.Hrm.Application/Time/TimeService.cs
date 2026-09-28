@@ -278,11 +278,11 @@ public sealed class TimeServiceImpl(
 
     public async Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "timesheet_operator");
         DateOnly? f = from is null ? null : DateOnly.Parse(from);
         DateOnly? t = to is null ? null : DateOnly.Parse(to);
         var items = await repo.ListAttendanceForScopeAsync(f, t, scope?.LocationId, scope?.OrgUnitId, ct);
-        if (scope is not null && scope.IsConfined && !scope.IsScopedToBranch)
+        if (scope is not null && scope.IsConfined)
             items = items.Where(a => (a.LocationId.HasValue && scope.AllowedLocationIds.Contains(a.LocationId.Value))
                 || (!a.LocationId.HasValue && a.Worker?.LocationId.HasValue == true && scope.AllowedLocationIds.Contains(a.Worker.LocationId.Value))).ToList();
         return items.Select(MapAttendance).ToList();
@@ -493,7 +493,7 @@ public sealed class TimeServiceImpl(
     public async Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request,
         string actorSubjectId, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "timesheet_operator");
         if (string.IsNullOrWhiteSpace(request.FileName) || request.Rows.Count == 0)
             throw new DomainException("attendance-import-empty", "A file name and at least one attendance row are required.");
         if (request.Rows.Count > 10_000)
@@ -512,11 +512,15 @@ public sealed class TimeServiceImpl(
             if (!seen.Add(key)) { errors.Add($"{key}: duplicate row in batch"); continue; }
             var worker = await repo.FindWorkerByEmployeeNoAsync(row.EmployeeNo.Trim(), ct);
             if (worker is null) { errors.Add($"{key}: employee not found"); continue; }
+            if (!AttendanceScope.Allows(worker, scope))
+            { errors.Add($"{key}: employee is outside your attendance scope"); continue; }
             if (!DateOnly.TryParse(row.WorkDate, out var date) ||
                 (row.ClockIn is not null && !TimeOnly.TryParse(row.ClockIn, out _)) ||
                 (row.ClockOut is not null && !TimeOnly.TryParse(row.ClockOut, out _)))
             { errors.Add($"{key}: invalid date or time"); continue; }
             var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            if (existing?.OvertimePayrollRunId.HasValue == true || existing?.OvertimeStatus == "paid")
+            { errors.Add($"{key}: attendance is locked by payroll"); continue; }
             var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
             var record = existing ?? new AttendanceRecord { WorkerId = worker.Id, WorkDate = date };
             record.ClockIn = row.ClockIn is null ? null : TimeOnly.Parse(row.ClockIn);

@@ -22,6 +22,7 @@ namespace Mightyfin.Erp.Hrm.Tests;
 public sealed class HrmStaffAdmissionTests
 {
     [Theory]
+    [InlineData("timesheet_operator")]
     [InlineData("employee")]
     [InlineData("manager")]
     [InlineData("hr_ops")]

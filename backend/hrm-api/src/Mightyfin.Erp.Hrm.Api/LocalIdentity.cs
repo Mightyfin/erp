@@ -1,3 +1,4 @@
+using Mightyfin.Erp.Hrm.Api;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -110,11 +111,11 @@ internal static class LocalIdentityRoutes
         foreach (var prefix in new[] { "/api/hrm/auth", "/api/v1/hrm/auth" })
         {
             var g = app.MapGroup(prefix);
-            g.MapGet("/capabilities", (IConfiguration config) => Results.Ok(AuthCapabilities(config))).AllowAnonymous();
+            g.MapGet("/capabilities", (IConfiguration config) => Results.Ok(AuthCapabilities(config))).AllowAnonymous().WithMetadata(new TimesheetAccess());
             g.MapPost("/login", LoginAsync).AllowAnonymous();
-            g.MapGet("/me", MeAsync).AllowAnonymous();
-            g.MapPost("/logout", LogoutAsync).RequireAuthorization();
-            g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization();
+            g.MapGet("/me", MeAsync).AllowAnonymous().WithMetadata(new TimesheetAccess());
+            g.MapPost("/logout", LogoutAsync).RequireAuthorization().WithMetadata(new TimesheetAccess());
+            g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization().WithMetadata(new TimesheetAccess());
             g.MapPost("/set-password", CompletePasswordSetupAsync).AllowAnonymous();
             g.MapGet("/users", ListUsersAsync).RequireAuthorization("hrm-admin");
             g.MapGet("/users/{id:guid}", GetUserAsync).RequireAuthorization("hrm-admin");

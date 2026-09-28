@@ -73,11 +73,17 @@ export const HRM_STAFF_ROLES = [
   "finance_approver",
   "hr_admin",
   "investigator",
+  "timesheet_operator",
 ] as const;
 
 export function hasHrmStaffRole(roles: string[]): boolean {
   const set = new Set(roles);
   return HRM_STAFF_ROLES.some((role) => set.has(role));
+}
+
+export function isTimesheetOnly(roles: string[]): boolean {
+  const set = new Set(roles.map((role) => role.toLowerCase()));
+  return set.has("timesheet_operator") && !HRM_STAFF_ROLES.some((role) => role !== "timesheet_operator" && set.has(role));
 }
 
 function mapRolesToDemoRole(roles: string[]): Role {
@@ -137,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //    who isn't linked yet simply sees their IdP name until HR links them.
   useEffect(() => {
     if (!USE_REAL || (!isSessionValid(session) && !localUser)) return;
+    const roles = session ? decodeSessionUser(session)?.roles ?? [] : localUser?.roles ?? [];
+    if (isTimesheetOnly(roles)) return;
     let cancelled = false;
     setResolvingWorker(true);
     (async () => {

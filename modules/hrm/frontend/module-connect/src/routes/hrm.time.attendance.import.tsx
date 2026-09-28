@@ -11,6 +11,7 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ImportDialog } from "@/platform/components/ImportExport/ImportDialog";
 import { ExportButton } from "@/platform/components/ImportExport/ExportButton";
+import { isTimesheetOnly, useAuth } from "@/platform/auth";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/time/attendance/import")({
@@ -24,6 +25,15 @@ export const Route = createFileRoute("/hrm/time/attendance/import")({
 });
 
 function AttendanceImportPage() {
+  const { user } = useAuth();
+  if (isTimesheetOnly(user?.roles ?? [])) return <AuthGate><AppShell>
+    <PageHeader eyebrow="Timesheets" title="Import attendance" description="Upload employee clock-in and clock-out records. Imported overtime goes to an administrator for approval." />
+    <ImportDialog typeKey="attendance" presentation="embedded" />
+  </AppShell></AuthGate>;
+  return <FullAttendanceImportPage />;
+}
+
+function FullAttendanceImportPage() {
   const history = useApi(realApi.timeOperationsHistory, []);
   const imports = history.data?.imports ?? [];
   const audits = history.data?.timeAudits ?? [];

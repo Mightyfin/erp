@@ -800,7 +800,7 @@ public static class Routes
         g.MapGet("/attendance/{workerId:guid}/today", async (Guid workerId, ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
         g.MapGet("/attendance", async ([FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
-            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct)));
+            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct))).WithMetadata(new TimesheetAccess());
         g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
@@ -829,7 +829,7 @@ public static class Routes
         {
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ImportAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         g.MapPost("/overtime/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<OvertimeImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -1265,7 +1265,7 @@ public static class Routes
         {
             http.Response.Headers.CacheControl = "no-store";
             return Results.Ok(await svc.GetPublicAsync(ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         var g = app.MapGroup($"{HrmPrefix}/admin").RequireAuthorization();
         g.MapGet("/config", async (IConfigService svc, CancellationToken ct) => await svc.GetConfigAsync(ct));
         g.MapGet("/branding", async (Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService svc, CancellationToken ct) =>
@@ -1830,21 +1830,21 @@ public static class Routes
     public static void RegisterImportExport(WebApplication app)
     {
         var g = app.MapGroup($"{HrmPrefix}/import").RequireAuthorization();
-        g.MapGet("/schemas", (IImportExportService svc) => Results.Ok(svc.ListSchemas()));
+        g.MapGet("/schemas", (IImportExportService svc) => Results.Ok(svc.ListSchemas())).WithMetadata(new TimesheetAccess());
         g.MapPost("/{typeKey}/preview", async (string typeKey, HttpContext http,
             IImportExportService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ImportPreviewRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.PreviewAsync(typeKey, request.FileName, request.Mode, request.Rows, ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         g.MapPost("/{typeKey}/apply", async (string typeKey, HttpContext http,
             IImportExportService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ImportApplyRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ApplyAsync(request.PreviewId, request.RowIndexes, ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         // M31b: format=xlsx in the filter string switches the output to XLSX.
         g.MapGet("/{typeKey}/export", async (string typeKey, string? filter,
             IImportExportService svc, CancellationToken ct) =>
@@ -1854,7 +1854,7 @@ public static class Routes
             if (isXlsx)
                 return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{typeKey}-export.xlsx");
             return Results.File(bytes, "text/csv; charset=utf-8", $"{typeKey}-export.csv");
-        });
+        }).WithMetadata(new TimesheetAccess());
     }
 
     // ===================== Performance & Goals (M36) =====================

@@ -386,6 +386,7 @@ app.Use(async (ctx, next) =>
     }
 });
 app.UseAuthorization();
+app.UseMiddleware<Mightyfin.Erp.Hrm.Api.TimesheetAccessMiddleware>();
 
 // M44 branch scoping + M45 branch confinement: populate ShellContext from
 // frontend shell-state headers and restrict confined operators to their
@@ -411,11 +412,19 @@ Routes.RegisterAll(app);
     {
         using var seedScope = app.Services.CreateScope();
         var seedRepo = seedScope.ServiceProvider.GetRequiredService<IConfigRepository>();
-        if (!(await seedRepo.ListRoleAssignmentsAsync(CancellationToken.None)).Any())
+        var existingRoles = await seedRepo.ListRoleAssignmentsAsync(CancellationToken.None);
+        if (existingRoles.Any() && !existingRoles.Any(r => r.RoleKey == "timesheet_operator"))
+            await seedRepo.CreateRoleAssignmentAsync(new TenantRoleAssignment
+            {
+                RoleKey = "timesheet_operator", RoleName = "Timesheet operator", Category = "hrm",
+                PermissionsCsv = "timesheet_operator", Active = true,
+            }, CancellationToken.None);
+        if (!existingRoles.Any())
         {
             foreach (var key in new (string Key, string Name, string Cat)[]
             {
                 ("employee", "Employee", "hrm"),
+                ("timesheet_operator", "Timesheet operator", "hrm"),
                 ("manager", "Manager", "hrm"),
                 ("hr_ops", "HR Operations", "hrm"),
                 ("payroll", "Payroll", "payroll"),

@@ -42,19 +42,28 @@ public interface IImportExportService
 public sealed class ImportExportServiceImpl : IImportExportService
 {
     private readonly IEnumerable<IImportSchema> schemas;
-    private static readonly Dictionary<Guid, ImportPreviewDto> Previews = new(); // in-memory preview cache
+    private readonly IAuthzService? authz;
+    private bool TimesheetsOnly => authz?.IsRole("timesheet_operator") == true
+        && !authz.IsRole(HrmStaffAccess.Roles.Where(r => r != "timesheet_operator").ToArray());
+    private sealed record SavedPreview(ImportPreviewDto Preview, string? SubjectId);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SavedPreview> Previews = new();
 
-    public ImportExportServiceImpl(IEnumerable<IImportSchema> schemas)
+    public ImportExportServiceImpl(IEnumerable<IImportSchema> schemas, IAuthzService? authz = null)
     {
         this.schemas = schemas;
+        this.authz = authz;
     }
 
-    private IImportSchema Schema(string typeKey) =>
-        schemas.FirstOrDefault(s => s.TypeKey.Equals(typeKey, StringComparison.OrdinalIgnoreCase))
-        ?? throw new DomainException("import-schema-not-found", $"No import schema registered for '{typeKey}'.");
+    private IImportSchema Schema(string typeKey)
+    {
+        if (TimesheetsOnly && !typeKey.Equals("attendance", StringComparison.OrdinalIgnoreCase))
+            throw new DomainException("forbidden", "Your account can import and export attendance only.");
+        return schemas.FirstOrDefault(s => s.TypeKey.Equals(typeKey, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DomainException("import-schema-not-found", $"No import schema registered for '{typeKey}'.");
+    }
 
     public List<ImportTypeSchemaDto> ListSchemas() =>
-        schemas.Select(s => new ImportTypeSchemaDto(
+        schemas.Where(s => !TimesheetsOnly || s.TypeKey == "attendance").Select(s => new ImportTypeSchemaDto(
             s.TypeKey, s.DisplayName,
             s.Fields.Select(f => new ImportFieldSchemaDto(
                 f.Key, f.Label, f.Required, f.NaturalKey, f.Example, f.FormatNote)).ToList())).ToList();
@@ -83,15 +92,18 @@ public sealed class ImportExportServiceImpl : IImportExportService
             typeKey, fileName, mode,
             rows.Count, willCreate, willUpdate, willSkip, willError, outcomes);
         // Stable id so the UI can POST apply for the exact preview shown.
-        Previews[preview.Id] = preview;
-        while (Previews.Count > 1000) { var oldest = Previews.Keys.First(); Previews.Remove(oldest); }
+        Previews[preview.Id] = new SavedPreview(preview, authz?.CurrentSubjectId);
+        while (Previews.Count > 1000) { var oldest = Previews.Keys.First(); Previews.TryRemove(oldest, out _); }
         return preview;
     }
 
     public async Task<ImportApplyResult> ApplyAsync(Guid previewId, List<int> rowIndexes, CancellationToken ct)
     {
-        if (!Previews.TryGetValue(previewId, out var preview))
+        if (!Previews.TryGetValue(previewId, out var saved))
             throw new DomainException("import-preview-expired", "The import preview has expired. Preview the file again.");
+        if (authz is not null && saved.SubjectId != authz.CurrentSubjectId)
+            throw new DomainException("forbidden", "This import preview belongs to another user. Preview the file again.");
+        var preview = saved.Preview;
         var schema = Schema(preview.TypeKey);
         var created = 0; var updated = 0; var skipped = 0;
         var rowOutcomes = new List<ImportRowPreviewDto>();

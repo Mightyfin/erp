@@ -17,6 +17,72 @@ namespace Mightyfin.Erp.Hrm.Tests;
 /// correction and leave decisions) over EF InMemory with a fixed tenant.</summary>
 public class TimeServiceTests
 {
+    private sealed class TimesheetAuthz : IAuthzService
+    {
+        public string CurrentSubjectId => "timesheet-clerk";
+        public void RequireAnyRole(params string[] roles)
+        {
+            if (!IsRole(roles)) throw new DomainException("forbidden", "Access denied.");
+        }
+        public bool IsRole(params string[] roles) => roles.Contains("timesheet_operator");
+        public bool CanAccessSensitive(string category) => false;
+    }
+
+    [Fact]
+    public async Task TimesheetOperatorCanImportAndReadOtherEmployeeAttendance()
+    {
+        var (service, ctx, worker, _, _) = Build(authz: new TimesheetAuthz());
+        using (ctx)
+        {
+            var result = await service.ImportAttendanceAsync(new AttendanceImportRequest("hours.csv",
+                [new(worker.EmployeeNo, "2026-09-21", "08:00", "17:00")]), "timesheet-clerk", default);
+            Assert.Equal(1, result.ImportedCount);
+            Assert.Equal(0, result.RejectedCount);
+            var rows = await service.ListAttendanceForScopeAsync("2026-09-21", "2026-09-21", default);
+            Assert.Equal(worker.Id, Assert.Single(rows).WorkerId);
+            var error = await Assert.ThrowsAsync<DomainException>(() => service.DecideOvertimeAsync(
+                rows[0].Id, new OvertimeDecisionRequest("approve"), "timesheet-clerk", default));
+            Assert.Equal("forbidden", error.Code);
+            await Assert.ThrowsAsync<DomainException>(() => service.ListLeaveAsync(null, null, default));
+            await Assert.ThrowsAsync<DomainException>(() => service.GetOperationsHistoryAsync(default));
+            await Assert.ThrowsAsync<DomainException>(() => service.ImportOvertimeAsync(
+                new OvertimeImportRequest("ot.csv", [], true), "timesheet-clerk", default));
+        }
+    }
+
+    [Fact]
+    public async Task AttendanceImportCannotOverwritePayrollLinkedRecord()
+    {
+        var (service, ctx, worker, _, _) = Build(authz: new TimesheetAuthz());
+        using (ctx)
+        {
+            var record = new AttendanceRecord { WorkerId = worker.Id, WorkDate = new DateOnly(2026, 9, 21),
+                ClockIn = new TimeOnly(8, 0), ClockOut = new TimeOnly(17, 0), OvertimePayrollRunId = Guid.NewGuid() };
+            ctx.AttendanceRecords.Add(record);
+            await ctx.SaveChangesAsync();
+            var result = await service.ImportAttendanceAsync(new AttendanceImportRequest("hours.csv",
+                [new(worker.EmployeeNo, "2026-09-21", "06:00", "22:00")]), "timesheet-clerk", default);
+            Assert.Equal(1, result.RejectedCount);
+            Assert.Equal(new TimeOnly(8, 0), record.ClockIn);
+        }
+    }
+
+    [Fact]
+    public async Task AttendanceImportHonoursAssignedBranch()
+    {
+        var authz = new TimesheetAuthz();
+        var (_, ctx, worker, wf, _) = Build(authz: authz);
+        using (ctx)
+        {
+            var scope = new ShellContext { LocationId = Guid.NewGuid() };
+            var service = new TimeServiceImpl(new TimeRepository(ctx), authz, wf, new WorkerRepository(ctx), scope);
+            var result = await service.ImportAttendanceAsync(new AttendanceImportRequest("hours.csv",
+                [new(worker.EmployeeNo, "2026-09-21", "08:00", "17:00")]), "timesheet-clerk", default);
+            Assert.Equal(1, result.RejectedCount);
+            Assert.Empty(ctx.AttendanceRecords);
+        }
+    }
+
     private sealed class EmployeeAuthz(string subject) : IAuthzService
     {
         public string CurrentSubjectId => subject;
