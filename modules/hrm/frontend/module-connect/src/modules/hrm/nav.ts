@@ -97,6 +97,7 @@ export const hrmModule: ModuleDefinition = {
             { label: "Corrections", to: "/hrm/attendance" },
             { label: "Raise a correction", to: "/hrm/attendance/new" },
             { label: "Schedules and rosters", to: "/hrm/time/schedules", roles: ["hr_ops", "hr_admin", "manager"] },
+            { label: "Add bulk attendance", to: "/hrm/time/attendance/bulk", roles: ["hr_ops", "hr_admin"] },
             { label: "Import attendance", to: "/hrm/time/attendance/import", roles: ["hr_ops", "hr_admin"] },
           ],
         },
@@ -106,6 +107,7 @@ export const hrmModule: ModuleDefinition = {
             { label: "Overtime review", to: "/hrm/time/operations", roles: ["hr_ops", "hr_admin", "manager"] },
             { label: "My leave", to: "/hrm/leave" },
             { label: "Request leave", to: "/hrm/leave/new" },
+            { label: "Recorded leave", to: "/hrm/leave/recorded", roles: ["hr_ops", "hr_admin"] },
             { label: "Leave approvals", to: "/hrm/leave/approvals", roles: ["hr_ops", "hr_admin", "manager"] },
             { label: "Leave control panel", to: "/hrm/leave/control", roles: ["hr_ops", "hr_admin", "manager", "payroll"] },
             { label: "Leave allocation", to: "/hrm/leave/allocations", roles: ["hr_ops", "hr_admin"] },
@@ -134,7 +136,7 @@ export const hrmModule: ModuleDefinition = {
       icon: Banknote,
       items: [
         { label: "My payslips", to: "/hrm/payslips" },
-        { label: "Compensation and benefits", to: "/hrm/pay/compensation" },
+        { label: "Compensation", to: "/hrm/pay/compensation", roles: ["hr_ops", "hr_admin", "payroll"] },
         { label: "Benefits", to: "/hrm/benefits", roles: ["hr_ops", "hr_admin", "payroll"] },
         { label: "Salary advances", to: "/hrm/payroll/salary-advances", roles: ["hr_ops", "hr_admin", "payroll"] },
         { label: "Payroll administration", to: "/hrm/payroll", roles: ["payroll", "hr_admin"] },
@@ -258,6 +260,11 @@ export const configurationGroups: {
         to: "/hrm/configuration/leave-types",
       },
       {
+        label: "Contract types",
+        detail: "Employment terms, probation and notice periods",
+        to: "/hrm/configuration/contract-types",
+      },
+      {
         label: "Leave policies and accruals",
         detail: "Policy administration and accrual controls",
         to: "/hrm/configuration/process",
@@ -331,6 +338,11 @@ export const configurationGroups: {
     label: "Technical",
     description: "Integrations and data movement. Rarely changed after go-live.",
     items: [
+      {
+        label: "Company branding",
+        detail: "Logo, favicon, and workspace colour palette",
+        to: "/hrm/configuration/branding",
+      },
       { label: "Import and export", detail: "Shared CSV and Excel data movement", to: "/hrm/data/import-export" },
       {
         label: "Payroll interface",

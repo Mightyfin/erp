@@ -20,12 +20,12 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/configuration/technical")({
   head: () => ({
     meta: [
-      { title: "Technical settings — Mightyfin HRMS" },
+      { title: "Technical settings — Newworldcargo HRM" },
       {
         name: "description",
         content: "Integrations, import and export, numbering series and HR vendors.",
       },
-      { property: "og:title", content: "Technical settings — Mightyfin HRMS" },
+      { property: "og:title", content: "Technical settings — Newworldcargo HRM" },
       {
         property: "og:description",
         content: "Integrations, import and export, numbering series and HR vendors.",
@@ -51,6 +51,10 @@ function TechnicalConfig() {
   const vendors = useMock(() => configurationApi.vendors());
   const notifications = useApi(() => realApi.notificationDeliveries({ limit: 100 }));
 
+  const sections = USE_REAL
+    ? SECTIONS.filter((section) => section.id === "notifications")
+    : SECTIONS;
+
   async function retryNotification(id: string) {
     try {
       await realApi.retryNotification(id);
@@ -71,7 +75,7 @@ function TechnicalConfig() {
     <ConfigPage
       title="Technical settings"
       description="What HRM connects to, and what it hands over. Rarely changed after go-live."
-      sections={USE_REAL ? SECTIONS.filter((section) => section.id === "notifications") : SECTIONS}
+      sections={sections}
       active={tab}
       onSelect={setTab}
       notice={

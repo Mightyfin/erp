@@ -88,6 +88,8 @@ builder.Services.AddScoped<IWorkerResolver, WorkerResolver>();
 builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();
 builder.Services.AddScoped<ITimeRepository, TimeRepository>();
 builder.Services.AddScoped<ITimeService, TimeServiceImpl>();
+if (!args.Contains("--apply-migrations-only") && !args.Contains("--run-outbox-publisher"))
+    builder.Services.AddHostedService<MonthlyLeaveAccrualWorker>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
 builder.Services.AddSingleton<ILetterTemplates, LetterTemplatesImpl>();
 builder.Services.AddScoped<IMergeDataProvider, MergeDataProviderImpl>();
@@ -105,6 +107,9 @@ builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Analytics.IAnalyticsSer
 builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
+builder.Services.AddScoped<IPeriodOvertimeService, PeriodOvertimeService>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService, PeriodBenefitService>();
+builder.Services.AddScoped<IRecordedLeaveService, RecordedLeaveService>();
 // M49: first-time setup wizard — state, step completion and the destructive reset
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupRepository, SetupRepository>();
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupService, Mightyfin.Erp.Hrm.Application.Setup.SetupServiceImpl>();
@@ -118,6 +123,7 @@ builder.Services.AddScoped<IPayrollReportPdfRenderer, PayrollReportPdfRendererIm
 builder.Services.AddScoped<IConfigRepository, ConfigRepository>();
 builder.Services.AddScoped<IConfigService, ConfigServiceImpl>();
 builder.Services.AddScoped<IConfigAdminService, ConfigAdminServiceImpl>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService, CompanyBrandingService>();
 builder.Services.AddScoped<IJobsAdminService, JobsAdminServiceImpl>();
 builder.Services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
 builder.Services.AddScoped<IRecruitmentService, RecruitmentServiceImpl>();
@@ -158,8 +164,22 @@ else
     var authority = builder.Configuration["ERP:OidcAuthority"] ?? builder.Configuration["HRM:OidcAuthority"];
     if (string.IsNullOrWhiteSpace(authority))
         throw new InvalidOperationException("ERP:AuthMode=oidc requires ERP:OidcAuthority or HRM:OidcAuthority.");
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(o =>
+    var authentication = authMode.Equals("hybrid", StringComparison.OrdinalIgnoreCase)
+        ? builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = "hybrid";
+            options.DefaultChallengeScheme = "hybrid";
+        }).AddPolicyScheme("hybrid", "OIDC or HRMS local session", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+                context.Request.Headers.Authorization.ToString()
+                    .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? JwtBearerDefaults.AuthenticationScheme
+                    : LocalAuthenticationHandler.Scheme;
+        }).AddScheme<LocalAuthOptions, LocalAuthenticationHandler>(
+            LocalAuthenticationHandler.Scheme, _ => { })
+        : builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme);
+    authentication.AddJwtBearer(o =>
         {
             o.Authority = authority;
             o.RequireHttpsMetadata = true;
@@ -371,6 +391,7 @@ app.Use(async (ctx, next) =>
     }
 });
 app.UseAuthorization();
+app.UseMiddleware<Mightyfin.Erp.Hrm.Api.TimesheetAccessMiddleware>();
 
 // M44 branch scoping + M45 branch confinement: populate ShellContext from
 // frontend shell-state headers and restrict confined operators to their
@@ -396,11 +417,19 @@ Routes.RegisterAll(app);
     {
         using var seedScope = app.Services.CreateScope();
         var seedRepo = seedScope.ServiceProvider.GetRequiredService<IConfigRepository>();
-        if (!(await seedRepo.ListRoleAssignmentsAsync(CancellationToken.None)).Any())
+        var existingRoles = await seedRepo.ListRoleAssignmentsAsync(CancellationToken.None);
+        if (existingRoles.Any() && !existingRoles.Any(r => r.RoleKey == "timesheet_operator"))
+            await seedRepo.CreateRoleAssignmentAsync(new TenantRoleAssignment
+            {
+                RoleKey = "timesheet_operator", RoleName = "Timesheet operator", Category = "hrm",
+                PermissionsCsv = "timesheet_operator", Active = true,
+            }, CancellationToken.None);
+        if (!existingRoles.Any())
         {
             foreach (var key in new (string Key, string Name, string Cat)[]
             {
                 ("employee", "Employee", "hrm"),
+                ("timesheet_operator", "Timesheet operator", "hrm"),
                 ("manager", "Manager", "hrm"),
                 ("hr_ops", "HR Operations", "hrm"),
                 ("payroll", "Payroll", "payroll"),

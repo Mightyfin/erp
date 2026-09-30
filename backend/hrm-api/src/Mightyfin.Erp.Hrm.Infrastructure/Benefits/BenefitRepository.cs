@@ -39,7 +39,8 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
 
     public async Task<bool> BenefitTypeHasUsageAsync(Guid id, CancellationToken ct) =>
         await ctx.WorkerBenefitAllowances.AnyAsync(x => x.BenefitTypeId == id, ct) ||
-        await ctx.BenefitClaims.AnyAsync(x => x.BenefitTypeId == id, ct);
+        await ctx.BenefitClaims.AnyAsync(x => x.BenefitTypeId == id, ct) ||
+        await ctx.PeriodBenefits.AnyAsync(x => x.BenefitTypeId == id, ct);
 
     public Task<List<WorkerBenefitAllowance>> ListAllowancesAsync(Guid? workerId, CancellationToken ct) =>
         ctx.WorkerBenefitAllowances
@@ -59,7 +60,7 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
     {
         var start = new DateTimeOffset(year, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var end = start.AddYears(1);
-        return ctx.BenefitClaims.AnyAsync(x => x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId &&
+        return ctx.BenefitClaims.AnyAsync(x => !x.IsArchived && x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId &&
             x.CreatedAt >= start && x.CreatedAt < end, ct);
     }
 
@@ -85,6 +86,7 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         var query = ctx.BenefitClaims
             .Include(x => x.Worker)
             .Include(x => x.BenefitType)
+            .Where(x => !x.IsArchived)
             .AsQueryable();
         if (workerId.HasValue) query = query.Where(x => x.WorkerId == workerId.Value);
         if (!string.IsNullOrEmpty(status)) query = query.Where(x => x.Status == status);
@@ -106,7 +108,7 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         ctx.BenefitClaims
             .Include(x => x.Worker)
             .Include(x => x.BenefitType)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && !x.IsArchived, ct);
 
     public async Task<BenefitClaim> CreateClaimAsync(BenefitClaim claim, CancellationToken ct)
     {
@@ -121,9 +123,30 @@ public sealed class BenefitRepository(HrmDbContext ctx) : IBenefitRepository
         await ctx.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateClaimDetailsAsync(BenefitClaim claim, string actor, string beforeJson, CancellationToken ct)
+    {
+        ctx.AuditEntries.Add(new AuditEntry {
+            EntityType = "benefit-claim", EntityId = claim.Id.ToString(), Action = "edit",
+            ActorSubjectId = actor, BeforeJson = beforeJson,
+            AfterJson = System.Text.Json.JsonSerializer.Serialize(new { claim.AmountClaimed, claim.Currency, claim.Note, claim.EvidenceAttached, claim.Status })
+        });
+        await ctx.SaveChangesAsync(ct);
+    }
+
+    public async Task ArchiveClaimAsync(BenefitClaim claim, string actor, CancellationToken ct)
+    {
+        claim.IsArchived = true;
+        ctx.AuditEntries.Add(new AuditEntry {
+            EntityType = "benefit-claim", EntityId = claim.Id.ToString(), Action = "delete",
+            ActorSubjectId = actor, BeforeJson = System.Text.Json.JsonSerializer.Serialize(new { claim.AmountClaimed, claim.Status, claim.WorkerId }),
+            AfterJson = System.Text.Json.JsonSerializer.Serialize(new { claim.IsArchived })
+        });
+        await ctx.SaveChangesAsync(ct);
+    }
+
     public Task<decimal> SumApprovedAsync(Guid workerId, Guid benefitTypeId, int year, CancellationToken ct) =>
         ctx.BenefitClaims
-            .Where(x => x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId
+            .Where(x => !x.IsArchived && x.WorkerId == workerId && x.BenefitTypeId == benefitTypeId
                         && (x.Status == "approved" || x.Status == "paid"))
             .SumAsync(x => (decimal?)x.ApprovedAmount ?? 0, ct);
 

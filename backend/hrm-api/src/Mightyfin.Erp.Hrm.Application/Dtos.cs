@@ -13,7 +13,7 @@ public sealed record WorkerListFilters(
 
 public sealed record WorkerCreateRequest(
     string EmployeeNo, string FirstName, string LastName,
-    string? MiddleName = null, string? PreferredName = null, string? Email = null,
+    string? MiddleName = null, string? PreferredName = null, string? Email = null, string? PersonalEmail = null,
     string? Phone = null, string? Nrc = null, string? PassportNo = null,
     string? Tpin = null, string? NapsaNumber = null, string? NhimaNumber = null,
     string? Nationality = null, string? DateOfBirth = null,
@@ -21,7 +21,8 @@ public sealed record WorkerCreateRequest(
     string? Grade = null, string? JobTitle = null, string? StartDate = null,
     string WorkerType = "employee",
     List<EmergencyContactCreate>? EmergencyContacts = null,
-    List<WorkerBankDetailCreate>? BankDetails = null);
+    List<WorkerBankDetailCreate>? BankDetails = null,
+    string? ProfileDetailsJson = null);
 
 public sealed record EmergencyContactCreate(string Relationship, string FullName, string? Phone, bool IsPrimary);
 
@@ -29,7 +30,7 @@ public sealed record EmergencyContactCreate(string Relationship, string FullName
 // is filled server-side from the token, never from client input.
 public sealed record WorkerSubjectUpdateRequest(
     string SubjectId,
-    string? PreferredName = null, string? Email = null, string? Phone = null,
+    string? PreferredName = null, string? Email = null, string? PersonalEmail = null, string? Phone = null,
     string? Nrc = null, string? PassportNo = null, string? Tpin = null,
     string? NapsaNumber = null, string? NhimaNumber = null,
     string? Nationality = null, string? DateOfBirth = null,
@@ -42,26 +43,27 @@ public sealed record WorkerAccountLinkRequest(string SubjectId);
 
 public sealed record WorkerUpdateRequest(
     string? FirstName = null, string? MiddleName = null, string? LastName = null,
-    string? PreferredName = null, string? Email = null, string? Phone = null,
+    string? PreferredName = null, string? Email = null, string? PersonalEmail = null, string? Phone = null,
     string? Nrc = null, string? PassportNo = null, string? Tpin = null,
     string? NapsaNumber = null, string? NhimaNumber = null, string? Nationality = null,
     string? DateOfBirth = null, Guid? OrgUnitId = null, Guid? LocationId = null,
     Guid? ManagerId = null, string? Grade = null, string? JobTitle = null,
-    string? Status = null, string? EndDate = null, string? SubjectId = null,
+    string? Status = null, string? ContractType = null, string? StartDate = null, string? EndDate = null, string? SubjectId = null,
     List<EmergencyContactCreate>? EmergencyContacts = null,
-    List<WorkerBankDetailCreate>? BankDetails = null);
+    List<WorkerBankDetailCreate>? BankDetails = null,
+    string? ProfileDetailsJson = null);
 
 public sealed record WorkerDto(
     Guid Id, string EmployeeNo, string FirstName, string? MiddleName, string LastName,
-    string FullName, string? PreferredName, string? Email, string? Phone, string? PhotoUrl,
+    string FullName, string? PreferredName, string? Email, string? PersonalEmail, string? Phone, string? PhotoUrl,
     string? Nrc, string? PassportNo, string? Tpin, string? NapsaNumber, string? NhimaNumber,
-    string? Nationality, string? DateOfBirth, string? SubjectId, string WorkerType, string Status,
+    string? Nationality, string? DateOfBirth, string? SubjectId, string WorkerType, string? ContractType, string Status,
     Guid? OrgUnitId, string? OrgUnitName, Guid? LocationId, string? LocationName,
     Guid? ManagerId, string? ManagerName, string? Grade, string? JobTitle,
     string? StartDate, string? EndDate,
     List<EmergencyContactDto> EmergencyContacts, List<WorkerBankDetailDto> BankDetails,
     List<WorkerEducationDto> Education, List<ExternalWorkHistoryDto> ExternalWorkHistory, List<InternalWorkHistoryDto> InternalWorkHistory,
-    DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, string? ProfileDetailsJson = null);
 
 public sealed record EmergencyContactDto(Guid Id, string Relationship, string FullName, string? Phone, bool IsPrimary);
 public sealed record WorkerBankDetailDto(Guid Id, string BankName, string BranchCode, string AccountNumber, string AccountName, string PaymentMethod, string? MobileMoneyNumber, bool IsPrimary);
@@ -140,7 +142,7 @@ public sealed record SalaryStructureCreateRequest(string Code, string Name, List
 public sealed record SalaryStructureUpdateRequest(string? Name = null, bool? IsActive = null,
     List<SalaryStructureItemUpsert>? Items = null);
 
-public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId);
+public sealed record PayrollRunCreate(Guid PayPeriodId, Guid PayGroupId, bool IsHistorical = false, string? HistoricalReason = null);
 public sealed record PayrollRunUpdate(Guid PayPeriodId, Guid PayGroupId, string? ApprovalNote = null);
 public sealed record PayrollRunPreflightDto(Guid PayPeriodId, Guid PayGroupId, Guid? LocationId,
     bool Ready, int IncludedWorkerCount, int WarningCount, List<PayrollRunPreflightCheckDto> Checks);
@@ -178,7 +180,8 @@ public sealed record PayrollRunDto(Guid Id, string Status, string PeriodLabel, i
     string? PaymentApprovedBySubjectId = null, string? PaymentReleasedBySubjectId = null,
     string? ReconciliationReference = null,
     decimal? ReconciledAmount = null, DateTimeOffset? ReconciledAt = null, Guid? LocationId = null,
-    Guid? PayPeriodId = null, Guid? PayGroupId = null, string? ApprovalNote = null);
+    Guid? PayPeriodId = null, Guid? PayGroupId = null, string? ApprovalNote = null,
+    bool IsHistorical = false, string? HistoricalReason = null);
 public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName, string EmployeeNo,
     decimal GrossPay, decimal TotalDeductions, decimal NetPay, decimal EmployerCost,
     bool HasException, string? ExceptionReason, List<PayrollLineComponentDto> Components,
@@ -186,7 +189,7 @@ public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName
     string? ExceptionDecidedBySubjectId = null, DateTimeOffset? ExceptionDecidedAt = null,
     bool IsExcluded = false,
     // M41 Gap 2: proration accounting (appended so existing callers stay binary-compatible)
-    int WorkingDays = 0, int PaymentDays = 0, string? ProrationNote = null);
+    int WorkingDays = 0, decimal PaymentDays = 0, string? ProrationNote = null);
 public sealed record PayrollLineComponentDto(string ComponentCode, string ComponentName,
     string ComponentType, decimal Amount, string Explanation, bool IsStatutory);
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,
@@ -384,19 +387,31 @@ public sealed record LeaveTypeCreateRequest(
     decimal MaxConsecutiveDays = 999, bool RequiresEvidence = false, int MinNoticeDays = 0,
     bool AllowsPartialDays = false, int CarryForwardDays = 0,
     int CarryForwardExpiryMonths = 0, bool AllowNegative = false,
-    string EffectiveFrom = null!, string? EffectiveTo = null);
+    string EffectiveFrom = null!, string? EffectiveTo = null,
+    bool AutoAccrueMonthly = false, string? AccrualStartDate = null);
 public sealed record LeaveTypeUpdateRequest(
     string? Name = null, string? Category = null, int? DefaultDaysPerYear = null,
     decimal? MaxConsecutiveDays = null, bool? RequiresEvidence = null,
     int? MinNoticeDays = null, bool? AllowsPartialDays = null, int? CarryForwardDays = null,
     int? CarryForwardExpiryMonths = null, bool? AllowNegative = null,
-    string? EffectiveTo = null, bool? IsActive = null);
+    string? EffectiveTo = null, bool? IsActive = null,
+    bool? AutoAccrueMonthly = null, string? AccrualStartDate = null);
 public sealed record LeaveTypeDtoFull(
     Guid Id, string Code, string Name, string Category, int DefaultDaysPerYear,
     decimal MaxConsecutiveDays, bool RequiresEvidence, int MinNoticeDays,
     bool AllowsPartialDays, int CarryForwardDays, int CarryForwardExpiryMonths,
     bool AllowNegative, string EffectiveFrom, string? EffectiveTo, bool IsActive,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt, bool AutoAccrueMonthly = false, string? AccrualStartDate = null);
+
+// ---------- Contract types ----------
+public sealed record ContractTypeCreateRequest(
+    string Code, string Name, int ProbationDays = 0, int NoticeDays = 30);
+public sealed record ContractTypeUpdateRequest(
+    string? Name = null, int? ProbationDays = null, int? NoticeDays = null,
+    bool? IsActive = null);
+public sealed record ContractTypeDto(
+    Guid Id, string Code, string Name, int ProbationDays, int NoticeDays,
+    bool IsActive, DateTimeOffset CreatedAt);
 
 // ---------- Capabilities ----------
 public sealed record CapabilityUpdateRequest(string? Tier = null, bool? IsEnabled = null, string? Description = null);
@@ -453,6 +468,8 @@ public sealed record ShiftDto(Guid Id, string Code, string Name, string StartTim
 public sealed record ShiftAssignmentRequest(Guid ShiftId, Guid? CalendarId, string EffectiveFrom, string? EffectiveTo = null);
 public sealed record ShiftAssignmentDto(Guid Id, Guid WorkerId, Guid ShiftId, string ShiftName,
     Guid? CalendarId, string? CalendarName, string EffectiveFrom, string? EffectiveTo);
+public sealed record ManualAttendanceRow(Guid WorkerId, string ClockIn, string ClockOut);
+public sealed record ManualAttendanceRequest(string WorkDate, List<ManualAttendanceRow> Rows);
 public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, string? ClockIn, string? ClockOut);
 public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
 public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
@@ -469,7 +486,8 @@ public sealed record TimeAuditEntryDto(Guid Id, string EntityType, string Entity
 public sealed record LeaveAccrualRunRequest(string Period);
 public sealed record LeaveAccrualRunDto(Guid Id, string Period, string Status, int WorkerCount,
     int LedgerEntryCount, decimal TotalDaysAccrued, string RunBySubjectId, DateTimeOffset CreatedAt);
-public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string Reason);
+public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string Reason,
+    string? ForDate = null);
 public sealed record LeaveBalanceAdjustmentDto(Guid Id, Guid WorkerId, string WorkerName,
     string LeaveTypeCode, decimal Days, string Reason, string AdjustedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record EscalationRunDto(int Reviewed, int Escalated, DateTimeOffset RunAt);

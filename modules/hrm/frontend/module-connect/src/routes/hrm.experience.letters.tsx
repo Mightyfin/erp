@@ -25,13 +25,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/hrm/experience/letters")({
   head: () => ({
     meta: [
-      { title: "Letters — Mightyfin HRMS" },
+      { title: "Letters — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "Request an employment letter and see exactly what it will say before it is issued.",
       },
-      { property: "og:title", content: "Letters — Mightyfin HRMS" },
+      { property: "og:title", content: "Letters — Newworldcargo HRM" },
       {
         property: "og:description",
         content:

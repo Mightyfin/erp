@@ -13,9 +13,9 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/configuration/process")({
   head: () => ({
     meta: [
-      { title: "Process design — Mightyfin HRMS" },
+      { title: "Process design — Newworldcargo HRM" },
       { name: "description", content: "Leave policies, shift rules, approval routing, request categories, forms, automation and templates." },
-      { property: "og:title", content: "Process design — Mightyfin HRMS" },
+      { property: "og:title", content: "Process design — Newworldcargo HRM" },
       { property: "og:description", content: "Leave policies, shift rules, approval routing, request categories, forms, automation and templates." },
     ],
   }),

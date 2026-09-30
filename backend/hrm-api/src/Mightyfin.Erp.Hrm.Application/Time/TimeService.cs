@@ -43,9 +43,11 @@ public interface ITimeService
     Task<ShiftDto> UpdateShiftAsync(Guid id, ShiftUpdateRequest request, CancellationToken ct);
     Task<ShiftDto> CloseShiftAsync(Guid id, CancellationToken ct);
     Task<ShiftAssignmentDto> AssignShiftAsync(Guid workerId, ShiftAssignmentRequest request, CancellationToken ct);
+    Task<List<AttendanceRecordDto>> CreateManualAttendanceAsync(ManualAttendanceRequest request, string actorSubjectId, CancellationToken ct);
     Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request, string actorSubjectId, CancellationToken ct);
     Task<AttendanceImportResultDto> ImportOvertimeAsync(OvertimeImportRequest request, string actorSubjectId, CancellationToken ct);
     Task<LeaveAccrualRunDto> RunLeaveAccrualAsync(LeaveAccrualRunRequest request, string actorSubjectId, CancellationToken ct);
+    Task<LeaveAccrualRunDto> RunScheduledLeaveAccrualAsync(LeaveAccrualRunRequest request, CancellationToken ct);
     Task<LeaveBalanceAdjustmentDto> AdjustLeaveBalanceAsync(LeaveBalanceAdjustmentRequest request, string actorSubjectId, CancellationToken ct);
     Task<EscalationRunDto> EscalateOverdueAsync(CancellationToken ct);
     Task<TimeOperationsHistoryDto> GetOperationsHistoryAsync(CancellationToken ct);
@@ -278,11 +280,11 @@ public sealed class TimeServiceImpl(
 
     public async Task<List<AttendanceRecordDto>> ListAttendanceForScopeAsync(string? from, string? to, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "manager", "payroll", "timesheet_operator");
         DateOnly? f = from is null ? null : DateOnly.Parse(from);
         DateOnly? t = to is null ? null : DateOnly.Parse(to);
         var items = await repo.ListAttendanceForScopeAsync(f, t, scope?.LocationId, scope?.OrgUnitId, ct);
-        if (scope is not null && scope.IsConfined && !scope.IsScopedToBranch)
+        if (scope is not null && scope.IsConfined)
             items = items.Where(a => (a.LocationId.HasValue && scope.AllowedLocationIds.Contains(a.LocationId.Value))
                 || (!a.LocationId.HasValue && a.Worker?.LocationId.HasValue == true && scope.AllowedLocationIds.Contains(a.Worker.LocationId.Value))).ToList();
         return items.Select(MapAttendance).ToList();
@@ -490,10 +492,67 @@ public sealed class TimeServiceImpl(
             created.Calendar?.Name, from.ToString(), to?.ToString());
     }
 
-    public async Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request,
+    public async Task<List<AttendanceRecordDto>> CreateManualAttendanceAsync(ManualAttendanceRequest request,
         string actorSubjectId, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        if (!DateOnly.TryParseExact(request.WorkDate, "yyyy-MM-dd", out var date) || date > DateOnly.FromDateTime(DateTime.UtcNow))
+            throw new DomainException("attendance-invalid-date", "Choose a valid work date today or earlier.");
+        if (request.Rows == null || request.Rows.Count is < 1 or > 500)
+            throw new DomainException("attendance-invalid-rows", "Enter between 1 and 500 attendance rows.");
+        if (request.Rows.Select(r => r.WorkerId).Distinct().Count() != request.Rows.Count)
+            throw new DomainException("attendance-duplicate-worker", "Each employee can appear only once for the work date.");
+        var saved = new List<AttendanceRecordDto>();
+        async Task Save(CancellationToken token)
+        {
+            var prepared = new List<AttendanceRecord>();
+            foreach (var row in request.Rows)
+            {
+                var worker = await workers.GetByIdAsync(row.WorkerId, token)
+                    ?? throw new DomainException("worker-not-found", "Employee not found.");
+                if (worker.IsArchived || worker.Status is not ("active" or "on-leave" or "notice")
+                    || (worker.StartDate.HasValue && worker.StartDate > date) || (worker.EndDate.HasValue && worker.EndDate < date))
+                    throw new DomainException("attendance-worker-inactive", $"{worker.EmployeeNo}: employee is not active for this date.");
+                if (scope != null && ((scope.LocationId.HasValue && scope.LocationId != worker.LocationId)
+                    || (scope.OrgUnitId.HasValue && scope.OrgUnitId != worker.OrgUnitId)
+                    || (scope.IsConfined && (!worker.LocationId.HasValue || !scope.AllowedLocationIds.Contains(worker.LocationId.Value)))))
+                    throw new DomainException("forbidden", "Employee is outside your branch access.");
+                if (!TimeOnly.TryParseExact(row.ClockIn, "HH:mm", out var clockIn)
+                    || !TimeOnly.TryParseExact(row.ClockOut, "HH:mm", out var clockOut) || clockIn == clockOut)
+                    throw new DomainException("attendance-invalid-time", $"{worker.EmployeeNo}: enter different clock-in and clock-out times in HH:mm format.");
+                if (await repo.GetAttendanceAsync(worker.Id, date, token) != null)
+                    throw new DomainException("attendance-already-recorded", $"{worker.EmployeeNo}: attendance already exists for {date:yyyy-MM-dd}. Refresh the table or use attendance corrections.");
+                if (payroll != null && await payroll.IsAttendanceDateLockedAsync(worker.Id, date, token))
+                    throw new DomainException("attendance-payroll-locked", $"{worker.EmployeeNo}: payroll inputs for this date are locked. Attendance cannot be added.");
+                // A weekly recalculation can affect adjacent dates. Do not alter locked payroll through a different day.
+                var weekStart = date.AddDays(-(((int)date.DayOfWeek + 6) % 7));
+                var week = await repo.ListAttendanceAsync(worker.Id, weekStart, weekStart.AddDays(6), token);
+                if (payroll != null)
+                    foreach (var existing in week.Where(a => !a.OvertimePayrollRunId.HasValue))
+                        if (await payroll.IsAttendanceDateLockedAsync(worker.Id, existing.WorkDate, token))
+                            throw new DomainException("attendance-payroll-locked", $"{worker.EmployeeNo}: this week contains locked payroll attendance. Contact payroll before changing the week.");
+                prepared.Add(new AttendanceRecord { WorkerId = worker.Id, Worker = worker, LocationId = worker.LocationId,
+                    WorkDate = date, ClockIn = clockIn, ClockOut = clockOut, Source = "manual-entry" });
+            }
+            // Validate the complete batch before writing any rows.
+            foreach (var record in prepared)
+            {
+                await ApplyHoursAsync(record, token);
+                await repo.CreateAttendanceAsync(record, token);
+                await RecalculateWeeklyOvertimeAsync(record.WorkerId, date, token);
+                await WriteTimeAuditAsync("time.attendance", record.Id.ToString("D"), record.WorkerId,
+                    "manual-create", actorSubjectId, null, AttendanceSnapshot(record), token);
+                saved.Add(MapAttendance(record));
+            }
+        }
+        if (unitOfWork == null) await Save(ct); else await unitOfWork.ExecuteAsync(Save, ct);
+        return saved;
+    }
+
+    public async Task<AttendanceImportResultDto> ImportAttendanceAsync(AttendanceImportRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
+        authz.RequireAnyRole("hr_ops", "hr_admin", "timesheet_operator");
         if (string.IsNullOrWhiteSpace(request.FileName) || request.Rows.Count == 0)
             throw new DomainException("attendance-import-empty", "A file name and at least one attendance row are required.");
         if (request.Rows.Count > 10_000)
@@ -512,11 +571,15 @@ public sealed class TimeServiceImpl(
             if (!seen.Add(key)) { errors.Add($"{key}: duplicate row in batch"); continue; }
             var worker = await repo.FindWorkerByEmployeeNoAsync(row.EmployeeNo.Trim(), ct);
             if (worker is null) { errors.Add($"{key}: employee not found"); continue; }
+            if (!AttendanceScope.Allows(worker, scope))
+            { errors.Add($"{key}: employee is outside your attendance scope"); continue; }
             if (!DateOnly.TryParse(row.WorkDate, out var date) ||
                 (row.ClockIn is not null && !TimeOnly.TryParse(row.ClockIn, out _)) ||
                 (row.ClockOut is not null && !TimeOnly.TryParse(row.ClockOut, out _)))
             { errors.Add($"{key}: invalid date or time"); continue; }
             var existing = await repo.GetAttendanceAsync(worker.Id, date, ct);
+            if (existing?.OvertimePayrollRunId.HasValue == true || existing?.OvertimeStatus == "paid")
+            { errors.Add($"{key}: attendance is locked by payroll"); continue; }
             var beforeJson = existing is null ? null : AttendanceSnapshot(existing);
             var record = existing ?? new AttendanceRecord { WorkerId = worker.Id, WorkDate = date };
             record.ClockIn = row.ClockIn is null ? null : TimeOnly.Parse(row.ClockIn);
@@ -637,12 +700,28 @@ public sealed class TimeServiceImpl(
         string actorSubjectId, CancellationToken ct)
     {
         authz.RequireAnyRole("hr_ops", "hr_admin");
+        return await RunLeaveAccrualCoreAsync(request, actorSubjectId, ct);
+    }
+
+    public Task<LeaveAccrualRunDto> RunScheduledLeaveAccrualAsync(LeaveAccrualRunRequest request, CancellationToken ct)
+        => RunLeaveAccrualCoreAsync(request, "system:monthly-leave-accrual", ct);
+
+    private async Task<LeaveAccrualRunDto> RunLeaveAccrualCoreAsync(LeaveAccrualRunRequest request,
+        string actorSubjectId, CancellationToken ct)
+    {
         if (!DateOnly.TryParse($"{request.Period}-01", out var periodDate) || request.Period.Length != 7)
             throw new DomainException("accrual-period-invalid", "Accrual period must use yyyy-MM.");
+        if (periodDate > new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1))
+            throw new DomainException("accrual-period-future", "Future leave periods cannot be accrued.");
         if (await repo.GetAccrualRunAsync(request.Period, ct) is not null)
             throw new DomainException("accrual-period-exists", $"Leave accrual has already run for {request.Period}.");
-        var workersToAccrue = await repo.ListAccrualWorkersAsync(ct);
-        var leaveTypes = await repo.GetLeaveTypesAsync(ct);
+        var leaveTypes = (await repo.GetLeaveTypesAsync(ct)).Where(t => t.AutoAccrueMonthly
+            && t.AccrualStartDate is not null && t.AccrualStartDate.Value <= periodDate && t.EffectiveFrom <= periodDate
+            && (t.EffectiveTo is null || t.EffectiveTo >= periodDate)
+            && t.DefaultDaysPerYear > 0).ToList();
+        if (leaveTypes.Count == 0)
+            throw new DomainException("accrual-no-types", "No monthly-accrual leave types are enabled for this period.");
+        var workersToAccrue = await repo.ListAccrualWorkersAsync(periodDate, ct);
         var run = new LeaveAccrualRun
         {
             Period = request.Period, Status = "processing", WorkerCount = workersToAccrue.Count,
@@ -678,6 +757,10 @@ public sealed class TimeServiceImpl(
         authz.RequireAnyRole("hr_ops", "hr_admin");
         if (request.Days == 0 || string.IsNullOrWhiteSpace(request.Reason))
             throw new DomainException("leave-adjustment-invalid", "A non-zero day adjustment and reason are required.");
+        var forDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (request.ForDate is not null && (!DateOnly.TryParse(request.ForDate, out forDate)
+            || forDate > DateOnly.FromDateTime(DateTime.UtcNow)))
+            throw new DomainException("leave-adjustment-date-invalid", "Adjustment date must be a valid date no later than today.");
         var worker = await workers.GetByIdAsync(request.WorkerId, ct)
             ?? throw new DomainException("worker-not-found", $"Worker {request.WorkerId} does not exist.");
         _ = await repo.GetLeaveTypeAsync(request.LeaveTypeCode, ct)
@@ -693,7 +776,7 @@ public sealed class TimeServiceImpl(
             {
                 WorkerId = worker.Id, LeaveTypeCode = request.LeaveTypeCode, Days = request.Days,
                 Reason = "manual-adjustment", ReferenceId = adjustment.Id, ReferenceType = "adjustment",
-                ForDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                ForDate = forDate,
             }, transactionCt);
             adjustment.LedgerEntryId = ledger.Id;
             adjustment = await repo.CreateAdjustmentAsync(adjustment, transactionCt);

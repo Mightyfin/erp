@@ -11,9 +11,9 @@ import { StatusBadge } from "@/platform/components/StatusBadge";
 export const Route = createFileRoute("/hrm/approvals")({
   head: () => ({
     meta: [
-      { title: "Approvals — Mightyfin HRMS" },
+      { title: "Approvals — Newworldcargo HRM" },
       { name: "description", content: "Everything waiting on your decision, oldest and highest risk first." },
-      { property: "og:title", content: "Approvals — Mightyfin HRMS" },
+      { property: "og:title", content: "Approvals — Newworldcargo HRM" },
       { property: "og:description", content: "Everything waiting on your decision, oldest and highest risk first." },
     ],
   }),

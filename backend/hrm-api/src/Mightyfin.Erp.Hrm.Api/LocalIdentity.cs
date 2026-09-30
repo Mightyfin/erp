@@ -1,3 +1,4 @@
+using Mightyfin.Erp.Hrm.Api;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Mightyfin.Erp.Hrm.Application;
 using Mightyfin.Erp.Hrm.Application.ConfigAndExtras;
+using Mightyfin.Erp.Hrm.Application.Integration;
 using Mightyfin.Erp.Hrm.Domain.Entities;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 
@@ -109,10 +111,11 @@ internal static class LocalIdentityRoutes
         foreach (var prefix in new[] { "/api/hrm/auth", "/api/v1/hrm/auth" })
         {
             var g = app.MapGroup(prefix);
+            g.MapGet("/capabilities", (IConfiguration config) => Results.Ok(AuthCapabilities(config))).AllowAnonymous().WithMetadata(new TimesheetAccess());
             g.MapPost("/login", LoginAsync).AllowAnonymous();
-            g.MapGet("/me", MeAsync).AllowAnonymous();
-            g.MapPost("/logout", LogoutAsync).RequireAuthorization();
-            g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization();
+            g.MapGet("/me", MeAsync).AllowAnonymous().WithMetadata(new TimesheetAccess());
+            g.MapPost("/logout", LogoutAsync).RequireAuthorization().WithMetadata(new TimesheetAccess());
+            g.MapPost("/change-password", ChangePasswordAsync).RequireAuthorization().WithMetadata(new TimesheetAccess());
             g.MapPost("/set-password", CompletePasswordSetupAsync).AllowAnonymous();
             g.MapGet("/users", ListUsersAsync).RequireAuthorization("hrm-admin");
             g.MapGet("/users/{id:guid}", GetUserAsync).RequireAuthorization("hrm-admin");
@@ -121,6 +124,18 @@ internal static class LocalIdentityRoutes
             g.MapPost("/users/{id:guid}/reset-password", ResetPasswordAsync).RequireAuthorization("hrm-admin");
             g.MapPost("/users/{id:guid}/send-password-link", SendPasswordLinkAsync).RequireAuthorization("hrm-admin");
         }
+    }
+
+    internal static object AuthCapabilities(IConfiguration config)
+    {
+        var mode = (config["ERP:AuthMode"] ?? config["HRM:AuthMode"] ?? "local").Trim().ToLowerInvariant();
+        var identityConfigured = !string.IsNullOrWhiteSpace(config["HRM:IdentityBaseUrl"]);
+        return new
+        {
+            mode,
+            localUsersEnabled = mode is "local" or "hybrid",
+            identityConfigured = identityConfigured && (mode is "oidc" or "hybrid"),
+        };
     }
 
     public static string[] ParseRoles(string csv)
@@ -284,14 +299,32 @@ internal static class LocalIdentityRoutes
         return Results.Ok(new { user = UserDto(user), activity, sessions });
     }
 
-    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, HrmDbContext db, IOutboxWriter outbox, IConfiguration config, CancellationToken ct)
+    private static async Task<IResult> CreateUserAsync(
+        CreateUserRequest request,
+        HrmDbContext db,
+        IOutboxWriter outbox,
+        IIdentityProvisioningService identity,
+        IConfiguration config,
+        CancellationToken ct)
     {
         var email = request.Email?.Trim() ?? "";
         var roles = await RequireAssignableRolesAsync(db, request.Roles, ct);
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.DisplayName) || roles.Length == 0)
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || string.IsNullOrWhiteSpace(request.DisplayName) || roles.Length == 0)
             return Results.BadRequest(new { code = "invalid-user", message = "Email, display name, and at least one valid HRM role are required." });
         if (await db.LocalUsers.AnyAsync(x => x.NormalizedEmail == NormalizeEmail(email), ct))
             return Results.Conflict(new { code = "email-taken", message = "An account with that email already exists." });
+
+        var authMode = config["ERP:AuthMode"]?.Trim().ToLowerInvariant();
+        if (authMode is "oidc" or "hybrid")
+        {
+            var directoryMatches = await identity.SearchDirectoryAsync(email, ct);
+            if (directoryMatches.Any(x => x.Email.Equals(email, StringComparison.OrdinalIgnoreCase)))
+                return Results.Conflict(new
+                {
+                    code = "identity-exists",
+                    message = "This person already has an organisation identity. Select that identity instead of creating a local HRMS account."
+                });
+        }
         var user = new LocalUser
         {
             Email = email,
@@ -386,7 +419,7 @@ internal static class LocalIdentityRoutes
         db.LocalCredentialLinks.Add(new LocalCredentialLink { TenantId = user.TenantId, LocalUserId = user.Id, TokenHash = LocalSessionTokens.Hash(token), ExpiresAt = now.AddHours(24) });
         user.MustChangePassword = true;
         await db.SaveChangesAsync(ct);
-        var publicUrl = config["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.newworldcargo.com";
+        var publicUrl = config["HRM:PublicUrl"]?.TrimEnd('/') ?? "https://erp.mightyfinance.co.zm";
         await outbox.EnqueueAsync(HrmEventTypes.AccountAccessLink, user.Id.ToString("D"), new
         {
             email = user.Email,

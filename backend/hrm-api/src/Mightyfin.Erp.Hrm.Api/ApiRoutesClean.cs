@@ -19,6 +19,7 @@ using Mightyfin.Erp.Hrm.Application.Payroll;
 using Mightyfin.Erp.Hrm.Application.Shared;
 using Mightyfin.Erp.Hrm.Application.Performance;
 using Mightyfin.Erp.Hrm.Application.Offboarding;
+using Mightyfin.Erp.Hrm.Application.Integration;
 using Mightyfin.Erp.Hrm.Infrastructure.Data;
 namespace Mightyfin.Erp.Hrm.Api.Routing;
 
@@ -59,6 +60,7 @@ public static class Routes
         RegisterRequisitions(app);
         RegisterBenefits(app);
         RegisterSetup(app);
+        RegisterIdentityAccess(app);
         RegisterShell(app);
     }
 
@@ -199,6 +201,48 @@ public static class Routes
                     "Reset the organisation only if you understand that ALL data will be permanently erased. Send {\"confirm\": \"RESET\"} to proceed.");
             await svc.ResetAsync(ct);
             return Results.Ok(new { reset = true });
+        });
+    }
+
+    /// <summary>
+    /// OIDC realm access administration. Production ERP identities live in
+    /// Keycloak; these routes intentionally do not touch the optional
+    /// standalone local_users tables.
+    /// </summary>
+    public static void RegisterIdentityAccess(WebApplication app)
+    {
+        var group = app.MapGroup($"{HrmPrefix}/identity/users")
+            .RequireAuthorization("hrm-admin");
+
+        group.MapGet("/", async (IIdentityProvisioningService service, CancellationToken ct) =>
+            Results.Ok(await service.ListUsersAsync(ct)));
+
+        group.MapGet("/directory", async (
+            string query,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(new { items = await service.SearchDirectoryAsync(query, ct) }));
+
+        group.MapPost("/", async (
+            IdentityUserInvite request,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(await service.InviteUserAsync(request, ct)));
+
+        group.MapPatch("/{id}", async (
+            string id,
+            IdentityUserUpdate request,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+            Results.Ok(await service.UpdateUserAsync(id, request, ct)));
+
+        group.MapPost("/{id}/send-password-link", async (
+            string id,
+            IIdentityProvisioningService service,
+            CancellationToken ct) =>
+        {
+            await service.SendPasswordResetAsync(id, ct);
+            return Results.Ok(new { sent = true });
         });
     }
     public static void RegisterNotifications(WebApplication app)
@@ -705,7 +749,6 @@ public static class Routes
         // Employee number is auto-issued by the backend when the request leaves it
         // empty — the UI deliberately never asks HR to type one ("issued automatically").
         if (string.IsNullOrWhiteSpace(request.FirstName)) errors.Add("firstName is required");
-        if (string.IsNullOrWhiteSpace(request.LastName)) errors.Add("lastName is required");
         if (request.WorkerType is not ("employee" or "contingent" or "intern" or "volunteer"))
             errors.Add("workerType must be employee|contingent|intern|volunteer");
         return errors;
@@ -757,7 +800,7 @@ public static class Routes
         g.MapGet("/attendance/{workerId:guid}/today", async (Guid workerId, ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
         g.MapGet("/attendance", async ([FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
-            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct)));
+            => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct))).WithMetadata(new TimesheetAccess());
         g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
@@ -782,11 +825,31 @@ public static class Routes
             var request = await ReadBodyAsync<ShiftAssignmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.AssignShiftAsync(workerId, request, ct));
         });
+        var recordedLeave = g.MapGroup("/recorded-leave");
+        recordedLeave.AddEndpointFilter(async (context, next) =>
+        {
+            try { return await next(context); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" })
+            { return Results.Conflict(new { message = "Leave data changed during this save. No changes were saved. Refresh the records and try again." }); }
+        });
+        recordedLeave.MapGet("", async (IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.ListAsync(ct)));
+        recordedLeave.MapPost("/quote", async (RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.QuoteAsync(input, ct)));
+        recordedLeave.MapPost("", async (RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.SaveAsync(null, input, ct)));
+        recordedLeave.MapPut("/{id:guid}", async (Guid id, RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.SaveAsync(id, input, ct)));
+        recordedLeave.MapPost("/{id:guid}/cancel", async (Guid id, TimeDecisionRequest input, IRecordedLeaveService svc, CancellationToken ct) => { await svc.CancelAsync(id, input.Reason ?? "", ct); return Results.NoContent(); });
+        g.MapPost("/attendance/manual", async (ManualAttendanceRequest request, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await svc.CreateManualAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct)); }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505", ConstraintName: "IX_attendance_records_tenant_id_worker_id_work_date" })
+            {
+                return Results.Conflict(new { code = "attendance-already-recorded", message = "Another attendance entry was saved for this employee and date. Refresh the table; no rows from this batch were saved." });
+            }
+        });
         g.MapPost("/attendance/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ImportAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         g.MapPost("/overtime/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<OvertimeImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -928,6 +991,13 @@ public static class Routes
         var g = app.MapGroup($"{HrmPrefix}/payroll").RequireAuthorization();
         g.MapGet("/components", async ([FromQuery] string? type, IPayrollService svc, CancellationToken ct)
             => await svc.ListComponentsAsync(type, ct));
+        g.MapPost("/components", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<SalaryComponentCreateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            var created = await svc.CreateSalaryComponentAsync(request, ct);
+            return Results.Created($"{HrmPrefix}/payroll/components/{created.Id}", created);
+        });
         g.MapGet("/pay-groups", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListPayGroupsAsync(ct));
         g.MapGet("/pay-groups/full", async (IPayrollService svc, CancellationToken ct)
@@ -990,6 +1060,22 @@ public static class Routes
                 CeilingSpecified: body.TryGetProperty("ceiling", out _));
             return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
         });
+        var monthBenefits = g.MapGroup("/periods/{periodId:guid}/benefits/{typeId:guid}");
+        monthBenefits.AddEndpointFilter(async (context, next) =>
+        {
+            try { return await next(context); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+            { return Results.Conflict(new { message = "Benefit assignments changed during this save. No rows were saved. Refresh and try again." }); }
+        });
+        monthBenefits.MapGet("", async (Guid periodId, Guid typeId, Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService svc, CancellationToken ct) => Results.Ok(await svc.GetAsync(periodId,typeId,ct)));
+        monthBenefits.MapPut("", async (Guid periodId, Guid typeId, Mightyfin.Erp.Hrm.Application.Benefits.PeriodBenefitSave input, Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService svc, CancellationToken ct) => { await svc.SaveAsync(periodId,typeId,input,ct); return Results.NoContent(); });
+        g.MapGet("/periods/{periodId:guid}/overtime-amounts", async (Guid periodId, IPeriodOvertimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetAsync(periodId, ct)));
+        g.MapPut("/periods/{periodId:guid}/overtime-amounts/{workerId:guid}", async (Guid periodId, Guid workerId, PeriodOvertimeSave request, IPeriodOvertimeService svc, CancellationToken ct) =>
+        {
+            await svc.SaveAsync(periodId, workerId, request, ct);
+            return Results.NoContent();
+        });
         // M21: salary structure administration
         g.MapGet("/structures", async (IPayrollService svc, CancellationToken ct)
             => await svc.ListStructuresAsync(ct));
@@ -1007,6 +1093,11 @@ public static class Routes
         });
         g.MapGet("/pay-groups/{groupId:guid}/periods", async (Guid groupId, IPayrollService svc, CancellationToken ct)
             => await svc.ListPeriodsAsync(groupId, ct));
+        g.MapPost("/historical-periods", async (HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<HistoricalPayPeriodCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateHistoricalPeriodAsync(request, ct));
+        });
         g.MapGet("/tax-slabs", async ([FromQuery] string taxYear, IPayrollService svc, CancellationToken ct)
             => await svc.ListTaxSlabsAsync(taxYear, ct));
         g.MapGet("/contribution-rules", async (IPayrollService svc, CancellationToken ct)
@@ -1100,6 +1191,11 @@ public static class Routes
         {
             var request = await ReadBodyAsync<PayrollCorrectionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ApplyCorrectionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
+        });
+        g.MapPost("/runs/{id:guid}/lines/{lineId:guid}/released-correction", async (Guid id, Guid lineId, HttpContext http, IPayrollService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<PayrollCorrectionRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.ApplyReleasedCorrectionAsync(id, lineId, request, ct, ResolveSubjectId(http) ?? "system"));
         });
         g.MapPost("/runs/{id:guid}/payments/generate", async (Guid id, HttpContext http, IPayrollService svc, CancellationToken ct) =>
             Results.Ok(await svc.GeneratePaymentFileAsync(id, ct, ResolveSubjectId(http) ?? "system")));
@@ -1198,8 +1294,26 @@ public static class Routes
 
     public static void RegisterConfig(WebApplication app)
     {
+        // Visual identity is needed on the sign-in screen before a session exists.
+        // Mutations remain under the authenticated /admin group below.
+        app.MapGet($"{HrmPrefix}/branding", async (HttpContext http,
+            Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService svc, CancellationToken ct) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(await svc.GetPublicAsync(ct));
+        }).WithMetadata(new TimesheetAccess());
         var g = app.MapGroup($"{HrmPrefix}/admin").RequireAuthorization();
         g.MapGet("/config", async (IConfigService svc, CancellationToken ct) => await svc.GetConfigAsync(ct));
+        g.MapGet("/branding", async (Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService svc, CancellationToken ct) =>
+            Results.Ok(await svc.GetAsync(ct)));
+        g.MapPut("/branding", async (HttpContext http, Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<Mightyfin.Erp.Hrm.Application.Branding.CompanyBrandingUpdateRequest>(http, ct)
+                ?? throw new DomainException("bad-request", "Branding settings are missing or invalid.");
+            return Results.Ok(await svc.UpdateAsync(request, ct));
+        });
+        g.MapPost("/branding/reset", async (Mightyfin.Erp.Hrm.Application.Branding.ICompanyBrandingService svc, CancellationToken ct) =>
+            Results.Ok(await svc.ResetAsync(ct)));
         g.MapGet("/leave-types", async ([FromQuery] bool includeInactive, IConfigService svc, CancellationToken ct) =>
             await svc.ListLeaveTypesAsync(includeInactive, ct));
 
@@ -1332,6 +1446,19 @@ public static class Routes
         {
             var request = await ReadBodyAsync<LeaveTypeUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.UpdateLeaveTypeAsync(id, request, ct));
+        });
+
+        g.MapGet("/contract-types", async ([FromQuery] bool includeInactive, IConfigAdminService svc, CancellationToken ct) =>
+            await svc.ListContractTypesAsync(includeInactive, ct));
+        g.MapPost("/contract-types", async (HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ContractTypeCreateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Created("", await svc.CreateContractTypeAsync(request, ct));
+        });
+        g.MapPatch("/contract-types/{id:guid}", async (Guid id, HttpContext http, IConfigAdminService svc, CancellationToken ct) =>
+        {
+            var request = await ReadBodyAsync<ContractTypeUpdateRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+            return Results.Ok(await svc.UpdateContractTypeAsync(id, request, ct));
         });
 
         g.MapGet("/capabilities", async (IConfigAdminService svc, CancellationToken ct) => await svc.ListCapabilitiesAsync(ct));
@@ -1739,21 +1866,21 @@ public static class Routes
     public static void RegisterImportExport(WebApplication app)
     {
         var g = app.MapGroup($"{HrmPrefix}/import").RequireAuthorization();
-        g.MapGet("/schemas", (IImportExportService svc) => Results.Ok(svc.ListSchemas()));
+        g.MapGet("/schemas", (IImportExportService svc) => Results.Ok(svc.ListSchemas())).WithMetadata(new TimesheetAccess());
         g.MapPost("/{typeKey}/preview", async (string typeKey, HttpContext http,
             IImportExportService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ImportPreviewRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.PreviewAsync(typeKey, request.FileName, request.Mode, request.Rows, ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         g.MapPost("/{typeKey}/apply", async (string typeKey, HttpContext http,
             IImportExportService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<ImportApplyRequest>(http, ct)
                 ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Ok(await svc.ApplyAsync(request.PreviewId, request.RowIndexes, ct));
-        });
+        }).WithMetadata(new TimesheetAccess());
         // M31b: format=xlsx in the filter string switches the output to XLSX.
         g.MapGet("/{typeKey}/export", async (string typeKey, string? filter,
             IImportExportService svc, CancellationToken ct) =>
@@ -1763,7 +1890,7 @@ public static class Routes
             if (isXlsx)
                 return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{typeKey}-export.xlsx");
             return Results.File(bytes, "text/csv; charset=utf-8", $"{typeKey}-export.csv");
-        });
+        }).WithMetadata(new TimesheetAccess());
     }
 
     // ===================== Performance & Goals (M36) =====================
@@ -2044,7 +2171,25 @@ public static void RegisterBenefits(WebApplication app)
     {
         var request = await ReadBodyAsync<Application.Benefits.BenefitClaimCreateRequest>(http, ct)
             ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-        return Results.Ok(await svc.CreateClaimAsync(request, ct));
+        try { return Results.Ok(await svc.CreateClaimAsync(request, ct)); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "Benefit assignments changed during this submission. The claim was not saved. Refresh and try again." }); }
+    });
+    g.MapPut("/claims/{id:guid}", async (Guid id, HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.BenefitClaimUpdateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        try { return Results.Ok(await svc.UpdateClaimAsync(id, request, ct)); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "The claim changed during this save. Refresh and try again." }); }
+    });
+    g.MapDelete("/claims/{id:guid}", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        try { await svc.DeleteClaimAsync(id, ct); return Results.NoContent(); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "The claim changed during deletion. Refresh and try again." }); }
     });
     g.MapPost("/claims/{id:guid}/decide", async (Guid id, HttpContext http,
         Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>

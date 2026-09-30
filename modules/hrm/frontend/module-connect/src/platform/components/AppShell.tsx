@@ -71,7 +71,9 @@ import { ComingSoon } from "./ComingSoon";
 import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
-import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
+import { TimesheetShell } from "@/platform/components/TimesheetWorkspace";
+import { isTimesheetOnly, HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
+import { BrandIdentity } from "@/platform/components/BrandIdentity";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { SignedInBadge } from "@/platform/components/AuthGate";
 import { modules } from "@/platform/modules";
@@ -594,6 +596,12 @@ function countOpen(items: unknown[]): number {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (isTimesheetOnly(user?.roles ?? [])) return <TimesheetShell>{children}</TimesheetShell>;
+  return <FullAppShell>{children}</FullAppShell>;
+}
+
+function FullAppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
   const { worker: myWorker, user } = useAuth();
@@ -809,8 +817,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">
-                <img src="/mightyfin-logo-light.png" alt="Mightyfin HRMS" className="h-8 w-auto max-w-[132px] object-contain" />
-                <span className="hidden font-semibold sm:inline">Mightyfin HRMS</span>
+                <BrandIdentity onDark nameClassName="hidden font-semibold sm:inline" />
                 <ChevronDown className="size-3.5" aria-hidden />
               </Button>
             </DropdownMenuTrigger>

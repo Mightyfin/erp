@@ -34,9 +34,9 @@ const description =
 export const Route = createFileRoute("/hrm/configuration/branch-access")({
   head: () => ({
     meta: [
-      { title: "Branch access — Mightyfin HRMS" },
+      { title: "Branch access — Newworldcargo HRM" },
       { name: "description", content: description },
-      { property: "og:title", content: "Branch access — Mightyfin HRMS" },
+      { property: "og:title", content: "Branch access — Newworldcargo HRM" },
     ],
   }),
   component: () => {
@@ -230,7 +230,7 @@ function AssignDialog({
             </label>
             <Input
               id="ba-user-email"
-              placeholder="e.g. jane@mightyfinance.co.zm"
+              placeholder="e.g. jane@newworldcargo.com"
               value={userEmail}
               onChange={(e) => setUserEmail(e.target.value)}
               autoComplete="off"

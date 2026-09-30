@@ -12,7 +12,7 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/configuration/go-live")({
   head: () => ({
     meta: [
-      { title: "Production readiness — Mightyfin HRMS" },
+      { title: "Production readiness — Newworldcargo HRM" },
       { name: "description", content: "Controlled go-live gates, evidence and formal acceptance." },
     ],
   }),

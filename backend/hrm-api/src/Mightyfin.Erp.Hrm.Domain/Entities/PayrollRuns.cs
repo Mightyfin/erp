@@ -28,6 +28,8 @@ public class PayrollRun : Entity
     public int ExceptionCount { get; set; }
     public string? CalcVersion { get; set; }          // pinned engine + rule version snapshot
     public string? ApprovalNote { get; set; }
+    public bool IsHistorical { get; set; }
+    public string? HistoricalReason { get; set; }
 
     // M27 operational controls. Subject ids are captured at each boundary so
     // segregation of duties is enforceable, rather than implied by status.
@@ -66,7 +68,7 @@ public class PayrollRunLine : Entity
     // PaymentDays = days the worker actually earned pay for (mid-month
     // starters/leavers and approved unpaid leave reduce it).
     public int WorkingDays { get; set; }
-    public int PaymentDays { get; set; }
+    public decimal PaymentDays { get; set; }
     public string? ProrationNote { get; set; }
 
     public bool HasException { get; set; }

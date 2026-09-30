@@ -85,7 +85,7 @@ public sealed class WorkerPrincipal
 public static class HrmStaffAccess
 {
     public static readonly string[] Roles =
-        ["employee", "manager", "hr_ops", "payroll", "finance_approver", "hr_admin", "investigator"];
+        ["employee", "manager", "hr_ops", "payroll", "finance_approver", "hr_admin", "investigator", "timesheet_operator"];
 
     public static bool IsStaff(IEnumerable<Claim> claims) =>
         WorkerPrincipal.FromClaims(claims).IsRole(Roles);

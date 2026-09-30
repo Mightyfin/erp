@@ -43,16 +43,19 @@ import { realApi, useApi } from "@/platform/use-api";
 import { useMock } from "@/platform/use-mock";
 import { useAuth } from "@/platform/auth";
 
+type PayrollRunTab = "overview" | "calculate" | "review" | "approval" | "release";
+const payrollRunTabKey = (runId: string) => `hrm.payroll.run.${runId}.active-tab`;
+
 export const Route = createFileRoute("/hrm/payroll/runs/$id")({
   head: () => ({
     meta: [
-      { title: "Pay run — Mightyfin HRMS" },
+      { title: "Pay run — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "A pay run stage by stage: population, calculation, variances, approval and controlled release.",
       },
-      { property: "og:title", content: "Pay run — Mightyfin HRMS" },
+      { property: "og:title", content: "Pay run — Newworldcargo HRM" },
       {
         property: "og:description",
         content:
@@ -1869,6 +1872,19 @@ function RunDetail() {
   const [calculating, setCalculating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [locking, setLocking] = useState(false);
+  const [activeTab, setActiveTab] = useState<PayrollRunTab>(() => {
+    if (typeof window === "undefined") return "overview";
+    const saved = window.sessionStorage.getItem(payrollRunTabKey(id));
+    return saved === "calculate" || saved === "review" || saved === "approval" || saved === "release" ? saved : "overview";
+  });
+  const selectTab = (tab: PayrollRunTab) => {
+    setActiveTab(tab);
+    window.sessionStorage.setItem(payrollRunTabKey(id), tab);
+  };
+  useEffect(() => {
+    const saved = window.sessionStorage.getItem(payrollRunTabKey(id));
+    setActiveTab(saved === "calculate" || saved === "review" || saved === "approval" || saved === "release" ? saved : "overview");
+  }, [id]);
 
   // `/payroll/runs/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
@@ -1944,6 +1960,7 @@ function RunDetail() {
                   await realApi.lockPayrollRun(run.id);
                 }
                 await realApi.calculatePayrollRun(run.id);
+                selectTab("review");
                 feedback.submitted(
                   "Calculation complete.",
                   "Review pay lines and variances before sending for review.",
@@ -1964,6 +1981,7 @@ function RunDetail() {
               setSubmitting(true);
               try {
                 await realApi.submitPayrollRun(run.id);
+                selectTab("approval");
                 feedback.submitted(
                   "Branch run sent for review.",
                   "Organisation-wide HR can now review and approve this draft.",
@@ -2022,7 +2040,7 @@ function RunDetail() {
                 ]}
                 timeline={<StatusTimeline title="Audit trail" events={run.timeline} />}
               >
-                <Tabs defaultValue="overview" className="space-y-4">
+                <Tabs value={activeTab} onValueChange={(value) => selectTab(value as PayrollRunTab)} className="space-y-4">
                   <div className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/75">
                     <TabsList className="h-auto min-w-max justify-start gap-1">
                       <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -2316,6 +2334,7 @@ function RunDetail() {
                                     reason ||
                                       "Top-admin self-approval override during controlled setup",
                                   );
+                                  selectTab("release");
                                   feedback.submitted(
                                     `${run.period} approved by top admin.`,
                                     "The override reason was recorded in the payroll audit trail.",
@@ -2376,6 +2395,7 @@ function RunDetail() {
                               if (USE_REAL && decision === "approve") {
                                 try {
                                   await realApi.payrollRunApprove(run.id);
+                                  selectTab("release");
                                   feedback.submitted(
                                     `${run.period} approved for ${run.included} employees.`,
                                     run.branchId
@@ -2457,6 +2477,7 @@ function RunDetail() {
                           run={run}
                           readiness={readiness.data}
                           onReleased={async () => {
+                            selectTab("release");
                             await readiness.reload();
                             await state.reload();
                           }}

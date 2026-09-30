@@ -12,8 +12,10 @@ public class Worker : Entity
     public string FullName => $"{FirstName} {LastName}".Trim();
     public string? PreferredName { get; set; }
     public string? Email { get; set; }
+    public string? PersonalEmail { get; set; }
     public string? Phone { get; set; }
     public string? PhotoUrl { get; set; }
+    public string? ProfileDetailsJson { get; set; }
 
     // Statutory / Zambian identity pack
     public string? Nrc { get; set; }           // national registration card
@@ -27,6 +29,7 @@ public class Worker : Entity
     // Identity correlation (optional — contingent workers have none)
     public string? SubjectId { get; set; }
     public string WorkerType { get; set; } = "employee"; // employee | contingent | intern | volunteer
+    public string? ContractType { get; set; } // current assignment contract, denormalized for employee lists
     public string Status { get; set; } = "pre-hire";     // pre-hire | active | on-leave | notice | terminated
 
     // Current assignment (denormalized read view; source of truth is Employment/Assignment)
@@ -116,6 +119,17 @@ public class Assignment : Entity, IEffectiveDated
     public DateOnly EffectiveFrom { get; set; }
     public DateOnly? EffectiveTo { get; set; }
     public string Status { get; set; } = "current"; // proposed | current | future | ended
+}
+
+/// <summary>Tenant-owned contract policy used by employment assignments.
+/// Archiving preserves historical assignments while preventing new use.</summary>
+public class ContractType : Entity
+{
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public int ProbationDays { get; set; }
+    public int NoticeDays { get; set; } = 30;
+    public bool IsActive { get; set; } = true;
 }
 
 /// <summary>HRM-017: Effective-dated movements (transfer, promotion, demotion,

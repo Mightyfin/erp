@@ -37,13 +37,13 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/people/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy and data retention — Mightyfin HRMS" },
+      { title: "Privacy and data retention — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "What personal data is held, why, how long each record type is kept, and how to exercise your rights over it.",
       },
-      { property: "og:title", content: "Privacy and data retention — Mightyfin HRMS" },
+      { property: "og:title", content: "Privacy and data retention — Newworldcargo HRM" },
       {
         property: "og:description",
         content:

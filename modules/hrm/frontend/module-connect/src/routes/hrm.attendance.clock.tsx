@@ -1,3 +1,4 @@
+import { LiveAttendanceClock } from "@/platform/components/LiveAttendanceClock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,13 +30,13 @@ import { useMock } from "@/platform/use-mock";
 export const Route = createFileRoute("/hrm/attendance/clock")({
   head: () => ({
     meta: [
-      { title: "Clock in and out — Mightyfin HRMS" },
+      { title: "Clock in and out — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "Clock in, take your break and clock out, with today's punches, how each one was captured, and any day that still needs a correction.",
       },
-      { property: "og:title", content: "Clock in and out — Mightyfin HRMS" },
+      { property: "og:title", content: "Clock in and out — Newworldcargo HRM" },
       {
         property: "og:description",
         content:
@@ -43,7 +44,7 @@ export const Route = createFileRoute("/hrm/attendance/clock")({
       },
     ],
   }),
-  component: ClockPage,
+  component: import.meta.env.VITE_USE_REAL_API === "true" ? LiveAttendanceClock : ClockPage,
 });
 
 const ME = "Chanda Mwansa-Chileshe";

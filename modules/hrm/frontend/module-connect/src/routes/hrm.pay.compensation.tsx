@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Info, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,17 +37,17 @@ import {
 export const Route = createFileRoute("/hrm/pay/compensation")({
   head: () => ({
     meta: [
-      { title: "Compensation and benefits — Mightyfin HRMS" },
+      { title: "Compensation — Newworldcargo HRM" },
       {
         name: "description",
         content:
-          "Per-worker salary structures and component amounts driving the next pay run. Benefits and review cycles are not yet administered here.",
+          "Per-worker salary structures and a live overview of configured benefits and claims.",
       },
-      { property: "og:title", content: "Compensation and benefits — Mightyfin HRMS" },
+      { property: "og:title", content: "Compensation — Newworldcargo HRM" },
       {
         property: "og:description",
         content:
-          "Per-worker salary structures and component amounts driving the next pay run. Benefits and review cycles are not yet administered here.",
+          "Per-worker salary structures and a live overview of configured benefits and claims.",
       },
     ],
   }),
@@ -60,6 +60,7 @@ const COMPENSATION_PAGE_SIZE = 25;
 type Raw = Record<string, unknown>;
 type CompensationState = {
   workers: Raw[];
+  activeWorkers: Raw[];
   totalCount: number;
   page: number;
   pageSize: number;
@@ -85,9 +86,10 @@ function CompaRatio({ value }: { value: number }) {
 /* ------------------------------------------------------------------ */
 
 async function loadCompensation(params: Record<string, unknown> = {}): Promise<CompensationState> {
-  if (!USE_REAL) return { workers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
-  const [workers, profiles, components, groups, locations] = await Promise.all([
+  if (!USE_REAL) return { workers: [], activeWorkers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
+  const [workers, activeWorkers, profiles, components, groups, locations] = await Promise.all([
     realApi.employees(params),
+    loadActiveWorkers(),
     realApi.payrollProfiles(),
     realApi.payrollComponents(),
     realApi.payrollPayGroups(),
@@ -96,6 +98,7 @@ async function loadCompensation(params: Record<string, unknown> = {}): Promise<C
   const workerItems = Array.isArray(workers) ? (workers as Raw[]) : ((workers?.items ?? []) as Raw[]);
   return {
     workers: workerItems,
+    activeWorkers,
     totalCount: Array.isArray(workers) ? workerItems.length : Number(workers?.totalCount ?? workerItems.length),
     page: Array.isArray(workers) ? 1 : Number((workers as { page?: number })?.page ?? params.page ?? 1),
     pageSize: Array.isArray(workers) ? workerItems.length : Number((workers as { pageSize?: number })?.pageSize ?? params.pageSize ?? COMPENSATION_PAGE_SIZE),
@@ -104,6 +107,17 @@ async function loadCompensation(params: Record<string, unknown> = {}): Promise<C
     groups: Array.isArray(groups) ? (groups as Raw[]) : [],
     locations: Array.isArray(locations) ? (locations as Raw[]) : [],
   };
+}
+
+async function loadActiveWorkers(): Promise<Raw[]> {
+  const all: Raw[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await realApi.employees({ status: "active", page, pageSize: 200 });
+    const items = Array.isArray(response) ? response as Raw[] : (response.items ?? []) as Raw[];
+    all.push(...items);
+    if (Array.isArray(response) || items.length === 0 || all.length >= Number(response.totalCount ?? all.length)) break;
+  }
+  return all;
 }
 
 function WorkerPayDialog({
@@ -228,7 +242,7 @@ function WorkerPayDialog({
         if (o && !initializedRef.current) initializedRef.current = true;
       }}
     >
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[90dvh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{workerName}</DialogTitle>
           <DialogDescription>
@@ -300,7 +314,7 @@ function WorkerPayDialog({
                 {(resolvedGroups.length ? resolvedGroups : state.groups).map((g) => (
                   <SelectItem key={String(g.id)} value={String(g.id)}>
                     {String(g.name ?? g.code)}
-                    {Boolean(g.isDefault) ? " — default" : ""}
+                    {g.isDefault ? " — default" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -455,7 +469,6 @@ function WorkerPayDialog({
 function CompensationPage() {
   const userRoles = new Set(useAuth().user?.roles ?? []);
   const canAct = userRoles.has("hr_admin") || userRoles.has("hr_ops") || userRoles.has("payroll");
-  const [tab, setTab] = useState<"pay" | "benefits" | "equity">("pay");
   const [editingWorker, setEditingWorker] = useState<Raw | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -488,7 +501,7 @@ function CompensationPage() {
     return demoEntityTree;
   }, []);
 
-  const data = state.data ?? { workers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
+  const data = state.data ?? { workers: [], activeWorkers: [], totalCount: 0, page: 1, pageSize: COMPENSATION_PAGE_SIZE, profiles: [], components: [], groups: [], locations: [] };
   const entityUnits = flattenEntityTree(treeState.data ?? []);
   const entityTreeOptions = treeToSelectOptions(treeState.data ?? []).map((o) => ({
     ...o,
@@ -505,9 +518,9 @@ function CompensationPage() {
 
   const profileFor = (w: Raw) => data.profiles.find((p) => String(p.workerId) === String(w.id));
   const basicComponent = data.components.find((c) => String(c.code ?? "").toLowerCase() === "basic");
-  const activeWorkerCount = data.workers.length;
-  const missingProfile = data.workers.filter((w) => !profileFor(w));
-  const profilesMissingBasic = data.workers.filter((w) => {
+  const activeWorkerCount = data.activeWorkers.length;
+  const missingProfile = data.activeWorkers.filter((w) => !profileFor(w));
+  const profilesMissingBasic = data.activeWorkers.filter((w) => {
     const profile = profileFor(w);
     if (!profile) return false;
     const values = (profile.values as Raw[] | undefined) ?? [];
@@ -535,16 +548,17 @@ function CompensationPage() {
     <AppShell>
       <PageHeader
         eyebrow="Payroll"
-        title="Compensation and benefits"
-        description="Pay is restricted data. This view manages the per-worker salary structures the next run calculates from; benefits and review cycles are not yet administered here."
+        title="Compensation"
+        description="Manage the pay profiles and component amounts used by payroll. Benefit types, claims and allowances are managed on the Benefits page."
         meta={
           <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
             <ShieldAlert className="size-3.5" aria-hidden />
-            Restricted — visible to Payroll and HR admin only
+            Restricted — visible to Payroll and HR only
           </span>
         }
       />
-      <div className="-mt-4 mb-4 flex justify-end">
+      <div className="-mt-4 mb-4 flex justify-end gap-2">
+        <Button variant="outline" asChild><Link to="/hrm/benefits">Open Benefits</Link></Button>
         <ImportDialog
           typeKey="payroll-profiles"
           onDone={() => void state.reload()}
@@ -562,372 +576,319 @@ function CompensationPage() {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Compensation views">
-        {([
-          ["pay", "Pay and bands"],
-          ["benefits", "Benefits and insurance"],
-          ["equity", "Review cycles and pay gap"],
-        ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-              tab === id
-                ? "border-primary bg-primary-soft font-medium text-primary"
-                : "bg-surface text-muted-foreground hover:border-border-strong"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted-foreground">Pay profiles ready</p>
+          <p className="mt-1 text-2xl font-semibold tabular">{readyWorkerCount}/{activeWorkerCount}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Active workers with a usable pay profile. Release checks are separate.</p>
+        </div>
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted-foreground">Missing profile</p>
+          <p className={`mt-1 text-2xl font-semibold tabular ${missingProfile.length ? "text-warning" : ""}`}>
+            {missingProfile.length}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">These workers will not calculate correctly.</p>
+        </div>
+        <div className="rounded-lg border bg-surface p-4">
+          <p className="text-xs text-muted-foreground">Missing basic pay</p>
+          <p className={`mt-1 text-2xl font-semibold tabular ${profilesMissingBasic.length ? "text-warning" : ""}`}>
+            {profilesMissingBasic.length}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">Basic pay is mandatory before running payroll.</p>
+        </div>
       </div>
 
-      {tab === "pay" ? (
-        <>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border bg-surface p-4">
-              <p className="text-xs text-muted-foreground">Ready for payroll</p>
-              <p className="mt-1 text-2xl font-semibold tabular">{readyWorkerCount}/{activeWorkerCount}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Active workers with a usable pay profile.</p>
-            </div>
-            <div className="rounded-lg border bg-surface p-4">
-              <p className="text-xs text-muted-foreground">Missing profile</p>
-              <p className={`mt-1 text-2xl font-semibold tabular ${missingProfile.length ? "text-warning" : ""}`}>
-                {missingProfile.length}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">These workers will not calculate correctly.</p>
-            </div>
-            <div className="rounded-lg border bg-surface p-4">
-              <p className="text-xs text-muted-foreground">Missing basic pay</p>
-              <p className={`mt-1 text-2xl font-semibold tabular ${profilesMissingBasic.length ? "text-warning" : ""}`}>
-                {profilesMissingBasic.length}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">Basic pay is mandatory before running payroll.</p>
-            </div>
-          </div>
+      <div className="mt-4 rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
+        <p className="flex items-start gap-2 font-medium">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          The salary structure is what a run posts to
+        </p>
+        <p className="mt-1.5 pl-6">
+          Every active worker should carry an open pay profile: a pay group, an effective date
+          and component amounts. Basic pay is mandatory; statutory components (PAYE, NAPSA,
+          NHIMA) compute themselves from basic at run time, so they never need re-typing here.
+        </p>
+      </div>
 
-          <div className="mt-4 rounded-lg border border-info/30 bg-info-soft p-4 text-sm text-info">
-            <p className="flex items-start gap-2 font-medium">
-              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-              The salary structure is what a run posts to
-            </p>
-            <p className="mt-1.5 pl-6">
-              Every active worker should carry an open pay profile: a pay group, an effective date
-              and component amounts. Basic pay is mandatory; statutory components (PAYE, NAPSA,
-              NHIMA) compute themselves from basic at run time, so they never need re-typing here.
-            </p>
-          </div>
+      <div className="mt-4 grid gap-3 rounded-lg border bg-surface p-3 md:grid-cols-[minmax(16rem,1.5fr)_repeat(3,minmax(9rem,1fr))] xl:grid-cols-[minmax(16rem,1.5fr)_repeat(7,minmax(9rem,1fr))]">
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="cp-search" className="sr-only">
+            Search workers
+          </Label>
+          <Input
+            id="cp-search"
+            placeholder="Search by employee number, name or job title"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <Select value={statusFilter || "all"} onValueChange={resetPagedFilter(setStatusFilter)}>
+          <SelectTrigger aria-label="Status">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Status: all</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="on-leave">On leave</SelectItem>
+            <SelectItem value="notice">Notice period</SelectItem>
+            <SelectItem value="pre-hire">Pre-hire</SelectItem>
+            <SelectItem value="terminated">Terminated</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter || "all"} onValueChange={resetPagedFilter(setTypeFilter)}>
+          <SelectTrigger aria-label="Employment type">
+            <SelectValue placeholder="Employment type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Type: all</SelectItem>
+            <SelectItem value="employee">Permanent</SelectItem>
+            <SelectItem value="contingent">Contractor</SelectItem>
+            <SelectItem value="intern">Intern</SelectItem>
+            <SelectItem value="volunteer">Volunteer</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={locationFilter || "all"} onValueChange={resetPagedFilter(setLocationFilter)}>
+          <SelectTrigger aria-label="Branch">
+            <SelectValue placeholder="Branch" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Branch: all</SelectItem>
+            {data.locations.map((location) => (
+              <SelectItem key={String(location.id)} value={String(location.id)}>
+                {String(location.name ?? location.code)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={orgFilter || "all"} onValueChange={resetPagedFilter(setOrgFilter)}>
+          <SelectTrigger aria-label="Entity and department">
+            <SelectValue placeholder="Entity / department" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Entity & branch: all</SelectItem>
+            {entityTreeOptions.map((o) => (
+              <SelectItem
+                key={o.value}
+                value={o.value}
+                className={o.entity ? "font-semibold text-primary" : undefined}
+              >
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={gradeFilter || "all"} onValueChange={resetPagedFilter(setGradeFilter)}>
+          <SelectTrigger aria-label="Grade">
+            <SelectValue placeholder="Grade" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Grade: all</SelectItem>
+            {gradeOptions.map((g) => (
+              <SelectItem key={g} value={g}>
+                {g}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={payGroupFilter || "all"} onValueChange={resetPagedFilter(setPayGroupFilter)}>
+          <SelectTrigger aria-label="Pay group">
+            <SelectValue placeholder="Pay group" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Pay group: all</SelectItem>
+            {data.groups.map((g) => (
+              <SelectItem key={String(g.id)} value={String(g.id)}>
+                {String(g.name ?? g.code)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={profileFilter || "all"} onValueChange={resetPagedFilter(setProfileFilter)}>
+          <SelectTrigger aria-label="Pay profile">
+            <SelectValue placeholder="Pay profile" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Profile: all</SelectItem>
+            <SelectItem value="assigned">Assigned</SelectItem>
+            <SelectItem value="missing">Missing</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
-          <div className="mt-4 grid gap-3 rounded-lg border bg-surface p-3 md:grid-cols-[minmax(16rem,1.5fr)_repeat(3,minmax(9rem,1fr))] xl:grid-cols-[minmax(16rem,1.5fr)_repeat(7,minmax(9rem,1fr))]">
-            <div className="min-w-0 flex-1">
-              <Label htmlFor="cp-search" className="sr-only">
-                Search workers
-              </Label>
-              <Input
-                id="cp-search"
-                placeholder="Search by employee number, name or job title"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-            <Select value={statusFilter || "all"} onValueChange={resetPagedFilter(setStatusFilter)}>
-              <SelectTrigger aria-label="Status">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Status: all</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="on-leave">On leave</SelectItem>
-                <SelectItem value="notice">Notice period</SelectItem>
-                <SelectItem value="pre-hire">Pre-hire</SelectItem>
-                <SelectItem value="terminated">Terminated</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter || "all"} onValueChange={resetPagedFilter(setTypeFilter)}>
-              <SelectTrigger aria-label="Employment type">
-                <SelectValue placeholder="Employment type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Type: all</SelectItem>
-                <SelectItem value="employee">Permanent</SelectItem>
-                <SelectItem value="contingent">Contractor</SelectItem>
-                <SelectItem value="intern">Intern</SelectItem>
-                <SelectItem value="volunteer">Volunteer</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={locationFilter || "all"} onValueChange={resetPagedFilter(setLocationFilter)}>
-              <SelectTrigger aria-label="Branch">
-                <SelectValue placeholder="Branch" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Branch: all</SelectItem>
-                {data.locations.map((location) => (
-                  <SelectItem key={String(location.id)} value={String(location.id)}>
-                    {String(location.name ?? location.code)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={orgFilter || "all"} onValueChange={resetPagedFilter(setOrgFilter)}>
-              <SelectTrigger aria-label="Entity and department">
-                <SelectValue placeholder="Entity / department" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Entity & branch: all</SelectItem>
-                {entityTreeOptions.map((o) => (
-                  <SelectItem
-                    key={o.value}
-                    value={o.value}
-                    className={o.entity ? "font-semibold text-primary" : undefined}
-                  >
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={gradeFilter || "all"} onValueChange={resetPagedFilter(setGradeFilter)}>
-              <SelectTrigger aria-label="Grade">
-                <SelectValue placeholder="Grade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Grade: all</SelectItem>
-                {gradeOptions.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={payGroupFilter || "all"} onValueChange={resetPagedFilter(setPayGroupFilter)}>
-              <SelectTrigger aria-label="Pay group">
-                <SelectValue placeholder="Pay group" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Pay group: all</SelectItem>
-                {data.groups.map((g) => (
-                  <SelectItem key={String(g.id)} value={String(g.id)}>
-                    {String(g.name ?? g.code)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={profileFilter || "all"} onValueChange={resetPagedFilter(setProfileFilter)}>
-              <SelectTrigger aria-label="Pay profile">
-                <SelectValue placeholder="Pay profile" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Profile: all</SelectItem>
-                <SelectItem value="assigned">Assigned</SelectItem>
-                <SelectItem value="missing">Missing</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Async state={state} rows={5}>
-            {(d) => (
-              <div className="mt-4 overflow-x-auto rounded-lg border bg-surface">
-                <table className="w-full min-w-[56rem] text-left text-sm">
-                  <caption className="sr-only">Workers and their open pay profiles</caption>
-                  <thead className="border-b bg-surface-muted">
-                    <tr>
-                      {["Employee", "No.", "Department", "Branch", "Job title", "Pay group", "Effective from", "Pay basis", "Overtime", "Action"].map((h) => (
-                        <th
-                          key={h}
-                          scope="col"
-                          className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                        >
-                          {h}
-                        </th>
-                      ))}
+      <Async state={state} rows={5}>
+        {(d) => (
+          <div className="mt-4 overflow-x-auto rounded-lg border bg-surface">
+            <table className="w-full min-w-[56rem] text-left text-sm">
+              <caption className="sr-only">Workers and their open pay profiles</caption>
+              <thead className="border-b bg-surface-muted">
+                <tr>
+                  {["Employee", "No.", "Department", "Branch", "Job title", "Pay group", "Effective from", "Pay basis", "Overtime", "Action"].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {visibleWorkers.map((w) => {
+                  const profile = profileFor(w);
+                  const group = data.groups.find(
+                    (g) => String(g.id) === (profile ? String(profile.payGroupId) : ""),
+                  );
+                  return (
+                    <tr key={String(w.id)} className="hover:bg-surface-muted">
+                      <td className="max-w-52 truncate px-3 py-3 font-medium">{String(w.fullName ?? "")}</td>
+                      <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{String(w.employeeNo ?? "")}</td>
+                      <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.orgUnitName ?? "—")}</td>
+                      <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.locationName ?? "—")}</td>
+                      <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.jobTitle ?? "—")}</td>
+                      <td className="px-3 py-3">{profile ? String(group?.name ?? group?.code ?? "—") : <span className="text-warning">Not assigned</span>}</td>
+                      <td className="px-3 py-3 font-mono text-xs">{profile ? String(profile.effectiveFrom) : "—"}</td>
+                      <td className="px-3 py-3">
+                        {profile && canAct ? (
+                          <Select
+                            value={String(profile.payBasis ?? "salary").toLowerCase() === "timesheet" ? "timesheet" : "salary"}
+                          onValueChange={async (next: string) => {
+                              const basis = next === "timesheet" ? "timesheet" : "salary";
+                              try {
+                                await realApi.setPayBasis(String(w.id), basis);
+                                await state.reload();
+                                feedback.saved(
+                                  basis === "timesheet"
+                                    ? "Timesheet flag set — salary-basis pay still applies until timesheet pay ships."
+                                    : "Pay basis is salary — standard per-component calculation.",
+                                );
+                              } catch {
+                                feedback.blocked("Pay basis was not updated.", "The HRM API rejected the change.");
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="salary">Salary</SelectItem>
+                              <SelectItem value="timesheet">Timesheet — not live</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{profile ? String(profile.payBasis ?? "salary") : "—"}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        {profile && canAct ? (
+                          <Select
+                            value={String(profile.overtimeCategory ?? "ordinary").toLowerCase() === "watchperson-guard" ? "watchperson-guard" : "ordinary"}
+                            onValueChange={async (next: string) => {
+                              const category = next === "watchperson-guard" ? "watchperson-guard" : "ordinary";
+                              try {
+                                await realApi.setOvertimePolicy(String(w.id), {
+                                  overtimeCategory: category,
+                                  weeklyOvertimeThresholdHours: category === "watchperson-guard" ? 60 : 48,
+                                  monthlyOvertimeDivisor: category === "watchperson-guard" ? 240 : 208,
+                                });
+                                await state.reload();
+                                feedback.saved(
+                                  category === "watchperson-guard"
+                                    ? "Overtime policy set to watchperson/guard: 60 weekly hours, basic divided by 240."
+                                    : "Overtime policy set to ordinary: 48 weekly hours, basic divided by 208.",
+                                );
+                              } catch {
+                                feedback.blocked("Overtime policy was not updated.", "The HRM API rejected the change.");
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-40">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ordinary">Ordinary</SelectItem>
+                              <SelectItem value="watchperson-guard">Watchperson / guard</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {profile ? String(profile.overtimeCategory ?? "ordinary") : "—"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {canAct ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => setEditingWorker(w)}
+                          >
+                            <Pencil className="size-3.5" aria-hidden />
+                            Edit pay
+                            <span className="sr-only"> pay structure for {String(w.fullName ?? "")}</span>
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Read-only</span>
+                        )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {visibleWorkers.map((w) => {
-                      const profile = profileFor(w);
-                      const group = data.groups.find(
-                        (g) => String(g.id) === (profile ? String(profile.payGroupId) : ""),
-                      );
-                      return (
-                        <tr key={String(w.id)} className="hover:bg-surface-muted">
-                          <td className="max-w-52 truncate px-3 py-3 font-medium">{String(w.fullName ?? "")}</td>
-                          <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{String(w.employeeNo ?? "")}</td>
-                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.orgUnitName ?? "—")}</td>
-                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.locationName ?? "—")}</td>
-                          <td className="max-w-48 truncate px-3 py-3 text-muted-foreground">{String(w.jobTitle ?? "—")}</td>
-                          <td className="px-3 py-3">{profile ? String(group?.name ?? group?.code ?? "—") : <span className="text-warning">Not assigned</span>}</td>
-                          <td className="px-3 py-3 font-mono text-xs">{profile ? String(profile.effectiveFrom) : "—"}</td>
-                          <td className="px-3 py-3">
-                            {profile && canAct ? (
-                              <Select
-                                value={String(profile.payBasis ?? "salary").toLowerCase() === "timesheet" ? "timesheet" : "salary"}
-                              onValueChange={async (next: string) => {
-                                  const basis = next === "timesheet" ? "timesheet" : "salary";
-                                  try {
-                                    await realApi.setPayBasis(String(w.id), basis);
-                                    await state.reload();
-                                    feedback.saved(
-                                      basis === "timesheet"
-                                        ? "Timesheet flag set — salary-basis pay still applies until timesheet pay ships."
-                                        : "Pay basis is salary — standard per-component calculation.",
-                                    );
-                                  } catch {
-                                    feedback.error("Could not update the pay basis.");
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-8 w-32">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="salary">Salary</SelectItem>
-                                  <SelectItem value="timesheet">Timesheet — not live</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">{profile ? String(profile.payBasis ?? "salary") : "—"}</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            {profile && canAct ? (
-                              <Select
-                                value={String(profile.overtimeCategory ?? "ordinary").toLowerCase() === "watchperson-guard" ? "watchperson-guard" : "ordinary"}
-                                onValueChange={async (next: string) => {
-                                  const category = next === "watchperson-guard" ? "watchperson-guard" : "ordinary";
-                                  try {
-                                    await realApi.setOvertimePolicy(String(w.id), {
-                                      overtimeCategory: category,
-                                      weeklyOvertimeThresholdHours: category === "watchperson-guard" ? 60 : 48,
-                                      monthlyOvertimeDivisor: category === "watchperson-guard" ? 240 : 208,
-                                    });
-                                    await state.reload();
-                                    feedback.saved(
-                                      category === "watchperson-guard"
-                                        ? "Overtime policy set to watchperson/guard: 60 weekly hours, basic divided by 240."
-                                        : "Overtime policy set to ordinary: 48 weekly hours, basic divided by 208.",
-                                    );
-                                  } catch {
-                                    feedback.error("Could not update the overtime policy.");
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-8 w-40">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="ordinary">Ordinary</SelectItem>
-                                  <SelectItem value="watchperson-guard">Watchperson / guard</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                {profile ? String(profile.overtimeCategory ?? "ordinary") : "—"}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-right">
-                            {canAct ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8"
-                                onClick={() => setEditingWorker(w)}
-                              >
-                                <Pencil className="size-3.5" aria-hidden />
-                                Edit pay
-                                <span className="sr-only"> pay structure for {String(w.fullName ?? "")}</span>
-                              </Button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Read-only</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {!visibleWorkers.length ? (
-                      <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                          No workers match{search ? ` "${search}"` : ""}.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Async>
-          {USE_REAL ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
-              <span className="text-muted-foreground">
-                Showing {pageStart}-{pageEnd} of {data.totalCount} workers
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  <ChevronLeft className="mr-1 size-4" aria-hidden />
-                  Previous
-                </Button>
-                <span className="min-w-24 text-center text-xs text-muted-foreground">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  Next
-                  <ChevronRight className="ml-1 size-4" aria-hidden />
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            Exact amounts stay off the screen by default — opening the edit dialog shows them and
-            the change lands in the profile, never on a colleague's file they are not authorised to
-            see.
-          </p>
-        </>
-      ) : null}
-
-      {tab === "benefits" ? (
-        <section aria-label="Benefits and insurance" className="mt-4">
-          <div className="rounded-lg border border-dashed p-10 text-center">
-            <p className="text-sm font-medium">Benefits and insurance — coming in a later milestone</p>
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              The backend has no benefit-administration surface yet. When it exists this tab will
-              carry NAPSA/NHIMA enrolment, medical cover and insurance claims with the same
-              restricted visibility as pay.
-            </p>
+                  );
+                })}
+                {!visibleWorkers.length ? (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      No workers match{search ? ` "${search}"` : ""}.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
           </div>
-        </section>
-      ) : null}
-
-      {tab === "equity" ? (
-        <section aria-label="Review cycles and pay gap" className="mt-4">
-          <div className="rounded-lg border border-dashed p-10 text-center">
-            <p className="text-sm font-medium">Review cycles and pay-gap reporting — coming in a later milestone</p>
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              Compensation review cycles, budgets and pay-gap analytics need grade bands and
-              review data the backend does not hold yet. They will appear here once that data
-              model ships.
-            </p>
+        )}
+      </Async>
+      {USE_REAL ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Showing {pageStart}-{pageEnd} of {data.totalCount} workers
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="mr-1 size-4" aria-hidden />
+              Previous
+            </Button>
+            <span className="min-w-24 text-center text-xs text-muted-foreground">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              Next
+              <ChevronRight className="ml-1 size-4" aria-hidden />
+            </Button>
           </div>
-        </section>
+        </div>
       ) : null}
 
+      <p className="mt-3 flex gap-2 text-xs text-muted-foreground">
+        <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        Exact amounts stay off the screen by default — opening the edit dialog shows them and
+        the change lands in the profile, never on a colleague's file they are not authorised to
+        see.
+      </p>
       <WorkerPayDialog
         worker={editingWorker}
         state={state.data ?? { profiles: [], components: [], groups: [] }}

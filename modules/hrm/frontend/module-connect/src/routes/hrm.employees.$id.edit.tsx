@@ -26,9 +26,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/employees/$id/edit")({
   head: () => ({
     meta: [
-      { title: "Edit employee — Mightyfin HRMS" },
+      { title: "Edit employee — HRM" },
       { name: "description", content: "Edit an employee record: personal details, job and grade, where they work, and the pay details payroll relies on." },
-      { property: "og:title", content: "Edit employee — Mightyfin HRMS" },
+      { property: "og:title", content: "Edit employee — HRM" },
       { property: "og:description", content: "Edit personal details, job, location and pay details on an employee record." },
     ],
   }),
@@ -46,6 +46,10 @@ const PAYMENT_METHODS = ["Bank transfer", "Mobile money", "Cash", "Paid through 
 const BLOOD_GROUPS = ["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"];
 const RELATIONSHIPS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Other"];
 const SHIFTS = ["Day shift, Monday to Friday", "Rotating shift", "Night shift", "Site roster — 14 on 7 off"];
+const FALLBACK_CONTRACT_TYPES = ["permanent", "fixed-term", "part-time", "casual", "internship", "apprenticeship"];
+
+type AssignmentRecord = { id: string; contractType?: string; status?: string };
+type ContractTypeRecord = { code: string; name: string; isActive?: boolean };
 
 function paymentMethodKey(value: string) {
   const normalized = value.toLowerCase().replace(/_/g, "-").trim();
@@ -53,10 +57,11 @@ function paymentMethodKey(value: string) {
   if (normalized === "mobile-money" || normalized === "mobile money") return "mobile-money";
   if (normalized === "cash") return "cash";
   if (normalized === "accounts-payable" || normalized.startsWith("paid through accounts payable")) return "accounts-payable";
-  return normalized || "bank";
+  return normalized;
 }
 
 function paymentMethodLabel(value: string | undefined) {
+  if (!value?.trim()) return "";
   const key = paymentMethodKey(value ?? "");
   if (key === "bank") return "Bank transfer";
   if (key === "mobile-money") return "Mobile money";
@@ -85,6 +90,15 @@ function EditEmployee() {
     () => (USE_REAL ? realApi.worker(id).then(adaptWorkerProfile) : employeeProfileApi.profile(id)),
     [id],
   );
+  const employmentState = useApi(async () => {
+    if (!USE_REAL) return { assignments: [] as AssignmentRecord[], types: [] as ContractTypeRecord[] };
+    const [contractTypes, assignments] = await Promise.all([realApi.contractTypes(), realApi.workerAssignments(id)]);
+    const data = contractTypes as { items?: ContractTypeRecord[] } | ContractTypeRecord[];
+    return {
+      types: Array.isArray(data) ? data : data.items ?? [],
+      assignments: assignments as AssignmentRecord[],
+    };
+  }, [id]);
 
   return (
     <AuthGate>
@@ -95,7 +109,13 @@ function EditEmployee() {
           // The form seeds its state once, on mount, so both records must be
           // in hand before it renders — otherwise it opens with blank fields.
           if (profileState.loading) return <LoadingState rows={4} />;
+          if (employmentState.loading) return <LoadingState rows={4} />;
           const pr = profileState.data;
+          const activeAssignment = employmentState.data?.assignments.find((assignment) => assignment.status === "current")
+            ?? employmentState.data?.assignments[0];
+          const contractTypeOptions = employmentState.data?.types
+            .filter((type) => type.isActive !== false || type.code === activeAssignment?.contractType)
+            .map((type) => type.code) ?? FALLBACK_CONTRACT_TYPES;
 
           // Edit mode: a field that the seeded record has never had cannot be
           // required — otherwise editing an existing record is blocked by the
@@ -108,12 +128,12 @@ function EditEmployee() {
               title: "Identity",
               description: "As it appears on the NRC. Payroll and the bank both check the legal name against it.",
               fields: [
-                { name: "salutation", label: "Salutation", type: "select", options: SALUTATIONS, required: true },
+                { name: "salutation", label: "Salutation", type: "select", options: SALUTATIONS },
                 { name: "fullName", label: "Full legal name", required: true, hint: "Must match the NRC." },
                 { name: "preferredName", label: "Preferred name", hint: "Used everywhere except legal documents." },
-                { name: "gender", label: "Gender", type: "select", options: GENDERS, required: true },
-                { name: "maritalStatus", label: "Marital status", type: "select", options: MARITAL, required: true },
-                { name: "nationality", label: "Nationality", required: true },
+                { name: "gender", label: "Gender", type: "select", options: GENDERS },
+                { name: "maritalStatus", label: "Marital status", type: "select", options: MARITAL },
+                { name: "nationality", label: "Nationality" },
                 { name: "homeTown", label: "Home town" },
                 {
                   name: "dateOfBirth",
@@ -200,6 +220,13 @@ function EditEmployee() {
                 { name: "department", label: "Department", type: "select", options: departmentOptions, required: true },
                 { name: "grade", label: "Grade", type: "select", options: gradeOptions, required: !!employee.grade },
                 { name: "employmentType", label: "Employment type", type: "select", options: [...EMPLOYMENT_TYPES], required: true },
+                {
+                  name: "startDate",
+                  label: "Employment start date",
+                  type: "date",
+                  required: true,
+                  hint: "Used for payroll proration when the employee starts partway through a pay period.",
+                },
                 { name: "reportsTo", label: "Reports to", required: !!pr?.reportsTo },
                 { name: "costCentre", label: "Cost centre", required: !!pr?.costCentre, hint: "Where this person's cost lands in the ledger." },
                 {
@@ -211,6 +238,21 @@ function EditEmployee() {
                     v && Number(v) < 30 ? "Zambian law requires at least 30 days for a permanent contract." : null,
                 },
                 { name: "probationEndsOn", label: "Probation ends", type: "date" },
+              ],
+            },
+            {
+              id: "contract",
+              title: "Contract terms",
+              description: "The employment contract that applies to this employee's active assignment.",
+              fields: [
+                {
+                  name: "contractType",
+                  label: "Contract type",
+                  type: "select",
+                  options: contractTypeOptions,
+                  required: !!activeAssignment?.contractType,
+                  hint: "Managed in Configuration > Contract types. This updates the employee's active assignment.",
+                },
               ],
             },
             {
@@ -232,7 +274,7 @@ function EditEmployee() {
               description: "Preferred payment method and payout details for this employee. Payroll reads the primary record directly.",
               fields: [
                 { name: "payGroup", label: "Pay group", required: !!pr?.payGroup },
-                { name: "paymentMethod", label: "Preferred payment method", type: "select", options: PAYMENT_METHODS, required: true },
+                { name: "paymentMethod", label: "Preferred payment method", type: "select", options: PAYMENT_METHODS, required: !!pr?.bankDetailId },
                 {
                   name: "accountName",
                   label: "Account holder name",
@@ -267,8 +309,9 @@ function EditEmployee() {
                   validate: (v, all) => {
                     if (paymentMethodKey(all.paymentMethod) !== "bank") return null;
                     if (!v) return "Account number is required for bank transfer.";
-                    return v.replace(/\s/g, "").length < 10
-                      ? "A Zambian account number is at least 10 digits. Check it against the bank letter."
+                    const digits = v.replace(/\D/g, "");
+                    return digits.length < 6
+                      ? "Enter the account number shown on the bank letter. Account-number length varies by bank."
                       : null;
                   },
                 },
@@ -330,9 +373,12 @@ function EditEmployee() {
           ];
           const liveFields = new Set([
             "fullName", "preferredName", "nationality", "dateOfBirth", "nationalId",
-            "passportNo", "email", "phone", "jobTitle", "grade", "tpin",
-            "napsaNumber", "nhimaNumber", "paymentMethod", "accountName", "bankName",
-            "bankBranch", "bankAccount", "mobileMoneyNumber",
+            "passportNo", "email", "personalEmail", "phone", "jobTitle", "grade", "contractType", "tpin",
+            "napsaNumber", "nhimaNumber", "startDate", "paymentMethod", "accountName", "bankName",
+            "bankBranch", "bankAccount", "mobileMoneyNumber", "salutation", "gender", "maritalStatus",
+            "homeTown", "passportExpiry", "alternatePhone", "residentialAddress", "postalAddress",
+            "bloodGroup", "workplaceAdjustments", "dietaryRequirements", "emergencyName",
+            "emergencyRelationship", "emergencyPhone",
           ]);
           const visibleSections = USE_REAL
             ? sections
@@ -381,12 +427,12 @@ function EditEmployee() {
                     ]),
               ] as EditSection[]}
               initial={{
-                salutation: pr?.salutation ?? "Mr",
+                salutation: pr?.salutation ?? "",
                 fullName: employee.fullName,
                 preferredName: employee.preferredName ?? "",
-                gender: pr?.gender ?? "Prefer not to say",
-                maritalStatus: pr?.maritalStatus ?? "Single",
-                nationality: pr?.nationality ?? "Zambian",
+                gender: pr?.gender ?? "",
+                maritalStatus: pr?.maritalStatus ?? "",
+                nationality: pr?.nationality ?? "",
                 homeTown: pr?.homeTown ?? "",
                 dateOfBirth: pr?.dateOfBirth ?? "",
                 nationalId: employee.nationalId,
@@ -401,13 +447,15 @@ function EditEmployee() {
                 postalAddress: pr?.postalAddress ?? "",
 
                 emergencyName: pr?.emergency[0]?.name ?? "",
-                emergencyRelationship: pr?.emergency[0]?.relationship ?? "Spouse",
+                emergencyRelationship: pr?.emergency[0]?.relationship ?? "",
                 emergencyPhone: pr?.emergency[0]?.phone ?? "",
 
                 jobTitle: employee.jobTitle,
                 department: employee.department,
                 grade: employee.grade,
                 employmentType: employee.employmentType,
+                contractType: activeAssignment?.contractType ?? "",
+                startDate: employee.startDate ?? "",
                 reportsTo: pr?.reportsTo ?? "",
                 costCentre: pr?.costCentre ?? "",
                 noticePeriodDays: String(pr?.noticePeriodDays ?? 30),
@@ -422,7 +470,7 @@ function EditEmployee() {
 
                 payGroup: pr?.payGroup ?? "",
                 paymentMethod: paymentMethodLabel(pr?.paymentMethod),
-                accountName: pr?.accountName ?? employee.fullName,
+                accountName: pr?.accountName ?? "",
                 bankName: pr?.bankName ?? "",
                 bankBranch: pr?.bankBranch ?? "",
                 bankAccount: pr?.bankAccount ?? employee.bankAccount ?? "",
@@ -450,9 +498,21 @@ function EditEmployee() {
                     const parts = values.fullName.trim().split(/\s+/);
                     body.firstName = parts[0] ?? "";
                     body.middleName = parts.slice(1, parts.length - 1).join(" ") || null;
-                    body.lastName = parts[parts.length - 1] ?? "";
+                    body.lastName = parts.length > 1 ? parts[parts.length - 1] : "";
                   }
+                  const profileFields = ["salutation", "gender", "maritalStatus", "homeTown", "passportExpiry",
+                    "alternatePhone", "residentialAddress", "postalAddress", "bloodGroup", "workplaceAdjustments",
+                    "dietaryRequirements"];
+                  if (changed.some((field) => profileFields.includes(field))) {
+                    let details: Record<string, unknown> = {};
+                    try { details = JSON.parse(pr?.profileDetailsJson || "{}"); } catch { details = {}; }
+                    for (const field of profileFields) if (changed.includes(field)) details[field] = values[field] || null;
+                    body.profileDetailsJson = JSON.stringify(details);
+                  }
+                  const emergencyChanged = changed.some((field) =>
+                    ["emergencyName", "emergencyRelationship", "emergencyPhone"].includes(field));
                   if (changed.includes("email")) body.email = values.email || null;
+                  if (changed.includes("personalEmail")) body.personalEmail = values.personalEmail || null;
                   if (changed.includes("phone")) body.phone = values.phone || null;
                   if (changed.includes("preferredName")) body.preferredName = values.preferredName || null;
                   if (changed.includes("nationalId")) body.nrc = values.nationalId || null;
@@ -464,19 +524,42 @@ function EditEmployee() {
                   if (changed.includes("nhimaNumber")) body.nhimaNumber = values.nhimaNumber || null;
                   if (changed.includes("jobTitle")) body.jobTitle = values.jobTitle || null;
                   if (changed.includes("grade")) body.grade = values.grade || null;
+                  if (changed.includes("startDate")) body.startDate = values.startDate || null;
                   if (changed.includes("employmentType"))
+                  {
                     body.workerType =
                       values.employmentType === "Contractor"
-                        ? "contractor"
+                        ? "contingent"
                         : values.employmentType === "Intern"
                           ? "intern"
                           : "employee";
+                    body.contractType = values.employmentType.toLowerCase().replace(/\s+/g, "-");
+                  }
+                  if (changed.includes("contractType")) body.contractType = values.contractType;
                   const paymentChanged = changed.some((field) =>
                     ["paymentMethod", "accountName", "bankName", "bankBranch", "bankAccount", "mobileMoneyNumber"].includes(field),
                   );
                   try {
                     if (Object.keys(body).length) {
                       await realApi.updateWorker(id, body);
+                    }
+                    if (emergencyChanged) {
+                      const existingContactId = pr?.emergency[0]?.id;
+                      if (!values.emergencyName?.trim()) {
+                        if (existingContactId) await realApi.deleteEmergencyContact(id, existingContactId);
+                      } else {
+                        const contact = { fullName: values.emergencyName.trim(),
+                          relationship: values.emergencyRelationship || "Other", phone: values.emergencyPhone || null,
+                          isPrimary: true };
+                        if (existingContactId)
+                          await realApi.updateEmergencyContact(id, existingContactId, contact);
+                        else
+                          await realApi.addEmergencyContact(id, contact);
+                      }
+                    }
+                    if (changed.includes("contractType")) {
+                      if (activeAssignment?.id)
+                        await realApi.updateWorkerAssignment(id, activeAssignment.id, { contractType: values.contractType });
                     }
                     if (paymentChanged) {
                       const method = paymentMethodKey(values.paymentMethod);
@@ -591,7 +674,7 @@ function HistoryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const missingRequired = required.some(
-    (name) => !String(document.getElementById(historyFieldId(kind, name))?.value ?? row[name] ?? "").trim(),
+    (name) => !String((document.getElementById(historyFieldId(kind, name)) as HTMLInputElement | null)?.value ?? row[name] ?? "").trim(),
   );
   // DOM ids are stable and unique across all three history forms — save()
   // reads the live DOM values (manual typing and programmatic fills both land
@@ -696,9 +779,9 @@ function HistorySection({ workerId }: { workerId: string }) {
       realApi.externalWorkHistory(workerId).catch(() => []),
       realApi.internalWorkHistory(workerId).catch(() => []),
     ]);
-    setEducation(Array.isArray(ed) ? ed : []);
-    setExternal(Array.isArray(ext) ? ext : []);
-    setInternal(Array.isArray(inn) ? inn : []);
+    setEducation(Array.isArray(ed) ? ed as HistoryRow[] : []);
+    setExternal(Array.isArray(ext) ? ext as HistoryRow[] : []);
+    setInternal(Array.isArray(inn) ? inn as HistoryRow[] : []);
   }
 
   useEffect(() => {
@@ -710,9 +793,9 @@ function HistorySection({ workerId }: { workerId: string }) {
     ])
       .then(([ed, ext, inn]) => {
         if (!alive) return;
-        setEducation(Array.isArray(ed) ? ed : []);
-        setExternal(Array.isArray(ext) ? ext : []);
-        setInternal(Array.isArray(inn) ? inn : []);
+        setEducation(Array.isArray(ed) ? ed as HistoryRow[] : []);
+        setExternal(Array.isArray(ext) ? ext as HistoryRow[] : []);
+        setInternal(Array.isArray(inn) ? inn as HistoryRow[] : []);
       })
       .catch((err) => {
         if (alive) setLoadError(err instanceof ApiError ? err.message : String(err));
@@ -763,16 +846,16 @@ function HistorySection({ workerId }: { workerId: string }) {
           async () => {
             if (!row.id) return;
             try {
-              if (kind === "education") await realApi.removeEducation(workerId, row.id);
+              if (kind === "education") await realApi.removeEducation(workerId, String(row.id));
               else if (kind === "external-work-history")
-                await realApi.removeExternalWorkHistory(workerId, row.id);
-              else await realApi.removeInternalWorkHistory(workerId, row.id);
+                await realApi.removeExternalWorkHistory(workerId, String(row.id));
+              else await realApi.removeInternalWorkHistory(workerId, String(row.id));
               setEducation((s) => s.filter((r) => r.id !== row.id));
               setExternal((s) => s.filter((r) => r.id !== row.id));
               setInternal((s) => s.filter((r) => r.id !== row.id));
               feedback.note("The record was removed again.");
             } catch {
-              feedback.blocked("The undo failed — the record is still saved.");
+              feedback.blocked("The undo failed.", "The history record is still saved.");
             }
           },
         );

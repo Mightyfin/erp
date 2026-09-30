@@ -60,6 +60,7 @@ public sealed class WorkerRepository(HrmDbContext db) : IWorkerRepository
 
     public async Task<Worker?> GetByIdAsync(Guid id, CancellationToken ct)
         => await db.Workers.Include(w => w.EmergencyContacts).Include(w => w.BankDetails)
+            .Include(w => w.Education).Include(w => w.ExternalWorkHistory).Include(w => w.InternalWorkHistory)
             .Include(w => w.OrgUnit).Include(w => w.Location).Include(w => w.Manager)
             .FirstOrDefaultAsync(w => w.Id == id, ct);
 
@@ -385,7 +386,7 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         => await db.LeaveTypes.FirstOrDefaultAsync(t => t.Code == code && t.IsActive, ct);
 
     public async Task<List<LeaveType>> GetLeaveTypesAsync(CancellationToken ct)
-        => await db.LeaveTypes.Where(t => t.IsActive).ToListAsync(ct);
+        => await db.LeaveTypes.Where(t => t.IsActive && !t.IsArchived).ToListAsync(ct);
 
     public async Task<DateOnly?> GetCurrentCutoffAsync(CancellationToken ct)
     {
@@ -634,8 +635,13 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         => (await db.LeaveAccrualRuns.Take(50).ToListAsync(ct))
             .OrderByDescending(run => run.CreatedAt).ToList();
 
-    public async Task<List<Worker>> ListAccrualWorkersAsync(CancellationToken ct)
-        => await db.Workers.Where(w => w.Status == "active").ToListAsync(ct);
+    public async Task<List<Worker>> ListAccrualWorkersAsync(DateOnly periodDate, CancellationToken ct)
+    {
+        var periodEnd = periodDate.AddMonths(1).AddDays(-1);
+        return await db.Workers.Where(w => !w.IsArchived && (w.Status == "active" || w.Status == "on-leave")
+            && (w.StartDate == null || w.StartDate <= periodEnd)
+            && (w.EndDate == null || w.EndDate >= periodDate)).ToListAsync(ct);
+    }
 
     public async Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct)
     {
@@ -1200,6 +1206,13 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (profiles, components, rules, slabs, period.CutoffDate);
     }
 
+    public async Task<List<PeriodBenefit>> LoadPeriodBenefitsAsync(Guid periodId, Guid? locationId, CancellationToken ct)
+    {
+        return await db.PeriodBenefits.Include(b => b.BenefitType).Where(b => !b.IsArchived && b.PayPeriodId == periodId
+            && b.BenefitType != null && !b.BenefitType.IsArchived && b.BenefitType.IsActive && b.BenefitType.IncludeInPayroll
+            && db.Workers.Any(w => w.Id == b.WorkerId && !w.IsArchived && (locationId == null || w.LocationId == locationId))).ToListAsync(ct);
+    }
+
     public async Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
@@ -1286,6 +1299,22 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .ToDictionary(row => codeById[row.Code], row => row.Amount);
     }
 
+    public async Task<bool> IsAttendanceDateLockedAsync(Guid workerId, DateOnly date, CancellationToken ct)
+    {
+        var worker = await db.Workers.FirstOrDefaultAsync(w => w.Id == workerId, ct);
+        if (worker == null) return true;
+        var groups = db.WorkerPayrollProfiles.Where(p => p.WorkerId == workerId && !p.IsArchived
+            ).Select(p => p.PayGroupId);
+        return await db.PayPeriods.AnyAsync(p => !p.IsArchived && p.StartDate <= date && p.EndDate >= date
+            && groups.Contains(p.PayGroupId) && (p.Status == "closed" || p.Status == "locked"
+                || db.PayrollRuns.Any(r => !r.IsArchived && r.PayPeriodId == p.Id
+                    && (r.LocationId == null || r.LocationId == worker.LocationId)
+                    && r.Status != "draft" && r.Status != "reversed" && r.Status != "cancelled")), ct);
+    }
+
+    public Task<List<PeriodOvertime>> LoadPeriodOvertimeAsync(Guid periodId, CancellationToken ct)
+        => db.PeriodOvertime.Where(o => !o.IsArchived && o.PayPeriodId == periodId).ToListAsync(ct);
+
     public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
@@ -1318,21 +1347,17 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
-        // Approved leaves whose type is unpaid (or half-pay, treated as unpaid
-        // for proration purposes) and whose range overlaps the period.
-        var unpaidTypeCodes = await db.LeaveTypes
-            .Where(t => t.Category == "unpaid" || t.Category == "half-pay")
-            .Select(t => t.Code)
-            .ToListAsync(ct);
-        var unpaidLeaves = await db.LeaveRequests
-            .Where(lr => lr.Status == "approved"
-                && unpaidTypeCodes.Contains(lr.LeaveTypeCode)
-                && lr.StartDate <= period.EndDate && lr.EndDate >= period.StartDate)
-            .Select(lr => new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate, lr.RequestedDays))
-            .ToListAsync(ct);
+        // The configured category controls how much of each approved day is paid.
+        var unpaidLeaves = await (from lr in db.LeaveRequests
+            join type in db.LeaveTypes on lr.LeaveTypeCode equals type.Code
+            where lr.Status == "approved" && !lr.IsArchived
+                && (type.Category == "unpaid" || type.Category == "half-pay")
+                && lr.StartDate <= period.EndDate && lr.EndDate >= period.StartDate
+            select new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate,
+                lr.RequestedDays, type.Category == "half-pay" ? 0.5m : 0m)).ToListAsync(ct);
         // Effective calendar: tenant default, falling back to any Zambia
-        // calendar. Holiday dates are informational (Zambian public holidays
-        // are paid, so they never reduce payment days).
+        // calendar. Its weekend definition drives monthly payroll proration;
+        // holiday dates are paid days, so they do not reduce payment days.
         var calendar = await db.WorkCalendars
             .OrderByDescending(c => c.IsDefault)
             .FirstOrDefaultAsync(ct);
@@ -1340,7 +1365,8 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .Where(h => h.CalendarId == calendar.Id && h.HolidayDate >= period.StartDate && h.HolidayDate <= period.EndDate)
             .Select(h => h.HolidayDate)
             .ToListAsync(ct);
-        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays);
+        return new PayrollProrationInputs(period.StartDate, period.EndDate, unpaidLeaves, holidays,
+            calendar?.WeekendDays ?? "sat,sun");
     }
 
     public async Task ClearRunLinesAsync(Guid runId, CancellationToken ct)
@@ -1373,6 +1399,19 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     {
         if (db.Entry(line).State == EntityState.Detached) db.PayrollRunLines.Update(line);
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<Payslip?> GetCurrentPayslipForRunLineAsync(Guid runLineId, CancellationToken ct)
+        => await db.Payslips
+            .Where(p => p.RunLineId == runLineId && (p.Status == "final" || p.Status == "corrected"))
+            .OrderByDescending(p => p.Version)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<Payslip> CreatePayslipAsync(Payslip payslip, CancellationToken ct)
+    {
+        db.Payslips.Add(payslip);
+        await db.SaveChangesAsync(ct);
+        return payslip;
     }
 
     public async Task RecalculateRunTotalsAsync(PayrollRun run, CancellationToken ct)
@@ -1496,6 +1535,7 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
                 line.WorkerId,
                 line.Worker?.SubjectId,
                 line.Worker?.Email,
+                line.Worker?.PersonalEmail,
                 line.Worker?.FirstName ?? "",
                 line.Worker?.LastName ?? ""));
         }
@@ -1594,6 +1634,8 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
     public async Task<List<WorkCalendar>> ListCalendarsAsync(CancellationToken ct) => await db.WorkCalendars.Include(c => c.Holidays).ToListAsync(ct);
     public async Task<List<LeaveType>> ListLeaveTypesAsync(bool includeInactive, CancellationToken ct)
         => await db.LeaveTypes.Where(t => includeInactive || t.IsActive).ToListAsync(ct);
+    public async Task<List<ContractType>> ListContractTypesAsync(bool includeInactive, CancellationToken ct)
+        => await db.ContractTypes.Where(t => includeInactive || t.IsActive).OrderBy(t => t.Name).ToListAsync(ct);
     public async Task<List<CapabilityConfig>> ListCapabilitiesAsync(CancellationToken ct) => await db.CapabilityConfigs.ToListAsync(ct);
     public async Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct) => await db.PayGroups.ToListAsync(ct);
     public async Task<List<Worker>> ListAllWorkersAsync(string? status, CancellationToken ct)
@@ -1650,6 +1692,11 @@ public sealed class ConfigRepository(HrmDbContext db) : IConfigRepository
     { db.LeaveTypes.Add(leaveType); await db.SaveChangesAsync(ct); return leaveType; }
     public async Task<LeaveType> UpdateLeaveTypeAsync(LeaveType leaveType, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return leaveType; }
+    public async Task<ContractType?> GetContractTypeAsync(Guid id, CancellationToken ct) => await db.ContractTypes.FirstOrDefaultAsync(t => t.Id == id, ct);
+    public async Task<ContractType> CreateContractTypeAsync(ContractType contractType, CancellationToken ct)
+    { db.ContractTypes.Add(contractType); await db.SaveChangesAsync(ct); return contractType; }
+    public async Task<ContractType> UpdateContractTypeAsync(ContractType contractType, CancellationToken ct)
+    { await db.SaveChangesAsync(ct); return contractType; }
     public async Task<CapabilityConfig> UpdateCapabilityAsync(CapabilityConfig capability, CancellationToken ct)
     { await db.SaveChangesAsync(ct); return capability; }
     public async Task<TenantRoleAssignment> CreateRoleAssignmentAsync(TenantRoleAssignment row, CancellationToken ct)

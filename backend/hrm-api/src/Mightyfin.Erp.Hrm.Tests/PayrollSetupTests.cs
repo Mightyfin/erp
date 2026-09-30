@@ -174,6 +174,38 @@ public class PayrollSetupTests
     }
 
     [Fact]
+    public async Task CreateSalaryComponent_Creates_Housing_As_Thirty_Percent_Of_Basic()
+    {
+        var (service, ctx) = Build();
+        SeedComponent(ctx, "basic", "earning");
+
+        var created = await service.CreateSalaryComponentAsync(new SalaryComponentCreateRequest(
+            "housing-allowance", "Housing Allowance", "earning", "percent-of",
+            BasisComponentCode: "basic", Rate: 30m, IsTaxable: true, Priority: 20), CancellationToken.None);
+
+        Assert.Equal("housing-allowance", created.Code);
+        Assert.Equal("percent-of", created.CalculationBasis);
+        Assert.Equal("basic", created.BasisComponentCode);
+        Assert.Equal(30m, created.Rate);
+        Assert.Equal(20, created.Priority);
+        var persisted = await ctx.SalaryComponents.SingleAsync(c => c.Code == "housing-allowance");
+        Assert.Equal("basic", persisted.BasisComponentCode);
+        Assert.Equal(30m, persisted.Rate);
+    }
+
+    [Fact]
+    public async Task CreateSalaryComponent_Rejects_Duplicate_And_Missing_Percentage_Basis()
+    {
+        var (service, ctx) = Build();
+        SeedComponent(ctx, "basic", "earning");
+
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateSalaryComponentAsync(
+            new SalaryComponentCreateRequest("basic", "Another Basic", "earning", "fixed"), CancellationToken.None));
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateSalaryComponentAsync(
+            new SalaryComponentCreateRequest("housing", "Housing", "earning", "percent-of", Rate: 30m), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ListPayGroupsFull_Includes_Status()
     {
         var (service, ctx) = Build();

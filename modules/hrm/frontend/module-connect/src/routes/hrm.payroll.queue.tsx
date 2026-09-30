@@ -24,7 +24,7 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/payroll/queue")({
   head: () => ({
     meta: [
-      { title: "Payroll approval queue — Mightyfin HRMS" },
+      { title: "Payroll approval queue — Newworldcargo HRM" },
       {
         name: "description",
         content: "Branch payroll runs awaiting organisation-wide HR approval, with control totals and submission stamps.",

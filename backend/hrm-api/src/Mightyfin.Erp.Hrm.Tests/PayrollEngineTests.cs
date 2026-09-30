@@ -114,6 +114,31 @@ public class PayrollEngineTests
     }
 
     [Fact]
+    public async Task CalculatedControlTotalsMatchRoundedPayslipComponents()
+    {
+        var (service, ctx) = Build();
+        var (group, _, period, profile, basic, housing, _, _, _, _, _) = await SeedStackAsync(ctx);
+        profile.ComponentValues.Single(v => v.ComponentId == basic.Id).Amount = 12345.67m;
+        profile.ComponentValues.Single(v => v.ComponentId == housing.Id).Amount = 2345.67m;
+        await ctx.SaveChangesAsync();
+
+        var run = await service.CreateRunAsync(new PayrollRunCreate(period.Id, group.Id), CancellationToken.None);
+        await service.LockRunAsync(run.Id, CancellationToken.None);
+        await service.CalculateRunAsync(run.Id, CancellationToken.None);
+
+        var line = await ctx.PayrollRunLines.Include(l => l.Components).SingleAsync(l => l.RunId == run.Id);
+        var savedRun = await ctx.PayrollRuns.SingleAsync(r => r.Id == run.Id);
+        Assert.Equal(line.Components.Where(c => c.ComponentType == "earning").Sum(c => c.Amount), line.GrossPay);
+        Assert.Equal(line.Components.Where(c => c.ComponentType is "deduction" or "tax").Sum(c => c.Amount), line.TotalDeductions);
+        Assert.Equal(line.Components.Where(c => c.ComponentType == "employer-contribution").Sum(c => c.Amount), line.EmployerCost);
+        Assert.Equal(line.GrossPay - line.TotalDeductions, line.NetPay);
+        Assert.Equal(line.GrossPay, savedRun.TotalGross);
+        Assert.Equal(line.TotalDeductions, savedRun.TotalDeductions);
+        Assert.Equal(line.NetPay, savedRun.TotalNet);
+        Assert.Equal(line.GrossPay + line.EmployerCost, savedRun.TotalEmployerCost);
+    }
+
+    [Fact]
     public async Task CalculateRun_IncludesPayrollBenefitAllowancesAsEarnings()
     {
         var (service, ctx) = Build();

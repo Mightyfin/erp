@@ -60,12 +60,12 @@ const APPROVER_ROLES: Role[] = ["manager", "hr_ops", "hr_admin", "payroll"];
 export const Route = createFileRoute("/hrm/employees/$id")({
   head: () => ({
     meta: [
-      { title: "Employee profile — Mightyfin HRMS" },
+      { title: "Employee profile — HRM" },
       {
         name: "description",
         content: "Employment record: identity, contract, pay context, history and related records.",
       },
-      { property: "og:title", content: "Employee profile — Mightyfin HRMS" },
+      { property: "og:title", content: "Employee profile — HRM" },
       {
         property: "og:description",
         content: "Employment record: identity, contract, pay context, history and related records.",
@@ -80,6 +80,10 @@ type PayslipRecord = {
   id?: string;
   payslipNo?: string;
   periodLabel?: string;
+  runId?: string;
+  gross?: number;
+  deductions?: number;
+  net?: number;
   releasedAt?: string | null;
   payDate?: string | null;
 };
@@ -115,12 +119,20 @@ function text(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
 }
 
+function escapeHtml(value: unknown) {
+  return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function mapPayslip(raw: unknown): PayslipRecord {
   const p = raw as Record<string, unknown>;
   return {
     id: text(p.id),
     payslipNo: text(p.payslipNo),
     periodLabel: text(p.periodLabel),
+    runId: text(p.runId),
+    gross: Number(p.grossPay ?? 0),
+    deductions: Number(p.totalDeductions ?? 0),
+    net: Number(p.netPay ?? 0),
     releasedAt: p.releasedAt ? text(p.releasedAt) : null,
     payDate: p.payDate ? text(p.payDate) : null,
   };
@@ -158,22 +170,21 @@ function rawText(raw: Record<string, unknown>, ...keys: string[]) {
 
 function previewRun(raw: unknown) {
   const r = raw as Record<string, unknown>;
+  const period = rawText(r, "periodLabel", "period", "name");
   return {
     id: rawText(r, "id"),
-    period: rawText(r, "periodLabel", "period", "name"),
+    period,
     payGroup: rawText(r, "payGroup", "payGroupName") || "Payroll run",
     currency: rawText(r, "currency") || "ZMW",
     status: (rawText(r, "status") || "draft").toLowerCase(),
-    sortKey: rawText(
-      r,
-      "endDate",
-      "cutoffDate",
-      "postingDate",
-      "createdAt",
-      "updatedAt",
-      "periodLabel",
-    ),
+    periodOrder: periodOrder(period),
+    sortKey: rawText(r, "endDate", "cutoffDate", "postingDate", "createdAt", "updatedAt"),
   };
+}
+
+function periodOrder(period: string) {
+  const date = Date.parse(`1 ${period}`);
+  return Number.isNaN(date) ? 0 : date;
 }
 
 function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
@@ -206,52 +217,54 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
   };
 }
 
-async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
-  try {
-    const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
-    const rawLine = rawPreview.line as Record<string, unknown> | undefined;
-    const guardrails = Array.isArray(rawPreview.guardrails)
-      ? rawPreview.guardrails.map(String).filter(Boolean)
-      : [];
-    const line = rawLine ? previewLine(rawLine) : undefined;
-    if (line && !line.components.length)
-      guardrails.push(
-        "The payroll preview was calculated, but no component breakdown was returned by the engine.",
-      );
-    return {
-      status: rawText(rawPreview, "status") === "ready" && guardrails.length === 0 ? "ready" : "blocked",
-      guardrails,
-      run: {
-        id: "current-preview",
-        period: rawText(rawPreview, "periodLabel") || "Current pay period",
-        payGroup: "",
-        currency: rawText(rawPreview, "currency") || "ZMW",
-        status: "preview",
-      },
-      line,
-    };
-  } catch {
-    // Older API deployments did not expose a simulation endpoint. Fall back to
-    // the latest calculated line so the screen remains usable during rollout.
-  }
+async function currentPayslipSimulationFor(workerId: string): Promise<PayslipPreview> {
+  const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
+  const rawLine = rawPreview.line as Record<string, unknown> | undefined;
+  const guardrails = Array.isArray(rawPreview.guardrails)
+    ? rawPreview.guardrails.map(String).filter(Boolean)
+    : [];
+  const line = rawLine ? previewLine(rawLine) : undefined;
+  if (line && !line.components.length)
+    guardrails.push(
+      "The payroll preview was calculated, but no component breakdown was returned by the engine.",
+    );
+  return {
+    status: rawText(rawPreview, "status") === "ready" && guardrails.length === 0 ? "ready" : "blocked",
+    guardrails,
+    run: {
+      id: "current-preview",
+      period: rawText(rawPreview, "periodLabel") || "Current pay period",
+      payGroup: "",
+      currency: rawText(rawPreview, "currency") || "ZMW",
+      status: "preview",
+    },
+    line,
+  };
+}
 
+async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
   const runs = (await realApi.payrollRuns()).items
     .map(previewRun)
     .filter((run) => run.id)
-    .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+    .sort((a, b) => b.periodOrder - a.periodOrder || b.sortKey.localeCompare(a.sortKey));
   const usableRuns = runs.filter(
     (run) => !["draft", "locked", "cancelled", "void", "reversed"].includes(run.status),
   );
-  const searchRuns = usableRuns.length ? usableRuns : runs;
+  const searchRuns = usableRuns;
   const guardrails: string[] = [];
 
-  if (!runs.length) {
-    return {
-      status: "blocked",
-      guardrails: [
-        "No payroll run exists yet. Create a payroll run, calculate it, then preview the employee's payslip.",
-      ],
-    };
+  // A current-period simulation is newer than a released historical payslip.
+  // Calculated lines for the current period still take precedence over simulations.
+  const now = new Date();
+  const currentMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  if ((usableRuns[0]?.periodOrder ?? 0) < currentMonth) {
+    try {
+      const simulation = await currentPayslipSimulationFor(workerId);
+      if (periodOrder(simulation.run?.period ?? "") > (usableRuns[0]?.periodOrder ?? 0))
+        return simulation;
+    } catch {
+      // Retain the newest calculated or released line if simulation is unavailable.
+    }
   }
 
   for (const run of searchRuns) {
@@ -288,10 +301,18 @@ async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview
     };
   }
 
+  try {
+    return await currentPayslipSimulationFor(workerId);
+  } catch {
+    // A calculated run is unavailable and this API does not support simulations.
+  }
+
   return {
     status: "blocked",
     guardrails: [
-      "No calculated payroll line was found for this employee.",
+      runs.length
+        ? "No calculated payroll line was found for this employee."
+        : "No payroll run exists yet. Create and calculate a payroll run before previewing the employee's payslip.",
       "Confirm the employee has an active payroll profile, belongs to the selected pay group and branch scope, then calculate the run again.",
     ],
   };
@@ -343,8 +364,11 @@ function PayslipPreviewDialog({
             Payslip preview for {employee.fullName}
           </DialogTitle>
           <DialogDescription>
-            Preview uses current payroll configuration. The last released payslip remains unchanged
-            and is available from Print last payslip.
+            {preview?.run?.status === "preview"
+              ? "Showing a simulation for the current pay period. This is not a released payslip."
+              : preview?.run?.status === "released" || preview?.run?.status === "corrected"
+                ? "Showing the latest released or corrected payslip."
+                : "Showing the latest calculated payroll line. This is not a released payslip."}
           </DialogDescription>
         </DialogHeader>
 
@@ -410,7 +434,7 @@ function PayslipPreviewDialog({
                     Run status: <strong>{preview?.run?.status.replaceAll("-", " ")}</strong> ·{" "}
                     {preview?.run?.payGroup}
                   </span>
-                  {preview?.run?.id ? (
+                  {preview?.run?.id && preview.run.id !== "current-preview" ? (
                     <Button variant="outline" size="sm" asChild>
                       <Link to="/hrm/payroll/runs/$id" params={{ id: preview.run.id }}>
                         Open payroll run
@@ -524,6 +548,36 @@ function downloadReportCsv(employee: EmployeeRecord, report: EmployeeReport) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+function escapeReportHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/** Opens the browser's native print dialog, where the user can save a genuine
+ * PDF. Keeping this rendering client-side means it exports the exact live
+ * report currently displayed, including reports assembled from multiple HRM
+ * resources, without a second data-export path to keep in sync. */
+function exportReportPdf(employee: EmployeeRecord, report: EmployeeReport) {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    feedback.blocked("PDF export was blocked", "Allow pop-ups for this site, then try again.");
+    return;
+  }
+  const rows = report.rows.length
+    ? report.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeReportHtml(cell || "—")}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${report.columns.length}">${escapeReportHtml(report.empty)}</td></tr>`;
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeReportHtml(employee.employeeNo)} — ${escapeReportHtml(report.title)}</title><style>
+    @page { size: A4; margin: 15mm; } body { color:#172033; font: 11px/1.45 Arial,sans-serif; } h1 { font-size:20px; margin:0 0 4px; } p { color:#56627a; margin:0 0 16px; } table { width:100%; border-collapse:collapse; } th { background:#eef2f8; text-align:left; } th,td { border:1px solid #cbd5e1; padding:7px; vertical-align:top; } @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  </style></head><body><h1>${escapeReportHtml(report.title)}</h1><p>${escapeReportHtml(employee.fullName)} · ${escapeReportHtml(employee.employeeNo)}<br>${escapeReportHtml(report.description)}</p><table><thead><tr>${report.columns.map((column) => `<th>${escapeReportHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></body></html>`);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 250);
+}
+
 function ReportTable({ report }: { report: EmployeeReport }) {
   return (
     <DetailSection title={report.title} description={report.description}>
@@ -578,7 +632,7 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
         title: "Employee payment details",
         description: "Recorded payment method and destination details. Sensitive account numbers stay on the protected Pay and statutory tab.",
         columns: ["Employee", "Payment method", "Account holder", "Bank", "Bank branch", "Mobile money"],
-        rows: [[employee.fullName, profile.paymentMethod, profile.accountName, profile.bankName, profile.bankBranch, profile.mobileMoneyNumber]],
+        rows: [[employee.fullName, profile.paymentMethod, profile.accountName ?? "", profile.bankName, profile.bankBranch, profile.mobileMoneyNumber ?? ""]],
         empty: "No payment details are recorded for this employee.",
       };
     }
@@ -692,13 +746,23 @@ function EmployeeReportsTab({ employee, profile }: { employee: EmployeeRecord; p
           <SelectContent>{employeeReports.map((report) => <SelectItem key={report.value} value={report.value}>{report.label}</SelectItem>)}</SelectContent>
         </Select>
         </div>
-        <Button
-          variant="outline"
-          disabled={!state.data || state.loading}
-          onClick={() => state.data && downloadReportCsv(employee, state.data)}
-        >
-          <Download className="size-4" aria-hidden /> Download CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && downloadReportCsv(employee, state.data)}
+          >
+            <Download className="size-4" aria-hidden /> Download CSV
+          </Button>
+          <Button
+            variant="outline"
+            data-testid="export-employee-report-pdf"
+            disabled={!state.data || state.loading}
+            onClick={() => state.data && exportReportPdf(employee, state.data)}
+          >
+            <Printer className="size-4" aria-hidden /> Export PDF
+          </Button>
+        </div>
       </div>
       <Async state={state} rows={5}>{(report) => <ReportTable report={report} />}</Async>
     </div>
@@ -830,10 +894,11 @@ function ProfileTabs({
         <DetailSection title="Contract">
           <FieldGrid>
             <Field label="Employment type" value={e.employmentType} />
+            {p.legacyEmploymentType ? <Field label="Previous Frappe employment type" value={p.legacyEmploymentType} /> : null}
             <Field label="Start date" value={e.startDate} />
             <Field label="Probation ends" value={p.probationEndsOn} />
             <Field label="Confirmed on" value={p.confirmedOn} />
-            <Field label="Notice period" value={`${p.noticePeriodDays} days`} />
+            <Field label="Notice period" value={p.noticePeriodDays ? `${p.noticePeriodDays} days` : ""} />
             <Field label="End date" value={e.endDate} />
           </FieldGrid>
         </DetailSection>
@@ -844,7 +909,7 @@ function ProfileTabs({
             <Field label="Department" value={e.department} />
             <Field label="Grade" value={e.grade} />
             <Field label="Reports to" value={p.reportsTo} />
-            <Field label="Legal entity" value={entities.find((x) => x.id === e.entityId)?.name} />
+            <Field label="Legal entity" value={p.legalEntityName || entities.find((x) => x.id === e.entityId)?.name} />
             <Field label="Branch" value={e.branch} />
             <Field label="Work location" value={e.location} />
             <Field
@@ -1116,6 +1181,39 @@ function EmployeePage() {
     }
   };
 
+  const printCorrectionStatement = async (workerId: string, employeeNo: string, employeeName: string) => {
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      feedback.blocked("Correction statement is unavailable.", "Your browser blocked the print window. Allow popups for this site and try again.");
+      return;
+    }
+    tab.document.write("<!doctype html><title>Preparing correction statement</title><p style='font-family:Arial;margin:32px'>Preparing correction statement...</p>");
+    tab.document.close();
+    setPayslipBusy("print");
+    try {
+      const slip = await latestPayslipFor(workerId);
+      if (!slip?.runId) throw new Error("No released payslip is available for a correction statement.");
+      const events = await realApi.payrollRunAudit(slip.runId) as Array<Record<string, unknown>>;
+      const rows = events.map((event) => {
+        try { return JSON.parse(text(event.detailsJson)) as Record<string, unknown>; } catch { return null; }
+      }).filter((row): row is Record<string, unknown> => row?.employeeNo === employeeNo && Boolean(row.grossAdjustment ?? row.netAdjustmentPaid));
+      if (!rows.length) throw new Error("No paid or pending payroll adjustment is recorded for this employee.");
+      const paidRow = rows.find((row) => Number.isFinite(Number(row.actualPaidNetAmount)) && Number(row.actualPaidNetAmount) > 0);
+      const currentNet = Number(slip.net ?? 0);
+      const adjustment = rows.reduce((sum, row) => sum + Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0), 0);
+      const paymentRows = paidRow
+        ? `<tr><td>Corrected payslip net pay</td><td class="r">${currentNet.toFixed(2)}</td></tr><tr><td>Actual payment already made</td><td class="r">${Number(paidRow.actualPaidNetAmount).toFixed(2)}</td></tr><tr><td>Current reconciliation difference</td><td class="r">${(Number(paidRow.actualPaidNetAmount) - currentNet).toFixed(2)}</td></tr>`
+        : `<tr><td>Corrected payslip net pay</td><td class="r">${currentNet.toFixed(2)}</td></tr>${rows.map((row) => `<tr><td>${escapeHtml(row.component ?? "Payroll adjustment")}</td><td class="r">${Number(row.netAdjustmentPaid ?? row.grossAdjustment ?? 0).toFixed(2)}</td></tr>`).join("")}`;
+      const displayedTotal = paidRow ? Number(paidRow.actualPaidNetAmount) : currentNet + adjustment;
+      const html = `<!doctype html><html><head><title>Newworldcargo HRM payroll correction statement</title><style>@page{margin:16mm}body{font:13px Arial,sans-serif;color:#17212b;margin:0}.brand{background:#012642;color:#fff;padding:22px 24px;border-bottom:6px solid #ffcc04}.brand strong{font-size:22px;display:block}.brand span{font-size:11px;opacity:.88}.document{margin:24px}.document h1{font-size:19px;color:#012642;margin:0 0 4px}.muted{color:#59636d;font-size:11px}table{width:100%;border-collapse:collapse;margin:18px 0}td,th{border:1px solid #cfd6dc;padding:8px;text-align:left}th{background:#e8f0f5;color:#012642}.r{text-align:right}.total th{background:#012642;color:#fff;font-size:14px}.notice{border-left:4px solid #ffcc04;background:#fff9df;padding:9px 12px;font-size:11px}</style></head><body><header class="brand"><strong>Newworldcargo HRM</strong><span>Human Resources &middot; Payroll Correction Statement</span></header><main class="document"><h1>Payroll Correction Statement</h1><p class="muted">This document supplements, and does not replace, the released payslip.</p><table><tr><td>Employee</td><td>${escapeHtml(employeeName)}</td><td>Employee no.</td><td>${escapeHtml(employeeNo)}</td></tr><tr><td>Period</td><td>${escapeHtml(slip.periodLabel)}</td><td>Corrected payslip</td><td>${escapeHtml(slip.payslipNo)}</td></tr></table><table><tr><th>Description</th><th class="r">Amount (ZMW)</th></tr>${paymentRows}<tr class="total"><th>Actual payment total</th><th class="r">${displayedTotal.toFixed(2)}</th></tr></table><p class="notice">Generated from the HRM audit trail on ${new Date().toLocaleString()}. Statutory treatment remains recorded on the corrected payslip.</p></main><script>window.onload=()=>window.print()</script></body></html>`;
+      tab.document.write(html); tab.document.close();
+    } catch (error) {
+      tab.close();
+      feedback.blocked("Correction statement is unavailable.", error instanceof Error ? error.message : "Try again.");
+    }
+    finally { setPayslipBusy(null); }
+  };
+
   // `/employees/$id/edit` is generated as a child of this route.
   const childMatches = useChildMatches();
   if (childMatches.length > 0) return <Outlet />;
@@ -1160,6 +1258,14 @@ function EmployeePage() {
                     >
                       <Printer className="mr-2 size-4" aria-hidden />
                       {payslipBusy === "print" ? "Checking..." : "Print last payslip"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void printCorrectionStatement(e.id, e.employeeNo, e.fullName)}
+                      disabled={payslipBusy !== null}
+                    >
+                      <Printer className="mr-2 size-4" aria-hidden />
+                      Print correction statement
                     </Button>
                     <Button asChild>
                       <Link to="/hrm/employees/$id/edit" params={{ id: e.id }}>

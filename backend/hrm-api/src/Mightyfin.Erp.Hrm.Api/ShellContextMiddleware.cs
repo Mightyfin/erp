@@ -14,7 +14,8 @@ public sealed class ShellContextMiddleware(RequestDelegate next, ILogger<ShellCo
 {
     public async Task InvokeAsync(HttpContext http, ShellContext scope, ITenantAccessor tenant, HrmDbContext db)
     {
-        if (!http.Request.Path.StartsWithSegments("/api/hrm"))
+        if (!http.Request.Path.StartsWithSegments("/api/hrm")
+            && !http.Request.Path.StartsWithSegments("/api/v1/hrm"))
         {
             await next(http);
             return;

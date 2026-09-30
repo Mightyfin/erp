@@ -11,19 +11,23 @@ public sealed class BenefitServiceImpl(
     IBenefitRepository repo,
     IAuthzService authz,
     IWorkerRepository workers,
-    Application.ShellContext? scope = null) : IBenefitService
+    Application.ShellContext? scope = null,
+    IPeriodBenefitService? periodBenefits = null) : IBenefitService
 {
     private bool IsEmployeeOnly =>
         authz.IsRole("employee") && !authz.IsRole("hr_ops", "hr_admin", "manager", "payroll");
 
     private async Task RequireWorkerScopeAsync(Guid workerId, CancellationToken ct)
     {
-        if (!IsEmployeeOnly) return;
+        if (!IsEmployeeOnly && scope?.IsConfined != true) return;
         var worker = await workers.GetByIdAsync(workerId, ct)
             ?? throw new DomainException("worker-not-found", $"Employee {workerId} does not exist.");
-        if (string.IsNullOrWhiteSpace(authz.CurrentSubjectId) ||
+        if (IsEmployeeOnly && (string.IsNullOrWhiteSpace(authz.CurrentSubjectId) ||
             !string.Equals(worker.SubjectId, authz.CurrentSubjectId, StringComparison.Ordinal))
+            )
             throw new DomainException("worker-access-denied", "Employees can only claim for themselves.");
+        if (scope?.IsConfined == true && (!worker.LocationId.HasValue || !scope.AllowedLocationIds.Contains(worker.LocationId.Value)))
+            throw new DomainException("worker-access-denied", "Employee is outside your branch access.");
     }
 
     public async Task<List<BenefitTypeDto>> ListBenefitTypesAsync(CancellationToken ct)
@@ -31,7 +35,7 @@ public sealed class BenefitServiceImpl(
         authz.RequireAnyRole("hr_admin", "hr_ops", "employee", "payroll");
         var types = await repo.ListBenefitTypesAsync(ct);
         return types.Select(t => new BenefitTypeDto(t.Id, t.Code, t.Name, t.Description,
-            t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive)).ToList();
+            t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsTaxable, t.IsActive)).ToList();
     }
 
     public async Task<BenefitTypeDto> CreateBenefitTypeAsync(BenefitTypeCreateRequest request, CancellationToken ct)
@@ -50,6 +54,7 @@ public sealed class BenefitServiceImpl(
             Code = code, Name = request.Name.Trim(), Description = request.Description?.Trim(),
             AnnualCap = request.AnnualCap, RequiresEvidence = request.RequiresEvidence,
             IncludeInPayroll = request.IncludeInPayroll,
+            IsTaxable = request.IncludeInPayroll && request.IsTaxable,
             IsActive = true,
         };
         await repo.CreateBenefitTypeAsync(type, ct);
@@ -77,6 +82,7 @@ public sealed class BenefitServiceImpl(
         type.AnnualCap = request.AnnualCap;
         type.RequiresEvidence = request.RequiresEvidence;
         type.IncludeInPayroll = request.IncludeInPayroll;
+        type.IsTaxable = request.IncludeInPayroll && request.IsTaxable;
         type.IsActive = request.IsActive;
         await repo.UpdateBenefitTypeAsync(type, ct);
         return MapType(type);
@@ -165,7 +171,7 @@ public sealed class BenefitServiceImpl(
     }
     public async Task<BenefitClaimDto> CreateClaimAsync(BenefitClaimCreateRequest request, CancellationToken ct)
     {
-        authz.RequireAnyRole("employee", "hr_ops", "hr_admin");
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "payroll");
         await RequireWorkerScopeAsync(request.WorkerId, ct);
 
         var code = NormalizeCode(request.BenefitTypeCode);
@@ -174,8 +180,12 @@ public sealed class BenefitServiceImpl(
         if (!type.IsActive)
             throw new DomainException("benefit-type-inactive", "Inactive benefit types cannot be claimed.");
         if (type.IncludeInPayroll)
-            throw new DomainException("benefit-claim-payroll-benefit",
-                $"{type.Name} is paid through payroll and cannot be submitted as a separate claim.");
+        {
+            if (periodBenefits == null) throw new DomainException("benefit-payroll-unavailable", "Payroll assignments are unavailable.");
+            return Map(await periodBenefits.SubmitClaimAsync(type.Id, request, ct));
+        }
+        if (request.PayPeriodId.HasValue)
+            throw new DomainException("benefit-claim-period", "Only payroll benefits can be assigned to a payroll month.");
         if (type.RequiresEvidence && !request.EvidenceAttached)
             throw new DomainException("benefit-claim-evidence",
                 $"Evidence is required for {type.Name} claims.");
@@ -208,6 +218,56 @@ public sealed class BenefitServiceImpl(
         };
         await repo.CreateClaimAsync(claim, ct);
         return Map(claim);
+    }
+
+    public async Task<BenefitClaimDto> UpdateClaimAsync(Guid id, BenefitClaimUpdateRequest request, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "payroll");
+        var claim = await repo.GetClaimAsync(id, ct)
+            ?? throw new DomainException("benefit-claim-not-found", "Claim not found.");
+        await RequireWorkerScopeAsync(claim.WorkerId, ct);
+        if (claim.PayPeriodId.HasValue)
+        {
+            if (periodBenefits == null) throw new DomainException("benefit-payroll-unavailable", "Payroll assignments are unavailable.");
+            return Map(await periodBenefits.UpdateClaimAsync(id, request, ct));
+        }
+        if (claim.Status is not ("submitted" or "returned" or "rejected"))
+            throw new DomainException("benefit-claim-state", "Only claims awaiting a decision or rejected claims can be edited.");
+        if (request.AmountClaimed <= 0 || decimal.Round(request.AmountClaimed, 2) != request.AmountClaimed)
+            throw new DomainException("benefit-claim-invalid", "Enter a positive amount with at most two decimal places.");
+        if (claim.BenefitType?.RequiresEvidence == true && !request.EvidenceAttached)
+            throw new DomainException("benefit-claim-evidence", $"Evidence is required for {claim.BenefitType.Name} claims.");
+        if (string.IsNullOrWhiteSpace(request.Currency) || request.Currency.Trim().Length != 3 || (request.Note?.Length ?? 0) > 500)
+            throw new DomainException("benefit-claim-invalid", "Enter a valid currency and a note of at most 500 characters.");
+        var year = claim.CreatedAt.Year == 1 ? DateTime.UtcNow.Year : claim.CreatedAt.Year;
+        var allowance = await repo.GetAllowanceAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+        var limit = allowance?.AnnualAmount ?? claim.BenefitType?.AnnualCap ?? 0;
+        var spent = await repo.SumApprovedAsync(claim.WorkerId, claim.BenefitTypeId, year, ct);
+        if (limit <= 0 || spent + request.AmountClaimed > limit)
+            throw new DomainException("benefit-claim-over-limit", "The revised amount exceeds the remaining benefit allowance.");
+        var before = System.Text.Json.JsonSerializer.Serialize(new { claim.AmountClaimed, claim.Currency, claim.Note, claim.EvidenceAttached, claim.Status });
+        claim.AmountClaimed = request.AmountClaimed; claim.Currency = request.Currency.Trim().ToUpperInvariant();
+        claim.Note = request.Note?.Trim(); claim.EvidenceAttached = request.EvidenceAttached;
+        claim.Status = "submitted"; claim.DecisionReason = null;
+        await repo.UpdateClaimDetailsAsync(claim, authz.CurrentSubjectId ?? "system", before, ct);
+        return Map(claim);
+    }
+
+    public async Task DeleteClaimAsync(Guid id, CancellationToken ct)
+    {
+        authz.RequireAnyRole("employee", "hr_ops", "hr_admin", "payroll");
+        var claim = await repo.GetClaimAsync(id, ct)
+            ?? throw new DomainException("benefit-claim-not-found", "Claim not found.");
+        await RequireWorkerScopeAsync(claim.WorkerId, ct);
+        if (claim.PayPeriodId.HasValue)
+        {
+            if (periodBenefits == null) throw new DomainException("benefit-payroll-unavailable", "Payroll assignments are unavailable.");
+            await periodBenefits.DeleteClaimAsync(id, ct);
+            return;
+        }
+        if (claim.Status is not ("submitted" or "returned" or "rejected"))
+            throw new DomainException("benefit-claim-state", "Approved or paid claims cannot be deleted.");
+        await repo.ArchiveClaimAsync(claim, authz.CurrentSubjectId ?? "system", ct);
     }
 
     public async Task<BenefitClaimDto> DecideClaimAsync(Guid id, ClaimDecideRequest request, CancellationToken ct)
@@ -260,6 +320,8 @@ public sealed class BenefitServiceImpl(
         authz.RequireAnyRole("hr_admin", "hr_ops", "payroll");
         var claim = await repo.GetClaimAsync(id, ct)
             ?? throw new DomainException("benefit-claim-not-found", "Claim not found.");
+        if (claim.PayPeriodId.HasValue)
+            throw new DomainException("benefit-claim-payroll-payment", "This claim is included in payroll. Release payment through payroll.");
         if (claim.Status != "approved")
             throw new DomainException("benefit-claim-state", "Only approved claims can be marked as paid.");
         claim.Status = "paid";
@@ -270,7 +332,7 @@ public sealed class BenefitServiceImpl(
     }
 
     private static BenefitTypeDto MapType(BenefitType t) =>
-        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsActive);
+        new(t.Id, t.Code, t.Name, t.Description, t.AnnualCap, t.RequiresEvidence, t.IncludeInPayroll, t.IsTaxable, t.IsActive);
 
     private static string NormalizeCode(string code) =>
         (code ?? "").Trim().ToLowerInvariant();
@@ -281,5 +343,5 @@ public sealed class BenefitServiceImpl(
             c.BenefitType?.Name ?? "?", c.AmountClaimed, c.Currency, c.Note,
             c.EvidenceAttached, c.Status, c.DecisionReason, c.ApprovedAmount,
             c.CreatedBySubjectId, c.DecidedBySubjectId, c.DecidedAt,
-            c.PaidBySubjectId, c.PaidAt, c.CreatedAt, c.LocationId);
+            c.PaidBySubjectId, c.PaidAt, c.CreatedAt, c.LocationId, c.PayPeriodId);
 }

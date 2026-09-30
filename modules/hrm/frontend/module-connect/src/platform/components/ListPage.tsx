@@ -46,6 +46,8 @@ export function ListPage<T extends { id: string }>({
   onViewChange,
   searchPlaceholder = "Search",
   searchFields,
+  searchValue,
+  onSearchChange,
   bulkActions = [],
   rowHref,
   emptyBody = "No records match the current view.",
@@ -58,6 +60,9 @@ export function ListPage<T extends { id: string }>({
   onViewChange?: (id: string) => void;
   searchPlaceholder?: string;
   searchFields: (row: T) => string;
+  /** When supplied, the caller searches the full dataset on the server. */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
   bulkActions?: { label: string; onSelect: (ids: string[]) => void }[];
   rowHref?: (row: T) => ReactNode;
   emptyBody?: string;
@@ -71,13 +76,13 @@ export function ListPage<T extends { id: string }>({
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
-      if (query && !searchFields(r).toLowerCase().includes(query.toLowerCase())) return false;
+      if (!onSearchChange && query && !searchFields(r).toLowerCase().includes(query.toLowerCase())) return false;
       return filters.every((f) => {
         const v = filterValues[f.id];
         return !v || v === "all" || f.match(r, v);
       });
     });
-  }, [rows, query, filterValues, filters, searchFields]);
+  }, [rows, query, filterValues, filters, searchFields, onSearchChange]);
 
   const shown = columns.filter((c) => visible.includes(c.id));
   const allSelected = filtered.length > 0 && selected.length === filtered.length;
@@ -109,8 +114,8 @@ export function ListPage<T extends { id: string }>({
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden />
           <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={searchValue ?? query}
+            onChange={(e) => onSearchChange ? onSearchChange(e.target.value) : setQuery(e.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             className="pl-8"

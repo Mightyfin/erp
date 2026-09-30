@@ -18,6 +18,8 @@
  * `mightyfin-sandbox` realm on the platform Keycloak (26.7).
  */
 
+import { oidcLoginEnabled } from "@/platform/auth-settings";
+
 const AUTHORITY =
   (import.meta.env.VITE_OIDC_AUTHORITY as string | undefined)?.trim() ||
   "https://auth.mightyfinance.co.zm/realms/mightyfin-sandbox";
@@ -134,6 +136,7 @@ function discovery(): {
 /* --------------------------------------------------------------- storage */
 
 export function getSession(): OidcSession | null {
+  if (!oidcLoginEnabled()) return null;
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
@@ -146,6 +149,7 @@ export function getSession(): OidcSession | null {
 }
 
 export function saveSession(s: OidcSession): void {
+  if (!oidcLoginEnabled()) return;
   localStorage.setItem(SESSION_KEY, JSON.stringify(s));
 }
 
@@ -310,6 +314,7 @@ export async function ensureFreshSession(): Promise<OidcSession | null> {
  * back with a code; otherwise with `error=login_required`.
  */
 export function startSilentSso(originPath: string): void {
+  if (!oidcLoginEnabled()) return;
   const st = captureAuthState(originPath);
   void sha256(st.codeVerifier).then((challenge) => {
     window.location.href = buildAuthUrl({
@@ -324,6 +329,7 @@ export function startSilentSso(originPath: string): void {
 
 /** Start the interactive (hosted login) redirect flow. */
 export function startInteractiveLogin(originPath: string): void {
+  if (!oidcLoginEnabled()) return;
   const st = captureAuthState(originPath);
   void sha256(st.codeVerifier).then((challenge) => {
     window.location.href = buildAuthUrl({
@@ -345,6 +351,7 @@ export function startInteractiveLogin(originPath: string): void {
  * could not complete (no code, state mismatch, exchange failure).
  */
 export async function handleLoginCallback(): Promise<string | null> {
+  if (!oidcLoginEnabled()) return null;
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
   const state = params.get("state");
@@ -381,6 +388,7 @@ export async function handleLoginCallback(): Promise<string | null> {
 
 /** Sign out: clear local state and ask Keycloak to end its session. */
 export function signOut(nextPath = "/sign-in"): void {
+  if (!oidcLoginEnabled()) { clearSession(); window.location.href = nextPath; return; }
   const session = getSession();
   clearSession();
   const idTokenHint = session?.idToken;

@@ -22,13 +22,13 @@ import { realApi, useApi } from "@/platform/use-api";
 export const Route = createFileRoute("/hrm/recruitment/vacancies")({
   head: () => ({
     meta: [
-      { title: "Vacancies — Mightyfin HRMS" },
+      { title: "Vacancies — Newworldcargo HRM" },
       {
         name: "description",
         content:
           "Live and closed postings created from approved requisitions, with applicant numbers, days open, closing date and the next action.",
       },
-      { property: "og:title", content: "Vacancies — Mightyfin HRMS" },
+      { property: "og:title", content: "Vacancies — Newworldcargo HRM" },
       {
         property: "og:description",
         content: "Postings from approved requisitions, with applicants, days open, closing date and next action.",

@@ -40,8 +40,8 @@ public class M41Gap2ProrationTests : IDisposable
     {
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2025, 1, 1) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(31, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 
@@ -50,9 +50,21 @@ public class M41Gap2ProrationTests : IDisposable
     {
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2026, 7, 16) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(16, payment); // 16th..31st inclusive
+        Assert.Equal(23, working);
+        Assert.Equal(12, payment); // 16th..31st, excluding weekends
         Assert.Contains("started 16 Jul 2026", note);
+    }
+
+    [Fact]
+    public void WeekdayCalendar_MidMonthStarter_ExcludesSaturdayAndSunday()
+    {
+        var (working, payment, note) = PaymentDaysCalculator.For(
+            July2026(), new Worker { StartDate = new DateOnly(2026, 7, 10) }, []);
+        // July 2026 contains 23 Mon–Fri workdays. From Friday 10th through
+        // Friday 31st, the employee has 16 scheduled workdays.
+        Assert.Equal(23, working);
+        Assert.Equal(16, payment);
+        Assert.Contains("started 10 Jul 2026", note);
     }
 
     [Fact]
@@ -61,8 +73,8 @@ public class M41Gap2ProrationTests : IDisposable
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(),
             new Worker { StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2026, 7, 15) }, []);
-        Assert.Equal(31, working);
-        Assert.Equal(15, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(11, payment);
         Assert.Contains("ended", note);
     }
 
@@ -76,9 +88,42 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2025, 1, 1) }, leaves);
-        Assert.Equal(31, working);
-        Assert.Equal(29, payment);
+        Assert.Equal(23, working);
+        Assert.Equal(21, payment);
         Assert.Contains("unpaid leave days", note);
+    }
+
+    [Fact]
+    public void HalfPayLeave_PaysHalfOfScheduledLeaveDays()
+    {
+        var worker = new Worker { FirstName = "A", LastName = "B", EmployeeNo = "E1", StartDate = new DateOnly(2025,1,1) };
+        var leave = new ApprovedUnpaidLeave(worker.Id, new DateOnly(2026,7,20), new DateOnly(2026,7,21), 2, 0.5m);
+        var (working, payment, note) = PaymentDaysCalculator.For(July2026(leave), worker, [leave]);
+        Assert.Equal(23, working);
+        Assert.Equal(22m, payment);
+        Assert.Contains("half-pay leave", note);
+        var basic = new SalaryComponent { Code="basic", Name="Basic", ComponentType="earning", CalculationBasis="fixed", FixedAmount=2300m };
+        var profile = new WorkerPayrollProfile { WorkerId=worker.Id, ComponentValues=[new WorkerComponentValue { ComponentId=basic.Id, Amount=2300m }] };
+        var context = new CalcContext(worker, profile, [basic], [], []);
+        context.SetProration(working, payment, note);
+        context.Evaluate(basic);
+        Assert.Equal(2200m, context.Gross);
+        Assert.Equal(22m, context.PaymentDays);
+    }
+
+    [Fact]
+    public async Task ApprovedLeaveLoadsConfiguredHalfPayFraction()
+    {
+        var stack = await PayrollEngineTests.SeedStackAsync(_db);
+        _db.LeaveTypes.Add(new LeaveType { Code="study", Name="Study Leave", Category="half-pay", DefaultDaysPerYear=14, EffectiveFrom=new DateOnly(2026,7,1) });
+        _db.LeaveRequests.Add(new LeaveRequest { WorkerId=stack.Profile.WorkerId, LeaveTypeCode="study", Status="approved", StartDate=new DateOnly(2026,7,20), EndDate=new DateOnly(2026,7,21), RequestedDays=2 });
+        await _db.SaveChangesAsync();
+        var inputs = await new PayrollRepository(_db).LoadProrationInputsAsync(stack.P2.Id,default);
+        var leave = Assert.Single(inputs.UnpaidLeaves);
+        Assert.Equal(0.5m,leave.PaidFraction);
+        var worker = await _db.Workers.SingleAsync(w=>w.Id==stack.Profile.WorkerId);
+        var (_,payment,_) = PaymentDaysCalculator.For(inputs,worker,[leave]);
+        Assert.Equal(22m,payment);
     }
 
     [Fact]
@@ -91,7 +136,7 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2025, 1, 1) }, leaves);
-        Assert.Equal(31, payment);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 
@@ -105,8 +150,8 @@ public class M41Gap2ProrationTests : IDisposable
         };
         var (working, payment, _) = PaymentDaysCalculator.For(
             July2026(), new Worker { Id = wid, StartDate = new DateOnly(2026, 7, 16) }, leaves);
-        Assert.Equal(31, working);
-        Assert.Equal(14, payment); // 16..31 = 16 days minus 2 unpaid
+        Assert.Equal(23, working);
+        Assert.Equal(10, payment); // 12 scheduled days minus 2 unpaid
     }
 
     [Fact]
@@ -124,9 +169,9 @@ public class M41Gap2ProrationTests : IDisposable
         var (working, payment, note) = PaymentDaysCalculator.For(
             July2026(), new Worker { StartDate = new DateOnly(2025, 1, 1) }, []);
         // July2026 includes Heroes' Day (6 Jul) as a holiday — payment days
-        // must still be the full 31.
-        Assert.Equal(31, working);
-        Assert.Equal(31, payment);
+        // remain the full 23 scheduled weekdays.
+        Assert.Equal(23, working);
+        Assert.Equal(23, payment);
         Assert.Null(note);
     }
 

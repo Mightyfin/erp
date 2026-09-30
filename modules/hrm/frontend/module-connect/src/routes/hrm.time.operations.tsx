@@ -11,10 +11,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppShell } from "@/platform/components/AppShell";
 import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
+import { PeriodOvertimeAmounts } from "@/platform/components/PeriodOvertimeAmounts";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/time/operations")({
-  head: () => ({ meta: [{ title: "Overtime review — Mightyfin HRMS" }, { name: "description", content: "Review attendance-derived overtime before payroll." }] }),
+  head: () => ({ meta: [{ title: "Overtime review — Newworldcargo HRM" }, { name: "description", content: "Review attendance-derived overtime before payroll." }] }),
   component: OvertimeReviewPage,
 });
 
@@ -119,6 +120,7 @@ function OvertimeReviewPage() {
         />
 
         <div className="space-y-6" data-testid="overtime-review-page">
+          <PeriodOvertimeAmounts />
           <section className="space-y-3" aria-labelledby="workflow-title">
             <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How this works</p><h2 id="workflow-title" className="mt-1 text-lg font-semibold">From clocked time to payroll</h2></div><p className="max-w-xl text-sm text-muted-foreground">{workflowMessage}</p></div>
             <div className="grid gap-2 md:grid-cols-4"><WorkflowStep number="1" title="Import" detail="Bring in clocked attendance." complete={rows.length > 0} /><WorkflowStep number="2" title="Review" detail="Check derived overtime." active={summary.pending > 0} /><WorkflowStep number="3" title="Approve" detail="Make hours payroll-eligible." active={summary.approved > 0} /><WorkflowStep number="4" title="Payroll" detail="Release and link the source row." active={summary.paid > 0} /></div>

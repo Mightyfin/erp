@@ -13,12 +13,14 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
     private readonly IWorkerRepository workerRepo;
     private readonly ITimeService timeService;
     private readonly IAuthzService authz;
+    private readonly ShellContext? scope;
 
-    public AttendanceImportSchema(IWorkerRepository workerRepo, ITimeService timeService, IAuthzService authz)
+    public AttendanceImportSchema(IWorkerRepository workerRepo, ITimeService timeService, IAuthzService authz, ShellContext? scope = null)
     {
         this.workerRepo = workerRepo;
         this.timeService = timeService;
         this.authz = authz;
+        this.scope = scope;
     }
 
     public string TypeKey => "attendance";
@@ -47,7 +49,7 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
 
     public async Task<ImportRowOutcome> PreviewRowAsync(IDictionary<string, string> row, string mode, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "timesheet_operator");
 
         var employeeNo = row.Get("employeeNo").Trim();
         var workDateStr = row.Get("workDate").Trim();
@@ -60,6 +62,9 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
         var worker = await workerRepo.FindByNaturalKeyAsync(employeeNo, null, null, ct);
         if (worker is null)
             return new ImportRowOutcome("error", $"Employee '{employeeNo}' not found.");
+
+        if (!AttendanceScope.Allows(worker, scope))
+            return new ImportRowOutcome("error", "Employee is outside your attendance scope.");
 
         if (!TryParseImportDate(workDateStr, out var date))
             return new ImportRowOutcome("error", $"Date '{workDateStr}' is invalid — use DD-MM-YYYY.");
@@ -88,7 +93,9 @@ public sealed class AttendanceImportSchema : IImportSchemaWithExport
                     OrNull(row.Get("clockOut")))
             });
 
-        await timeService.ImportAttendanceAsync(request, authz.CurrentSubjectId ?? "system", ct);
+        var result = await timeService.ImportAttendanceAsync(request, authz.CurrentSubjectId ?? "system", ct);
+        if (result.RejectedCount > 0)
+            throw new DomainException("attendance-import-rejected", string.Join("; ", result.Errors));
     }
 
     public async Task<List<Dictionary<string, string>>> ExportRowsAsync(string? filter, CancellationToken ct)

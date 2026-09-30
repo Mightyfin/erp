@@ -16,9 +16,9 @@ import { feedback } from "@/platform/feedback";
 export const Route = createFileRoute("/hrm/requests/$id")({
   head: () => ({
     meta: [
-      { title: "HR request — Mightyfin HRMS" },
+      { title: "HR request — Newworldcargo HRM" },
       { name: "description", content: "One thread: conversation, evidence and status together." },
-      { property: "og:title", content: "HR request — Mightyfin HRMS" },
+      { property: "og:title", content: "HR request — Newworldcargo HRM" },
       {
         property: "og:description",
         content: "One thread: conversation, evidence and status together.",

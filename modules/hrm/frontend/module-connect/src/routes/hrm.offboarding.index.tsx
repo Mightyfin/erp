@@ -17,7 +17,7 @@ import type { ColumnDef } from "@/platform/components/ListPage";
 export const Route = createFileRoute("/hrm/offboarding/")({
   head: () => ({
     meta: [
-      { title: "Offboarding — Mightyfin HRMS" },
+      { title: "Offboarding — Newworldcargo HRM" },
       { name: "description", content: "Manage employee exits, checklist items and exit interviews." },
     ],
   }),

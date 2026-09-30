@@ -32,7 +32,7 @@ public class PayrollStatutoryTests
     };
 
     private static SalaryComponent Comp(string code, string type, string basis, string? tied = null, decimal? rate = null, decimal? ceiling = null, int priority = 100, bool statutory = false) =>
-        new() { Code = code, Name = code, ComponentType = type, CalculationBasis = basis, BasisComponentCode = tied ?? "basic", Rate = rate, Ceiling = ceiling, Priority = priority, IsStatutory = statutory, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 };
+        new() { Code = code, Name = code, ComponentType = type, CalculationBasis = basis, BasisComponentCode = tied ?? "basic", Rate = rate, Ceiling = ceiling, Priority = priority, IsTaxable = type == "earning", IsStatutory = statutory, IsActive = true, EffectiveFrom = DateOnly.FromDateTime(new DateTime(2026, 1, 1)), Version = 1 };
 
     private static Worker TestWorker(string empNo = "T001") => new()
     {
@@ -226,6 +226,35 @@ public class PayrollStatutoryTests
         Assert.Equal(19524m, net);
         // Employer cost = 1,500 (NAPSA-ER 5% × 30,000) + 250 (NHIMA-ER 1% × 25,000) = 1,750
         Assert.Equal(1750m, employerCost);
+    }
+
+    [Fact]
+    public void SummieScenario_TaxableCashAllowancesUseTaxableIncomeAndGrossNapsa()
+    {
+        var basic = Comp("basic", "earning", "fixed", priority: 10);
+        var housing = Comp("housing-allowance", "earning", "percent-of", tied: "basic", rate: 30m, priority: 20);
+        var lunch = Comp("lunch-cash", "earning", "fixed", priority: 30);
+        var transport = Comp("transport-cash", "earning", "fixed", priority: 40);
+        var napsaEe = Comp("napsa-ee", "deduction", "percent-of", tied: "gross", rate: 5m, statutory: true, priority: 60);
+        var nhimaEe = Comp("nhima-ee", "deduction", "percent-of", tied: "basic", rate: 1m, statutory: true, priority: 70);
+        var paye = Comp("paye", "tax", "slab", tied: "taxable", statutory: true, priority: 80);
+
+        var (gross, deductions, net, _, comps) = Evaluate(
+            new() { basic, housing, lunch, transport, napsaEe, nhimaEe, paye },
+            new()
+            {
+                (basic.Id, "basic", 20076.92m),
+                (lunch.Id, "lunch-cash", 450m),
+                (transport.Id, "transport-cash", 450m),
+            },
+            ZambiaNapsaNhima2026(), ZambiaPaye2026());
+
+        Assert.Equal(27000m, Math.Round(gross, 2));
+        Assert.Equal(7616m, comps.First(c => c.Code == "paye").Amount);
+        Assert.Equal(1350m, comps.First(c => c.Code == "napsa-ee").Amount);
+        Assert.Equal(200.77m, comps.First(c => c.Code == "nhima-ee").Amount);
+        Assert.Equal(9166.77m, Math.Round(deductions, 2));
+        Assert.Equal(17833.23m, Math.Round(net, 2));
     }
 
     [Fact]

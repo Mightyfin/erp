@@ -79,7 +79,9 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
             MiddleName = request.MiddleName,
             LastName = request.LastName,
             PreferredName = request.PreferredName,
+            ProfileDetailsJson = ValidateProfileDetails(request.ProfileDetailsJson),
             Email = request.Email,
+            PersonalEmail = request.PersonalEmail,
             Phone = request.Phone,
             Nrc = request.Nrc,
             PassportNo = request.PassportNo,
@@ -120,7 +122,10 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         if (request.MiddleName is not null) worker.MiddleName = request.MiddleName;
         if (request.LastName is not null) worker.LastName = request.LastName;
         if (request.PreferredName is not null) worker.PreferredName = request.PreferredName;
+        if (request.ProfileDetailsJson is not null)
+            worker.ProfileDetailsJson = ValidateProfileDetails(request.ProfileDetailsJson);
         if (request.Email is not null) worker.Email = request.Email;
+        if (request.PersonalEmail is not null) worker.PersonalEmail = request.PersonalEmail;
         if (request.Phone is not null) worker.Phone = request.Phone;
         if (request.Nrc is not null) worker.Nrc = request.Nrc;
         if (request.PassportNo is not null) worker.PassportNo = request.PassportNo;
@@ -135,6 +140,15 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         if (request.Grade is not null) worker.Grade = request.Grade;
         if (request.JobTitle is not null) worker.JobTitle = request.JobTitle;
         if (request.Status is not null) worker.Status = request.Status;
+        if (request.ContractType is not null) worker.ContractType = request.ContractType.Trim().ToLowerInvariant();
+        if (request.StartDate is not null)
+        {
+            if (!DateOnly.TryParse(request.StartDate, out var startDate))
+                throw new DomainException("invalid-start-date", "Employment start date must be a valid date.");
+            if (worker.EndDate.HasValue && startDate > worker.EndDate.Value)
+                throw new DomainException("invalid-employment-dates", "Employment start date cannot be after the employment end date.");
+            worker.StartDate = startDate;
+        }
         if (request.EndDate is not null) worker.EndDate = DateOnly.Parse(request.EndDate);
         // M27 P0 UX audit: the profile page's Link account action arrives here
         // (PUT /workers/{id}), so the admin update honours SubjectId with the
@@ -352,12 +366,12 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
 
     private static WorkerDto Map(Worker w, bool includeSensitive) => new(
         w.Id, w.EmployeeNo, w.FirstName, w.MiddleName, w.LastName, w.FullName, w.PreferredName,
-        w.Email, w.Phone, w.PhotoUrl, Mask(w.Nrc, includeSensitive), Mask(w.PassportNo, includeSensitive),
+        w.Email, includeSensitive ? w.PersonalEmail : null, w.Phone, w.PhotoUrl, Mask(w.Nrc, includeSensitive), Mask(w.PassportNo, includeSensitive),
         Mask(w.Tpin, includeSensitive), Mask(w.NapsaNumber, includeSensitive), Mask(w.NhimaNumber, includeSensitive),
-        w.Nationality, includeSensitive ? w.DateOfBirth : null, includeSensitive ? w.SubjectId : null, w.WorkerType, w.Status,
+        w.Nationality, includeSensitive ? w.DateOfBirth : null, includeSensitive ? w.SubjectId : null, w.WorkerType, w.ContractType, w.Status,
         w.OrgUnitId, w.OrgUnit?.Name, w.LocationId, w.Location?.Name, w.ManagerId,
         w.Manager?.FullName, w.Grade, w.JobTitle,
-        w.StartDate?.ToString(), w.EndDate?.ToString(),
+        w.StartDate?.ToString("yyyy-MM-dd"), w.EndDate?.ToString("yyyy-MM-dd"),
         includeSensitive && w.EmergencyContacts.Count > 0
             ? w.EmergencyContacts.Select(e => new EmergencyContactDto(e.Id, e.Relationship, e.FullName, e.Phone, e.IsPrimary)).ToList()
             : null,
@@ -367,7 +381,25 @@ public sealed class WorkerServiceImpl(IWorkerRepository repo, IAuthzService auth
         w.Education.Select(e => new WorkerEducationDto(e.Id, e.Institution, e.Qualification, e.FieldOfStudy, e.Grade, e.StartYear, e.EndYear)).ToList(),
         w.ExternalWorkHistory.Select(e => new ExternalWorkHistoryDto(e.Id, e.Company, e.Role, e.StartDate, e.EndDate, e.Responsibilities)).ToList(),
         w.InternalWorkHistory.Select(e => new InternalWorkHistoryDto(e.Id, e.OrgUnitName, e.Role, e.Grade, e.StartDate, e.EndDate, e.Reason)).ToList(),
-        w.CreatedAt, w.UpdatedAt);
+        w.CreatedAt, w.UpdatedAt, includeSensitive ? w.ProfileDetailsJson : null);
+
+    private static string? ValidateProfileDetails(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        if (json.Length > 16_384)
+            throw new DomainException("profile-details-too-large", "Personnel profile details are too large.");
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                throw new DomainException("profile-details-invalid", "Personnel profile details must be a JSON object.");
+            return document.RootElement.GetRawText();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new DomainException("profile-details-invalid", "Personnel profile details must be valid JSON.");
+        }
+    }
 
     // M35: self-service notification preferences
     public async Task<string?> GetMyPreferencesAsync(string subjectId, CancellationToken ct)

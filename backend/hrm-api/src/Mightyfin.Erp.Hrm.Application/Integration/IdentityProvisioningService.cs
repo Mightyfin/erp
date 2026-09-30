@@ -35,6 +35,18 @@ public interface IIdentityProvisioningService
     /// so re-saving the same list is safe.
     Task<ProvisionResult> ProvisionAdminsAsync(
         IEnumerable<string> emails, CancellationToken ct);
+
+    /// Lists and administers the users admitted to the ERP realm. These
+    /// operations deliberately target Keycloak rather than the optional local
+    /// account tables used by standalone installations.
+    Task<IdentityUserList> ListUsersAsync(CancellationToken ct);
+    Task<IReadOnlyList<IdentityDirectoryUser>> SearchDirectoryAsync(
+        string query, CancellationToken ct);
+    Task<IdentityAccessUser> InviteUserAsync(
+        IdentityUserInvite request, CancellationToken ct);
+    Task<IdentityAccessUser> UpdateUserAsync(
+        string userId, IdentityUserUpdate request, CancellationToken ct);
+    Task SendPasswordResetAsync(string userId, CancellationToken ct);
 }
 
 public sealed record ClaimElevationResult(
@@ -54,6 +66,34 @@ public sealed record ProvisionEntry(
     bool Assigned,
     string? Error);
 
+public sealed record IdentityAccessUser(
+    string Id,
+    string Email,
+    string DisplayName,
+    IReadOnlyList<string> Roles,
+    bool IsActive,
+    bool Federated);
+
+public sealed record IdentityUserList(
+    string Provider,
+    string Realm,
+    IReadOnlyList<IdentityAccessUser> Items);
+
+public sealed record IdentityUserInvite(
+    string Email,
+    string DisplayName,
+    IReadOnlyList<string> Roles,
+    string SourceUserId);
+
+public sealed record IdentityDirectoryUser(
+    string Id,
+    string Email,
+    string DisplayName);
+
+public sealed record IdentityUserUpdate(
+    bool? IsActive,
+    IReadOnlyList<string>? Roles);
+
 /// <summary>M51: Keycloak admin REST client for identity provisioning.</summary>
 public sealed class IdentityProvisioningService(
     ILogger<IdentityProvisioningService> log,
@@ -72,6 +112,16 @@ public sealed class IdentityProvisioningService(
         (cfg["HRM:IdentityBaseUrl"] ?? "").TrimEnd('/');
     private string TenantRealm =>
         cfg["HRM:IdentityTenantRealm"] ?? "mightyfin-sandbox";
+    private string SourceRealm =>
+        cfg["HRM:IdentitySourceRealm"] ?? "mightyfin-sandbox";
+    private string BrokerAlias =>
+        cfg["HRM:IdentityBrokerAlias"] ?? "mightyfin-staff";
+
+    private static readonly string[] ManagedRoles =
+    [
+        "employee", "manager", "hr_ops", "payroll", "finance_approver",
+        "hr_admin", "investigator", "erp_access"
+    ];
 
     private static readonly TimeSpan AdminTokenTtl = TimeSpan.FromMinutes(4);
     private volatile CachedToken? _adminToken;
@@ -200,7 +250,351 @@ public sealed class IdentityProvisioningService(
         return new ProvisionResult(entries);
     }
 
+    public async Task<IdentityUserList> ListUsersAsync(CancellationToken ct)
+    {
+        var token = await AdminTokenAsync(ct) ??
+            throw new InvalidOperationException("identity-admin-unreachable");
+        using var client = AdminClient(token);
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users?max=500", ct);
+        await EnsureIdentitySuccessAsync(response, "identity-user-list-failed", ct);
+        var users = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var items = new List<IdentityAccessUser>();
+        if (users.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var user in users.EnumerateArray())
+            {
+                var id = user.TryGetProperty("id", out var idNode) ? idNode.GetString() : null;
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                var roles = await UserRolesAsync(client, TenantRealm, id, ct);
+                if (!roles.Any(ManagedRoles.Contains)) continue;
+                var email = user.TryGetProperty("email", out var emailNode)
+                    ? emailNode.GetString() ?? "" : "";
+                var username = user.TryGetProperty("username", out var usernameNode)
+                    ? usernameNode.GetString() ?? "" : "";
+                var firstName = user.TryGetProperty("firstName", out var firstNode)
+                    ? firstNode.GetString() ?? "" : "";
+                var lastName = user.TryGetProperty("lastName", out var lastNode)
+                    ? lastNode.GetString() ?? "" : "";
+                var displayName = string.Join(' ', new[] { firstName, lastName }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+                if (string.IsNullOrWhiteSpace(displayName)) displayName = email.Length > 0 ? email : username;
+                var active = !user.TryGetProperty("enabled", out var enabledNode) || enabledNode.GetBoolean();
+                var federated = await HasFederatedIdentityAsync(client, TenantRealm, id, ct);
+                items.Add(new IdentityAccessUser(id, email.Length > 0 ? email : username,
+                    displayName, roles.Where(ManagedRoles.Contains).Order().ToArray(), active, federated));
+            }
+        }
+        return new IdentityUserList("oidc", TenantRealm,
+            items.OrderBy(item => item.Email, StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    public async Task<IReadOnlyList<IdentityDirectoryUser>> SearchDirectoryAsync(
+        string query, CancellationToken ct)
+    {
+        var value = query.Trim();
+        if (value.Length < 2) return [];
+        var token = await AdminTokenAsync(ct) ??
+            throw new InvalidOperationException("identity-admin-unreachable");
+        using var client = AdminClient(token);
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{SourceRealm}/users?search={Uri.EscapeDataString(value)}&max=20",
+            ct);
+        await EnsureIdentitySuccessAsync(response, "identity-directory-search-failed", ct);
+        var users = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (users.ValueKind != JsonValueKind.Array) return [];
+        return users.EnumerateArray().Select(user =>
+        {
+            var id = user.TryGetProperty("id", out var idNode) ? idNode.GetString() ?? "" : "";
+            var email = user.TryGetProperty("email", out var emailNode)
+                ? emailNode.GetString() ?? "" : "";
+            var username = user.TryGetProperty("username", out var usernameNode)
+                ? usernameNode.GetString() ?? "" : "";
+            var first = user.TryGetProperty("firstName", out var firstNode)
+                ? firstNode.GetString() ?? "" : "";
+            var last = user.TryGetProperty("lastName", out var lastNode)
+                ? lastNode.GetString() ?? "" : "";
+            var name = string.Join(' ', new[] { first, last }.Where(x => x.Length > 0));
+            return new IdentityDirectoryUser(id, email.Length > 0 ? email : username,
+                name.Length > 0 ? name : email.Length > 0 ? email : username);
+        }).Where(user => user.Id.Length > 0 && user.Email.Length > 0).ToArray();
+    }
+
+    public async Task<IdentityAccessUser> InviteUserAsync(
+        IdentityUserInvite request, CancellationToken ct)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (email.Length == 0 || !email.Contains('@'))
+            throw new InvalidOperationException("identity-email-invalid");
+        var token = await AdminTokenAsync(ct) ??
+            throw new InvalidOperationException("identity-admin-unreachable");
+        using var client = AdminClient(token);
+
+        if (string.IsNullOrWhiteSpace(request.SourceUserId))
+            throw new InvalidOperationException("identity-source-user-required");
+        var source = await GetUserRepresentationAsync(client, SourceRealm, request.SourceUserId, ct);
+        var sourceEmail = source.TryGetProperty("email", out var sourceEmailNode)
+            ? sourceEmailNode.GetString() ?? "" : "";
+        if (!sourceEmail.Equals(email, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("identity-source-user-mismatch");
+        var sourceId = request.SourceUserId;
+        var targetId = await FindUserIdInRealmAsync(client, TenantRealm, email, ct)
+            ?? await CreateUserInRealmAsync(client, TenantRealm, email, request.DisplayName, ct);
+        await EnsureBrokerLinkAsync(client, targetId, sourceId, email, ct);
+        await ReplaceManagedRolesAsync(client, targetId, request.Roles, ct);
+        return await GetIdentityUserAsync(client, targetId, ct);
+    }
+
+    public async Task<IdentityAccessUser> UpdateUserAsync(
+        string userId, IdentityUserUpdate request, CancellationToken ct)
+    {
+        var token = await AdminTokenAsync(ct) ??
+            throw new InvalidOperationException("identity-admin-unreachable");
+        using var client = AdminClient(token);
+        if (request.IsActive is not null)
+        {
+            using var get = await client.GetAsync(
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(userId)}", ct);
+            await EnsureIdentitySuccessAsync(get, "identity-user-not-found", ct);
+            var node = await JsonSerializer.DeserializeAsync<JsonNode>(
+                await get.Content.ReadAsStreamAsync(ct), cancellationToken: ct) ?? new JsonObject();
+            node["enabled"] = request.IsActive.Value;
+            using var content = new StringContent(node.ToJsonString(), System.Text.Encoding.UTF8,
+                new MediaTypeHeaderValue("application/json"));
+            using var put = await client.PutAsync(
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(userId)}",
+                content, ct);
+            await EnsureIdentitySuccessAsync(put, "identity-user-update-failed", ct);
+        }
+        if (request.Roles is not null)
+            await ReplaceManagedRolesAsync(client, userId, request.Roles, ct);
+        return await GetIdentityUserAsync(client, userId, ct);
+    }
+
+    public async Task SendPasswordResetAsync(string userId, CancellationToken ct)
+    {
+        var token = await AdminTokenAsync(ct) ??
+            throw new InvalidOperationException("identity-admin-unreachable");
+        using var client = AdminClient(token);
+        var sourceId = await FederatedSourceIdAsync(client, userId, ct);
+        await ExecutePasswordActionAsync(client,
+            sourceId is null ? TenantRealm : SourceRealm,
+            sourceId ?? userId, ct);
+    }
+
     // ---------------- Keycloak admin REST helpers ----------------
+
+    private HttpClient AdminClient(string token)
+    {
+        var client = http.CreateClient("keycloak-admin");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    private static async Task EnsureIdentitySuccessAsync(
+        HttpResponseMessage response, string code, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode) return;
+        var detail = await response.Content.ReadAsStringAsync(ct);
+        throw new InvalidOperationException(
+            $"{code}:{(int)response.StatusCode}:{detail[..Math.Min(detail.Length, 160)]}");
+    }
+
+    private async Task<string[]> UserRolesAsync(
+        HttpClient client, string realm, string userId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users/{Uri.EscapeDataString(userId)}/role-mappings/realm/composite",
+            ct);
+        await EnsureIdentitySuccessAsync(response, "identity-role-list-failed", ct);
+        var roles = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        return roles.ValueKind == JsonValueKind.Array
+            ? roles.EnumerateArray()
+                .Select(role => role.TryGetProperty("name", out var name) ? name.GetString() : null)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+    }
+
+    private async Task<bool> HasFederatedIdentityAsync(
+        HttpClient client, string realm, string userId, CancellationToken ct)
+        => (await FederatedIdentitiesAsync(client, realm, userId, ct))
+            .Any(identity => identity.Alias.Equals(BrokerAlias, StringComparison.OrdinalIgnoreCase));
+
+    private async Task<string?> FederatedSourceIdAsync(
+        HttpClient client, string targetUserId, CancellationToken ct)
+        => (await FederatedIdentitiesAsync(client, TenantRealm, targetUserId, ct))
+            .FirstOrDefault(identity => identity.Alias.Equals(BrokerAlias,
+                StringComparison.OrdinalIgnoreCase))?.UserId;
+
+    private async Task<FederatedIdentityRef[]> FederatedIdentitiesAsync(
+        HttpClient client, string realm, string userId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users/{Uri.EscapeDataString(userId)}/federated-identity",
+            ct);
+        await EnsureIdentitySuccessAsync(response, "identity-link-list-failed", ct);
+        var links = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (links.ValueKind != JsonValueKind.Array) return [];
+        return links.EnumerateArray().Select(link => new FederatedIdentityRef(
+            link.TryGetProperty("identityProvider", out var alias) ? alias.GetString() ?? "" : "",
+            link.TryGetProperty("userId", out var id) ? id.GetString() ?? "" : ""))
+            .ToArray();
+    }
+
+    private async Task<string?> FindUserIdInRealmAsync(
+        HttpClient client, string realm, string email, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users?email={Uri.EscapeDataString(email)}&exact=true",
+            ct);
+        await EnsureIdentitySuccessAsync(response, "identity-user-search-failed", ct);
+        var users = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (users.ValueKind != JsonValueKind.Array || users.GetArrayLength() == 0) return null;
+        return users[0].TryGetProperty("id", out var id) ? id.GetString() : null;
+    }
+
+    private async Task<JsonElement> GetUserRepresentationAsync(
+        HttpClient client, string realm, string userId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users/{Uri.EscapeDataString(userId)}", ct);
+        await EnsureIdentitySuccessAsync(response, "identity-directory-user-not-found", ct);
+        return await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+    }
+
+    private async Task<string> CreateUserInRealmAsync(
+        HttpClient client, string realm, string email, string displayName, CancellationToken ct)
+    {
+        var names = displayName.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var fallback = Capitalize(email[..email.IndexOf('@')]);
+        var firstName = names.Length > 0 ? names[0] : fallback;
+        var lastName = names.Length > 1 ? names[1] : firstName;
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            username = email,
+            email,
+            emailVerified = false,
+            enabled = true,
+            firstName,
+            lastName,
+            requiredActions = Array.Empty<string>()
+        });
+        using var content = new ByteArrayContent(payload);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var response = await client.PostAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users", content, ct);
+        if (response.StatusCode != System.Net.HttpStatusCode.Conflict)
+            await EnsureIdentitySuccessAsync(response, "identity-user-create-failed", ct);
+        return await FindUserIdInRealmAsync(client, realm, email, ct)
+            ?? throw new InvalidOperationException("identity-user-create-unresolved");
+    }
+
+    private async Task EnsureBrokerLinkAsync(
+        HttpClient client, string targetId, string sourceId, string email, CancellationToken ct)
+    {
+        if (await HasFederatedIdentityAsync(client, TenantRealm, targetId, ct)) return;
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            identityProvider = BrokerAlias,
+            userId = sourceId,
+            userName = email
+        });
+        using var content = new ByteArrayContent(payload);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var response = await client.PostAsync(
+            $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(targetId)}/federated-identity/{Uri.EscapeDataString(BrokerAlias)}",
+            content, ct);
+        await EnsureIdentitySuccessAsync(response, "identity-link-create-failed", ct);
+    }
+
+    private async Task ReplaceManagedRolesAsync(
+        HttpClient client, string userId, IEnumerable<string> requested, CancellationToken ct)
+    {
+        var desired = requested
+            .Where(role => ManagedRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        desired.Add("employee");
+        desired.Add("erp_access");
+
+        using var existingResponse = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(userId)}/role-mappings/realm",
+            ct);
+        await EnsureIdentitySuccessAsync(existingResponse, "identity-role-list-failed", ct);
+        var existing = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await existingResponse.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var removable = existing.ValueKind == JsonValueKind.Array
+            ? existing.EnumerateArray()
+                .Where(role => role.TryGetProperty("name", out var name)
+                    && ManagedRoles.Contains(name.GetString() ?? "", StringComparer.OrdinalIgnoreCase)
+                    && !desired.Contains(name.GetString() ?? ""))
+                .Select(role => role.Clone()).ToArray()
+            : [];
+        if (removable.Length > 0)
+        {
+            using var removeRequest = new HttpRequestMessage(HttpMethod.Delete,
+                $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(userId)}/role-mappings/realm")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(removable),
+                    System.Text.Encoding.UTF8, new MediaTypeHeaderValue("application/json"))
+            };
+            using var removeResponse = await client.SendAsync(removeRequest, ct);
+            await EnsureIdentitySuccessAsync(removeResponse, "identity-role-remove-failed", ct);
+        }
+
+        var existingNames = existing.ValueKind == JsonValueKind.Array
+            ? existing.EnumerateArray()
+                .Select(role => role.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "")
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var roleName in desired.Where(role => !existingNames.Contains(role)))
+        {
+            var role = await RoleAsync(roleName, ct);
+            if (role is not null)
+                await AssignRealmRoleAsync(Guid.Parse(userId), role.Id, role.Name, ct);
+        }
+    }
+
+    private async Task<IdentityAccessUser> GetIdentityUserAsync(
+        HttpClient client, string userId, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(
+            $"{IdentityBaseUrl}/admin/realms/{TenantRealm}/users/{Uri.EscapeDataString(userId)}", ct);
+        await EnsureIdentitySuccessAsync(response, "identity-user-not-found", ct);
+        var user = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var roles = await UserRolesAsync(client, TenantRealm, userId, ct);
+        var email = user.TryGetProperty("email", out var emailNode)
+            ? emailNode.GetString() ?? "" : "";
+        var first = user.TryGetProperty("firstName", out var firstNode)
+            ? firstNode.GetString() ?? "" : "";
+        var last = user.TryGetProperty("lastName", out var lastNode)
+            ? lastNode.GetString() ?? "" : "";
+        var name = string.Join(' ', new[] { first, last }.Where(value => value.Length > 0));
+        return new IdentityAccessUser(userId, email, name.Length > 0 ? name : email,
+            roles.Where(ManagedRoles.Contains).Order().ToArray(),
+            !user.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
+            await HasFederatedIdentityAsync(client, TenantRealm, userId, ct));
+    }
+
+    private async Task ExecutePasswordActionAsync(
+        HttpClient client, string realm, string userId, CancellationToken ct)
+    {
+        using var content = new StringContent("[\"UPDATE_PASSWORD\"]",
+            System.Text.Encoding.UTF8, new MediaTypeHeaderValue("application/json"));
+        using var response = await client.PutAsync(
+            $"{IdentityBaseUrl}/admin/realms/{realm}/users/{Uri.EscapeDataString(userId)}/execute-actions-email?lifespan=43200",
+            content, ct);
+        await EnsureIdentitySuccessAsync(response, "identity-password-email-failed", ct);
+    }
 
     private async Task<string?> AdminTokenAsync(CancellationToken ct)
     {
@@ -474,4 +868,6 @@ public sealed class IdentityProvisioningService(
     private sealed record RoleRef(
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("name")] string Name);
+
+    private sealed record FederatedIdentityRef(string Alias, string UserId);
 }

@@ -7,8 +7,12 @@
  *   scope queries to the right tenant.
  * - All responses follow the backend's problem-details-ish envelope and this
  *   client normalises them into an `ApiError` class the UI can surface.
- * - Standalone auth: requests carry the application-owned HttpOnly session cookie.
+ * - OIDC auth: requests carry the current ERP-realm access token. Cookies stay
+ *   enabled so the same client remains compatible with explicitly configured
+ *   standalone/local deployments.
  */
+
+import { getSession } from "@/platform/oidc";
 
 export class ApiError extends Error {
   constructor(
@@ -76,6 +80,56 @@ export interface LocalAuthResult {
   user: LocalAuthUser;
 }
 
+export interface AuthCapabilities {
+  mode: "local" | "hybrid" | "oidc" | "disabled";
+  localUsersEnabled: boolean;
+  identityConfigured: boolean;
+}
+
+export interface IdentityAccessUser {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: string[];
+  isActive: boolean;
+  federated: boolean;
+  source?: "idp" | "local";
+}
+
+export interface IdentityDirectoryUser {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
+export interface CompanyBranding {
+  displayName: string;
+  companyName: string;
+  companyDomain: string;
+  loginHeading: string;
+  loginDescription: string;
+  emailPlaceholder: string;
+  passwordPlaceholder: string;
+  supportEmail: string;
+  primaryColor: string;
+  primaryForegroundColor: string;
+  buttonColor: string;
+  buttonForegroundColor: string;
+  secondaryColor: string;
+  secondaryForegroundColor: string;
+  accentColor: string;
+  accentForegroundColor: string;
+  railColor: string;
+  railForegroundColor: string;
+  railMutedColor: string;
+  railActiveColor: string;
+  logoLightDataUri?: string | null;
+  logoDarkDataUri?: string | null;
+  faviconDataUri?: string | null;
+  updatedAt?: string | null;
+}
+export type CompanyBrandingUpdate = Partial<CompanyBranding>;
+
 /** Minimal shape of the linked worker returned by `hrmApi.myProfile()`. */
 export interface LinkedWorker {
   id: string;
@@ -103,10 +157,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const problem = payload && typeof payload === "object" ? (payload as { title?: unknown; message?: unknown; code?: unknown }) : null;
     const title =
-      res.status === 403 ? "You do not have permission to access this page."
-        : res.status === 401 ? "Your session has expired. Please sign in again."
-          : problem?.message ? String(problem.message)
-            : problem?.title ? String(problem.title)
+      problem?.message ? String(problem.message)
+        : problem?.title ? String(problem.title)
+          : res.status === 403 ? "You do not have permission to access this page."
+            : res.status === 401 ? "Your session has expired. Please sign in again."
               : `HTTP ${res.status}`;
     const code =
       problem?.code
@@ -138,9 +192,13 @@ function headers(extra?: Record<string, string>): Record<string, string> {
     // Corrupt or missing shell state — send no scope and let the backend
     // treat the operator as global (entity-wide) view.
   }
+  const session = typeof localStorage !== "undefined" ? getSession() : null;
+  const authHeaders: Record<string, string> = {};
+  if (session?.accessToken) authHeaders.Authorization = `Bearer ${session.accessToken}`;
   return {
     Accept: "application/json",
     "HRM-Default-TenantId": TENANT_ID,
+    ...authHeaders,
     ...shellHeaders,
     ...extra,
   };
@@ -158,7 +216,27 @@ function qs(params: Record<string, unknown>): string {
 
 /** Generic typed wrapper around the HRM API surface. */
 export const hrmApi = {
+  identity: {
+    users: () =>
+      hrmApi.get<{ provider: string; realm: string; items: IdentityAccessUser[] }>(
+        "/hrm/identity/users",
+      ),
+    searchDirectory: (query: string) =>
+      hrmApi.get<{ items: IdentityDirectoryUser[] }>("/hrm/identity/users/directory", { query }),
+    inviteUser: (body: {
+      email: string;
+      displayName: string;
+      roles: string[];
+      sourceUserId: string;
+    }) =>
+      hrmApi.post<IdentityAccessUser>("/hrm/identity/users", body),
+    updateUser: (id: string, body: Partial<{ roles: string[]; isActive: boolean }>) =>
+      hrmApi.patch<IdentityAccessUser>(`/hrm/identity/users/${id}`, body),
+    sendPasswordLink: (id: string) =>
+      hrmApi.post<{ sent: boolean }>(`/hrm/identity/users/${id}/send-password-link`, {}),
+  },
   auth: {
+    capabilities: () => hrmApi.get<AuthCapabilities>("/hrm/auth/capabilities"),
     login: (email: string, password: string) =>
       hrmApi.post<LocalAuthResult>("/hrm/auth/login", { email, password }),
     me: () => hrmApi.get<{ authenticated: boolean; user: LocalAuthUser | null }>("/hrm/auth/me"),
@@ -240,7 +318,7 @@ export const hrmApi = {
     form.append("title", title);
     const res = await fetch(`${BASE}/hrm/documents/upload`, {
       method: "POST",
-      headers: { "HRM-Default-TenantId": TENANT_ID },
+      headers: headers(),
       body: form,
     });
     return handleResponse(res);
