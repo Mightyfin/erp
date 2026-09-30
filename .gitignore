@@ -53,3 +53,6 @@ bin/
 obj/
 *.user
 .vs/
+
+# Private HR/payroll audit records stay on the server, never in the public repo.
+docs/hrm/private/
