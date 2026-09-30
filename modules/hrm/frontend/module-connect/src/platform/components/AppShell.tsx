@@ -71,7 +71,8 @@ import { ComingSoon } from "./ComingSoon";
 import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
-import { HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
+import { TimesheetShell } from "@/platform/components/TimesheetWorkspace";
+import { isTimesheetOnly, HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
 import { BrandIdentity } from "@/platform/components/BrandIdentity";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
 import { SignedInBadge } from "@/platform/components/AuthGate";
@@ -595,6 +596,12 @@ function countOpen(items: unknown[]): number {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (isTimesheetOnly(user?.roles ?? [])) return <TimesheetShell>{children}</TimesheetShell>;
+  return <FullAppShell>{children}</FullAppShell>;
+}
+
+function FullAppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { role, setRole, entityId, setEntityId, branch, setBranch, theme, toggleTheme } = useApp();
   const { worker: myWorker, user } = useAuth();

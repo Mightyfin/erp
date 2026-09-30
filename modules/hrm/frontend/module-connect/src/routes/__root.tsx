@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { TimesheetBoundary } from "../platform/components/TimesheetWorkspace";
 import { AppProvider } from "../platform/app-context";
 import { AuthProvider } from "../platform/auth";
 import { BrandingProvider } from "@/platform/branding";
@@ -139,7 +140,7 @@ function RootComponent() {
         <BrandingProvider>
           <AppProvider>
             {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
+            <TimesheetBoundary><Outlet /></TimesheetBoundary>
           </AppProvider>
         </BrandingProvider>
       </AuthProvider>

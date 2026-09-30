@@ -30,6 +30,7 @@ const description =
   "Create tenant roles, decide which HRMS permissions each role grants, and switch roles on or off for new sessions.";
 
 const permissionOptions = [
+  { key: "timesheet_operator", label: "Timesheet operations", detail: "View and import attendance for employees. Overtime approval, payroll and administration require separate permissions." },
   { key: "employee", label: "Employee self-service", detail: "Own profile, leave, payslips and personal HR requests." },
   { key: "manager", label: "Manager approvals", detail: "Team approvals, time review and manager work queues." },
   { key: "hr_ops", label: "HR operations", detail: "Employee records, onboarding, leave and day-to-day HR administration." },
