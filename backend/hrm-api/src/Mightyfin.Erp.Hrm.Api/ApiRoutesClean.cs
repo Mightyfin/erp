@@ -801,6 +801,21 @@ public static class Routes
             => Results.Ok(await svc.GetTodayAsync(workerId, ct)));
         g.MapGet("/attendance", async ([FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => Results.Ok(await svc.ListAttendanceForScopeAsync(from, to, ct))).WithMetadata(new TimesheetAccess());
+        // Attendance pickers expose only work identity, never the full HR profile.
+        g.MapGet("/attendance/employees", async (HrmDbContext db, IAuthzService authz, ShellContext scope, CancellationToken ct) =>
+        {
+            authz.RequireAnyRole("hr_ops", "hr_admin", "timesheet_operator");
+            var workers = db.Workers.AsNoTracking().Where(w => w.Status == "active" || w.Status == "on-leave" || w.Status == "notice");
+            if (scope.LocationId.HasValue) workers = workers.Where(w => w.LocationId == scope.LocationId);
+            if (scope.OrgUnitId.HasValue) workers = workers.Where(w => w.OrgUnitId == scope.OrgUnitId);
+            if (scope.IsConfined) workers = workers.Where(w => w.LocationId.HasValue && scope.AllowedLocationIds.Contains(w.LocationId.Value));
+            return Results.Ok(await workers.OrderBy(w => w.FirstName).ThenBy(w => w.LastName).Select(w => new
+            {
+                w.Id, w.EmployeeNo, FullName = (w.FirstName + " " + w.LastName).Trim(), w.Status,
+                w.LocationId, LocationName = w.Location == null ? null : w.Location.Name,
+                w.OrgUnitId, OrgUnitName = w.OrgUnit == null ? null : w.OrgUnit.Name, w.StartDate, w.EndDate,
+            }).ToListAsync(ct));
+        }).WithMetadata(new TimesheetAccess());
         g.MapGet("/attendance/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
             => await svc.ListAttendanceAsync(workerId, from, to, ct));
         g.MapGet("/roster/{workerId:guid}", async (Guid workerId, [FromQuery] string? from, [FromQuery] string? to, ITimeService svc, CancellationToken ct)
@@ -844,7 +859,7 @@ public static class Routes
             {
                 return Results.Conflict(new { code = "attendance-already-recorded", message = "Another attendance entry was saved for this employee and date. Refresh the table; no rows from this batch were saved." });
             }
-        });
+        }).WithMetadata(new TimesheetAccess());
         g.MapPost("/attendance/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");

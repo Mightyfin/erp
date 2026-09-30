@@ -88,7 +88,7 @@ const LAYOUTS: Array<{ value: LayoutMode; label: string; icon: typeof Table2 }> 
 function TimesheetsPage() {
   const [entryOpen, setEntryOpen] = useState(false);
   const { user } = useAuth();
-  const canEnter = user?.roles.some(r => ["hr_ops", "hr_admin"].includes(r));
+  const canEnter = user?.roles.some(r => ["hr_ops", "hr_admin", "timesheet_operator"].includes(r));
   const timesheetOnly = isTimesheetOnly(user?.roles ?? []);
   const [periodMode, setPeriodMode] = useState<PeriodMode>("day");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("table");

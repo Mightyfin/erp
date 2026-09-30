@@ -5,7 +5,7 @@ import { SignedInBadge } from "@/platform/components/AuthGate";
 import { Button } from "@/components/ui/button";
 
 const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
-const paths = new Set(["/hrm/time/timesheets", "/hrm/time/attendance/import", "/sign-in"]);
+const paths = new Set(["/hrm/time/timesheets", "/hrm/time/attendance/import", "/hrm/time/attendance/bulk", "/sign-in"]);
 
 /** Block unrelated pages before they mount or request data. */
 export function TimesheetBoundary({ children }: { children: ReactNode }) {
@@ -29,6 +29,7 @@ export function TimesheetShell({ children }: { children: ReactNode }) {
     </header>
     <nav aria-label="Timesheet navigation" className="flex gap-2 border-b px-6 py-3">
       <Button variant="ghost" asChild><Link to="/hrm/time/timesheets">Timesheets</Link></Button>
+      <Button variant="ghost" asChild><Link to="/hrm/time/attendance/bulk">Add bulk attendance</Link></Button>
       <Button variant="ghost" asChild><Link to="/hrm/time/attendance/import">Import attendance</Link></Button>
     </nav>
     <main className="mx-auto max-w-screen-2xl space-y-6 p-6">{children}</main>

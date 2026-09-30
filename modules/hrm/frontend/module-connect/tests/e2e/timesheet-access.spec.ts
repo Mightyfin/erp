@@ -44,3 +44,41 @@ test("timesheet operator sees employee attendance and cannot navigate to adminis
   await expect(page.getByRole("link", { name: "User access" })).toHaveCount(0);
   expect(unexpected).toEqual([]);
 });
+
+test("front desk can record single and bulk attendance without the full employee directory", async ({ page }) => {
+  const saved: any[] = [];
+  const unexpected: string[] = [];
+  const employees = [1, 2].map(n => ({ id: `worker-${n}`, employeeNo: `EMP-${n}`, fullName: `Employee ${n}`, status: "active" }));
+  await page.route("**/api/hrm/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown;
+    if (path.endsWith("/auth/capabilities")) body = { mode: "local", localUsersEnabled: true, identityConfigured: false };
+    else if (path.endsWith("/auth/me")) body = { authenticated: true, user: { id: "front-desk", email: "desk@example.test", displayName: "Front Desk", roles: ["front_desk", "timesheet_operator"], isActive: true } };
+    else if (path.endsWith("/branding")) body = {};
+    else if (path.endsWith("/attendance/employees")) body = employees;
+    else if (path.endsWith("/attendance/manual")) {
+      const input = route.request().postDataJSON(); saved.push(input);
+      body = input.rows.map((r: any) => ({ ...r, id: r.workerId, totalHours: 8, overtimeStatus: "none" }));
+    }
+    else if (path.endsWith("/time/attendance")) body = [];
+    else { unexpected.push(path); await route.fulfill({ status: 403, json: { message: "Denied" } }); return; }
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/hrm/time/timesheets");
+  await page.getByRole("button", { name: "Add attendance", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Employee", { exact: true }).selectOption("worker-1");
+  await dialog.getByLabel("Clock in", { exact: true }).fill("08:00");
+  await dialog.getByLabel("Clock out", { exact: true }).fill("17:00");
+  await dialog.getByRole("button", { name: "Save attendance" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("navigation", { name: "Timesheet navigation" }).getByRole("link", { name: "Add bulk attendance" }).click();
+  await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();
+  await page.getByLabel("Clock in for EMP-2", { exact: true }).fill("09:00");
+  await page.getByLabel("Clock out for EMP-2", { exact: true }).fill("18:00");
+  await page.getByRole("button", { name: /Save.*attendance|Save.*row/i }).click();
+  await expect.poll(() => saved.length).toBe(2);
+  expect(saved[0].rows).toEqual([{ workerId: "worker-1", clockIn: "08:00", clockOut: "17:00" }]);
+  expect(saved[1].rows).toEqual([{ workerId: "worker-2", clockIn: "09:00", clockOut: "18:00" }]);
+  expect(unexpected).toEqual([]);
+});

@@ -149,6 +149,23 @@ public class TimeServiceTests
     }
 
     [Fact]
+    public async Task TimesheetOperatorCanRecordOtherEmployeesButCannotManageShifts()
+    {
+        var (service, db, worker) = ManualBuild(authz: new TimesheetAuthz());
+        using (db)
+        {
+            var other = new Worker { EmployeeNo = "FRONT-DESK-OTHER", FirstName = "Other", LastName = "Employee", Status = "active" };
+            db.Workers.Add(other);
+            await db.SaveChangesAsync();
+            var rows = await service.CreateManualAttendanceAsync(new("2026-08-21",
+                [new(worker.Id, "08:00", "17:00"), new(other.Id, "08:00", "18:00")]), "timesheet-clerk", default);
+            Assert.Equal(2, rows.Count);
+            Assert.All(await db.AuditEntries.Where(a => a.Action == "manual-create").ToListAsync(), a => Assert.Equal("timesheet-clerk", a.ActorSubjectId));
+            await Assert.ThrowsAsync<DomainException>(() => service.CloseShiftAsync(Guid.NewGuid(), default));
+        }
+    }
+
+    [Fact]
     public async Task ManualAttendance_UsesShiftRulesAndAuditAndRejectsDuplicate()
     {
         var (service, db, worker) = ManualBuild();
