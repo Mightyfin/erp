@@ -46,7 +46,7 @@ public interface ITimeRepository
     Task<LeaveAccrualRun> CreateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct);
     Task UpdateAccrualRunAsync(LeaveAccrualRun run, CancellationToken ct);
     Task<List<LeaveAccrualRun>> ListAccrualRunsAsync(CancellationToken ct);
-    Task<List<Worker>> ListAccrualWorkersAsync(CancellationToken ct);
+    Task<List<Worker>> ListAccrualWorkersAsync(DateOnly periodDate, CancellationToken ct);
     Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct);
     Task<LeaveBalanceAdjustment> CreateAdjustmentAsync(LeaveBalanceAdjustment adjustment, CancellationToken ct);
     Task<List<LeaveBalanceAdjustment>> ListAdjustmentsAsync(CancellationToken ct);

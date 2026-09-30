@@ -160,6 +160,22 @@ public class M41Gap6bBenefitClaimsTests
     }
 
     [Fact]
+    public async Task PendingClaimCanBeEditedAndDeletedButApprovedClaimCannot()
+    {
+        var (svc, ctx, worker, _) = Build();
+        var claim = await svc.CreateClaimAsync(new BenefitClaimCreateRequest(worker.Id,"medical",100,"ZMW","first",true),default);
+        var edited = await svc.UpdateClaimAsync(claim.Id,new BenefitClaimUpdateRequest(150,"ZMW","corrected",true),default);
+        Assert.Equal(150,edited.AmountClaimed);Assert.Equal("corrected",edited.Note);
+        await svc.DecideClaimAsync(claim.Id,new ClaimDecideRequest("approve",null,null),default);
+        await Assert.ThrowsAsync<DomainException>(()=>svc.UpdateClaimAsync(claim.Id,new(200,"ZMW",null,true),default));
+        await Assert.ThrowsAsync<DomainException>(()=>svc.DeleteClaimAsync(claim.Id,default));
+        var pending=await svc.CreateClaimAsync(new BenefitClaimCreateRequest(worker.Id,"medical",50,"ZMW",null,true),default);
+        await svc.DeleteClaimAsync(pending.Id,default);
+        Assert.Single((await svc.ListClaimsAsync(worker.Id,null,1,50,default)).Items);
+        Assert.Equal(150,await new BenefitRepository(ctx).SumApprovedAsync(worker.Id,claim.BenefitTypeId,DateTime.UtcNow.Year,default));
+    }
+
+    [Fact]
     public async Task CreateClaim_InactiveTypeRejected()
     {
         var (svc, ctx, worker, medical) = Build();

@@ -825,6 +825,26 @@ public static class Routes
             var request = await ReadBodyAsync<ShiftAssignmentRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
             return Results.Created("", await svc.AssignShiftAsync(workerId, request, ct));
         });
+        var recordedLeave = g.MapGroup("/recorded-leave");
+        recordedLeave.AddEndpointFilter(async (context, next) =>
+        {
+            try { return await next(context); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" })
+            { return Results.Conflict(new { message = "Leave data changed during this save. No changes were saved. Refresh the records and try again." }); }
+        });
+        recordedLeave.MapGet("", async (IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.ListAsync(ct)));
+        recordedLeave.MapPost("/quote", async (RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.QuoteAsync(input, ct)));
+        recordedLeave.MapPost("", async (RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.SaveAsync(null, input, ct)));
+        recordedLeave.MapPut("/{id:guid}", async (Guid id, RecordedLeaveInput input, IRecordedLeaveService svc, CancellationToken ct) => Results.Ok(await svc.SaveAsync(id, input, ct)));
+        recordedLeave.MapPost("/{id:guid}/cancel", async (Guid id, TimeDecisionRequest input, IRecordedLeaveService svc, CancellationToken ct) => { await svc.CancelAsync(id, input.Reason ?? "", ct); return Results.NoContent(); });
+        g.MapPost("/attendance/manual", async (ManualAttendanceRequest request, HttpContext http, ITimeService svc, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await svc.CreateManualAttendanceAsync(request, ResolveSubjectId(http) ?? "system", ct)); }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505", ConstraintName: "IX_attendance_records_tenant_id_worker_id_work_date" })
+            {
+                return Results.Conflict(new { code = "attendance-already-recorded", message = "Another attendance entry was saved for this employee and date. Refresh the table; no rows from this batch were saved." });
+            }
+        });
         g.MapPost("/attendance/import", async (HttpContext http, ITimeService svc, CancellationToken ct) =>
         {
             var request = await ReadBodyAsync<AttendanceImportRequest>(http, ct) ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
@@ -1039,6 +1059,22 @@ public static class Routes
                 FixedAmountSpecified: body.TryGetProperty("fixedAmount", out _),
                 CeilingSpecified: body.TryGetProperty("ceiling", out _));
             return Results.Ok(await svc.UpdateSalaryComponentAsync(componentId, request, ct));
+        });
+        var monthBenefits = g.MapGroup("/periods/{periodId:guid}/benefits/{typeId:guid}");
+        monthBenefits.AddEndpointFilter(async (context, next) =>
+        {
+            try { return await next(context); }
+            catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+            { return Results.Conflict(new { message = "Benefit assignments changed during this save. No rows were saved. Refresh and try again." }); }
+        });
+        monthBenefits.MapGet("", async (Guid periodId, Guid typeId, Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService svc, CancellationToken ct) => Results.Ok(await svc.GetAsync(periodId,typeId,ct)));
+        monthBenefits.MapPut("", async (Guid periodId, Guid typeId, Mightyfin.Erp.Hrm.Application.Benefits.PeriodBenefitSave input, Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService svc, CancellationToken ct) => { await svc.SaveAsync(periodId,typeId,input,ct); return Results.NoContent(); });
+        g.MapGet("/periods/{periodId:guid}/overtime-amounts", async (Guid periodId, IPeriodOvertimeService svc, CancellationToken ct)
+            => Results.Ok(await svc.GetAsync(periodId, ct)));
+        g.MapPut("/periods/{periodId:guid}/overtime-amounts/{workerId:guid}", async (Guid periodId, Guid workerId, PeriodOvertimeSave request, IPeriodOvertimeService svc, CancellationToken ct) =>
+        {
+            await svc.SaveAsync(periodId, workerId, request, ct);
+            return Results.NoContent();
         });
         // M21: salary structure administration
         g.MapGet("/structures", async (IPayrollService svc, CancellationToken ct)
@@ -2135,7 +2171,25 @@ public static void RegisterBenefits(WebApplication app)
     {
         var request = await ReadBodyAsync<Application.Benefits.BenefitClaimCreateRequest>(http, ct)
             ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
-        return Results.Ok(await svc.CreateClaimAsync(request, ct));
+        try { return Results.Ok(await svc.CreateClaimAsync(request, ct)); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "Benefit assignments changed during this submission. The claim was not saved. Refresh and try again." }); }
+    });
+    g.MapPut("/claims/{id:guid}", async (Guid id, HttpContext http,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        var request = await ReadBodyAsync<Application.Benefits.BenefitClaimUpdateRequest>(http, ct)
+            ?? throw new DomainException("bad-request", "Request body is missing or invalid.");
+        try { return Results.Ok(await svc.UpdateClaimAsync(id, request, ct)); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "The claim changed during this save. Refresh and try again." }); }
+    });
+    g.MapDelete("/claims/{id:guid}", async (Guid id,
+        Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>
+    {
+        try { await svc.DeleteClaimAsync(id, ct); return Results.NoContent(); }
+        catch (Exception ex) when (ex is Npgsql.PostgresException { SqlState: "40001" or "23505" } || ex.InnerException is Npgsql.PostgresException { SqlState: "40001" or "23505" })
+        { return Results.Conflict(new { message = "The claim changed during deletion. Refresh and try again." }); }
     });
     g.MapPost("/claims/{id:guid}/decide", async (Guid id, HttpContext http,
         Mightyfin.Erp.Hrm.Application.Benefits.IBenefitService svc, CancellationToken ct) =>

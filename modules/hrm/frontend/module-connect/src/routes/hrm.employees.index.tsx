@@ -15,7 +15,7 @@
  * Mock mode is untouched so the demo still renders its seeded catalogue.
  */
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, Pencil, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -66,6 +66,7 @@ const EMPLOYEE_PAGE_SIZE = 25;
 type EmployeeRow = Employee & { rawId?: string; isArchived?: boolean; rawStatus?: string };
 
 function EmployeesPage() {
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
@@ -73,6 +74,14 @@ function EmployeesPage() {
   const [archiveTarget, setArchiveTarget] = useState<EmployeeRow | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   // Mock-mode view chip (demo behaviour only — real mode uses the backend).
   const [view, setView] = useState("all");
@@ -112,7 +121,8 @@ function EmployeesPage() {
   );
 
   const mockState = useMock(() => api.employees());
-  const listState = USE_REAL ? { ...state, data: state.data?.items ?? null } : mockState;
+  // Keep the search input mounted and focused while the next result page loads.
+  const listState = USE_REAL ? { ...state, loading: state.loading && state.data === null, data: state.data?.items ?? null } : mockState;
   const rows: EmployeeRow[] = USE_REAL ? (state.data?.items ?? []) : mockState.data ?? [];
   const totalCount = USE_REAL ? (state.data?.totalCount ?? 0) : rows.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / EMPLOYEE_PAGE_SIZE));
@@ -365,7 +375,8 @@ function EmployeesPage() {
           {(rendered) => {
             const renderedRows: EmployeeRow[] = rendered;
             return (
-              <div className="space-y-4">
+              <div className="space-y-4" aria-busy={USE_REAL && state.loading}>
+                {USE_REAL && state.loading && <p role="status" className="text-sm text-muted-foreground">Loading employees…</p>}
                 <ListPage
                   rows={renderedRows}
                   columns={columns}
@@ -374,6 +385,8 @@ function EmployeesPage() {
                   onViewChange={handleView}
                   searchPlaceholder={USE_REAL ? "Search name, employee number, NRC or email" : "Search name, number or job title"}
                   searchFields={(e) => `${e.fullName} ${e.employeeNo} ${e.jobTitle} ${e.email ?? ""} ${e.nationalId ?? ""}`}
+                  searchValue={USE_REAL ? searchInput : undefined}
+                  onSearchChange={USE_REAL ? setSearchInput : undefined}
                   filters={clientFilters}
                   emptyBody={
                     archived
@@ -400,7 +413,7 @@ function EmployeesPage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={page <= 1}
+                        disabled={page <= 1 || state.loading}
                         onClick={() => setPage((current) => Math.max(1, current - 1))}
                       >
                         <ChevronLeft className="mr-1 size-4" aria-hidden />
@@ -413,7 +426,7 @@ function EmployeesPage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={page >= totalPages}
+                        disabled={page >= totalPages || state.loading}
                         onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                       >
                         Next

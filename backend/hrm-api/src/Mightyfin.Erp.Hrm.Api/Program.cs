@@ -88,6 +88,8 @@ builder.Services.AddScoped<IWorkerResolver, WorkerResolver>();
 builder.Services.AddScoped<IWorkerLifecycleService, WorkerLifecycleServiceImpl>();
 builder.Services.AddScoped<ITimeRepository, TimeRepository>();
 builder.Services.AddScoped<ITimeService, TimeServiceImpl>();
+if (!args.Contains("--apply-migrations-only") && !args.Contains("--run-outbox-publisher"))
+    builder.Services.AddHostedService<MonthlyLeaveAccrualWorker>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
 builder.Services.AddSingleton<ILetterTemplates, LetterTemplatesImpl>();
 builder.Services.AddScoped<IMergeDataProvider, MergeDataProviderImpl>();
@@ -105,6 +107,9 @@ builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Analytics.IAnalyticsSer
 builder.Services.AddScoped<IOffboardingService, OffboardingServiceImpl>();
 builder.Services.AddScoped<IPayrollRepository, PayrollRepository>();
 builder.Services.AddScoped<IPayrollService, PayrollServiceImpl>();
+builder.Services.AddScoped<IPeriodOvertimeService, PeriodOvertimeService>();
+builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Benefits.IPeriodBenefitService, PeriodBenefitService>();
+builder.Services.AddScoped<IRecordedLeaveService, RecordedLeaveService>();
 // M49: first-time setup wizard — state, step completion and the destructive reset
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupRepository, SetupRepository>();
 builder.Services.AddScoped<Mightyfin.Erp.Hrm.Application.Setup.ISetupService, Mightyfin.Erp.Hrm.Application.Setup.SetupServiceImpl>();

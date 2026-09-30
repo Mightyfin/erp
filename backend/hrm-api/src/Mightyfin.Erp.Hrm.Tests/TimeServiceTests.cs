@@ -65,13 +65,79 @@ public class TimeServiceTests
         {
             Code = "annual", Name = "Annual Leave", Category = "annual",
             DefaultDaysPerYear = 12, IsActive = true, AllowNegative = false,
+            AutoAccrueMonthly = true, AccrualStartDate = new DateOnly(2026, 1, 1),
             MaxConsecutiveDays = 999, RequiresEvidence = false, MinNoticeDays = 0,
             AllowsPartialDays = false, CarryForwardDays = 0, CarryForwardExpiryMonths = 0,
-            EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30)),
+            EffectiveFrom = new DateOnly(2026, 1, 1),
             TenantId = "test-tenant",
         });
         ctx.SaveChanges();
         return (service, ctx, worker, wf, wfRepo);
+    }
+
+    private static (TimeServiceImpl Service, HrmDbContext Db, Worker Worker) ManualBuild(ShellContext? scope = null, IAuthzService? authz = null)
+    {
+        var (_, db, worker, wf, _) = Build();
+        return (new TimeServiceImpl(new TimeRepository(db), authz ?? new PermissiveAuthz(), wf,
+            new WorkerRepository(db), scope, new PayrollRepository(db), unitOfWork: new EfUnitOfWork(db)), db, worker);
+    }
+
+    [Fact]
+    public async Task ManualAttendance_UsesShiftRulesAndAuditAndRejectsDuplicate()
+    {
+        var (service, db, worker) = ManualBuild();
+        var shift = new ShiftDefinition { Code = "DAY", Name = "Day", StartTime = new(8,0), EndTime = new(17,0),
+            UnpaidBreakMinutes = 60, StandardHours = 8, DailyOvertimeThresholdHours = 8, WeekdayOvertimeMultiplier = 1.5m };
+        db.ShiftDefinitions.Add(shift);
+        db.WorkerShiftAssignments.Add(new WorkerShiftAssignment { WorkerId = worker.Id, ShiftId = shift.Id, EffectiveFrom = new(2026,8,1) });
+        await db.SaveChangesAsync();
+        var request = new ManualAttendanceRequest("2026-08-20", [new(worker.Id, "08:00", "19:00")]);
+        var result = await service.CreateManualAttendanceAsync(request, "hr-operator", default);
+        Assert.Equal(10m, result.Single().TotalHours);
+        Assert.Equal(2m, result.Single().OvertimeHours);
+        Assert.Equal("pending", result.Single().OvertimeStatus);
+        Assert.Equal("manual-entry", result.Single().Source);
+        Assert.Contains(await db.AuditEntries.ToListAsync(), a => a.Action == "manual-create" && a.ActorSubjectId == "hr-operator");
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateManualAttendanceAsync(request, "hr-operator", default));
+        Assert.Single(await db.AttendanceRecords.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ManualAttendance_InvalidBulkRowSavesNothingAndOvernightWorks()
+    {
+        var (service, db, worker) = ManualBuild();
+        var other = new Worker { EmployeeNo = "OTHER", FirstName = "Other", LastName = "Employee", Status = "active" };
+        db.Workers.Add(other); await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateManualAttendanceAsync(new("2026-08-21",
+            [new(worker.Id, "08:00", "17:00"), new(other.Id, "08:00", "08:00")]), "hr", default));
+        Assert.Empty(await db.AttendanceRecords.ToListAsync());
+        var rows = await service.CreateManualAttendanceAsync(new("2026-08-21",
+            [new(worker.Id, "22:00", "06:00"), new(other.Id, "08:00", "17:00")]), "hr", default);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(8m, rows.Single(r => r.WorkerId == worker.Id).TotalHours);
+        Assert.Equal(2, await db.AttendanceRecords.CountAsync());
+    }
+
+    [Fact]
+    public async Task ManualAttendance_RejectsOtherBranchAndEmployeeRole()
+    {
+        var (service, _, worker) = ManualBuild(new ShellContext { LocationId = Guid.NewGuid() });
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateManualAttendanceAsync(new("2026-08-21", [new(worker.Id, "08:00", "17:00")]), "hr", default));
+        var (employeeService, _, ownWorker) = ManualBuild(authz: new EmployeeAuthz("subject-001"));
+        await Assert.ThrowsAsync<DomainException>(() => employeeService.CreateManualAttendanceAsync(new("2026-08-21", [new(ownWorker.Id, "08:00", "17:00")]), "employee", default));
+    }
+
+    [Fact]
+    public async Task ManualAttendance_RejectsLockedPayrollAndFutureDates()
+    {
+        var (service, db, worker) = ManualBuild();
+        var stack = await PayrollEngineTests.SeedStackAsync(db);
+        db.PayrollRuns.Add(new PayrollRun { PayPeriodId = stack.P1.Id, PayGroupId = stack.Group.Id, Status = "released" });
+        await db.SaveChangesAsync();
+        var error = await Assert.ThrowsAsync<DomainException>(() => service.CreateManualAttendanceAsync(new("2026-06-15", [new(stack.Profile.WorkerId, "08:00", "17:00")]), "hr", default));
+        Assert.Contains("locked", error.Message);
+        await Assert.ThrowsAsync<DomainException>(() => service.CreateManualAttendanceAsync(new(DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1).ToString("yyyy-MM-dd"), [new(worker.Id, "08:00", "17:00")]), "hr", default));
+        Assert.Empty(await db.AttendanceRecords.ToListAsync());
     }
 
     [Fact]
@@ -567,7 +633,7 @@ public class TimeServiceTests
     [Fact]
     public async Task AccrualRun_IsIdempotent_AndAdjustmentChangesAvailableBalance()
     {
-        var (service, _, worker, _, _) = Build();
+        var (service, ctx, worker, _, _) = Build();
         var run = await service.RunLeaveAccrualAsync(new LeaveAccrualRunRequest("2026-08"),
             "hr-admin", CancellationToken.None);
         Assert.Equal(1, run.WorkerCount);
@@ -579,10 +645,32 @@ public class TimeServiceTests
         Assert.Equal("accrual-period-exists", duplicate.Code);
 
         await service.AdjustLeaveBalanceAsync(new LeaveBalanceAdjustmentRequest(
-            worker.Id, "annual", 2.5m, "Opening balance correction"), "hr-admin", CancellationToken.None);
+            worker.Id, "annual", 2.5m, "Opening balance correction", "2026-08-31"), "hr-admin", CancellationToken.None);
         var annual = (await service.GetBalancesAsync(worker.Id, CancellationToken.None)).Single();
         Assert.Equal(3.5m, annual.Accrued);
         Assert.Equal(3.5m, annual.Available);
+        Assert.Contains(await ctx.LeaveBalanceLedgers.ToListAsync(), entry =>
+            entry.Reason == "manual-adjustment" && entry.ForDate == new DateOnly(2026, 8, 31));
+    }
+
+    [Fact]
+    public async Task AccrualRun_OnlyCreditsEnabledTypesFromTheirStartMonth()
+    {
+        var (service, ctx, worker, _, _) = Build();
+        ctx.LeaveTypes.Add(new LeaveType
+        {
+            Code = "study", Name = "Study Leave", Category = "paid", DefaultDaysPerYear = 14,
+            EffectiveFrom = new DateOnly(2026, 1, 1), IsActive = true, TenantId = "test-tenant",
+        });
+        ctx.SaveChanges();
+
+        var run = await service.RunLeaveAccrualAsync(new LeaveAccrualRunRequest("2026-09"),
+            "hr-admin", CancellationToken.None);
+
+        Assert.Equal(1, run.LedgerEntryCount);
+        Assert.Equal(1m, run.TotalDaysAccrued);
+        var entry = Assert.Single(ctx.LeaveBalanceLedgers.Where(e => e.WorkerId == worker.Id));
+        Assert.Equal("annual", entry.LeaveTypeCode);
     }
 
     [Fact]

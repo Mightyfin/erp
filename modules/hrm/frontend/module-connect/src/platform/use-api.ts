@@ -566,6 +566,10 @@ export const realApi = {
     ),
   createBenefitClaim: (body: Record<string, unknown>) =>
     hrmApi.post<unknown>("/hrm/benefits/claims", body),
+  updateBenefitClaim: (id: string, body: Record<string, unknown>) =>
+    hrmApi.put<unknown>(`/hrm/benefits/claims/${id}`, body),
+  deleteBenefitClaim: (id: string) =>
+    hrmApi.delete<unknown>(`/hrm/benefits/claims/${id}`),
   decideBenefitClaim: (id: string, body: Record<string, unknown>) =>
     hrmApi.post<unknown>(`/hrm/benefits/claims/${id}/decide`, body),
   payBenefitClaim: (id: string) =>

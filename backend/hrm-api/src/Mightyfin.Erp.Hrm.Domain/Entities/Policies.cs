@@ -8,6 +8,8 @@ public class LeaveType : Entity, IEffectiveDated
     public string Name { get; set; } = null!;
     public string Category { get; set; } = "paid"; // paid | unpaid | half-pay
     public int DefaultDaysPerYear { get; set; } = 24;
+    public bool AutoAccrueMonthly { get; set; }
+    public DateOnly? AccrualStartDate { get; set; }
     public decimal MaxConsecutiveDays { get; set; } = 999;
     public bool RequiresEvidence { get; set; }
     public int MinNoticeDays { get; set; }

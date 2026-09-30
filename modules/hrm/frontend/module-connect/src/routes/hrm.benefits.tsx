@@ -1,5 +1,7 @@
+import { PeriodBenefitAssignments, benefitPayrollPeriods } from "@/platform/components/PeriodBenefitAssignments";
+import { useAuth } from "@/platform/auth";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { ChevronLeft, ChevronRight, Edit, Plus, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ import { AuthGate } from "@/platform/components/AuthGate";
 import { PageHeader } from "@/platform/components/PageHeader";
 import { ScopeBadge } from "@/platform/components/ScopeBadge";
 import { ConfirmDialog } from "@/platform/components/ConfirmDialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { realApi, useApi } from "@/platform/use-api";
 
 export const Route = createFileRoute("/hrm/benefits")({ component: Benefits });
@@ -98,8 +101,41 @@ function employeeLabel(row: Row) {
   return `${name}${row.employeeNo ? ` (${text(row.employeeNo)})` : ""}`;
 }
 
+function EditClaimDialog({ row, onClose, onSaved }: { row: Row; onClose: () => void; onSaved: () => void }) {
+  const [amount, setAmount] = useState(text(row.amountClaimed));
+  const [currency, setCurrency] = useState(text(row.currency || "ZMW"));
+  const [note, setNote] = useState(text(row.note));
+  const [evidence, setEvidence] = useState(Boolean(row.evidenceAttached));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) { setError("Enter a positive amount with at most two decimal places."); return; }
+    setBusy(true); setError("");
+    try {
+      await realApi.updateBenefitClaim(text(row.id), { amountClaimed: Number(amount), currency, note, evidenceAttached: evidence });
+      toast.success("Claim updated. Recalculate payroll if this is a payroll claim.");
+      onSaved(); onClose();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update claim."); }
+    finally { setBusy(false); }
+  }
+  return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Edit claim</DialogTitle><DialogDescription>{text(row.workerName)} · {text(row.benefitTypeName)}{row.payPeriodId ? " · payroll needs recalculation after saving" : ""}</DialogDescription></DialogHeader>
+    <form onSubmit={save} className="space-y-4">
+      <div><Label htmlFor="edit-claim-amount">Amount claimed</Label><Input id="edit-claim-amount" type="number" min="0.01" step="0.01" required value={amount} disabled={busy} onChange={event => setAmount(event.target.value)} /></div>
+      <div><Label htmlFor="edit-claim-currency">Currency</Label><Select value={currency} onValueChange={setCurrency} disabled={busy}><SelectTrigger id="edit-claim-currency"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ZMW">ZMW</SelectItem><SelectItem value="USD">USD</SelectItem></SelectContent></Select></div>
+      <div><Label htmlFor="edit-claim-note">Note</Label><Input id="edit-claim-note" maxLength={500} value={note} disabled={busy} onChange={event => setNote(event.target.value)} /></div>
+      <div className="flex items-center gap-2"><Checkbox id="edit-claim-evidence" checked={evidence} disabled={busy} onCheckedChange={checked => setEvidence(Boolean(checked))} /><Label htmlFor="edit-claim-evidence">Evidence attached</Label></div>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button></div>
+    </form>
+  </DialogContent></Dialog>;
+}
+
 function Benefits() {
   const [mode, setMode] = useState<Mode>("list");
+  const { user } = useAuth();
+  const canAssignPayroll = user?.roles.some(r => ["hr_ops", "hr_admin", "payroll"].includes(r));
+  const [claimMode, setClaimMode] = useState<"once" | "recurring" | "reimbursement">("reimbursement");
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [assignmentYearFilter, setAssignmentYearFilter] = useState(() => String(new Date().getFullYear()));
@@ -122,6 +158,8 @@ function Benefits() {
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
   const [deletingType, setDeletingType] = useState<Row | null>(null);
   const [deletingAllowance, setDeletingAllowance] = useState<Row | null>(null);
+  const [editingClaim, setEditingClaim] = useState<Row | null>(null);
+  const [deletingClaim, setDeletingClaim] = useState<Row | null>(null);
 
   const [allowanceWorker, setAllowanceWorker] = useState("");
   const [allowanceType, setAllowanceType] = useState("");
@@ -148,6 +186,8 @@ function Benefits() {
     [bulkStatus, bulkOrgUnit, bulkLocation, bulkGrade],
   );
 
+  const payrollPeriods = useApi(benefitPayrollPeriods, []);
+  const [claimPeriod, setClaimPeriod] = useState("");
   const [claimWorker, setClaimWorker] = useState("");
   const [claimType, setClaimType] = useState("");
   const [claimAmount, setClaimAmount] = useState("");
@@ -160,10 +200,6 @@ function Benefits() {
   const activeTypes = useMemo(
     () => ((types.data ?? []) as Row[]).filter((row) => Boolean(row.isActive)),
     [types.data],
-  );
-  const claimOnlyTypes = useMemo(
-    () => activeTypes.filter((row) => !Boolean(row.includeInPayroll)),
-    [activeTypes],
   );
   const workerRows = (employees.data?.items ?? []) as Row[];
   const bulkWorkerRows = (bulkWorkers.data?.items ?? []) as Row[];
@@ -324,6 +360,11 @@ function Benefits() {
       realApi.deleteBenefitAllowance(text(deletingAllowance.id)), () => setDeletingAllowance(null));
   };
 
+  const deleteClaim = async () => {
+    if (!deletingClaim) return;
+    await run("Claim deleted", () => realApi.deleteBenefitClaim(text(deletingClaim.id)), () => setDeletingClaim(null));
+  };
+
   const submitAllowance = async () => {
     if (!allowanceWorker || !allowanceType || !allowanceAmount) {
       toast.error("Employee, benefit type and amount are required.");
@@ -347,7 +388,7 @@ function Benefits() {
       () => {
         setAllowanceWorker("");
         setAllowanceAmount("");
-        setMode("list");
+        if (mode !== "claims") setMode("list");
       },
     );
   };
@@ -395,11 +436,15 @@ function Benefits() {
   };
 
   const submitClaim = async () => {
+    if (selectedClaimType?.includeInPayroll && !claimPeriod) {
+      toast.error("Select the payroll month for this claim.");
+      return;
+    }
     if (!claimWorker || !claimType || !claimAmount) {
       toast.error("Employee, benefit type and amount are required.");
       return;
     }
-    const evidenceAttached = Boolean(claimEvidence) || selectedClaimType?.requiresEvidence === true;
+    const evidenceAttached = Boolean(claimEvidence);
     await run(
       "Claim submitted",
       () =>
@@ -410,6 +455,7 @@ function Benefits() {
           currency: claimCurrency || "ZMW",
           note: claimNote || null,
           evidenceAttached,
+          ...(selectedClaimType?.includeInPayroll ? { payPeriodId: claimPeriod } : {}),
         }),
       () => {
         setClaimAmount("");
@@ -466,6 +512,17 @@ function Benefits() {
             Claims
           </Button>
         </div>
+
+        {mode === "claims" && canAssignPayroll && <div className="mb-4 space-y-3 rounded-lg border bg-card p-4">
+          <h2 className="font-semibold">Claims and payroll assignments</h2>
+          <p className="text-sm text-muted-foreground">Choose how this benefit should be paid. Payroll assignments are earnings added to the employee’s payslip.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant={claimMode === "once" ? "default" : "outline"} onClick={() => setClaimMode("once")}>Once-off payroll</Button>
+            <Button variant={claimMode === "recurring" ? "default" : "outline"} onClick={() => { setClaimMode("recurring"); if (!selectedType?.includeInPayroll) setAllowanceType(""); }}>Recurring payroll</Button>
+            <Button variant={claimMode === "reimbursement" ? "default" : "outline"} onClick={() => setClaimMode("reimbursement")}>Reimbursement claim</Button>
+          </div>
+        </div>}
+        {canAssignPayroll && <div hidden={mode !== "claims" || claimMode !== "once"}><PeriodBenefitAssignments types={activeTypes.map(t => ({ id: text(t.id), name: text(t.name), includeInPayroll: Boolean(t.includeInPayroll), isActive: Boolean(t.isActive) }))} /></div>}
 
         {mode === "list" ? (
           <Card>
@@ -645,13 +702,13 @@ function Benefits() {
           </Card>
         ) : null}
 
-        {mode === "assign" ? (
+        {(mode === "assign" || (mode === "claims" && canAssignPayroll && claimMode === "recurring")) ? (
           <Card>
             <CardHeader>
-              <CardTitle>Assign allowance</CardTitle>
+              <CardTitle>{mode === "claims" ? "Recurring payroll assignment" : "Assign allowance"}</CardTitle>
               <CardDescription>
-                Enter the annual allowance. For benefits added to payroll, the monthly payslip amount
-                is calculated below. The yearly cap is always enforced.
+                Enter the annual allowance or monthly payslip amount for the selected year. Recurring payroll
+                assignments apply throughout that year (annual amount divided by 12). For a single month, use Once-off payroll in Claims.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -676,7 +733,7 @@ function Benefits() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select type..." />
                   </SelectTrigger>
-                  <SelectContent>{typeOptions(activeTypes)}</SelectContent>
+                  <SelectContent>{typeOptions(mode === "claims" ? activeTypes.filter(t => Boolean(t.includeInPayroll)) : activeTypes)}</SelectContent>
                 </Select>
               </div>
               <div>
@@ -1122,7 +1179,7 @@ function Benefits() {
           </Card>
         ) : null}
 
-        {mode === "claims" ? (
+        {mode === "claims" && (!canAssignPayroll || claimMode === "reimbursement") ? (
           <Card>
             <CardHeader>
               <CardTitle>Claims</CardTitle>
@@ -1135,7 +1192,7 @@ function Benefits() {
                 <div>
                   <Label>Employee</Label>
                   <Select value={claimWorker || undefined} onValueChange={setClaimWorker}>
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Claim employee">
                       <SelectValue placeholder="Select employee..." />
                     </SelectTrigger>
                     <SelectContent className="max-h-64">
@@ -1150,12 +1207,21 @@ function Benefits() {
                 <div>
                   <Label>Benefit type</Label>
                   <Select value={claimType || undefined} onValueChange={setClaimType}>
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Claim benefit type">
                       <SelectValue placeholder="Select type..." />
                     </SelectTrigger>
-                    <SelectContent>{typeOptions(claimOnlyTypes)}</SelectContent>
+                    <SelectContent>{activeTypes.map(t => <SelectItem key={text(t.code)} value={text(t.code)}>{text(t.name)} · claim</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
+                {selectedClaimType?.includeInPayroll && <div>
+                  <Label htmlFor="claim-payroll-period">Payroll month</Label>
+                  <select id="claim-payroll-period" className="block h-10 w-full rounded-md border bg-background px-2" value={claimPeriod} onChange={e => setClaimPeriod(e.target.value)} disabled={busy || payrollPeriods.loading}>
+                    <option value="">Select payroll month...</option>
+                    {(payrollPeriods.data ?? []).map(p => <option key={p.id} value={p.id}>{p.periodLabel}</option>)}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">Added directly to this month's payroll. Tax follows the benefit settings.</p>
+                  {(payrollPeriods.error || payrollPeriods.degraded) && <p role="alert" className="text-sm text-danger">Payroll months could not be loaded. Refresh to retry.</p>}
+                </div>}
                 <div>
                   <Label htmlFor="claim-amount">Amount claimed</Label>
                   <Input
@@ -1195,9 +1261,10 @@ function Benefits() {
                   />
                   <Label htmlFor="claim-evidence">Evidence attached</Label>
                 </div>
-                <Button className="md:col-span-3" onClick={submitClaim} disabled={busy}>
+                <Button className="md:col-span-3" onClick={submitClaim} disabled={busy || (Boolean(selectedClaimType?.includeInPayroll) && !canAssignPayroll)}>
                   Submit claim
                 </Button>
+
               </div>
               <div className="flex justify-end">
                 <Select
@@ -1238,17 +1305,17 @@ function Benefits() {
                             {text(row.employeeNo)}
                           </div>
                         </TableCell>
-                        <TableCell>{text(row.benefitTypeName)}</TableCell>
+                        <TableCell>{text(row.benefitTypeName)}{row.payPeriodId && <div className="text-xs text-muted-foreground">{payrollPeriods.data?.find(p => p.id === row.payPeriodId)?.periodLabel ?? "Payroll assignment"}</div>}</TableCell>
                         <TableCell className="text-right">
                           {money(row.amountClaimed)} {text(row.currency || "ZMW")}
                         </TableCell>
                         <TableCell>
                           <span className={STATUS_CLASS[text(row.status)] ?? ""}>
-                            {STATUS_LABEL[text(row.status)] ?? text(row.status)}
+                            {row.payPeriodId ? "Assigned to payroll" : STATUS_LABEL[text(row.status)] ?? text(row.status)}
                           </span>
                         </TableCell>
                         <TableCell>
-                          <Input
+                          {(row.status === "submitted" || row.status === "returned") && <><Input
                             className="mb-1 h-8 min-w-36"
                             placeholder="Reason"
                             value={decisionReason[text(row.id)] ?? ""}
@@ -1263,9 +1330,10 @@ function Benefits() {
                             onChange={(e) =>
                               setApproveAmount((s) => ({ ...s, [text(row.id)]: e.target.value }))
                             }
-                          />
+                          /></>}
                         </TableCell>
                         <TableCell>
+                          <div className="flex flex-wrap gap-1">
                           {row.status === "submitted" || row.status === "returned" ? (
                             <div className="flex flex-wrap gap-1">
                               <Button
@@ -1293,7 +1361,7 @@ function Benefits() {
                                 Return
                               </Button>
                             </div>
-                          ) : row.status === "approved" ? (
+                          ) : row.status === "approved" && !row.payPeriodId ? (
                             <Button
                               size="sm"
                               onClick={() =>
@@ -1304,6 +1372,11 @@ function Benefits() {
                               Mark paid
                             </Button>
                           ) : null}
+                          {canAssignPayroll && (row.payPeriodId || ["submitted", "returned", "rejected"].includes(text(row.status))) && <>
+                            <Button size="sm" variant="outline" aria-label={`Edit claim for ${text(row.workerName)} ${money(row.amountClaimed)}`} onClick={() => setEditingClaim(row)} disabled={busy}><Edit className="mr-1 size-4" />Edit</Button>
+                            <Button size="sm" variant="outline" aria-label={`Delete claim for ${text(row.workerName)} ${money(row.amountClaimed)}`} onClick={() => setDeletingClaim(row)} disabled={busy}><Trash2 className="mr-1 size-4" />Delete</Button>
+                          </>}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1333,6 +1406,8 @@ function Benefits() {
           destructive
           onConfirm={() => void deleteType()}
         />
+        {editingClaim && <EditClaimDialog key={text(editingClaim.id)} row={editingClaim} onClose={() => setEditingClaim(null)} onSaved={() => claims.reload()} />}
+        <ConfirmDialog open={Boolean(deletingClaim)} onOpenChange={open => { if (!open) setDeletingClaim(null); }} title="Delete claim" consequence={`Remove ${money(deletingClaim?.amountClaimed)} ${text(deletingClaim?.currency)} for ${text(deletingClaim?.workerName)} from ${text(deletingClaim?.benefitTypeName)}?`} detail={deletingClaim?.payPeriodId ? "The assigned payroll amount will decrease. Recalculate payroll before approval." : "The claim will be removed from the claims list."} confirmLabel="Delete claim" destructive onConfirm={() => void deleteClaim()} />
         <ConfirmDialog
           open={Boolean(deletingAllowance)}
           onOpenChange={(open) => { if (!open) setDeletingAllowance(null); }}

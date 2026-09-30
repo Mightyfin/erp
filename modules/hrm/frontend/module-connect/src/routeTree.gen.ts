@@ -62,6 +62,7 @@ import { Route as HrmLeaveAllocationsRouteImport } from './routes/hrm.leave.allo
 import { Route as HrmLeaveApprovalsRouteImport } from './routes/hrm.leave.approvals'
 import { Route as HrmLeaveControlRouteImport } from './routes/hrm.leave.control'
 import { Route as HrmLeaveNewRouteImport } from './routes/hrm.leave.new'
+import { Route as HrmLeaveRecordedRouteImport } from './routes/hrm.leave.recorded'
 import { Route as HrmLifecycleIndexRouteImport } from './routes/hrm.lifecycle.index'
 import { Route as HrmLifecycleAlumniRouteImport } from './routes/hrm.lifecycle.alumni'
 import { Route as HrmLifecycleAssetsRouteImport } from './routes/hrm.lifecycle.assets'
@@ -131,6 +132,7 @@ import { Route as HrmRecruitmentCandidatesIdRouteImport } from './routes/hrm.rec
 import { Route as HrmRecruitmentRequisitionsNewRouteImport } from './routes/hrm.recruitment.requisitions.new'
 import { Route as HrmRelationsCasesIdRouteImport } from './routes/hrm.relations.cases.$id'
 import { Route as HrmTalentReviewsIdRouteImport } from './routes/hrm.talent.reviews.$id'
+import { Route as HrmTimeAttendanceBulkRouteImport } from './routes/hrm.time.attendance.bulk'
 import { Route as HrmTimeAttendanceImportRouteImport } from './routes/hrm.time.attendance.import'
 import { Route as HrmTimeExpensesIndexRouteImport } from './routes/hrm.time.expenses.index'
 import { Route as HrmTimeExpensesNewRouteImport } from './routes/hrm.time.expenses.new'
@@ -411,6 +413,11 @@ const HrmLeaveControlRoute = HrmLeaveControlRouteImport.update({
 const HrmLeaveNewRoute = HrmLeaveNewRouteImport.update({
   id: '/hrm/leave/new',
   path: '/hrm/leave/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HrmLeaveRecordedRoute = HrmLeaveRecordedRouteImport.update({
+  id: '/hrm/leave/recorded',
+  path: '/hrm/leave/recorded',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HrmLifecycleIndexRoute = HrmLifecycleIndexRouteImport.update({
@@ -768,6 +775,11 @@ const HrmTalentReviewsIdRoute = HrmTalentReviewsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => HrmTalentReviewsRoute,
 } as any)
+const HrmTimeAttendanceBulkRoute = HrmTimeAttendanceBulkRouteImport.update({
+  id: '/hrm/time/attendance/bulk',
+  path: '/hrm/time/attendance/bulk',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HrmTimeAttendanceImportRoute = HrmTimeAttendanceImportRouteImport.update({
   id: '/hrm/time/attendance/import',
   path: '/hrm/time/attendance/import',
@@ -839,6 +851,7 @@ export interface FileRoutesByFullPath {
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/leave/recorded': typeof HrmLeaveRecordedRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
   '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
@@ -912,6 +925,7 @@ export interface FileRoutesByFullPath {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/bulk': typeof HrmTimeAttendanceBulkRoute
   '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
@@ -967,6 +981,7 @@ export interface FileRoutesByTo {
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/leave/recorded': typeof HrmLeaveRecordedRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
   '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
@@ -1040,6 +1055,7 @@ export interface FileRoutesByTo {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/bulk': typeof HrmTimeAttendanceBulkRoute
   '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses': typeof HrmTimeExpensesIndexRoute
@@ -1096,6 +1112,7 @@ export interface FileRoutesById {
   '/hrm/leave/approvals': typeof HrmLeaveApprovalsRoute
   '/hrm/leave/control': typeof HrmLeaveControlRoute
   '/hrm/leave/new': typeof HrmLeaveNewRoute
+  '/hrm/leave/recorded': typeof HrmLeaveRecordedRoute
   '/hrm/lifecycle/alumni': typeof HrmLifecycleAlumniRoute
   '/hrm/lifecycle/assets': typeof HrmLifecycleAssetsRoute
   '/hrm/lifecycle/journeys': typeof HrmLifecycleJourneysRoute
@@ -1169,6 +1186,7 @@ export interface FileRoutesById {
   '/hrm/recruitment/requisitions/new': typeof HrmRecruitmentRequisitionsNewRoute
   '/hrm/relations/cases/$id': typeof HrmRelationsCasesIdRoute
   '/hrm/talent/reviews/$id': typeof HrmTalentReviewsIdRoute
+  '/hrm/time/attendance/bulk': typeof HrmTimeAttendanceBulkRoute
   '/hrm/time/attendance/import': typeof HrmTimeAttendanceImportRoute
   '/hrm/time/expenses/new': typeof HrmTimeExpensesNewRoute
   '/hrm/time/expenses/': typeof HrmTimeExpensesIndexRoute
@@ -1226,6 +1244,7 @@ export interface FileRouteTypes {
     | '/hrm/leave/approvals'
     | '/hrm/leave/control'
     | '/hrm/leave/new'
+    | '/hrm/leave/recorded'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
     | '/hrm/lifecycle/journeys'
@@ -1299,6 +1318,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/bulk'
     | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses/'
@@ -1354,6 +1374,7 @@ export interface FileRouteTypes {
     | '/hrm/leave/approvals'
     | '/hrm/leave/control'
     | '/hrm/leave/new'
+    | '/hrm/leave/recorded'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
     | '/hrm/lifecycle/journeys'
@@ -1427,6 +1448,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/bulk'
     | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses'
@@ -1482,6 +1504,7 @@ export interface FileRouteTypes {
     | '/hrm/leave/approvals'
     | '/hrm/leave/control'
     | '/hrm/leave/new'
+    | '/hrm/leave/recorded'
     | '/hrm/lifecycle/alumni'
     | '/hrm/lifecycle/assets'
     | '/hrm/lifecycle/journeys'
@@ -1555,6 +1578,7 @@ export interface FileRouteTypes {
     | '/hrm/recruitment/requisitions/new'
     | '/hrm/relations/cases/$id'
     | '/hrm/talent/reviews/$id'
+    | '/hrm/time/attendance/bulk'
     | '/hrm/time/attendance/import'
     | '/hrm/time/expenses/new'
     | '/hrm/time/expenses/'
@@ -1611,6 +1635,7 @@ export interface RootRouteChildren {
   HrmLeaveApprovalsRoute: typeof HrmLeaveApprovalsRoute
   HrmLeaveControlRoute: typeof HrmLeaveControlRoute
   HrmLeaveNewRoute: typeof HrmLeaveNewRoute
+  HrmLeaveRecordedRoute: typeof HrmLeaveRecordedRoute
   HrmLifecycleAlumniRoute: typeof HrmLifecycleAlumniRoute
   HrmLifecycleAssetsRoute: typeof HrmLifecycleAssetsRoute
   HrmLifecycleJourneysRoute: typeof HrmLifecycleJourneysRoute
@@ -1672,6 +1697,7 @@ export interface RootRouteChildren {
   HrmReportsIndexRoute: typeof HrmReportsIndexRoute
   HrmRequestsIndexRoute: typeof HrmRequestsIndexRoute
   HrmTalentIndexRoute: typeof HrmTalentIndexRoute
+  HrmTimeAttendanceBulkRoute: typeof HrmTimeAttendanceBulkRoute
   HrmTimeAttendanceImportRoute: typeof HrmTimeAttendanceImportRoute
   HrmTimeExpensesNewRoute: typeof HrmTimeExpensesNewRoute
   HrmTimeExpensesIndexRoute: typeof HrmTimeExpensesIndexRoute
@@ -2048,6 +2074,13 @@ declare module '@tanstack/react-router' {
       path: '/hrm/leave/new'
       fullPath: '/hrm/leave/new'
       preLoaderRoute: typeof HrmLeaveNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hrm/leave/recorded': {
+      id: '/hrm/leave/recorded'
+      path: '/hrm/leave/recorded'
+      fullPath: '/hrm/leave/recorded'
+      preLoaderRoute: typeof HrmLeaveRecordedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hrm/lifecycle/': {
@@ -2533,6 +2566,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HrmTalentReviewsIdRouteImport
       parentRoute: typeof HrmTalentReviewsRoute
     }
+    '/hrm/time/attendance/bulk': {
+      id: '/hrm/time/attendance/bulk'
+      path: '/hrm/time/attendance/bulk'
+      fullPath: '/hrm/time/attendance/bulk'
+      preLoaderRoute: typeof HrmTimeAttendanceBulkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hrm/time/attendance/import': {
       id: '/hrm/time/attendance/import'
       path: '/hrm/time/attendance/import'
@@ -2766,6 +2806,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmLeaveApprovalsRoute: HrmLeaveApprovalsRoute,
   HrmLeaveControlRoute: HrmLeaveControlRoute,
   HrmLeaveNewRoute: HrmLeaveNewRoute,
+  HrmLeaveRecordedRoute: HrmLeaveRecordedRoute,
   HrmLifecycleAlumniRoute: HrmLifecycleAlumniRoute,
   HrmLifecycleAssetsRoute: HrmLifecycleAssetsRoute,
   HrmLifecycleJourneysRoute: HrmLifecycleJourneysRoute,
@@ -2827,6 +2868,7 @@ const rootRouteChildren: RootRouteChildren = {
   HrmReportsIndexRoute: HrmReportsIndexRoute,
   HrmRequestsIndexRoute: HrmRequestsIndexRoute,
   HrmTalentIndexRoute: HrmTalentIndexRoute,
+  HrmTimeAttendanceBulkRoute: HrmTimeAttendanceBulkRoute,
   HrmTimeAttendanceImportRoute: HrmTimeAttendanceImportRoute,
   HrmTimeExpensesNewRoute: HrmTimeExpensesNewRoute,
   HrmTimeExpensesIndexRoute: HrmTimeExpensesIndexRoute,

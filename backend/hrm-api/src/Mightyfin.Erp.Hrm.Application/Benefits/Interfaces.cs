@@ -26,6 +26,8 @@ public interface IBenefitRepository
     Task<BenefitClaim?> GetClaimAsync(Guid id, CancellationToken ct);
     Task<BenefitClaim> CreateClaimAsync(BenefitClaim claim, CancellationToken ct);
     Task UpdateClaimAsync(BenefitClaim claim, CancellationToken ct);
+    Task UpdateClaimDetailsAsync(BenefitClaim claim, string actor, string beforeJson, CancellationToken ct);
+    Task ArchiveClaimAsync(BenefitClaim claim, string actor, CancellationToken ct);
     Task<decimal> SumApprovedAsync(Guid workerId, Guid benefitTypeId, int year, CancellationToken ct);
     Task SaveChangesAsync(CancellationToken ct);
 }
@@ -44,6 +46,8 @@ public interface IBenefitService
 
     Task<(List<BenefitClaimDto> Items, int Total)> ListClaimsAsync(Guid? workerId, string? status, int page, int pageSize, CancellationToken ct);
     Task<BenefitClaimDto> CreateClaimAsync(BenefitClaimCreateRequest request, CancellationToken ct);
+    Task<BenefitClaimDto> UpdateClaimAsync(Guid id, BenefitClaimUpdateRequest request, CancellationToken ct);
+    Task DeleteClaimAsync(Guid id, CancellationToken ct);
     Task<BenefitClaimDto> DecideClaimAsync(Guid id, ClaimDecideRequest request, CancellationToken ct);
     Task<BenefitClaimDto> PayClaimAsync(Guid id, CancellationToken ct);
 }
@@ -51,7 +55,8 @@ public interface IBenefitService
 public sealed record BenefitTypeCreateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IncludeInPayroll, bool IsTaxable = false);
 public sealed record BenefitTypeUpdateRequest(string Code, string Name, string? Description, decimal AnnualCap, bool RequiresEvidence, bool IsActive, bool IncludeInPayroll, bool IsTaxable = false);
 public sealed record AllowanceSetRequest(Guid WorkerId, string BenefitTypeCode, decimal AnnualAmount, int Year);
-public sealed record BenefitClaimCreateRequest(Guid WorkerId, string BenefitTypeCode, decimal AmountClaimed, string Currency, string? Note, bool EvidenceAttached);
+public sealed record BenefitClaimCreateRequest(Guid WorkerId, string BenefitTypeCode, decimal AmountClaimed, string Currency, string? Note, bool EvidenceAttached, Guid? PayPeriodId = null);
+public sealed record BenefitClaimUpdateRequest(decimal AmountClaimed, string Currency, string? Note, bool EvidenceAttached);
 public sealed record ClaimDecideRequest(string Action, string? Reason, decimal? ApprovedAmount);
 
 public sealed record BenefitTypeDto(
@@ -66,4 +71,4 @@ public sealed record BenefitClaimDto(
     string? Note, bool EvidenceAttached, string Status, string? DecisionReason,
     decimal? ApprovedAmount,     string? CreatedBySubjectId, string? DecidedBySubjectId,
     DateTimeOffset? DecidedAt, string? PaidBySubjectId, DateTimeOffset? PaidAt,
-    DateTimeOffset CreatedAt, Guid? LocationId = null);
+    DateTimeOffset CreatedAt, Guid? LocationId = null, Guid? PayPeriodId = null);

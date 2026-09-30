@@ -23,6 +23,12 @@ const MOCK_NOTE = USE_REAL ? undefined : "Demonstration build — nothing is sav
 const BLOCKED = "blocked";
 
 export const feedback = {
+  /** A successful action without an undo control. */
+  success(what: string, detail?: string) {
+    toast.dismiss(BLOCKED);
+    toast.success(what, { description: detail ?? MOCK_NOTE });
+  },
+
   /** A change that took effect and can be taken back. */
   saved(what: string, onUndo?: () => void) {
     toast.dismiss(BLOCKED);

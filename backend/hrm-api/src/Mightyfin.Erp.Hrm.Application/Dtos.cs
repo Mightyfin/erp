@@ -189,7 +189,7 @@ public sealed record PayrollRunLineDto(Guid Id, Guid WorkerId, string WorkerName
     string? ExceptionDecidedBySubjectId = null, DateTimeOffset? ExceptionDecidedAt = null,
     bool IsExcluded = false,
     // M41 Gap 2: proration accounting (appended so existing callers stay binary-compatible)
-    int WorkingDays = 0, int PaymentDays = 0, string? ProrationNote = null);
+    int WorkingDays = 0, decimal PaymentDays = 0, string? ProrationNote = null);
 public sealed record PayrollLineComponentDto(string ComponentCode, string ComponentName,
     string ComponentType, decimal Amount, string Explanation, bool IsStatutory);
 public sealed record PayslipDto(Guid Id, string PayslipNo, int Version, decimal GrossPay,
@@ -387,19 +387,21 @@ public sealed record LeaveTypeCreateRequest(
     decimal MaxConsecutiveDays = 999, bool RequiresEvidence = false, int MinNoticeDays = 0,
     bool AllowsPartialDays = false, int CarryForwardDays = 0,
     int CarryForwardExpiryMonths = 0, bool AllowNegative = false,
-    string EffectiveFrom = null!, string? EffectiveTo = null);
+    string EffectiveFrom = null!, string? EffectiveTo = null,
+    bool AutoAccrueMonthly = false, string? AccrualStartDate = null);
 public sealed record LeaveTypeUpdateRequest(
     string? Name = null, string? Category = null, int? DefaultDaysPerYear = null,
     decimal? MaxConsecutiveDays = null, bool? RequiresEvidence = null,
     int? MinNoticeDays = null, bool? AllowsPartialDays = null, int? CarryForwardDays = null,
     int? CarryForwardExpiryMonths = null, bool? AllowNegative = null,
-    string? EffectiveTo = null, bool? IsActive = null);
+    string? EffectiveTo = null, bool? IsActive = null,
+    bool? AutoAccrueMonthly = null, string? AccrualStartDate = null);
 public sealed record LeaveTypeDtoFull(
     Guid Id, string Code, string Name, string Category, int DefaultDaysPerYear,
     decimal MaxConsecutiveDays, bool RequiresEvidence, int MinNoticeDays,
     bool AllowsPartialDays, int CarryForwardDays, int CarryForwardExpiryMonths,
     bool AllowNegative, string EffectiveFrom, string? EffectiveTo, bool IsActive,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt, bool AutoAccrueMonthly = false, string? AccrualStartDate = null);
 
 // ---------- Contract types ----------
 public sealed record ContractTypeCreateRequest(
@@ -466,6 +468,8 @@ public sealed record ShiftDto(Guid Id, string Code, string Name, string StartTim
 public sealed record ShiftAssignmentRequest(Guid ShiftId, Guid? CalendarId, string EffectiveFrom, string? EffectiveTo = null);
 public sealed record ShiftAssignmentDto(Guid Id, Guid WorkerId, Guid ShiftId, string ShiftName,
     Guid? CalendarId, string? CalendarName, string EffectiveFrom, string? EffectiveTo);
+public sealed record ManualAttendanceRow(Guid WorkerId, string ClockIn, string ClockOut);
+public sealed record ManualAttendanceRequest(string WorkDate, List<ManualAttendanceRow> Rows);
 public sealed record AttendanceImportRow(string EmployeeNo, string WorkDate, string? ClockIn, string? ClockOut);
 public sealed record AttendanceImportRequest(string FileName, List<AttendanceImportRow> Rows);
 public sealed record AttendanceImportResultDto(Guid BatchId, string FileName, string Status,
@@ -482,7 +486,8 @@ public sealed record TimeAuditEntryDto(Guid Id, string EntityType, string Entity
 public sealed record LeaveAccrualRunRequest(string Period);
 public sealed record LeaveAccrualRunDto(Guid Id, string Period, string Status, int WorkerCount,
     int LedgerEntryCount, decimal TotalDaysAccrued, string RunBySubjectId, DateTimeOffset CreatedAt);
-public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string Reason);
+public sealed record LeaveBalanceAdjustmentRequest(Guid WorkerId, string LeaveTypeCode, decimal Days, string Reason,
+    string? ForDate = null);
 public sealed record LeaveBalanceAdjustmentDto(Guid Id, Guid WorkerId, string WorkerName,
     string LeaveTypeCode, decimal Days, string Reason, string AdjustedBySubjectId, DateTimeOffset CreatedAt);
 public sealed record EscalationRunDto(int Reviewed, int Escalated, DateTimeOffset RunAt);

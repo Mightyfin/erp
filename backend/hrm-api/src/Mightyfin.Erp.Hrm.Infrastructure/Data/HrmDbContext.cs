@@ -86,6 +86,8 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
     public DbSet<ContractType> ContractTypes => Set<ContractType>();
     public DbSet<LeaveBalanceLedger> LeaveBalanceLedgers => Set<LeaveBalanceLedger>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<PeriodBenefit> PeriodBenefits => Set<PeriodBenefit>();
+    public DbSet<PeriodOvertime> PeriodOvertime => Set<PeriodOvertime>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
     public DbSet<AttendanceCorrection> AttendanceCorrections => Set<AttendanceCorrection>();
     public DbSet<ShiftDefinition> ShiftDefinitions => Set<ShiftDefinition>();
@@ -234,9 +236,24 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<ContractType>(modelBuilder, "contract_types", e => e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique());
         ConfigureEntity<LeaveBalanceLedger>(modelBuilder, "leave_balance_ledger");
         ConfigureEntity<LeaveRequest>(modelBuilder, "leave_requests");
+        ConfigureEntity<PeriodBenefit>(modelBuilder, "period_benefits", e =>
+        {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.PayPeriodId, x.WorkerId, x.BenefitTypeId }).IsUnique().HasFilter("NOT is_archived");
+            e.HasOne<PayPeriod>().WithMany().HasForeignKey(x => x.PayPeriodId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Worker>().WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.BenefitType).WithMany().HasForeignKey(x => x.BenefitTypeId).OnDelete(DeleteBehavior.Restrict);
+        });
+        ConfigureEntity<PeriodOvertime>(modelBuilder, "period_overtime", e =>
+        {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.PayPeriodId, x.WorkerId }).IsUnique().HasFilter("NOT is_archived");
+            e.HasOne<PayPeriod>().WithMany().HasForeignKey(x => x.PayPeriodId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Worker>().WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Restrict);
+        });
         ConfigureEntity<AttendanceRecord>(modelBuilder, "attendance_records", e =>
         {
-            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate });
+            e.HasIndex(x => new { x.TenantId, x.WorkerId, x.WorkDate }).IsUnique().HasFilter("NOT is_archived");
             e.HasIndex(x => new { x.TenantId, x.OvertimeStatus, x.WorkDate });
         });
         ConfigureEntity<AttendanceCorrection>(modelBuilder, "attendance_corrections");
@@ -262,7 +279,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<WorkerBenefitAllowance>(modelBuilder, "benefit_allowances",
             e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.BenefitTypeId, x.Year }).IsUnique());
         ConfigureEntity<BenefitClaim>(modelBuilder, "benefit_claims",
-            e => e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status }));
+            e => { e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status }); e.HasOne<PayPeriod>().WithMany().HasForeignKey(x => x.PayPeriodId).OnDelete(DeleteBehavior.Restrict); });
         ConfigureEntity<SalaryAdvance>(modelBuilder, "salary_advances", e =>
         {
             e.HasIndex(x => new { x.TenantId, x.WorkerId, x.Status });
@@ -273,7 +290,7 @@ public sealed class HrmDbContext(DbContextOptions<HrmDbContext> options, ITenant
         ConfigureEntity<TaxSlab>(modelBuilder, "tax_slabs");
         ConfigureEntity<ContributionRule>(modelBuilder, "contribution_rules");
         ConfigureEntity<PayrollRun>(modelBuilder, "payroll_runs");
-        ConfigureEntity<PayrollRunLine>(modelBuilder, "payroll_run_lines");
+        ConfigureEntity<PayrollRunLine>(modelBuilder, "payroll_run_lines", e => e.Property(x => x.PaymentDays).HasColumnType("numeric(8,2)"));
         ConfigureEntity<PayrollRunEvent>(modelBuilder, "payroll_run_events", e => e.HasIndex(x => new { x.TenantId, x.RunId, x.CreatedAt }));
         ConfigureEntity<PayrollLineComponent>(modelBuilder, "payroll_line_components");
         ConfigureEntity<Payslip>(modelBuilder, "payslips", e => e.HasIndex(x => x.PayslipNo).IsUnique());

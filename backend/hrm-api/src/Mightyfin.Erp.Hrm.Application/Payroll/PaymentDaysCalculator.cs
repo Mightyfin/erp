@@ -5,9 +5,8 @@ namespace Mightyfin.Erp.Hrm.Application.Payroll;
 /// <summary>M41 Gap 2: pure proration logic — no EF, no DI, unit-testable.
 ///
 /// Monthly payroll is prorated over scheduled workdays from the effective
-/// work calendar. Public holidays are PAID days and therefore remain payment
-/// days. Payment days are reduced only by (a) the worker starting or ending
-/// mid-period and (b) approved unpaid (or half-pay) leave on a workday.
+/// work calendar. Public holidays are paid days. Approved unpaid leave removes
+/// a full payment day; half-pay leave removes half a payment day.
 ///
 /// paymentDays = scheduled workdays in
 /// [max(periodStart, startDate)..min(periodEnd, endDate)] minus unpaid-leave
@@ -16,7 +15,7 @@ namespace Mightyfin.Erp.Hrm.Application.Payroll;
 /// salary-earned component amounts before statutory floors/ceilings re-apply.</summary>
 public static class PaymentDaysCalculator
 {
-    public static (int WorkingDays, int PaymentDays, string? Note) For(
+    public static (int WorkingDays, decimal PaymentDays, string? Note) For(
         PayrollProrationInputs inputs, Worker worker, List<ApprovedUnpaidLeave> unpaidLeaves)
     {
         var weekends = ParseWeekendDays(inputs.WeekendDays);
@@ -35,7 +34,7 @@ public static class PaymentDaysCalculator
         var parts = new List<string>();
 
         // Approved unpaid/half-pay leave overlapping the clamped window.
-        int leaveDays = 0;
+        decimal leaveReduction = 0;
         foreach (var leave in unpaidLeaves)
         {
             DateOnly ls = MaxDate(leave.StartDate, start);
@@ -46,17 +45,20 @@ public static class PaymentDaysCalculator
                 // Leave requested in partial days or capped by the worker's own
                 // requested balance — honour the smaller of the two measures.
                 var taken = Math.Min(leave.RequestedDays, overlapDays);
-                leaveDays += (int)Math.Round(taken, MidpointRounding.AwayFromZero);
+                var paidFraction = Math.Clamp(leave.PaidFraction, 0m, 1m);
+                leaveReduction += taken * (1m - paidFraction);
+                if (taken > 0)
+                    parts.Add(paidFraction == 0m
+                        ? $"minus {taken:0.##} unpaid leave day{(taken == 1m ? "" : "s")}"
+                        : $"{taken:0.##} half-pay leave day{(taken == 1m ? "" : "s")} at 50% pay");
             }
         }
-        if (leaveDays > 0) parts.Add($"minus {leaveDays} unpaid leave day{(leaveDays == 1 ? "" : "s")}");
-
-        int paymentDays = Math.Max(0, days - leaveDays);
+        decimal paymentDays = Math.Max(0m, days - leaveReduction);
 
         // Why is this month not full pay? Build the human note.
         bool lateStart = worker.StartDate.HasValue && worker.StartDate > inputs.PeriodStart;
         bool earlyEnd = worker.EndDate.HasValue && worker.EndDate < inputs.PeriodEnd;
-        if (!lateStart && !earlyEnd && leaveDays == 0)
+        if (!lateStart && !earlyEnd && leaveReduction == 0)
             return (periodDays, periodDays, null);
 
         var reasons = new List<string>();

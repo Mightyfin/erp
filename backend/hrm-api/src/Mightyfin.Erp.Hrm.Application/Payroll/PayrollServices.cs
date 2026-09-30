@@ -1102,6 +1102,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
                 ? $"{rules.Count} active contribution rule{(rules.Count == 1 ? "" : "s")} are available."
                 : $"Missing active contribution rule configuration for: {string.Join(", ", missingRules.Select(r => r.Code))}.",
             missingRules.Count));
+        var enteredOvertime = (await repo.LoadPeriodOvertimeAsync(run.PayPeriodId, ct))
+            .Where(o => profiles.Any(p => p.WorkerId == o.WorkerId)).ToList();
+        checks.Add(new("overtime-amounts", "Period overtime amounts loaded", "pass",
+            $"{enteredOvertime.Count} employee amount(s) entered for this period; these replace hours-based overtime for those employees.", enteredOvertime.Count));
         checks.Add(new("overtime", "Approved overtime input loaded", "pass",
             approvedOvertime.Count > 0
                 ? $"{approvedOvertime.Count} approved overtime record{(approvedOvertime.Count == 1 ? "" : "s")} will be included."
@@ -1144,6 +1148,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var payrollBenefits = (await repo.LoadPayrollBenefitAllowancesAsync(run.PayPeriodId, run.LocationId, ct))
             .GroupBy(x => x.WorkerId)
             .ToDictionary(x => x.Key, x => x.ToList());
+        var periodBenefits = (await repo.LoadPeriodBenefitsAsync(run.PayPeriodId, run.LocationId, ct)).GroupBy(b => b.WorkerId).ToDictionary(g => g.Key, g => g.ToList());
         var salaryAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(run.PayPeriodId, run.LocationId, ct))
             .GroupBy(x => x.WorkerId)
             .ToDictionary(x => x.Key, x => x.ToList());
@@ -1151,6 +1156,7 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             salaryAdvances.Values.SelectMany(x => x).Select(x => x.Id).Distinct().ToList(), ct);
         var prorationInputs = await repo.LoadProrationInputsAsync(run.PayPeriodId, ct);
         var approvedOvertime = await repo.LoadApprovedOvertimeAsync(run.PayPeriodId, run.LocationId, ct);
+        var periodOvertime = (await repo.LoadPeriodOvertimeAsync(run.PayPeriodId, ct)).ToDictionary(o => o.WorkerId);
         int exceptions = 0;
         run.TotalGross = run.TotalDeductions = run.TotalNet = run.TotalEmployerCost = 0;
         run.EmployeeCount = 0;
@@ -1170,30 +1176,37 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             // Milestone 1: approved attendance overtime is a first-class earning.
             // It is intentionally added before statutory components so PAYE and
             // percentage-based deductions see the same explainable gross basis.
-            ctx.AddOvertime(approvedOvertime.Where(a => a.WorkerId == worker.Id).ToList());
-            ctx.AddPayrollBenefits(payrollBenefits.TryGetValue(worker.Id, out var benefits) ? benefits : []);
+            ctx.AddOvertime(approvedOvertime.Where(a => a.WorkerId == worker.Id).ToList(), periodOvertime.GetValueOrDefault(worker.Id));
+            ctx.AddPayrollBenefits(payrollBenefits.TryGetValue(worker.Id, out var benefits) ? benefits : [], periodBenefits.GetValueOrDefault(worker.Id));
             foreach (var comp in components.Where(c => c.IsActive).OrderBy(c => c.Priority))
                 ctx.Evaluate(comp);
             ctx.AddSalaryAdvances(
                 salaryAdvances.TryGetValue(worker.Id, out var advances) ? advances : [],
                 advanceRecovered);
-            var net = ctx.Gross - ctx.Deductions;
+            // Control totals and payslips must use the same rounded component
+            // amounts. Keeping unrounded evaluator values here caused the run
+            // total to differ from its pay lines and, occasionally, a line's
+            // deduction total to differ from the displayed deductions.
+            var gross = ctx.Components.Where(c => c.Type == "earning").Sum(c => c.Amount);
+            var deductions = ctx.Components.Where(c => c.Type is "deduction" or "tax").Sum(c => c.Amount);
+            var employerCost = ctx.Components.Where(c => c.Type == "employer-contribution").Sum(c => c.Amount);
+            var net = gross - deductions;
             if (net < 0) { exceptions++; ctx.ExceptionReason = "negative-net"; }
             // Missing payment details do not affect gross-to-net calculation or
             // payslip release. They remain a payment-readiness warning and block
             // the bank-file step until HR records a primary payment method.
             run.EmployeeCount++;
-            run.TotalGross += ctx.Gross;
-            run.TotalDeductions += ctx.Deductions;
+            run.TotalGross += gross;
+            run.TotalDeductions += deductions;
             run.TotalNet += net;
-            run.TotalEmployerCost += ctx.EmployerCost + ctx.Gross;
+            run.TotalEmployerCost += employerCost + gross;
             run.ExceptionCount = exceptions;
 
             var line = new PayrollRunLine
             {
                 RunId = run.Id, WorkerId = worker.Id,
-                GrossPay = Math.Round(ctx.Gross, 2), TotalDeductions = Math.Round(ctx.Deductions, 2),
-                NetPay = Math.Round(net, 2), EmployerCost = Math.Round(ctx.EmployerCost, 2),
+                GrossPay = gross, TotalDeductions = deductions,
+                NetPay = net, EmployerCost = employerCost,
                 HasException = ctx.ExceptionReason is not null, ExceptionReason = ctx.ExceptionReason,
                 ComponentCount = ctx.Components.Count,
                 RuleVersionSnapshot = JsonSerializer.Serialize(components.Select(c => new { c.Id, c.Version }).ToList()),
@@ -1243,8 +1256,11 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
         var payGroup = await repo.GetPayGroupAsync(openProfile.PayGroupId, ct);
         var periods = await repo.ListPeriodsAsync(openProfile.PayGroupId, ct);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var period = periods.FirstOrDefault(p => p.IsCurrent)
-            ?? periods.FirstOrDefault(p => p.StartDate <= today && p.EndDate >= today)
+        // Preview the period containing today before consulting the operational
+        // current flag, which may still point to the previous released month.
+        // Otherwise new starters receive a zero-day preview before their start date.
+        var period = periods.FirstOrDefault(p => p.StartDate <= today && p.EndDate >= today)
+            ?? periods.FirstOrDefault(p => p.IsCurrent)
             ?? periods.FirstOrDefault();
         if (period is null)
             return new WorkerPayslipPreviewDto("blocked", "", payGroup?.Currency ?? "ZMW",
@@ -1275,9 +1291,10 @@ public sealed class PayrollServiceImpl(IPayrollRepository repo, IAuthzService au
             prorationInputs, worker, prorationInputs.UnpaidLeaves.Where(l => l.WorkerId == worker.Id).ToList());
         ctx.SetProration(workingDays, paymentDays, note);
         ctx.AddOvertime((await repo.LoadApprovedOvertimeAsync(period.Id, locationId, ct))
-            .Where(a => a.WorkerId == worker.Id).ToList());
+            .Where(a => a.WorkerId == worker.Id).ToList(),
+            (await repo.LoadPeriodOvertimeAsync(period.Id, ct)).FirstOrDefault(o => o.WorkerId == worker.Id));
         ctx.AddPayrollBenefits((await repo.LoadPayrollBenefitAllowancesAsync(period.Id, locationId, ct))
-            .Where(a => a.WorkerId == worker.Id).ToList());
+            .Where(a => a.WorkerId == worker.Id).ToList(), (await repo.LoadPeriodBenefitsAsync(period.Id, locationId, ct)).Where(b => b.WorkerId == worker.Id).ToList());
         foreach (var comp in activeComponents)
             ctx.Evaluate(comp);
         var previewAdvances = (await repo.LoadDeductibleSalaryAdvancesAsync(period.Id, locationId, ct))
@@ -2147,7 +2164,7 @@ internal sealed class CalcContext
     public decimal Deductions;
     public decimal EmployerCost;
     public int WorkingDays;
-    public int PaymentDays;
+    public decimal PaymentDays;
     public string? ProrationNote;
     public string? ExceptionReason;
     public readonly List<(string Code, string Name, string Type, decimal Amount, string Explanation, bool IsStatutory)> Components = [];
@@ -2277,8 +2294,18 @@ internal sealed class CalcContext
         return Math.Round(amount * factor, 2);
     }
 
-    public void AddOvertime(List<AttendanceRecord> records)
+    public void AddOvertime(List<AttendanceRecord> records, PeriodOvertime? enteredAmount = null)
     {
+        if (enteredAmount != null)
+        {
+            _values["overtime"] = enteredAmount.Amount;
+            if (enteredAmount.Amount > 0)
+                Components.Add(("overtime", "Overtime", "earning", enteredAmount.Amount,
+                    $"Period overtime amount; input {enteredAmount.Id}; period {enteredAmount.PayPeriodId}. {enteredAmount.Note}", false));
+            Gross += enteredAmount.Amount;
+            _taxableEarnings += enteredAmount.Amount;
+            return;
+        }
         if (records.Count == 0) return;
         var hours = records.Sum(r => r.OvertimeHours);
         if (hours <= 0) return;
@@ -2299,10 +2326,23 @@ internal sealed class CalcContext
         _taxableEarnings += amount;
     }
 
-    public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances)
+    public void AddPayrollBenefits(List<WorkerBenefitAllowance> allowances, List<PeriodBenefit>? periodBenefits = null)
     {
+        var assigned = (periodBenefits ?? []).Where(b => b.BenefitType?.IsActive == true && b.BenefitType.IncludeInPayroll).ToList();
+        var assignedTypes = assigned.Select(b => b.BenefitTypeId).ToHashSet();
+        foreach (var entry in assigned)
+        {
+            var type = entry.BenefitType!;
+            var code = $"benefit-{type.Code.Trim().ToLowerInvariant()}";
+            _values[code] = entry.Amount;
+            if (entry.Amount <= 0) continue;
+            Components.Add((code, type.Name, "earning", entry.Amount,
+                $"Benefit assigned for payroll period {entry.PayPeriodId}; amount K{entry.Amount:N2}. {entry.Note}", false));
+            Gross += entry.Amount;
+            if (type.IsTaxable) _taxableEarnings += entry.Amount;
+        }
         foreach (var allowance in allowances
-            .Where(a => a.AnnualAmount > 0 && a.BenefitType?.IncludeInPayroll == true && a.BenefitType.IsActive)
+            .Where(a => !assignedTypes.Contains(a.BenefitTypeId) && a.AnnualAmount > 0 && a.BenefitType?.IncludeInPayroll == true && a.BenefitType.IsActive)
             .OrderBy(a => a.BenefitType!.Name, StringComparer.OrdinalIgnoreCase))
         {
             var type = allowance.BenefitType!;
@@ -2340,7 +2380,7 @@ internal sealed class CalcContext
         }
     }
 
-    public void SetProration(int workingDays, int paymentDays, string? note)
+    public void SetProration(int workingDays, decimal paymentDays, string? note)
     {
         WorkingDays = workingDays;
         PaymentDays = paymentDays;
@@ -2374,6 +2414,7 @@ public interface IPayrollRepository
     Task<List<PayGroup>> ListPayGroupsAsync(CancellationToken ct);
     Task<List<PayPeriod>> ListPeriodsAsync(Guid payGroupId, CancellationToken ct);
     Task<PayPeriod?> GetPeriodAsync(Guid id, CancellationToken ct);
+    Task<List<PeriodBenefit>> LoadPeriodBenefitsAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
     Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
     Task<List<SalaryAdvance>> ListSalaryAdvancesAsync(Guid? workerId, string? status, CancellationToken ct);
     Task<SalaryAdvance?> GetSalaryAdvanceAsync(Guid id, CancellationToken ct);
@@ -2416,6 +2457,8 @@ public interface IPayrollRepository
     Task<PayrollRun> UpdateRunAsync(PayrollRun run, CancellationToken ct);
     Task<PayrollRun> SubmitRunAsync(PayrollRun run, CancellationToken ct);
     Task<(List<WorkerPayrollProfile> Profiles, List<SalaryComponent> Components, List<ContributionRule> Rules, List<TaxSlab> Slabs, DateOnly? Cutoff)> LoadCalculationInputsAsync(Guid payPeriodId, CancellationToken ct, Guid? locationId = null);
+    Task<bool> IsAttendanceDateLockedAsync(Guid workerId, DateOnly date, CancellationToken ct);
+    Task<List<PeriodOvertime>> LoadPeriodOvertimeAsync(Guid periodId, CancellationToken ct) => Task.FromResult(new List<PeriodOvertime>());
     Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct);
     Task LinkOvertimeToPayrollAsync(Guid attendanceId, Guid runId, Guid runLineId, CancellationToken ct);
     Task ClearRunLinesAsync(Guid runId, CancellationToken ct);
@@ -2455,7 +2498,7 @@ public sealed record PayrollProrationInputs(
     string WeekendDays = "sat,sun");
 
 /// <summary>One approved leave of an unpaid leave type overlapping the period.</summary>
-public sealed record ApprovedUnpaidLeave(Guid WorkerId, DateOnly StartDate, DateOnly EndDate, decimal RequestedDays);
+public sealed record ApprovedUnpaidLeave(Guid WorkerId, DateOnly StartDate, DateOnly EndDate, decimal RequestedDays, decimal PaidFraction = 0m);
 
 public sealed record PayrollPaymentRow(Guid WorkerId, string EmployeeNo, string WorkerName,
     string BankName, string BranchCode, string AccountName, string AccountNumber, decimal Amount);

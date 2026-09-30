@@ -68,7 +68,7 @@ public class PayrollRunLine : Entity
     // PaymentDays = days the worker actually earned pay for (mid-month
     // starters/leavers and approved unpaid leave reduce it).
     public int WorkingDays { get; set; }
-    public int PaymentDays { get; set; }
+    public decimal PaymentDays { get; set; }
     public string? ProrationNote { get; set; }
 
     public bool HasException { get; set; }

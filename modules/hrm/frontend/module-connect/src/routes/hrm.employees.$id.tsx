@@ -120,7 +120,7 @@ function text(value: unknown) {
 }
 
 function escapeHtml(value: unknown) {
-  return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+  return text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function mapPayslip(raw: unknown): PayslipRecord {
@@ -170,22 +170,21 @@ function rawText(raw: Record<string, unknown>, ...keys: string[]) {
 
 function previewRun(raw: unknown) {
   const r = raw as Record<string, unknown>;
+  const period = rawText(r, "periodLabel", "period", "name");
   return {
     id: rawText(r, "id"),
-    period: rawText(r, "periodLabel", "period", "name"),
+    period,
     payGroup: rawText(r, "payGroup", "payGroupName") || "Payroll run",
     currency: rawText(r, "currency") || "ZMW",
     status: (rawText(r, "status") || "draft").toLowerCase(),
-    sortKey: rawText(
-      r,
-      "endDate",
-      "cutoffDate",
-      "postingDate",
-      "createdAt",
-      "updatedAt",
-      "periodLabel",
-    ),
+    periodOrder: periodOrder(period),
+    sortKey: rawText(r, "endDate", "cutoffDate", "postingDate", "createdAt", "updatedAt"),
   };
+}
+
+function periodOrder(period: string) {
+  const date = Date.parse(`1 ${period}`);
+  return Number.isNaN(date) ? 0 : date;
 }
 
 function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
@@ -218,77 +217,54 @@ function previewLine(raw: unknown): NonNullable<PayslipPreview["line"]> {
   };
 }
 
+async function currentPayslipSimulationFor(workerId: string): Promise<PayslipPreview> {
+  const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
+  const rawLine = rawPreview.line as Record<string, unknown> | undefined;
+  const guardrails = Array.isArray(rawPreview.guardrails)
+    ? rawPreview.guardrails.map(String).filter(Boolean)
+    : [];
+  const line = rawLine ? previewLine(rawLine) : undefined;
+  if (line && !line.components.length)
+    guardrails.push(
+      "The payroll preview was calculated, but no component breakdown was returned by the engine.",
+    );
+  return {
+    status: rawText(rawPreview, "status") === "ready" && guardrails.length === 0 ? "ready" : "blocked",
+    guardrails,
+    run: {
+      id: "current-preview",
+      period: rawText(rawPreview, "periodLabel") || "Current pay period",
+      payGroup: "",
+      currency: rawText(rawPreview, "currency") || "ZMW",
+      status: "preview",
+    },
+    line,
+  };
+}
+
 async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview> {
-  // A historical payslip is authoritative. Do not replace it with a fresh
-  // simulation that may use a different work calendar or later configuration.
-  const releasedSlip = await latestPayslipFor(workerId);
-  if (releasedSlip?.runId) {
-    const rawLines = await realApi.payrollRunLines(releasedSlip.runId);
-    const lines = ((rawLines as { items?: unknown[] }).items ?? []) as Record<string, unknown>[];
-    const rawLine = lines.find((line) => rawText(line, "workerId", "employeeId") === workerId);
-    if (rawLine) {
-      const runs = (await realApi.payrollRuns()).items.map(previewRun);
-      const run = runs.find((item) => item.id === releasedSlip.runId);
-      return {
-        status: "ready",
-        guardrails: ["Showing the latest released or corrected payslip. A new simulation is not used for this historical period."],
-        run: {
-          id: releasedSlip.runId,
-          period: releasedSlip.periodLabel || run?.period || "Released pay period",
-          payGroup: run?.payGroup ?? "Payroll run",
-          currency: run?.currency ?? "ZMW",
-          status: "released",
-        },
-        line: previewLine(rawLine),
-      };
-    }
-  }
-
-  try {
-    const rawPreview = (await realApi.workerPayslipPreview(workerId)) as Record<string, unknown>;
-    const rawLine = rawPreview.line as Record<string, unknown> | undefined;
-    const guardrails = Array.isArray(rawPreview.guardrails)
-      ? rawPreview.guardrails.map(String).filter(Boolean)
-      : [];
-    const line = rawLine ? previewLine(rawLine) : undefined;
-    if (line && !line.components.length)
-      guardrails.push(
-        "The payroll preview was calculated, but no component breakdown was returned by the engine.",
-      );
-    return {
-      status: rawText(rawPreview, "status") === "ready" && guardrails.length === 0 ? "ready" : "blocked",
-      guardrails,
-      run: {
-        id: "current-preview",
-        period: rawText(rawPreview, "periodLabel") || "Current pay period",
-        payGroup: "",
-        currency: rawText(rawPreview, "currency") || "ZMW",
-        status: "preview",
-      },
-      line,
-    };
-  } catch {
-    // Older API deployments did not expose a simulation endpoint. Fall back to
-    // the latest calculated line so the screen remains usable during rollout.
-  }
-
   const runs = (await realApi.payrollRuns()).items
     .map(previewRun)
     .filter((run) => run.id)
-    .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+    .sort((a, b) => b.periodOrder - a.periodOrder || b.sortKey.localeCompare(a.sortKey));
   const usableRuns = runs.filter(
     (run) => !["draft", "locked", "cancelled", "void", "reversed"].includes(run.status),
   );
-  const searchRuns = usableRuns.length ? usableRuns : runs;
+  const searchRuns = usableRuns;
   const guardrails: string[] = [];
 
-  if (!runs.length) {
-    return {
-      status: "blocked",
-      guardrails: [
-        "No payroll run exists yet. Create a payroll run, calculate it, then preview the employee's payslip.",
-      ],
-    };
+  // A current-period simulation is newer than a released historical payslip.
+  // Calculated lines for the current period still take precedence over simulations.
+  const now = new Date();
+  const currentMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  if ((usableRuns[0]?.periodOrder ?? 0) < currentMonth) {
+    try {
+      const simulation = await currentPayslipSimulationFor(workerId);
+      if (periodOrder(simulation.run?.period ?? "") > (usableRuns[0]?.periodOrder ?? 0))
+        return simulation;
+    } catch {
+      // Retain the newest calculated or released line if simulation is unavailable.
+    }
   }
 
   for (const run of searchRuns) {
@@ -325,10 +301,18 @@ async function latestPayslipPreviewFor(workerId: string): Promise<PayslipPreview
     };
   }
 
+  try {
+    return await currentPayslipSimulationFor(workerId);
+  } catch {
+    // A calculated run is unavailable and this API does not support simulations.
+  }
+
   return {
     status: "blocked",
     guardrails: [
-      "No calculated payroll line was found for this employee.",
+      runs.length
+        ? "No calculated payroll line was found for this employee."
+        : "No payroll run exists yet. Create and calculate a payroll run before previewing the employee's payslip.",
       "Confirm the employee has an active payroll profile, belongs to the selected pay group and branch scope, then calculate the run again.",
     ],
   };
@@ -381,8 +365,10 @@ function PayslipPreviewDialog({
           </DialogTitle>
           <DialogDescription>
             {preview?.run?.status === "preview"
-              ? "No released payslip exists for this employee, so this is a current payroll simulation."
-              : "Showing the complete latest released or corrected payslip."}
+              ? "Showing a simulation for the current pay period. This is not a released payslip."
+              : preview?.run?.status === "released" || preview?.run?.status === "corrected"
+                ? "Showing the latest released or corrected payslip."
+                : "Showing the latest calculated payroll line. This is not a released payslip."}
           </DialogDescription>
         </DialogHeader>
 
@@ -448,7 +434,7 @@ function PayslipPreviewDialog({
                     Run status: <strong>{preview?.run?.status.replaceAll("-", " ")}</strong> ·{" "}
                     {preview?.run?.payGroup}
                   </span>
-                  {preview?.run?.id ? (
+                  {preview?.run?.id && preview.run.id !== "current-preview" ? (
                     <Button variant="outline" size="sm" asChild>
                       <Link to="/hrm/payroll/runs/$id" params={{ id: preview.run.id }}>
                         Open payroll run

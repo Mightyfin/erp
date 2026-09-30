@@ -117,6 +117,7 @@ public class WorkerBenefitAllowance : Entity
 
 public class BenefitClaim : Entity
 {
+    public Guid? PayPeriodId { get; set; }
     public Guid WorkerId { get; set; }
     public Worker? Worker { get; set; }
     // M44 branch scoping: branch the claim belongs to; null = global.

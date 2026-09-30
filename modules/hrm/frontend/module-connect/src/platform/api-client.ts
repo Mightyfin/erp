@@ -157,10 +157,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const problem = payload && typeof payload === "object" ? (payload as { title?: unknown; message?: unknown; code?: unknown }) : null;
     const title =
-      res.status === 403 ? "You do not have permission to access this page."
-        : res.status === 401 ? "Your session has expired. Please sign in again."
-          : problem?.message ? String(problem.message)
-            : problem?.title ? String(problem.title)
+      problem?.message ? String(problem.message)
+        : problem?.title ? String(problem.title)
+          : res.status === 403 ? "You do not have permission to access this page."
+            : res.status === 401 ? "Your session has expired. Please sign in again."
               : `HTTP ${res.status}`;
     const code =
       problem?.code

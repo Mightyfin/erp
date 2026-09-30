@@ -364,20 +364,24 @@ public sealed class ConfigAdminServiceImpl(IConfigRepository repo, IAuthzService
         authz.RequireAnyRole("hr_ops", "hr_admin");
         RequireNonEmpty(request.Code, "code");
         RequireNonEmpty(request.Name, "name");
+        var category = LeaveCategory(request.Category);
         var existing = (await repo.ListLeaveTypesAsync(true, ct)).FirstOrDefault(t => t.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
             throw new DomainException("leave-type-code-taken", $"Leave type code '{request.Code}' is already in use.");
         var effectiveFrom = string.IsNullOrWhiteSpace(request.EffectiveFrom) ? DateOnly.FromDateTime(DateTime.UtcNow) : DateOnly.Parse(request.EffectiveFrom);
         var leaveType = new LeaveType
         {
-            Code = request.Code.Trim().ToLowerInvariant(), Name = request.Name.Trim(), Category = request.Category,
+            Code = request.Code.Trim().ToLowerInvariant(), Name = request.Name.Trim(), Category = category,
             DefaultDaysPerYear = Math.Max(0, request.DefaultDaysPerYear), MaxConsecutiveDays = request.MaxConsecutiveDays,
             RequiresEvidence = request.RequiresEvidence, MinNoticeDays = Math.Max(0, request.MinNoticeDays),
             AllowsPartialDays = request.AllowsPartialDays, CarryForwardDays = Math.Max(0, request.CarryForwardDays),
             CarryForwardExpiryMonths = Math.Max(0, request.CarryForwardExpiryMonths), AllowNegative = request.AllowNegative,
             EffectiveFrom = effectiveFrom,
             EffectiveTo = string.IsNullOrWhiteSpace(request.EffectiveTo) ? null : DateOnly.Parse(request.EffectiveTo),
+            AutoAccrueMonthly = request.AutoAccrueMonthly,
+            AccrualStartDate = ParseAccrualStart(request.AccrualStartDate),
         };
+        ValidateAccrualPolicy(leaveType);
         return ToLeaveTypeDto(await repo.CreateLeaveTypeAsync(leaveType, ct));
     }
 
@@ -387,7 +391,7 @@ public sealed class ConfigAdminServiceImpl(IConfigRepository repo, IAuthzService
         var leaveType = await repo.GetLeaveTypeAsync(id, ct)
             ?? throw new DomainException("leave-type-not-found", $"Leave type {id} does not exist.");
         if (request.Name is not null) leaveType.Name = request.Name.Trim();
-        if (request.Category is not null) leaveType.Category = request.Category;
+        if (request.Category is not null) leaveType.Category = LeaveCategory(request.Category);
         if (request.DefaultDaysPerYear.HasValue) leaveType.DefaultDaysPerYear = Math.Max(0, request.DefaultDaysPerYear.Value);
         if (request.MaxConsecutiveDays.HasValue) leaveType.MaxConsecutiveDays = request.MaxConsecutiveDays.Value;
         if (request.RequiresEvidence.HasValue) leaveType.RequiresEvidence = request.RequiresEvidence.Value;
@@ -398,7 +402,32 @@ public sealed class ConfigAdminServiceImpl(IConfigRepository repo, IAuthzService
         if (request.AllowNegative.HasValue) leaveType.AllowNegative = request.AllowNegative.Value;
         if (request.EffectiveTo is not null) leaveType.EffectiveTo = string.IsNullOrWhiteSpace(request.EffectiveTo) ? null : DateOnly.Parse(request.EffectiveTo);
         if (request.IsActive.HasValue) leaveType.IsActive = request.IsActive.Value;
+        if (request.AutoAccrueMonthly.HasValue) leaveType.AutoAccrueMonthly = request.AutoAccrueMonthly.Value;
+        if (request.AccrualStartDate is not null) leaveType.AccrualStartDate = ParseAccrualStart(request.AccrualStartDate);
+        ValidateAccrualPolicy(leaveType);
         return ToLeaveTypeDto(await repo.UpdateLeaveTypeAsync(leaveType, ct));
+    }
+
+    private static DateOnly? ParseAccrualStart(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!DateOnly.TryParse(value, out var date) || date.Day != 1)
+            throw new DomainException("leave-accrual-start-invalid", "Accrual start date must be the first day of a month.");
+        return date;
+    }
+
+    private static void ValidateAccrualPolicy(LeaveType type)
+    {
+        if (type.AutoAccrueMonthly && (type.AccrualStartDate is null || type.DefaultDaysPerYear <= 0))
+            throw new DomainException("leave-accrual-policy-invalid", "Monthly accrual requires a start month and a positive annual entitlement.");
+    }
+
+    private static string LeaveCategory(string? value)
+    {
+        var category = value?.Trim().ToLowerInvariant();
+        if (category is not ("paid" or "unpaid" or "half-pay"))
+            throw new DomainException("leave-category-invalid", "Pay treatment must be paid, unpaid or half-pay.");
+        return category;
     }
 
     // ================= Contract types =================
@@ -512,7 +541,7 @@ public sealed class ConfigAdminServiceImpl(IConfigRepository repo, IAuthzService
         t.Id, t.Code, t.Name, t.Category, t.DefaultDaysPerYear, t.MaxConsecutiveDays, t.RequiresEvidence,
         t.MinNoticeDays, t.AllowsPartialDays, t.CarryForwardDays, t.CarryForwardExpiryMonths,
         t.AllowNegative, t.EffectiveFrom.ToString("yyyy-MM-dd"), t.EffectiveTo?.ToString("yyyy-MM-dd"),
-        t.IsActive, t.CreatedAt);
+        t.IsActive, t.CreatedAt, t.AutoAccrueMonthly, t.AccrualStartDate?.ToString("yyyy-MM-dd"));
 
     private static ContractTypeDto ToContractTypeDto(ContractType t) => new(
         t.Id, t.Code, t.Name, t.ProbationDays, t.NoticeDays, t.IsActive, t.CreatedAt);

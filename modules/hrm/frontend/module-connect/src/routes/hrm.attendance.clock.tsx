@@ -1,3 +1,4 @@
+import { LiveAttendanceClock } from "@/platform/components/LiveAttendanceClock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -43,7 +44,7 @@ export const Route = createFileRoute("/hrm/attendance/clock")({
       },
     ],
   }),
-  component: ClockPage,
+  component: import.meta.env.VITE_USE_REAL_API === "true" ? LiveAttendanceClock : ClockPage,
 });
 
 const ME = "Chanda Mwansa-Chileshe";

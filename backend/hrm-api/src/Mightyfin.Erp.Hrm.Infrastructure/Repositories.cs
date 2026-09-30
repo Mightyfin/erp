@@ -386,7 +386,7 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         => await db.LeaveTypes.FirstOrDefaultAsync(t => t.Code == code && t.IsActive, ct);
 
     public async Task<List<LeaveType>> GetLeaveTypesAsync(CancellationToken ct)
-        => await db.LeaveTypes.Where(t => t.IsActive).ToListAsync(ct);
+        => await db.LeaveTypes.Where(t => t.IsActive && !t.IsArchived).ToListAsync(ct);
 
     public async Task<DateOnly?> GetCurrentCutoffAsync(CancellationToken ct)
     {
@@ -635,8 +635,13 @@ public sealed class TimeRepository(HrmDbContext db) : ITimeRepository
         => (await db.LeaveAccrualRuns.Take(50).ToListAsync(ct))
             .OrderByDescending(run => run.CreatedAt).ToList();
 
-    public async Task<List<Worker>> ListAccrualWorkersAsync(CancellationToken ct)
-        => await db.Workers.Where(w => w.Status == "active").ToListAsync(ct);
+    public async Task<List<Worker>> ListAccrualWorkersAsync(DateOnly periodDate, CancellationToken ct)
+    {
+        var periodEnd = periodDate.AddMonths(1).AddDays(-1);
+        return await db.Workers.Where(w => !w.IsArchived && (w.Status == "active" || w.Status == "on-leave")
+            && (w.StartDate == null || w.StartDate <= periodEnd)
+            && (w.EndDate == null || w.EndDate >= periodDate)).ToListAsync(ct);
+    }
 
     public async Task<LeaveBalanceLedger> AddLedgerEntryAsync(LeaveBalanceLedger entry, CancellationToken ct)
     {
@@ -1201,6 +1206,13 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
         return (profiles, components, rules, slabs, period.CutoffDate);
     }
 
+    public async Task<List<PeriodBenefit>> LoadPeriodBenefitsAsync(Guid periodId, Guid? locationId, CancellationToken ct)
+    {
+        return await db.PeriodBenefits.Include(b => b.BenefitType).Where(b => !b.IsArchived && b.PayPeriodId == periodId
+            && b.BenefitType != null && !b.BenefitType.IsArchived && b.BenefitType.IsActive && b.BenefitType.IncludeInPayroll
+            && db.Workers.Any(w => w.Id == b.WorkerId && !w.IsArchived && (locationId == null || w.LocationId == locationId))).ToListAsync(ct);
+    }
+
     public async Task<List<WorkerBenefitAllowance>> LoadPayrollBenefitAllowancesAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
@@ -1287,6 +1299,22 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
             .ToDictionary(row => codeById[row.Code], row => row.Amount);
     }
 
+    public async Task<bool> IsAttendanceDateLockedAsync(Guid workerId, DateOnly date, CancellationToken ct)
+    {
+        var worker = await db.Workers.FirstOrDefaultAsync(w => w.Id == workerId, ct);
+        if (worker == null) return true;
+        var groups = db.WorkerPayrollProfiles.Where(p => p.WorkerId == workerId && !p.IsArchived
+            ).Select(p => p.PayGroupId);
+        return await db.PayPeriods.AnyAsync(p => !p.IsArchived && p.StartDate <= date && p.EndDate >= date
+            && groups.Contains(p.PayGroupId) && (p.Status == "closed" || p.Status == "locked"
+                || db.PayrollRuns.Any(r => !r.IsArchived && r.PayPeriodId == p.Id
+                    && (r.LocationId == null || r.LocationId == worker.LocationId)
+                    && r.Status != "draft" && r.Status != "reversed" && r.Status != "cancelled")), ct);
+    }
+
+    public Task<List<PeriodOvertime>> LoadPeriodOvertimeAsync(Guid periodId, CancellationToken ct)
+        => db.PeriodOvertime.Where(o => !o.IsArchived && o.PayPeriodId == periodId).ToListAsync(ct);
+
     public async Task<List<AttendanceRecord>> LoadApprovedOvertimeAsync(Guid payPeriodId, Guid? locationId, CancellationToken ct)
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
@@ -1319,18 +1347,14 @@ public sealed class PayrollRepository(HrmDbContext db) : IPayrollRepository
     {
         var period = await db.PayPeriods.FirstOrDefaultAsync(p => p.Id == payPeriodId, ct)
             ?? throw new DomainException("pay-period-not-found", "Pay period not found.");
-        // Approved leaves whose type is unpaid (or half-pay, treated as unpaid
-        // for proration purposes) and whose range overlaps the period.
-        var unpaidTypeCodes = await db.LeaveTypes
-            .Where(t => t.Category == "unpaid" || t.Category == "half-pay")
-            .Select(t => t.Code)
-            .ToListAsync(ct);
-        var unpaidLeaves = await db.LeaveRequests
-            .Where(lr => lr.Status == "approved"
-                && unpaidTypeCodes.Contains(lr.LeaveTypeCode)
-                && lr.StartDate <= period.EndDate && lr.EndDate >= period.StartDate)
-            .Select(lr => new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate, lr.RequestedDays))
-            .ToListAsync(ct);
+        // The configured category controls how much of each approved day is paid.
+        var unpaidLeaves = await (from lr in db.LeaveRequests
+            join type in db.LeaveTypes on lr.LeaveTypeCode equals type.Code
+            where lr.Status == "approved" && !lr.IsArchived
+                && (type.Category == "unpaid" || type.Category == "half-pay")
+                && lr.StartDate <= period.EndDate && lr.EndDate >= period.StartDate
+            select new ApprovedUnpaidLeave(lr.WorkerId, lr.StartDate, lr.EndDate,
+                lr.RequestedDays, type.Category == "half-pay" ? 0.5m : 0m)).ToListAsync(ct);
         // Effective calendar: tenant default, falling back to any Zambia
         // calendar. Its weekend definition drives monthly payroll proration;
         // holiday dates are paid days, so they do not reduce payment days.
