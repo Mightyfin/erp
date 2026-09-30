@@ -32,9 +32,12 @@ import {
   type OidcUser,
 } from "@/platform/oidc";
 
+import { INITIAL_AUTH_SETTINGS, loadAuthSettings, type AuthSettings } from "@/platform/auth-settings";
+
 const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
 
 interface AuthState {
+  authSettings: AuthSettings;
   /** Real OIDC session when the hybrid flow is active; null in demo mode. */
   session: OidcSession | null;
   user: OidcUser | null;
@@ -102,6 +105,7 @@ function mapRolesToDemoRole(roles: string[]): Role {
 const PUBLIC_PATHS = new Set(["/sign-in", "/speak-up"]);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [authSettings, setAuthSettings] = useState(INITIAL_AUTH_SETTINGS);
   const [session, setSession] = useState<OidcSession | null>(null);
   const [localUser, setLocalUser] = useState<LocalAuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,9 +121,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     (async () => {
-      const fresh = await ensureFreshSession();
+      const settings = await loadAuthSettings();
+      if (!settings.oidcEnabled) clearSession();
+      const fresh = settings.oidcEnabled ? await ensureFreshSession() : null;
       let restoredLocal: LocalAuthUser | null = null;
-      if (!fresh) {
+      if (!fresh && settings.localEnabled) {
         try {
           const local = await hrmApi.auth.me();
           restoredLocal = local.authenticated ? local.user : null;
@@ -128,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!cancelled) {
+        setAuthSettings(settings);
         setSession(fresh);
         setLocalUser(restoredLocal);
         setLoading(false);
@@ -195,10 +202,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInLocal = useCallback(async (email: string, password: string) => {
+    if (!authSettings.localEnabled) throw new Error("Local sign-in is not enabled.");
     const result = await hrmApi.auth.login(email, password);
     setLocalUser(result.user);
     setSession(null);
-  }, []);
+  }, [authSettings.localEnabled]);
 
   const signOut = useCallback(() => {
     clearSession();
@@ -220,6 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(
     () => ({
+      authSettings,
       session,
       user,
       loading,
@@ -233,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resolvingWorker,
     }),
     [
+      authSettings,
       session,
       user,
       loading,

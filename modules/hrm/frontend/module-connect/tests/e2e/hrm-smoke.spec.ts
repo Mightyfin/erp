@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+// Authentication behavior in these fixtures explicitly enables the shared IdP.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/hrm/auth/capabilities", (route) => route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } }));
+});
+
 test("HRM entry renders or reaches the sign-in flow", async ({ page }) => {
   await page.goto("/hrm");
 
@@ -114,6 +119,10 @@ test("HR admin keeps Configuration navigation when also assigned payroll roles",
     );
   });
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -150,6 +159,10 @@ test("HR admin can add housing allowance as thirty percent of basic", async ({ p
     isActive: true,
   };
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     const request = route.request();
     const path = new URL(request.url()).pathname;
     let body: unknown = [];
@@ -243,6 +256,10 @@ test("payroll start keeps backdated periods separate from the open payroll calen
     localStorage.setItem("erp.oidc.session", JSON.stringify({ accessToken: token, idToken: token, expiresAt: Date.now() + 3_600_000 }));
   });
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     const path = new URL(route.request().url()).pathname;
     let body: unknown = [];
     if (path.endsWith("/payroll/pay-groups")) body = [{ id: "pg-1", code: "MONTHLY", name: "Monthly", currency: "ZMW", isDefault: true }];
@@ -276,6 +293,10 @@ test("HR admin home is assembled from live tenant APIs, not seeded dashboard rec
     }));
   });
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     const path = new URL(route.request().url()).pathname;
     let body: unknown = { items: [] };
     if (path.endsWith("/workflow/queue")) body = { items: [{ requestId: "live-approval", workflowType: "Live promotion", subjectName: "Mary Phiri", status: "submitted" }] };
@@ -309,6 +330,10 @@ test("attendance import page exposes overtime-only import and time audit evidenc
     }));
   });
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     const url = new URL(route.request().url());
     const path = url.pathname;
     if (path.endsWith("/time/overtime/import") && route.request().method() === "POST") {
@@ -1688,6 +1713,10 @@ test("M36 coordinator records rehearsal evidence and a role-enforced go-live sig
     ],
   });
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "hybrid", localUsersEnabled: true, identityConfigured: true } });
+      return;
+    }
     const url = new URL(route.request().url());
     if (url.pathname.includes("/hrm/me")) {
       await route.fulfill({

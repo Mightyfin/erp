@@ -59,3 +59,36 @@ The client allows redirect URIs on `https://erp.mightyfinance.co.zm/*` (producti
 ## Server notes
 
 Keycloak admin bootstrap credentials live in the efaas sandbox compose file (`compose.portable.yaml` → `KC_BOOTSTRAP_ADMIN_*`); the setup script embeds them so it can run unattended during platform provisioning. The traefik router `mightyfin-auth` exposes only `/realms` and `/resources` paths on `auth.mightyfinance.co.zm`, so the admin API is reachable from the host on `127.0.0.1:18081` but not from the internet.
+
+
+## Runtime login switch
+
+The browser reads `/api/hrm/auth/capabilities` before restoring tokens or showing
+login options. `ERP__AuthMode` on the HRM API is the deployment switch, with
+`HRM__AuthMode` as the existing fallback. The default is `local`.
+
+| Server mode | Local account login | Organisation / OIDC login |
+| --- | --- | --- |
+| `local` | Enabled | Disabled; cached OIDC sessions are discarded |
+| `hybrid` | Enabled | Enabled when the identity provider is configured |
+| `oidc` | Disabled | Enabled when the identity provider is configured |
+
+For the current Mightyfin deployment, the API environment is
+`/home/mightyfin/.config/mightyfin/hrm/.env`. Its explicit `ERP__AuthMode=hybrid`
+setting enables both login methods. The active OIDC authority is
+`https://auth.mightyfinance.co.zm/realms/mightyfin-erp`; the `mightyfin-staff`
+broker connects invited ERP accounts to the shared staff directory.
+
+Changing the API environment requires recreating/restarting the API service,
+then reloading the browser. It does **not** require rebuilding the frontend.
+`VITE_HRM_AUTH_MODE` no longer controls login. There is no new database flag or
+competing database/environment precedence: the existing server capabilities
+endpoint is the single source of truth. Missing, failed or unrecognised
+capabilities never enable OIDC redirects, callback exchanges, token refreshes,
+or bearer headers. The browser offers a reload message if no login method is
+available. Demo builds retain their separate existing demo flow.
+
+Validation: production web build plus browser cases for all three modes,
+expired/current saved OIDC sessions while local-only, disabled callbacks,
+PKCE redirect, silent SSO, invalid/missing/failed capabilities, and switching
+modes on browser reload. Existing timesheet role isolation is also checked.

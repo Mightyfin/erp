@@ -58,6 +58,10 @@ async function stubShell(page: Page) {
     sessionStorage.clear();
   });
   await page.route("**/api/hrm/**", async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith("/auth/capabilities")) {
+      await route.fulfill({ json: { mode: "local", localUsersEnabled: true, identityConfigured: false } });
+      return;
+    }
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
