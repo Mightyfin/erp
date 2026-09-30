@@ -35,8 +35,10 @@ test("timesheet operator sees employee attendance and cannot navigate to adminis
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByText("Other Employee").first()).toBeVisible();
   const menu = page.getByRole("navigation", { name: "Main" });
-  await menu.getByRole("button", { name: "Performance", exact: true }).click();
-  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(menu.getByText("Performance", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Corrections", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("All setup and admin lives here.")).toHaveCount(0);
   await expect(menu.getByRole("link", { name: "Performance cycles" })).toHaveCount(0);
 
   await page.getByText("Other Employee").first().click();
@@ -89,7 +91,7 @@ test("front desk can record single and bulk attendance without the full employee
 });
 
 
-test("front desk sidebar is available on mobile with restricted modules disabled", async ({ page }) => {
+test("front desk sidebar is available on mobile with restricted children and empty parent menus hidden", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/hrm/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -102,8 +104,10 @@ test("front desk sidebar is available on mobile with restricted modules disabled
   await page.getByRole("button", { name: "Open navigation" }).click();
   const menu = page.getByRole("dialog").getByRole("navigation", { name: "Main" });
   await expect(menu.getByRole("link", { name: "Timesheets", exact: true })).toBeVisible();
-  await menu.getByRole("button", { name: "Performance", exact: true }).click();
-  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(menu.getByText("Performance", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Corrections", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("All setup and admin lives here.")).toHaveCount(0);
   await menu.getByRole("link", { name: "Add bulk attendance", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();

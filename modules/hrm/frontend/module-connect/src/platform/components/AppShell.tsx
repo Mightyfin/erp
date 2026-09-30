@@ -81,7 +81,16 @@ import { cn } from "@/lib/utils";
 
 function useVisibleSections(mod: ModuleDefinition, role: Role) {
   const { user } = useAuth();
-  return isTimesheetOnly(user?.roles ?? []) ? mod.sections : mod.sections.filter((s) => !s.roles || s.roles.includes(role));
+  if (!isTimesheetOnly(user?.roles ?? []))
+    return mod.sections.filter((s) => !s.roles || s.roles.includes(role));
+  const permitted = (item: NavItem) => canUseTimesheetPath(item.to) && isPathEnabled(item.to);
+  return mod.sections.map(section => ({
+    ...section,
+    items: section.items?.filter(permitted),
+    groups: section.groups?.map(group => ({ ...group, items: group.items.filter(permitted) }))
+      .filter(group => group.items.length > 0),
+  })).filter(section => section.to ? canUseTimesheetPath(section.to)
+    : Boolean(section.items?.length || section.groups?.length));
 }
 
 /** Out-of-scope sections stay in the rail, greyed, so the roadmap is visible. */
@@ -112,7 +121,7 @@ function SoonSection({ section, collapsed = false }: { section: NavSection; coll
 function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNavigate?: () => void; collapsed?: boolean }) {
   const { user } = useAuth();
   if (isTimesheetOnly(user?.roles ?? []) && !canUseTimesheetPath(item.to))
-    return <span aria-disabled="true" title="Your role does not have access" className="block cursor-not-allowed rounded-md px-3 py-1.5 text-sm text-rail-muted/50">{item.label}</span>;
+    return null;
   return (
     <Link
       to={item.to}
@@ -141,7 +150,7 @@ function Section({ section, onNavigate, collapsed = false }: { section: NavSecti
   const { role } = useApp();
   const { user } = useAuth();
   const restricted = isTimesheetOnly(user?.roles ?? []);
-  const visible = (i: NavItem) => (restricted || !i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
+  const visible = (i: NavItem) => (restricted ? canUseTimesheetPath(i.to) : !i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
   const items = section.items?.filter(visible);
   const groups = section.groups
     ?.map((g) => ({ ...g, items: g.items.filter(visible) }))
@@ -156,7 +165,7 @@ function Section({ section, onNavigate, collapsed = false }: { section: NavSecti
   }, [childActive]);
 
   if (section.to && restricted && !canUseTimesheetPath(section.to))
-    return <div aria-disabled="true" title="Your role does not have access" className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted/50"><Icon className="size-4 shrink-0" aria-hidden />{section.label}</div>;
+    return null;
 
   if (section.to) {
     return (
