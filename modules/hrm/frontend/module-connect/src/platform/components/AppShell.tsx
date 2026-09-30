@@ -71,7 +71,7 @@ import { ComingSoon } from "./ComingSoon";
 import { ScopeSwitchOverlay } from "./ScopeSwitchOverlay";
 import type { ModuleDefinition, NavItem, NavSection } from "@/platform/nav";
 import { useApp, useRoleGate } from "@/platform/app-context";
-import { TimesheetShell } from "@/platform/components/TimesheetWorkspace";
+import { canUseTimesheetPath } from "@/platform/components/TimesheetWorkspace";
 import { isTimesheetOnly, HRM_STAFF_ROLES, useAuth } from "@/platform/auth";
 import { BrandIdentity } from "@/platform/components/BrandIdentity";
 import { adaptWorkers, realApi, useApi } from "@/platform/use-api";
@@ -80,7 +80,8 @@ import { modules } from "@/platform/modules";
 import { cn } from "@/lib/utils";
 
 function useVisibleSections(mod: ModuleDefinition, role: Role) {
-  return mod.sections.filter((s) => !s.roles || s.roles.includes(role));
+  const { user } = useAuth();
+  return isTimesheetOnly(user?.roles ?? []) ? mod.sections : mod.sections.filter((s) => !s.roles || s.roles.includes(role));
 }
 
 /** Out-of-scope sections stay in the rail, greyed, so the roadmap is visible. */
@@ -109,6 +110,9 @@ function SoonSection({ section, collapsed = false }: { section: NavSection; coll
 }
 
 function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNavigate?: () => void; collapsed?: boolean }) {
+  const { user } = useAuth();
+  if (isTimesheetOnly(user?.roles ?? []) && !canUseTimesheetPath(item.to))
+    return <span aria-disabled="true" title="Your role does not have access" className="block cursor-not-allowed rounded-md px-3 py-1.5 text-sm text-rail-muted/50">{item.label}</span>;
   return (
     <Link
       to={item.to}
@@ -135,7 +139,9 @@ function NavLink({ item, onNavigate, collapsed = false }: { item: NavItem; onNav
 function Section({ section, onNavigate, collapsed = false }: { section: NavSection; onNavigate?: () => void; collapsed?: boolean }) {
   const Icon = section.icon;
   const { role } = useApp();
-  const visible = (i: NavItem) => (!i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
+  const { user } = useAuth();
+  const restricted = isTimesheetOnly(user?.roles ?? []);
+  const visible = (i: NavItem) => (restricted || !i.roles || i.roles.includes(role)) && isPathEnabled(i.to.split("/$")[0]);
   const items = section.items?.filter(visible);
   const groups = section.groups
     ?.map((g) => ({ ...g, items: g.items.filter(visible) }))
@@ -148,6 +154,9 @@ function Section({ section, onNavigate, collapsed = false }: { section: NavSecti
   useEffect(() => {
     if (childActive) setOpen(true);
   }, [childActive]);
+
+  if (section.to && restricted && !canUseTimesheetPath(section.to))
+    return <div aria-disabled="true" title="Your role does not have access" className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-rail-muted/50"><Icon className="size-4 shrink-0" aria-hidden />{section.label}</div>;
 
   if (section.to) {
     return (
@@ -599,6 +608,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   if (isTimesheetOnly(user?.roles ?? [])) return <TimesheetShell>{children}</TimesheetShell>;
   return <FullAppShell>{children}</FullAppShell>;
+}
+
+/** Keep the standard navigation visible without fetching inaccessible HR data. */
+function TimesheetShell({ children }: { children: ReactNode }) {
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  return <div className="min-h-screen bg-background">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b bg-primary px-4 text-primary-foreground">
+      <div className="flex items-center gap-3">
+        <Sheet open={navigationOpen} onOpenChange={setNavigationOpen}>
+          <SheetTrigger asChild><Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation"><Menu className="size-5" /></Button></SheetTrigger>
+          <SheetContent side="left" className="w-72 bg-rail p-0 text-rail-foreground">
+            <SheetHeader className="sr-only"><SheetTitle>Navigation</SheetTitle></SheetHeader>
+            <RailContent onNavigate={() => setNavigationOpen(false)} />
+          </SheetContent>
+        </Sheet>
+        <span className="font-semibold">Mightyfin HRMS · Front Desk</span>
+      </div>
+      <SignedInBadge />
+    </header>
+    <aside className="fixed bottom-0 left-0 top-14 hidden w-64 bg-rail text-rail-foreground lg:block"><RailContent /></aside>
+    <main id="main" className="space-y-6 p-6 lg:ml-64">{children}</main>
+  </div>;
 }
 
 function FullAppShell({ children }: { children: ReactNode }) {

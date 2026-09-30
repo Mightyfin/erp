@@ -32,13 +32,18 @@ test("timesheet operator sees employee attendance and cannot navigate to adminis
   await page.goto("/hrm/configuration/users");
   await expect(page).toHaveURL(/\/hrm\/time\/timesheets$/, { timeout: 20000 });
   await expect(page.getByRole("heading", { name: "Timesheet summary" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Timesheet navigation" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByText("Other Employee").first()).toBeVisible();
+  const menu = page.getByRole("navigation", { name: "Main" });
+  await menu.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(menu.getByRole("link", { name: "Performance cycles" })).toHaveCount(0);
+
   await page.getByText("Other Employee").first().click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "Review overtime", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Close", exact: true }).first().click();
-  await page.getByRole("navigation", { name: "Timesheet navigation" }).getByRole("link", { name: "Import attendance" }).click();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Import attendance" }).click();
   await expect(page.getByRole("heading", { name: "Import attendance", level: 1 })).toBeVisible();
   await expect(page.getByText("Import overtime hours only")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "User access" })).toHaveCount(0);
@@ -72,7 +77,7 @@ test("front desk can record single and bulk attendance without the full employee
   await dialog.getByLabel("Clock out", { exact: true }).fill("17:00");
   await dialog.getByRole("button", { name: "Save attendance" }).click();
   await expect(dialog).toHaveCount(0);
-  await page.getByRole("navigation", { name: "Timesheet navigation" }).getByRole("link", { name: "Add bulk attendance" }).click();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Add bulk attendance" }).click();
   await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();
   await page.getByLabel("Clock in for EMP-2", { exact: true }).fill("09:00");
   await page.getByLabel("Clock out for EMP-2", { exact: true }).fill("18:00");
@@ -81,4 +86,25 @@ test("front desk can record single and bulk attendance without the full employee
   expect(saved[0].rows).toEqual([{ workerId: "worker-1", clockIn: "08:00", clockOut: "17:00" }]);
   expect(saved[1].rows).toEqual([{ workerId: "worker-2", clockIn: "09:00", clockOut: "18:00" }]);
   expect(unexpected).toEqual([]);
+});
+
+
+test("front desk sidebar is available on mobile with restricted modules disabled", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/hrm/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path.endsWith("/auth/capabilities") ? { mode: "local", localUsersEnabled: true, identityConfigured: false }
+      : path.endsWith("/auth/me") ? { authenticated: true, user: { id: "desk", roles: ["front_desk", "timesheet_operator"], email: "desk@example.test", isActive: true } }
+      : path.endsWith("/branding") ? {} : [];
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/hrm/time/timesheets");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const menu = page.getByRole("dialog").getByRole("navigation", { name: "Main" });
+  await expect(menu.getByRole("link", { name: "Timesheets", exact: true })).toBeVisible();
+  await menu.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveAttribute("aria-disabled", "true");
+  await menu.getByRole("link", { name: "Add bulk attendance", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();
 });
