@@ -6,7 +6,8 @@ test("timesheet operator sees employee attendance and cannot navigate to adminis
   await page.route("**/api/hrm/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown;
-    if (path === "/api/hrm/auth/me") body = { authenticated: true, user: {
+    if (path === "/api/hrm/auth/capabilities") body = { mode: "local", localUsersEnabled: true, identityConfigured: false };
+    else if (path === "/api/hrm/auth/me") body = { authenticated: true, user: {
       id: "clerk", displayName: "Timesheet Clerk", email: "clerk@example.test",
       roles: ["timesheet_operator"], isActive: true, mustChangePassword: false,
     } };

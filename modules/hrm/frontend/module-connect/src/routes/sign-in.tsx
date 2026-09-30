@@ -31,9 +31,7 @@ export const Route = createFileRoute("/sign-in")({
 });
 
 const USE_REAL = (import.meta.env.VITE_USE_REAL_API as string | undefined) === "true";
-const ORGANISATION_LOGIN = ["oidc", "hybrid"].includes(
-  (import.meta.env.VITE_HRM_AUTH_MODE as string | undefined)?.trim().toLowerCase() ?? "local",
-);
+
 
 /**
  * ERP-hosted login page (M12 — hybrid auth).
@@ -55,7 +53,9 @@ const ORGANISATION_LOGIN = ["oidc", "hybrid"].includes(
 function SignIn() {
   const navigate = useNavigate();
   const { setRole } = useApp();
-  const { authenticated, signInLocal } = useAuth();
+  const { authenticated, signInLocal, authSettings, loading } = useAuth();
+  const organisationLogin = authSettings.oidcEnabled;
+  const localLogin = authSettings.localEnabled;
   const { branding } = useBranding();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +77,7 @@ function SignIn() {
   // when no SSO cookie exists and must leave the hosted form stable.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (USE_REAL && ORGANISATION_LOGIN && (params.has("code") || params.has("error"))) {
+    if (USE_REAL && organisationLogin && (params.has("code") || params.has("error"))) {
       callbackInProgress.current = true;
       void handleLoginCallback().then((origin) => {
         // The callback stores the new OIDC session outside React state. Force
@@ -89,17 +89,17 @@ function SignIn() {
         else setSilenceFailed(true);
       });
     }
-  }, [navigate]);
+  }, [navigate, organisationLogin]);
 
   // (2) Auto-login whenever a valid session exists.
   useEffect(() => {
-    if (!USE_REAL || !ORGANISATION_LOGIN) return;
+    if (!USE_REAL || loading || !authSettings.ready) return;
     if (credentialToken) return;
     if (authenticated) {
       void navigate({ to: "/hrm", replace: true });
       return;
     }
-    if (callbackInProgress.current) return;
+    if (!organisationLogin || callbackInProgress.current) return;
     // A callback is already being handled by the effect above. Starting a new
     // authorization request here would replace its PKCE state and loop.
     const params = new URLSearchParams(window.location.search);
@@ -110,7 +110,7 @@ function SignIn() {
     const session = getSession();
     if (isSessionValid(session)) return;
     startSilentSso(window.location.pathname === "/sign-in" ? "/hrm" : window.location.pathname);
-  }, [authenticated, credentialToken, navigate, silenceFailed]);
+  }, [authenticated, authSettings.ready, credentialToken, loading, navigate, organisationLogin, silenceFailed]);
 
   const enterWithOrganisation = () => {
     setBusy(true);
@@ -272,10 +272,10 @@ function SignIn() {
             <>
           <h2 className="mt-6 text-xl font-semibold lg:mt-0">{loginHeadingFor(branding)}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {branding?.loginDescription || (ORGANISATION_LOGIN ? "Use your organisation account or HRMS local account." : "Use your HRMS local account.")}
+            {branding?.loginDescription || (organisationLogin ? "Use your organisation account or HRMS local account." : "Use your HRMS local account.")}
           </p>
 
-          {ORGANISATION_LOGIN ? <Button className="mt-6 w-full" onClick={enterWithOrganisation} disabled={busy}>
+          {organisationLogin ? <Button className="mt-6 w-full" onClick={enterWithOrganisation} disabled={busy}>
             {busy ? (
               "Checking your session\u2026"
             ) : (
@@ -286,13 +286,13 @@ function SignIn() {
             )}
           </Button> : null}
 
-          {ORGANISATION_LOGIN ? <div className="my-6 flex items-center gap-3">
+          {organisationLogin && localLogin ? <div className="my-6 flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
             <span className="text-xs text-muted-foreground">HRMS local account</span>
             <span className="h-px flex-1 bg-border" />
           </div> : null}
 
-          <form className="space-y-4" onSubmit={enterWithLocalAccount}>
+          {localLogin ? <form className="space-y-4" onSubmit={enterWithLocalAccount}>
             <div>
               <Label htmlFor="email">Work email</Label>
               <Input
@@ -304,7 +304,7 @@ function SignIn() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={emailPlaceholderFor(branding)}
               />
-              {ORGANISATION_LOGIN ? <p className="mt-1 text-xs text-muted-foreground">Use this when HR created an HRMS-local account.</p> : null}
+              {organisationLogin ? <p className="mt-1 text-xs text-muted-foreground">Use this when HR created an HRMS-local account.</p> : null}
             </div>
 
             <div>
@@ -323,11 +323,11 @@ function SignIn() {
 
             {localError ? <p className="text-sm text-destructive" role="alert">{localError}</p> : null}
 
-            <Button type="submit" variant={ORGANISATION_LOGIN ? "outline" : "default"} className="w-full" disabled={localBusy}>
+            <Button type="submit" variant={organisationLogin ? "outline" : "default"} className="w-full" disabled={localBusy}>
               {localBusy ? "Signing in…" : "Sign in with HRMS local account"}
             </Button>
 
-            {ORGANISATION_LOGIN ? <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
+            {organisationLogin ? <div className="rounded-lg border border-warning/40 bg-warning-soft p-3">
               <p className="flex gap-2 text-xs text-warning">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 <span>
@@ -336,7 +336,9 @@ function SignIn() {
                 </span>
               </p>
             </div> : null}
-          </form>
+          </form> : null}
+          {USE_REAL && !authSettings.ready ? <p className="mt-6 text-sm text-muted-foreground" role="status">Loading sign-in options…</p> : null}
+          {USE_REAL && authSettings.ready && !organisationLogin && !localLogin ? <div className="mt-6" role="alert"><p className="text-sm text-destructive">Sign-in is temporarily unavailable. Please reload or contact support.</p><Button className="mt-3" variant="outline" onClick={() => window.location.reload()}>Reload</Button></div> : null}
           {branding?.supportEmail ? <p className="mt-4 text-center text-xs text-muted-foreground">
             Need account help? <a className="text-primary underline underline-offset-2" href={`mailto:${branding.supportEmail}`}>{branding.supportEmail}</a>
           </p> : null}
