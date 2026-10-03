@@ -8,12 +8,7 @@ export function todayLocal() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 export async function attendanceEmployees(): Promise<AttendanceEmployee[]> {
-  const rows: AttendanceEmployee[] = [];
-  for (let page = 1; ; page++) {
-    const result = await hrmApi.get<{ items: AttendanceEmployee[]; totalCount: number }>("/hrm/workers", { page, pageSize: 100 });
-    rows.push(...result.items);
-    if (!result.items.length || rows.length >= result.totalCount) break;
-  }
+  const rows = await hrmApi.get<AttendanceEmployee[]>("/hrm/time/attendance/employees");
   return rows.filter(w => ["active", "on-leave", "notice"].includes(w.status)).sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 export function activeOn(w: AttendanceEmployee, date: string) {

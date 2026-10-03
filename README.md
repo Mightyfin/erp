@@ -1,6 +1,6 @@
 # MightyFin Enterprise ERP
 
-Status: **Architecture settled, HRM frontend built against mocks, no backend yet**
+Status: **HRM frontend and ASP.NET Core API present; Procurement is in specification**
 
 MightyFin's internal employee and corporate administration platform — HR and payroll,
 finance, procurement and inventory. It is deliberately separate from the regulated core
@@ -22,9 +22,10 @@ ERP API                          ERP database
 └── Inventory
 ```
 
-Module rules in brief: each module owns its schema, never reads another module's tables,
+Target module rules: each module owns its schema, never reads another module's tables,
 keeps its own permissions, migrations, jobs and tests, and reaches other modules through
-defined contracts. Isolation is enforced by per-module Postgres roles, not by code review.
+defined contracts. The architecture calls for per-module Postgres roles; the bootstrap
+migration creates schemas but does not yet configure those roles.
 
 ## Layout
 
@@ -33,11 +34,15 @@ defined contracts. Isolation is enforced by per-module Postgres roles, not by co
 | `docs/` | Architecture position and product documentation |
 | `docs/hrm/` | HRM product principles, personas, information architecture, workflow catalogue and the frontend build contract |
 | `docs/hrm/feature-specifications/` | Prepared HRM and ERP feature specification documents |
+| `docs/procurement/` | Procurement module architecture, capability map and feature documentation sequence |
 | `modules/hrm/frontend/module-connect/` | HRM web UI — React, TanStack Router, Vite |
+| `backend/hrm-api/` | ASP.NET Core HRM API and EF Core migrations for the `hrm` schema |
+| `cmd/`, `internal/` | Go ERP API bootstrap, authentication, migrations and health endpoints |
 
-Backend modules are not yet present. When they land they follow the pattern already proven
-by `Mightyfin/wallet` and `Mightyfin/payment-rails`: Go, PostgreSQL with goose migrations,
-transactional outbox, `internal/` package layout, OIDC middleware.
+The earlier architecture record proposes a Go backend. The implemented HRM backend uses
+ASP.NET Core and EF Core, while the Go ERP API currently provides shared bootstrap facilities.
+The Procurement specification records the runtime and migration ownership decision needed
+before its backend is built.
 
 ## HRM frontend
 
@@ -45,25 +50,17 @@ transactional outbox, `internal/` package layout, OIDC middleware.
 cd modules/hrm/frontend/module-connect && npm install && npm run dev
 ```
 
-Every screen currently reads from `src/mock/`. The mock clients are written to be replaced by
-real fetches without touching UI code — that is the explicit contract in
-[`docs/hrm/08-frontend-build-contract.md`](docs/hrm/08-frontend-build-contract.md). No figure
-shown anywhere in the app is calculated by the frontend, and none should ever be.
+The frontend contains both mock and real API paths. The original replacement contract is
+recorded in [`docs/hrm/08-frontend-build-contract.md`](docs/hrm/08-frontend-build-contract.md);
+consult the current route and client code to see which screens use each path.
 
 Branding lives entirely in `src/theme/tokens.css`. MightyFin is the **vendor**; the employer
 whose data appears on screen is a **tenant** and must stay swappable.
 
-## Known gaps
+## Procurement planning
 
-Recorded rather than discovered later:
-
-- No backend. The payroll calculation engine, statutory country packs and every write path
-  are unimplemented.
-- Pay group is a bare string with no registry, and the values on the employee record do not
-  match those offered when opening a pay run.
-- Tax bands do not exist. `basis: "ZRA 2026 monthly bands"` is a display string; the figures
-  in the mocks are literals.
-- Configuration screens read but do not write.
-
-The payroll engine is a **port, not a greenfield build** — `Mightyfin/admin-lms` already runs
-a tested, data-driven Zambian slab engine in production. See `docs/00-architecture-position.md`.
+The [PROC-00 Procurement Module Architecture and Capability Map](docs/procurement/PROC-00-PROCUREMENT-MODULE-ARCHITECTURE-AND-CAPABILITY-MAP.md)
+is the current draft source for the module boundary, parent capabilities, data ownership and build order.
+Child features will receive the required 28-section specification before implementation.
+The [complete Procurement UI prompt pack](docs/procurement/PROC-UX-02-COMPLETE-LOVABLE-UI-PROMPT-PACK.md)
+provides the sequenced Lovable handoff for internal and supplier-facing screens.

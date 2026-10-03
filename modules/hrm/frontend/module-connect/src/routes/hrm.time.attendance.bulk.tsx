@@ -16,8 +16,8 @@ export const Route = createFileRoute("/hrm/time/attendance/bulk")({ head: () => 
 
 function BulkAttendance() {
   const { user } = useAuth();
-  const allowed = user?.roles.some(r => ["hr_ops", "hr_admin"].includes(r));
-  return <AuthGate><AppShell>{allowed ? <EntryTable /> : <p role="alert">Attendance entry is available to HR administrators and HR operations staff.</p>}</AppShell></AuthGate>;
+  const allowed = user?.roles.some(r => ["hr_ops", "hr_admin", "timesheet_operator"].includes(r));
+  return <AuthGate><AppShell>{allowed ? <EntryTable /> : <p role="alert">Attendance entry requires timesheet or HR operations access.</p>}</AppShell></AuthGate>;
 }
 function EntryTable() {
   const [date, setDate] = useState(todayLocal);

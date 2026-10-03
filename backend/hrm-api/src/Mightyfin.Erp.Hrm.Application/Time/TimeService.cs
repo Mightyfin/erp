@@ -495,7 +495,7 @@ public sealed class TimeServiceImpl(
     public async Task<List<AttendanceRecordDto>> CreateManualAttendanceAsync(ManualAttendanceRequest request,
         string actorSubjectId, CancellationToken ct)
     {
-        authz.RequireAnyRole("hr_ops", "hr_admin");
+        authz.RequireAnyRole("hr_ops", "hr_admin", "timesheet_operator");
         if (!DateOnly.TryParseExact(request.WorkDate, "yyyy-MM-dd", out var date) || date > DateOnly.FromDateTime(DateTime.UtcNow))
             throw new DomainException("attendance-invalid-date", "Choose a valid work date today or earlier.");
         if (request.Rows == null || request.Rows.Count is < 1 or > 500)

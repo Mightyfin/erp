@@ -32,15 +32,83 @@ test("timesheet operator sees employee attendance and cannot navigate to adminis
   await page.goto("/hrm/configuration/users");
   await expect(page).toHaveURL(/\/hrm\/time\/timesheets$/, { timeout: 20000 });
   await expect(page.getByRole("heading", { name: "Timesheet summary" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Timesheet navigation" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByText("Other Employee").first()).toBeVisible();
+  const menu = page.getByRole("navigation", { name: "Main" });
+  await expect(menu.getByText("Performance", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Corrections", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("All setup and admin lives here.")).toHaveCount(0);
+  await expect(menu.getByRole("link", { name: "Performance cycles" })).toHaveCount(0);
+
   await page.getByText("Other Employee").first().click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "Review overtime", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Close", exact: true }).first().click();
-  await page.getByRole("navigation", { name: "Timesheet navigation" }).getByRole("link", { name: "Import attendance" }).click();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Import attendance" }).click();
   await expect(page.getByRole("heading", { name: "Import attendance", level: 1 })).toBeVisible();
   await expect(page.getByText("Import overtime hours only")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "User access" })).toHaveCount(0);
   expect(unexpected).toEqual([]);
+});
+
+test("front desk can record single and bulk attendance without the full employee directory", async ({ page }) => {
+  const saved: any[] = [];
+  const unexpected: string[] = [];
+  const employees = [1, 2].map(n => ({ id: `worker-${n}`, employeeNo: `EMP-${n}`, fullName: `Employee ${n}`, status: "active" }));
+  await page.route("**/api/hrm/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown;
+    if (path.endsWith("/auth/capabilities")) body = { mode: "local", localUsersEnabled: true, identityConfigured: false };
+    else if (path.endsWith("/auth/me")) body = { authenticated: true, user: { id: "front-desk", email: "desk@example.test", displayName: "Front Desk", roles: ["front_desk", "timesheet_operator"], isActive: true } };
+    else if (path.endsWith("/branding")) body = {};
+    else if (path.endsWith("/attendance/employees")) body = employees;
+    else if (path.endsWith("/attendance/manual")) {
+      const input = route.request().postDataJSON(); saved.push(input);
+      body = input.rows.map((r: any) => ({ ...r, id: r.workerId, totalHours: 8, overtimeStatus: "none" }));
+    }
+    else if (path.endsWith("/time/attendance")) body = [];
+    else { unexpected.push(path); await route.fulfill({ status: 403, json: { message: "Denied" } }); return; }
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/hrm/time/timesheets");
+  await page.getByRole("button", { name: "Add attendance", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Employee", { exact: true }).selectOption("worker-1");
+  await dialog.getByLabel("Clock in", { exact: true }).fill("08:00");
+  await dialog.getByLabel("Clock out", { exact: true }).fill("17:00");
+  await dialog.getByRole("button", { name: "Save attendance" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Add bulk attendance" }).click();
+  await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();
+  await page.getByLabel("Clock in for EMP-2", { exact: true }).fill("09:00");
+  await page.getByLabel("Clock out for EMP-2", { exact: true }).fill("18:00");
+  await page.getByRole("button", { name: /Save.*attendance|Save.*row/i }).click();
+  await expect.poll(() => saved.length).toBe(2);
+  expect(saved[0].rows).toEqual([{ workerId: "worker-1", clockIn: "08:00", clockOut: "17:00" }]);
+  expect(saved[1].rows).toEqual([{ workerId: "worker-2", clockIn: "09:00", clockOut: "18:00" }]);
+  expect(unexpected).toEqual([]);
+});
+
+
+test("front desk sidebar is available on mobile with restricted children and empty parent menus hidden", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/hrm/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path.endsWith("/auth/capabilities") ? { mode: "local", localUsersEnabled: true, identityConfigured: false }
+      : path.endsWith("/auth/me") ? { authenticated: true, user: { id: "desk", roles: ["front_desk", "timesheet_operator"], email: "desk@example.test", isActive: true } }
+      : path.endsWith("/branding") ? {} : [];
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/hrm/time/timesheets");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const menu = page.getByRole("dialog").getByRole("navigation", { name: "Main" });
+  await expect(menu.getByRole("link", { name: "Timesheets", exact: true })).toBeVisible();
+  await expect(menu.getByText("Performance", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Performance cycles", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Corrections", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("All setup and admin lives here.")).toHaveCount(0);
+  await menu.getByRole("link", { name: "Add bulk attendance", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("bulk-attendance-page")).toBeVisible();
 });
