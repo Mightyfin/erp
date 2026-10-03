@@ -62,3 +62,5 @@ whose data appears on screen is a **tenant** and must stay swappable.
 The [PROC-00 Procurement Module Architecture and Capability Map](docs/procurement/PROC-00-PROCUREMENT-MODULE-ARCHITECTURE-AND-CAPABILITY-MAP.md)
 is the current draft source for the module boundary, parent capabilities, data ownership and build order.
 Child features will receive the required 28-section specification before implementation.
+The [complete Procurement UI prompt pack](docs/procurement/PROC-UX-02-COMPLETE-LOVABLE-UI-PROMPT-PACK.md)
+provides the sequenced Lovable handoff for internal and supplier-facing screens.
